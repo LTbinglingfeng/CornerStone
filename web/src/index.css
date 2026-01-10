@@ -33,6 +33,9 @@
   --red-packet-open-btn-text: #3b2e1f;
   --red-packet-result-accent: #cf3c32;
   --red-packet-result-footer: var(--text-secondary);
+  --pat-banner-bg: rgba(255, 255, 255, 0.08);
+  --pat-banner-text: rgba(255, 255, 255, 0.7);
+  --pat-banner-border: rgba(255, 255, 255, 0.08);
 }
 
 [data-theme="light"] {
@@ -63,6 +66,9 @@
   --red-packet-open-btn-text: #2f2418;
   --red-packet-result-accent: #d6453b;
   --red-packet-result-footer: var(--text-secondary);
+  --pat-banner-bg: rgba(0, 0, 0, 0.06);
+  --pat-banner-text: rgba(0, 0, 0, 0.5);
+  --pat-banner-border: rgba(0, 0, 0, 0.05);
 }
 
 html, body {

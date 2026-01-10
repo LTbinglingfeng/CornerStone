@@ -23,6 +23,12 @@ export interface RedPacketParams {
   message: string
 }
 
+// 拍一拍参数
+export interface PatParams {
+  name: string
+  target?: string
+}
+
 export interface ChatSession {
   id: string
   title: string

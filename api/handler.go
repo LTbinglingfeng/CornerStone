@@ -798,7 +798,7 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 		Temperature: temperature,
 		TopP:        provider.TopP,
 		MaxTokens:   req.MaxTokens,
-		Tools:       getRedPacketTools(),
+		Tools:       getChatTools(),
 	}
 
 	if useStream {
@@ -1413,14 +1413,14 @@ func (h *Handler) handleUserAvatar(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// getRedPacketTools 返回红包工具定义
-func getRedPacketTools() []client.Tool {
+// getChatTools 返回聊天工具定义
+func getChatTools() []client.Tool {
 	return []client.Tool{
 		{
 			Type: "function",
 			Function: client.ToolFunction{
 				Name:        "send_red_packet",
-				Description: "向用户发送一个红包。当你想要给用户发红包、送礼物、表达祝福时使用此工具。",
+				Description: "向用户发送一个红包。当你想要给用户发红包时使用此工具。使用此工具的同时也可以发送信息",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -1435,6 +1435,29 @@ func getRedPacketTools() []client.Tool {
 						},
 					},
 					"required": []string{"amount", "message"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: client.ToolFunction{
+				Name:        "send_pat",
+				Description: "发送一次拍一拍提示，用于打招呼、提醒或互动，使用此工具的同时也可以发送信息",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"name": map[string]interface{}{
+							"type":        "string",
+							"description": "发起拍一拍的名称",
+							"maxLength":   20,
+						},
+						"target": map[string]interface{}{
+							"type":        "string",
+							"description": "被拍的人称呼，比如“我/你/他”",
+							"maxLength":   6,
+						},
+					},
+					"required": []string{"name"},
 				},
 			},
 		},

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { gsap } from 'gsap'
-import type { ChatMessage, ChatRecord, Prompt, UserInfo, ToolCall, RedPacketParams } from '../types/chat'
+import type { ChatMessage, ChatRecord, Prompt, UserInfo, ToolCall, RedPacketParams, PatParams } from '../types/chat'
 import { getSession, sendMessage, getPrompt, getUserInfo, getPromptAvatarUrl, getUserAvatarUrl, uploadChatImage, getChatImageUrl, getActiveProvider, appendQueryParam } from '../services/api'
 import ChatSettings from './ChatSettings'
 import './ChatDetail.css'
@@ -16,6 +16,7 @@ type DisplayItem =
   | { key: string; role: string; type: 'text'; message: ChatMessage }
   | { key: string; role: string; type: 'loading'; message: ChatMessage }
   | { key: string; role: string; type: 'red-packet'; message: ChatMessage; toolCall: ToolCall }
+  | { key: string; role: string; type: 'pat-banner'; message: ChatMessage; toolCall: ToolCall }
 
 const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, onSwitchSession }) => {
   const [session, setSession] = useState<ChatRecord | null>(null)
@@ -492,6 +493,24 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     }
   }
 
+  const renderPatBanner = (toolCall: ToolCall) => {
+    if (toolCall.function.name !== 'send_pat') return null
+
+    try {
+      const params: PatParams = JSON.parse(toolCall.function.arguments || '{}')
+      const name = (typeof params.name === 'string' ? params.name.trim() : '') || prompt?.name || 'AI Assistant'
+      const target = (typeof params.target === 'string' ? params.target.trim() : '') || '我'
+
+      return (
+        <div className="pat-banner">
+          <span className="pat-banner-text">"{name}"拍了拍{target}</span>
+        </div>
+      )
+    } catch {
+      return null
+    }
+  }
+
   const handleOpenPacket = () => {
     setPacketStep('opening')
     setTimeout(() => {
@@ -503,7 +522,8 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     const items: DisplayItem[] = []
     messages.forEach((message, index) => {
       const hasContent = (message.content && message.content.trim() !== '') || (message.image_paths && message.image_paths.length > 0)
-      const redPacketCalls = (message.tool_calls || []).filter(tc => tc.function.name === 'send_red_packet')
+      const toolCalls = message.tool_calls || []
+      const supportedCalls = toolCalls.filter(tc => tc.function.name === 'send_red_packet' || tc.function.name === 'send_pat')
 
       if (hasContent) {
         items.push({
@@ -514,17 +534,28 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         })
       }
 
-      redPacketCalls.forEach((toolCall, toolIndex) => {
-        items.push({
-          key: `${message.timestamp}-rp-${toolCall.id || toolIndex}`,
-          role: message.role,
-          type: 'red-packet',
-          message,
-          toolCall,
-        })
+      supportedCalls.forEach((toolCall, toolIndex) => {
+        if (toolCall.function.name === 'send_red_packet') {
+          items.push({
+            key: `${message.timestamp}-rp-${toolCall.id || toolIndex}`,
+            role: message.role,
+            type: 'red-packet',
+            message,
+            toolCall,
+          })
+        }
+        if (toolCall.function.name === 'send_pat') {
+          items.push({
+            key: `${message.timestamp}-pat-${toolCall.id || toolIndex}`,
+            role: message.role,
+            type: 'pat-banner',
+            message,
+            toolCall,
+          })
+        }
       })
 
-      if (!hasContent && redPacketCalls.length === 0) {
+      if (!hasContent && supportedCalls.length === 0) {
         const shouldShowLoading = sending && index === messages.length - 1 && message.role === 'assistant'
         if (shouldShowLoading) {
           items.push({
@@ -590,6 +621,17 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         ) : (
           displayItems.map((item) => {
             const isRedPacket = item.type === 'red-packet'
+            const isPatBanner = item.type === 'pat-banner'
+            if (isPatBanner) {
+              const banner = renderPatBanner(item.toolCall)
+              if (!banner) return null
+              return (
+                <div key={item.key} className="message-item pat-banner-item">
+                  {banner}
+                </div>
+              )
+            }
+
             const content = isRedPacket ? (
               renderRedPacket(item.toolCall)
             ) : (
