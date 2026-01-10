@@ -44,6 +44,7 @@ func main() {
 	promptManager := storage.NewPromptManager(promptsDir)
 	chatManager := storage.NewChatManager(chatsDir)
 	userManager := storage.NewUserManager(userAboutDir)
+	authManager := storage.NewAuthManager(userAboutDir)
 	os.MkdirAll(cachePhotoDir, 0755)
 
 	log.Printf("数据存储目录: %s", baseDir)
@@ -57,7 +58,7 @@ func main() {
 	mux := http.NewServeMux()
 
 	// 注册API处理器
-	handler := api.NewHandler(configManager, promptManager, chatManager, userManager, cachePhotoDir)
+	handler := api.NewHandler(configManager, promptManager, chatManager, userManager, authManager, cachePhotoDir)
 	handler.RegisterRoutes(mux)
 
 	// 启动服务
@@ -65,6 +66,9 @@ func main() {
 	log.Printf("AI客户端后端启动在 http://localhost%s", addr)
 	log.Printf("API端点:")
 	log.Printf("  POST   /api/chat                    - 发送聊天消息")
+	log.Printf("  GET    /management/auth/status      - 获取鉴权状态")
+	log.Printf("  POST   /management/auth/setup       - 初始化用户名和密码")
+	log.Printf("  POST   /management/auth/login       - 登录获取令牌")
 	log.Printf("  GET    /management/config           - 获取配置")
 	log.Printf("  PUT    /management/config           - 更新配置")
 	log.Printf("  GET    /management/providers        - 获取供应商列表")

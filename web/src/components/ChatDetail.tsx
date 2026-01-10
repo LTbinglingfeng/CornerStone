@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { gsap } from 'gsap'
 import type { ChatMessage, ChatRecord, Prompt, UserInfo, ToolCall, RedPacketParams } from '../types/chat'
-import { getSession, sendMessage, getPrompt, getUserInfo, getPromptAvatarUrl, getUserAvatarUrl, uploadChatImage, getChatImageUrl, getActiveProvider } from '../services/api'
+import { getSession, sendMessage, getPrompt, getUserInfo, getPromptAvatarUrl, getUserAvatarUrl, uploadChatImage, getChatImageUrl, getActiveProvider, appendQueryParam } from '../services/api'
 import ChatSettings from './ChatSettings'
 import './ChatDetail.css'
 
@@ -397,7 +397,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
   // 获取用户头像 URL
   const getUserAvatarSrc = () => {
     if (userInfo?.avatar) {
-      return getUserAvatarUrl() + `?t=${new Date(userInfo.updated_at).getTime()}`
+      return appendQueryParam(getUserAvatarUrl(), 't', new Date(userInfo.updated_at).getTime())
     }
     return null
   }
@@ -405,7 +405,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
   // 获取 prompt 头像 URL
   const getPromptAvatarSrc = () => {
     if (prompt?.avatar) {
-      return getPromptAvatarUrl(prompt.id) + `?t=${new Date(prompt.updated_at).getTime()}`
+      return appendQueryParam(getPromptAvatarUrl(prompt.id), 't', new Date(prompt.updated_at).getTime())
     }
     return null
   }

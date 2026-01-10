@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { gsap } from 'gsap'
-import { getPrompts, createPrompt, updatePrompt, deletePrompt, uploadPromptAvatar, getPromptAvatarUrl, deletePromptAvatar, createSession } from '../services/api'
+import { getPrompts, createPrompt, updatePrompt, deletePrompt, uploadPromptAvatar, getPromptAvatarUrl, deletePromptAvatar, createSession, appendQueryParam } from '../services/api'
 import type { Prompt } from '../types/chat'
 import './Contacts.css'
 
@@ -186,7 +186,7 @@ const Contacts: React.FC<ContactsProps> = ({ onStartChat }) => {
 
   const getAvatarUrl = (prompt: Prompt) => {
     if (prompt.avatar) {
-      return getPromptAvatarUrl(prompt.id) + `?t=${new Date(prompt.updated_at).getTime()}`
+      return appendQueryParam(getPromptAvatarUrl(prompt.id), 't', new Date(prompt.updated_at).getTime())
     }
     return null
   }

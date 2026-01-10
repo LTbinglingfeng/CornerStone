@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { gsap } from 'gsap'
-import { getPrompts, getPromptAvatarUrl } from '../services/api'
+import { getPrompts, getPromptAvatarUrl, appendQueryParam } from '../services/api'
 import type { Prompt } from '../types/chat'
 import './PromptSelector.css'
 
@@ -65,7 +65,7 @@ const PromptSelector: React.FC<PromptSelectorProps> = ({ onSelect, onClose }) =>
 
   const getAvatarUrl = (prompt: Prompt) => {
     if (prompt.avatar) {
-      return getPromptAvatarUrl(prompt.id) + `?t=${new Date(prompt.updated_at).getTime()}`
+      return appendQueryParam(getPromptAvatarUrl(prompt.id), 't', new Date(prompt.updated_at).getTime())
     }
     return null
   }

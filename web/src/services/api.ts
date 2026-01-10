@@ -1,10 +1,43 @@
-import type { ApiResponse, ChatSession, ChatRecord, AppConfig, Provider, ProvidersResponse, Prompt, UserInfo } from '../types/chat'
+import type { ApiResponse, ChatSession, ChatRecord, AppConfig, Provider, ProvidersResponse, Prompt, UserInfo, AuthStatus, AuthSession } from '../types/chat'
 
 const API_BASE = 'http://localhost:1205/api'
 const MANAGEMENT_BASE = 'http://localhost:1205/management'
+const AUTH_TOKEN_KEY = 'cornerstone.auth.token'
 
-async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
-  const res = await fetch(url, init)
+export function getAuthToken(): string | null {
+  return localStorage.getItem(AUTH_TOKEN_KEY)
+}
+
+export function setAuthToken(token: string | null): void {
+  if (token) {
+    localStorage.setItem(AUTH_TOKEN_KEY, token)
+  } else {
+    localStorage.removeItem(AUTH_TOKEN_KEY)
+  }
+}
+
+function withAuthToken(url: string): string {
+  const token = getAuthToken()
+  if (!token) {
+    return url
+  }
+  const separator = url.includes('?') ? '&' : '?'
+  return `${url}${separator}token=${encodeURIComponent(token)}`
+}
+
+export function appendQueryParam(url: string, key: string, value: string | number): string {
+  const separator = url.includes('?') ? '&' : '?'
+  return `${url}${separator}${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`
+}
+
+async function apiFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers || {})
+  const token = getAuthToken()
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`)
+  }
+
+  const res = await fetch(url, { ...init, headers })
   if (res.ok) return res
 
   let message = `${res.status} ${res.statusText}`.trim()
@@ -30,6 +63,39 @@ async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
 async function apiFetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await apiFetch(url, init)
   return (await res.json()) as T
+}
+
+export async function getAuthStatus(): Promise<AuthStatus | null> {
+  try {
+    const data = await apiFetchJson<ApiResponse<AuthStatus>>(`${MANAGEMENT_BASE}/auth/status`)
+    return data.success && data.data ? data.data : null
+  } catch {
+    return null
+  }
+}
+
+export async function setupAuth(username: string, password: string): Promise<AuthSession> {
+  const data = await apiFetchJson<ApiResponse<AuthSession>>(`${MANAGEMENT_BASE}/auth/setup`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  })
+  if (!data.success || !data.data) {
+    throw new Error(data.error || 'Setup failed')
+  }
+  return data.data
+}
+
+export async function loginAuth(username: string, password: string): Promise<AuthSession> {
+  const data = await apiFetchJson<ApiResponse<AuthSession>>(`${MANAGEMENT_BASE}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  })
+  if (!data.success || !data.data) {
+    throw new Error(data.error || 'Login failed')
+  }
+  return data.data
 }
 
 export async function getSessions(): Promise<ChatSession[]> {
@@ -319,7 +385,7 @@ export async function uploadPromptAvatar(id: string, file: File): Promise<string
 
 // 获取提示词头像URL
 export function getPromptAvatarUrl(id: string): string {
-  return `${MANAGEMENT_BASE}/prompts-avatar/${id}`
+  return withAuthToken(`${MANAGEMENT_BASE}/prompts-avatar/${id}`)
 }
 
 // 删除提示词头像
@@ -376,7 +442,7 @@ export async function uploadUserAvatar(file: File): Promise<string | null> {
 
 // 获取用户头像URL
 export function getUserAvatarUrl(): string {
-  return `${MANAGEMENT_BASE}/user/avatar`
+  return withAuthToken(`${MANAGEMENT_BASE}/user/avatar`)
 }
 
 // 删除用户头像
@@ -410,5 +476,5 @@ export function getChatImageUrl(imagePath: string): string {
     const normalized = imagePath.replace(/\\/g, '/')
     const cleaned = normalized.startsWith('cache_photo/') ? normalized.slice('cache_photo/'.length) : normalized
     const encoded = encodeURIComponent(cleaned)
-    return `${MANAGEMENT_BASE}/cache-photo/${encoded}`
+    return withAuthToken(`${MANAGEMENT_BASE}/cache-photo/${encoded}`)
 }

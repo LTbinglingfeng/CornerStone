@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { gsap } from 'gsap'
 import type { ChatSession, Prompt } from '../types/chat'
-import { getSessionsByPromptId, getPromptAvatarUrl, updateSessionTitle } from '../services/api'
+import { getSessionsByPromptId, getPromptAvatarUrl, updateSessionTitle, appendQueryParam } from '../services/api'
 import { formatTime } from '../utils/time'
 import './ChatSettings.css'
 
@@ -122,7 +122,7 @@ const ChatSettings: React.FC<ChatSettingsProps> = ({
 
   const getAvatarSrc = () => {
     if (prompt.avatar) {
-      return getPromptAvatarUrl(prompt.id) + `?t=${new Date(prompt.updated_at).getTime()}`
+      return appendQueryParam(getPromptAvatarUrl(prompt.id), 't', new Date(prompt.updated_at).getTime())
     }
     return null
   }

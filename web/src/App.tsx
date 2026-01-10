@@ -8,10 +8,25 @@ import Contacts from './components/Contacts'
 import ProfilePage from './components/ProfilePage'
 import BottomNav from './components/BottomNav'
 import PromptSelector from './components/PromptSelector'
-import { createSession } from './services/api'
+import AuthSetupPage from './components/AuthSetupPage'
+import AuthLoginPage from './components/AuthLoginPage'
+import { createSession, getAuthStatus, setupAuth, loginAuth, setAuthToken } from './services/api'
 import './App.css'
 
+const getErrorStatus = (error: unknown): number | undefined => {
+  if (typeof error === 'object' && error && 'status' in error) {
+    const statusValue = (error as { status?: number }).status
+    if (typeof statusValue === 'number') {
+      return statusValue
+    }
+  }
+  return undefined
+}
+
 function App() {
+  const [authMode, setAuthMode] = useState<'loading' | 'setup' | 'login' | 'ready'>('loading')
+  const [authUsername, setAuthUsername] = useState<string | null>(null)
+  const [authLoading, setAuthLoading] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
   const [selectedPromptId, setSelectedPromptId] = useState<string | undefined>(undefined)
@@ -95,6 +110,74 @@ function App() {
     }
   }, [])
 
+  useEffect(() => {
+    const checkAuth = async () => {
+      const status = await getAuthStatus()
+      if (!status) {
+        setAuthMode('login')
+        return
+      }
+      if (status.needs_setup) {
+        setAuthToken(null)
+        setAuthUsername(null)
+        setAuthMode('setup')
+        return
+      }
+      setAuthUsername(status.username || null)
+      if (status.authenticated) {
+        setAuthMode('ready')
+      } else {
+        setAuthToken(null)
+        setAuthMode('login')
+      }
+    }
+    checkAuth()
+  }, [])
+
+  const handleSetup = useCallback(async (username: string, password: string) => {
+    setAuthLoading(true)
+    try {
+      const session = await setupAuth(username, password)
+      setAuthToken(session.token)
+      setAuthUsername(session.username)
+      setAuthMode('ready')
+      return null
+    } catch (error) {
+      const status = getErrorStatus(error)
+      if (status === 409) {
+        return '已存在账号，请直接登录'
+      }
+      if (status === 400) {
+        return '请填写有效的用户名和密码'
+      }
+      return '创建失败，请稍后重试'
+    } finally {
+      setAuthLoading(false)
+    }
+  }, [])
+
+  const handleLogin = useCallback(async (username: string, password: string) => {
+    setAuthLoading(true)
+    try {
+      const session = await loginAuth(username, password)
+      setAuthToken(session.token)
+      setAuthUsername(session.username)
+      setAuthMode('ready')
+      return null
+    } catch (error) {
+      const status = getErrorStatus(error)
+      if (status === 401) {
+        return '用户名或密码错误'
+      }
+      if (status === 409) {
+        return '请先设置用户名和密码'
+      }
+      return '登录失败，请重试'
+    } finally {
+      setAuthLoading(false)
+    }
+  }, [])
+
   // 窗口大小变化时重新定位
   useEffect(() => {
     const handleResize = () => {
@@ -107,6 +190,20 @@ function App() {
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
   }, [activeTab])
+
+  if (authMode !== 'ready') {
+    return (
+      <div className="app-wrapper">
+        {authMode === 'loading' && <div className="auth-loading">加载中...</div>}
+        {authMode === 'setup' && (
+          <AuthSetupPage onSubmit={handleSetup} loading={authLoading} />
+        )}
+        {authMode === 'login' && (
+          <AuthLoginPage username={authUsername} onSubmit={handleLogin} loading={authLoading} />
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="app-wrapper" ref={wrapperRef}>

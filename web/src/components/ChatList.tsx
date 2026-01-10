@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { ChatSession, Prompt } from '../types/chat'
-import { getSessions, getPrompts, getPromptAvatarUrl } from '../services/api'
+import { getSessions, getPrompts, getPromptAvatarUrl, appendQueryParam } from '../services/api'
 import { formatTime } from '../utils/time'
 import ContextMenu from './ContextMenu'
 import { deleteSession } from '../services/api'
@@ -114,7 +114,7 @@ const ChatList: React.FC<ChatListProps> = ({ onSelectSession, searchQuery = '' }
 
   const getAvatarUrl = (prompt: Prompt) => {
     if (prompt.avatar) {
-      return getPromptAvatarUrl(prompt.id) + `?t=${new Date(prompt.updated_at).getTime()}`
+      return appendQueryParam(getPromptAvatarUrl(prompt.id), 't', new Date(prompt.updated_at).getTime())
     }
     return null
   }

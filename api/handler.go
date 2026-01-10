@@ -25,16 +25,20 @@ type Handler struct {
 	promptManager *storage.PromptManager
 	chatManager   *storage.ChatManager
 	userManager   *storage.UserManager
+	authManager   *storage.AuthManager
+	tokenStore    *authTokenStore
 	cachePhotoDir string
 }
 
 // NewHandler 创建处理器
-func NewHandler(cm *config.Manager, pm *storage.PromptManager, chatMgr *storage.ChatManager, userMgr *storage.UserManager, cachePhotoDir string) *Handler {
+func NewHandler(cm *config.Manager, pm *storage.PromptManager, chatMgr *storage.ChatManager, userMgr *storage.UserManager, authMgr *storage.AuthManager, cachePhotoDir string) *Handler {
 	return &Handler{
 		configManager: cm,
 		promptManager: pm,
 		chatManager:   chatMgr,
 		userManager:   userMgr,
+		authManager:   authMgr,
+		tokenStore:    newAuthTokenStore(),
 		cachePhotoDir: cachePhotoDir,
 	}
 }
@@ -129,38 +133,43 @@ func (h *Handler) decodeJSON(w http.ResponseWriter, r *http.Request, dst interfa
 
 // RegisterRoutes 注册所有路由
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
+	// 鉴权接口
+	mux.HandleFunc("/management/auth/status", h.corsMiddleware(h.handleAuthStatus))
+	mux.HandleFunc("/management/auth/setup", h.corsMiddleware(h.handleAuthSetup))
+	mux.HandleFunc("/management/auth/login", h.corsMiddleware(h.handleAuthLogin))
+
 	// 聊天接口 (保持 /api 前缀)
-	mux.HandleFunc("/api/chat", h.corsMiddleware(h.handleChat))
+	mux.HandleFunc("/api/chat", h.corsMiddleware(h.authMiddleware(h.handleChat)))
 
 	// 配置接口 (使用 /management 前缀)
-	mux.HandleFunc("/management/config", h.corsMiddleware(h.handleConfig))
+	mux.HandleFunc("/management/config", h.corsMiddleware(h.authMiddleware(h.handleConfig)))
 
 	// 供应商管理接口
-	mux.HandleFunc("/management/providers", h.corsMiddleware(h.handleProviders))
-	mux.HandleFunc("/management/providers/", h.corsMiddleware(h.handleProviderByID))
-	mux.HandleFunc("/management/providers/active", h.corsMiddleware(h.handleActiveProvider))
+	mux.HandleFunc("/management/providers", h.corsMiddleware(h.authMiddleware(h.handleProviders)))
+	mux.HandleFunc("/management/providers/", h.corsMiddleware(h.authMiddleware(h.handleProviderByID)))
+	mux.HandleFunc("/management/providers/active", h.corsMiddleware(h.authMiddleware(h.handleActiveProvider)))
 
 	// 提示词接口
-	mux.HandleFunc("/management/prompts", h.corsMiddleware(h.handlePrompts))
-	mux.HandleFunc("/management/prompts/", h.corsMiddleware(h.handlePromptByID))
+	mux.HandleFunc("/management/prompts", h.corsMiddleware(h.authMiddleware(h.handlePrompts)))
+	mux.HandleFunc("/management/prompts/", h.corsMiddleware(h.authMiddleware(h.handlePromptByID)))
 
 	// 提示词头像接口
-	mux.HandleFunc("/management/prompts-avatar/", h.corsMiddleware(h.handlePromptAvatar))
+	mux.HandleFunc("/management/prompts-avatar/", h.corsMiddleware(h.authMiddleware(h.handlePromptAvatar)))
 
 	// 提示词相关聊天记录接口
-	mux.HandleFunc("/management/prompts-sessions/", h.corsMiddleware(h.handlePromptSessions))
+	mux.HandleFunc("/management/prompts-sessions/", h.corsMiddleware(h.authMiddleware(h.handlePromptSessions)))
 
 	// 聊天记录接口
-	mux.HandleFunc("/management/sessions", h.corsMiddleware(h.handleSessions))
-	mux.HandleFunc("/management/sessions/", h.corsMiddleware(h.handleSessionByID))
+	mux.HandleFunc("/management/sessions", h.corsMiddleware(h.authMiddleware(h.handleSessions)))
+	mux.HandleFunc("/management/sessions/", h.corsMiddleware(h.authMiddleware(h.handleSessionByID)))
 
 	// 用户信息接口
-	mux.HandleFunc("/management/user", h.corsMiddleware(h.handleUser))
-	mux.HandleFunc("/management/user/avatar", h.corsMiddleware(h.handleUserAvatar))
+	mux.HandleFunc("/management/user", h.corsMiddleware(h.authMiddleware(h.handleUser)))
+	mux.HandleFunc("/management/user/avatar", h.corsMiddleware(h.authMiddleware(h.handleUserAvatar)))
 
 	// 聊天图片缓存接口
-	mux.HandleFunc("/management/cache-photo", h.corsMiddleware(h.handleCachePhoto))
-	mux.HandleFunc("/management/cache-photo/", h.corsMiddleware(h.handleCachePhotoByName))
+	mux.HandleFunc("/management/cache-photo", h.corsMiddleware(h.authMiddleware(h.handleCachePhoto)))
+	mux.HandleFunc("/management/cache-photo/", h.corsMiddleware(h.authMiddleware(h.handleCachePhotoByName)))
 
 	// 健康检查
 	mux.HandleFunc("/management/health", h.corsMiddleware(h.handleHealth))
@@ -1243,6 +1252,11 @@ func (h *Handler) handleUser(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: err.Error()})
 			return
+		}
+		if req.Username != "" && h.authManager != nil {
+			if err := h.authManager.UpdateUsername(req.Username); err != nil && !errors.Is(err, storage.ErrAuthNotSetup) {
+				log.Printf("sync auth username failed: %v", err)
+			}
 		}
 
 		h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: userInfo})

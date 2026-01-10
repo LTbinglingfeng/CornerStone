@@ -51,6 +51,19 @@ export interface ApiResponse<T> {
   error?: string
 }
 
+export interface AuthStatus {
+  needs_setup: boolean
+  username?: string
+  user_id?: string
+  authenticated?: boolean
+}
+
+export interface AuthSession {
+  token: string
+  username: string
+  user_id: string
+}
+
 // 供应商类型
 export type ProviderType = 'openai' | 'gemini'
 

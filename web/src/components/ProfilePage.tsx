@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { gsap } from 'gsap'
-import { getUserInfo, updateUserInfo, uploadUserAvatar, getUserAvatarUrl } from '../services/api'
+import { getUserInfo, updateUserInfo, uploadUserAvatar, getUserAvatarUrl, appendQueryParam } from '../services/api'
 import type { UserInfo } from '../types/chat'
 import Settings from './Settings'
 import './ProfilePage.css'
@@ -64,7 +64,7 @@ const ProfilePage: React.FC = () => {
       description: userInfo?.description || ''
     })
     if (userInfo?.avatar) {
-      setUserAvatarPreview(getUserAvatarUrl() + `?t=${Date.now()}`)
+      setUserAvatarPreview(appendQueryParam(getUserAvatarUrl(), 't', Date.now()))
     } else {
       setUserAvatarPreview(null)
     }
@@ -147,7 +147,7 @@ const ProfilePage: React.FC = () => {
 
   const getAvatarUrl = () => {
     if (userInfo?.avatar) {
-      return getUserAvatarUrl() + `?t=${Date.now()}`
+      return appendQueryParam(getUserAvatarUrl(), 't', Date.now())
     }
     return null
   }
