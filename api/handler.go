@@ -352,12 +352,18 @@ func (h *Handler) handleProviderByID(w http.ResponseWriter, r *http.Request) {
 			providerType = config.ProviderTypeOpenAI
 		}
 
+		existingProvider := h.configManager.GetProvider(id)
+		apiKey := req.APIKey
+		if existingProvider != nil && (apiKey == "" || strings.Contains(apiKey, "*")) {
+			apiKey = existingProvider.APIKey
+		}
+
 		provider := config.Provider{
 			ID:           id,
 			Name:         req.Name,
 			Type:         providerType,
 			BaseURL:      req.BaseURL,
-			APIKey:       req.APIKey,
+			APIKey:       apiKey,
 			Model:        req.Model,
 			Stream:       req.Stream,
 			ImageCapable: req.ImageCapable,

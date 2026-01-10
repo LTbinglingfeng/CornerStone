@@ -65,8 +65,9 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
   }, [])
 
   useEffect(() => {
+    if (loading) return
     scrollToBottom()
-  }, [messages])
+  }, [messages, loading])
 
   const loadSession = async () => {
     setLoading(true)

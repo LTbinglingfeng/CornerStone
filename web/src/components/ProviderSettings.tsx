@@ -109,7 +109,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
   }
 
   const handleEditProvider = (provider: Provider) => {
-    setEditingProvider({ ...provider })
+    setEditingProvider({ ...provider, api_key: '' })
     setIsAddingNew(false)
     setShowModal(true)
   }
@@ -366,7 +366,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                   className="modal-input"
                   value={editingProvider.api_key}
                   onChange={(e) => handleProviderChange('api_key', e.target.value)}
-                  placeholder="sk-..."
+                  placeholder={isAddingNew ? 'sk-...' : '留空保持不变'}
                 />
               </div>
 
