@@ -39,6 +39,9 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
     base_url: '',
     api_key: '',
     model: '',
+    temperature: 0.8,
+    top_p: 1,
+    context_messages: 64,
     stream: true,
     image_capable: false,
   }
@@ -184,7 +187,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
     }
   }
 
-  const handleProviderChange = (field: keyof Provider, value: string | boolean) => {
+  const handleProviderChange = (field: keyof Provider, value: string | boolean | number) => {
     if (!editingProvider) return
     setEditingProvider({ ...editingProvider, [field]: value })
   }
@@ -245,6 +248,18 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                     <div className="provider-card-row">
                       <span className="provider-card-label">模型</span>
                       <span className="provider-card-value model">{provider.model}</span>
+                    </div>
+                    <div className="provider-card-row">
+                      <span className="provider-card-label">温度</span>
+                      <span className="provider-card-value">{provider.temperature}</span>
+                    </div>
+                    <div className="provider-card-row">
+                      <span className="provider-card-label">Top P</span>
+                      <span className="provider-card-value">{provider.top_p}</span>
+                    </div>
+                    <div className="provider-card-row">
+                      <span className="provider-card-label">上下文</span>
+                      <span className="provider-card-value">{provider.context_messages} 轮</span>
                     </div>
                     <div className="provider-card-row">
                       <span className="provider-card-label">流式</span>
@@ -378,6 +393,47 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                   value={editingProvider.model}
                   onChange={(e) => handleProviderChange('model', e.target.value)}
                   placeholder="gpt-4"
+                />
+              </div>
+
+              <div className="modal-group">
+                <label className="modal-label">温度 (0-2)</label>
+                <input
+                  type="number"
+                  className="modal-input"
+                  min={0}
+                  max={2}
+                  step={0.1}
+                  value={editingProvider.temperature}
+                  onChange={(e) => handleProviderChange('temperature', Number(e.target.value) || 0)}
+                  placeholder="0.8"
+                />
+              </div>
+
+              <div className="modal-group">
+                <label className="modal-label">Top P (0-1)</label>
+                <input
+                  type="number"
+                  className="modal-input"
+                  min={0}
+                  max={1}
+                  step={0.1}
+                  value={editingProvider.top_p}
+                  onChange={(e) => handleProviderChange('top_p', Number(e.target.value) || 0)}
+                  placeholder="1"
+                />
+              </div>
+
+              <div className="modal-group">
+                <label className="modal-label">上下文轮数</label>
+                <input
+                  type="number"
+                  className="modal-input"
+                  min={1}
+                  step={1}
+                  value={editingProvider.context_messages}
+                  onChange={(e) => handleProviderChange('context_messages', Number(e.target.value) || 0)}
+                  placeholder="64"
                 />
               </div>
 

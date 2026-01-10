@@ -49,7 +49,7 @@ type ChatMessageRequest struct {
 	PromptID    string           `json:"prompt_id,omitempty"` // 选择的人设ID
 	Messages    []client.Message `json:"messages"`
 	Stream      *bool            `json:"stream,omitempty"`
-	Temperature float64          `json:"temperature,omitempty"`
+	Temperature *float64         `json:"temperature,omitempty"`
 	MaxTokens   int              `json:"max_tokens,omitempty"`
 	SaveHistory bool             `json:"save_history,omitempty"`
 }
@@ -64,14 +64,17 @@ type ConfigUpdateRequest struct {
 
 // ProviderRequest 供应商请求
 type ProviderRequest struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	Type         string `json:"type"` // 供应商类型 (openai/gemini)
-	BaseURL      string `json:"base_url"`
-	APIKey       string `json:"api_key"`
-	Model        string `json:"model"`
-	Stream       bool   `json:"stream"`        // 是否启用流式输出
-	ImageCapable bool   `json:"image_capable"` // 是否支持识图
+	ID              string   `json:"id"`
+	Name            string   `json:"name"`
+	Type            string   `json:"type"` // 供应商类型 (openai/gemini)
+	BaseURL         string   `json:"base_url"`
+	APIKey          string   `json:"api_key"`
+	Model           string   `json:"model"`
+	Temperature     *float64 `json:"temperature,omitempty"`
+	TopP            *float64 `json:"top_p,omitempty"`
+	ContextMessages *int     `json:"context_messages,omitempty"`
+	Stream          bool     `json:"stream"`        // 是否启用流式输出
+	ImageCapable    bool     `json:"image_capable"` // 是否支持识图
 }
 
 // SetActiveProviderRequest 设置激活供应商请求
@@ -293,15 +296,32 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 			providerType = config.ProviderTypeOpenAI
 		}
 
+		defaultProvider := config.DefaultProvider()
+		temperature := defaultProvider.Temperature
+		topP := defaultProvider.TopP
+		contextMessages := defaultProvider.ContextMessages
+		if req.Temperature != nil {
+			temperature = *req.Temperature
+		}
+		if req.TopP != nil {
+			topP = *req.TopP
+		}
+		if req.ContextMessages != nil {
+			contextMessages = *req.ContextMessages
+		}
+
 		provider := config.Provider{
-			ID:           req.ID,
-			Name:         req.Name,
-			Type:         providerType,
-			BaseURL:      req.BaseURL,
-			APIKey:       req.APIKey,
-			Model:        req.Model,
-			Stream:       req.Stream,
-			ImageCapable: req.ImageCapable,
+			ID:              req.ID,
+			Name:            req.Name,
+			Type:            providerType,
+			BaseURL:         req.BaseURL,
+			APIKey:          req.APIKey,
+			Model:           req.Model,
+			Temperature:     temperature,
+			TopP:            topP,
+			ContextMessages: contextMessages,
+			Stream:          req.Stream,
+			ImageCapable:    req.ImageCapable,
 		}
 
 		if err := h.configManager.AddProvider(provider); err != nil {
@@ -361,21 +381,43 @@ func (h *Handler) handleProviderByID(w http.ResponseWriter, r *http.Request) {
 			providerType = config.ProviderTypeOpenAI
 		}
 
+		defaultProvider := config.DefaultProvider()
 		existingProvider := h.configManager.GetProvider(id)
 		apiKey := req.APIKey
 		if existingProvider != nil && (apiKey == "" || strings.Contains(apiKey, "*")) {
 			apiKey = existingProvider.APIKey
 		}
 
+		temperature := defaultProvider.Temperature
+		topP := defaultProvider.TopP
+		contextMessages := defaultProvider.ContextMessages
+		if existingProvider != nil {
+			temperature = existingProvider.Temperature
+			topP = existingProvider.TopP
+			contextMessages = existingProvider.ContextMessages
+		}
+		if req.Temperature != nil {
+			temperature = *req.Temperature
+		}
+		if req.TopP != nil {
+			topP = *req.TopP
+		}
+		if req.ContextMessages != nil {
+			contextMessages = *req.ContextMessages
+		}
+
 		provider := config.Provider{
-			ID:           id,
-			Name:         req.Name,
-			Type:         providerType,
-			BaseURL:      req.BaseURL,
-			APIKey:       apiKey,
-			Model:        req.Model,
-			Stream:       req.Stream,
-			ImageCapable: req.ImageCapable,
+			ID:              id,
+			Name:            req.Name,
+			Type:            providerType,
+			BaseURL:         req.BaseURL,
+			APIKey:          apiKey,
+			Model:           req.Model,
+			Temperature:     temperature,
+			TopP:            topP,
+			ContextMessages: contextMessages,
+			Stream:          req.Stream,
+			ImageCapable:    req.ImageCapable,
 		}
 
 		if err := h.configManager.UpdateProvider(provider); err != nil {
@@ -695,6 +737,7 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 			historyMessages = convertChatMessages(session.Messages)
 		}
 	}
+	historyMessages = limitMessagesByTurns(historyMessages, provider.ContextMessages)
 
 	// 构建消息，顺序: 系统提示词 -> 用户信息 -> 人设
 	messages := make([]client.Message, 0, len(historyMessages)+1)
@@ -743,11 +786,17 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 		useStream = *req.Stream
 	}
 
+	temperature := provider.Temperature
+	if req.Temperature != nil {
+		temperature = *req.Temperature
+	}
+
 	chatReq := client.ChatRequest{
 		Model:       provider.Model,
 		Messages:    resolvedMessages,
 		Stream:      useStream,
-		Temperature: req.Temperature,
+		Temperature: temperature,
+		TopP:        provider.TopP,
 		MaxTokens:   req.MaxTokens,
 		Tools:       getRedPacketTools(),
 	}
@@ -884,6 +933,27 @@ func convertChatMessages(messages []storage.ChatMessage) []client.Message {
 		})
 	}
 	return converted
+}
+
+func limitMessagesByTurns(messages []client.Message, maxTurns int) []client.Message {
+	if len(messages) == 0 || maxTurns <= 0 {
+		return messages
+	}
+	userCount := 0
+	startIndex := 0
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "user" {
+			userCount++
+			if userCount == maxTurns {
+				startIndex = i
+				break
+			}
+		}
+	}
+	if userCount < maxTurns {
+		return messages
+	}
+	return messages[startIndex:]
 }
 
 func collectToolCalls(toolCallsMap map[int]*client.ToolCall) []client.ToolCall {

@@ -62,6 +62,7 @@ type GeminiFunctionCall struct {
 
 type GeminiGenerationConfig struct {
 	Temperature     float64 `json:"temperature,omitempty"`
+	TopP            float64 `json:"topP,omitempty"`
 	MaxOutputTokens int     `json:"maxOutputTokens,omitempty"`
 }
 
@@ -193,9 +194,10 @@ func (c *GeminiClient) Chat(ctx context.Context, req ChatRequest) (*ChatResponse
 		Tools:             c.convertToGeminiTools(req.Tools),
 	}
 
-	if req.Temperature > 0 || req.MaxTokens > 0 {
+	if req.Temperature > 0 || req.TopP > 0 || req.MaxTokens > 0 {
 		geminiReq.GenerationConfig = &GeminiGenerationConfig{
 			Temperature:     req.Temperature,
+			TopP:            req.TopP,
 			MaxOutputTokens: req.MaxTokens,
 		}
 	}
@@ -251,9 +253,10 @@ func (c *GeminiClient) ChatStream(ctx context.Context, req ChatRequest, callback
 		Tools:             c.convertToGeminiTools(req.Tools),
 	}
 
-	if req.Temperature > 0 || req.MaxTokens > 0 {
+	if req.Temperature > 0 || req.TopP > 0 || req.MaxTokens > 0 {
 		geminiReq.GenerationConfig = &GeminiGenerationConfig{
 			Temperature:     req.Temperature,
+			TopP:            req.TopP,
 			MaxOutputTokens: req.MaxTokens,
 		}
 	}

@@ -22,16 +22,25 @@ const (
 	ProviderTypeGemini ProviderType = "gemini" // Google Gemini API
 )
 
+const (
+	DefaultProviderTemperature     = 0.8
+	DefaultProviderTopP            = 1.0
+	DefaultProviderContextMessages = 64
+)
+
 // Provider 供应商配置
 type Provider struct {
-	ID           string       `json:"id"`            // 供应商唯一标识
-	Name         string       `json:"name"`          // 显示名称
-	Type         ProviderType `json:"type"`          // 供应商类型 (openai/gemini)
-	BaseURL      string       `json:"base_url"`      // API基础URL
-	APIKey       string       `json:"api_key"`       // API密钥
-	Model        string       `json:"model"`         // 默认模型
-	Stream       bool         `json:"stream"`        // 是否启用流式输出
-	ImageCapable bool         `json:"image_capable"` // 是否支持识图
+	ID              string       `json:"id"`               // 供应商唯一标识
+	Name            string       `json:"name"`             // 显示名称
+	Type            ProviderType `json:"type"`             // 供应商类型 (openai/gemini)
+	BaseURL         string       `json:"base_url"`         // API基础URL
+	APIKey          string       `json:"api_key"`          // API密钥
+	Model           string       `json:"model"`            // 默认模型
+	Temperature     float64      `json:"temperature"`      // 温度
+	TopP            float64      `json:"top_p"`            // Top P
+	ContextMessages int          `json:"context_messages"` // 上下文消息轮数
+	Stream          bool         `json:"stream"`           // 是否启用流式输出
+	ImageCapable    bool         `json:"image_capable"`    // 是否支持识图
 }
 
 // Config 存储应用配置信息
@@ -51,14 +60,17 @@ type Manager struct {
 // DefaultProvider 返回默认供应商
 func DefaultProvider() Provider {
 	return Provider{
-		ID:           "default",
-		Name:         "OpenAI",
-		Type:         ProviderTypeOpenAI,
-		BaseURL:      "https://api.openai.com/v1",
-		APIKey:       "",
-		Model:        "gpt-3.5-turbo",
-		Stream:       true,
-		ImageCapable: false,
+		ID:              "default",
+		Name:            "OpenAI",
+		Type:            ProviderTypeOpenAI,
+		BaseURL:         "https://api.openai.com/v1",
+		APIKey:          "",
+		Model:           "gpt-3.5-turbo",
+		Temperature:     DefaultProviderTemperature,
+		TopP:            DefaultProviderTopP,
+		ContextMessages: DefaultProviderContextMessages,
+		Stream:          true,
+		ImageCapable:    false,
 	}
 }
 
@@ -99,6 +111,11 @@ func (m *Manager) Load() error {
 		return err
 	}
 
+	var rawProviders struct {
+		Providers []map[string]json.RawMessage `json:"providers"`
+	}
+	_ = json.Unmarshal(data, &rawProviders)
+
 	// 检查是否是旧格式配置（没有providers字段）
 	// 如果 Providers 为空，尝试从旧格式迁移
 	if len(m.config.Providers) == 0 {
@@ -113,12 +130,15 @@ func (m *Manager) Load() error {
 			m.config = Config{
 				Providers: []Provider{
 					{
-						ID:      "default",
-						Name:    "Default Provider",
-						Type:    ProviderTypeOpenAI, // 默认使用OpenAI类型
-						BaseURL: oldConfig.BaseURL,
-						APIKey:  oldConfig.APIKey,
-						Model:   oldConfig.Model,
+						ID:              "default",
+						Name:            "Default Provider",
+						Type:            ProviderTypeOpenAI, // 默认使用OpenAI类型
+						BaseURL:         oldConfig.BaseURL,
+						APIKey:          oldConfig.APIKey,
+						Model:           oldConfig.Model,
+						Temperature:     DefaultProviderTemperature,
+						TopP:            DefaultProviderTopP,
+						ContextMessages: DefaultProviderContextMessages,
 					},
 				},
 				ActiveProviderID: "default",
@@ -129,7 +149,41 @@ func (m *Manager) Load() error {
 		}
 	}
 
+	if m.applyProviderDefaults(rawProviders.Providers) {
+		return m.saveUnsafe()
+	}
+
 	return nil
+}
+
+func (m *Manager) applyProviderDefaults(rawProviders []map[string]json.RawMessage) bool {
+	changed := false
+	for i := range m.config.Providers {
+		provider := &m.config.Providers[i]
+		var raw map[string]json.RawMessage
+		if i < len(rawProviders) {
+			raw = rawProviders[i]
+		}
+		if raw == nil || raw["temperature"] == nil {
+			if provider.Temperature == 0 {
+				provider.Temperature = DefaultProviderTemperature
+				changed = true
+			}
+		}
+		if raw == nil || raw["top_p"] == nil {
+			if provider.TopP == 0 {
+				provider.TopP = DefaultProviderTopP
+				changed = true
+			}
+		}
+		if raw == nil || raw["context_messages"] == nil {
+			if provider.ContextMessages == 0 {
+				provider.ContextMessages = DefaultProviderContextMessages
+				changed = true
+			}
+		}
+	}
+	return changed
 }
 
 // Save 保存配置到文件

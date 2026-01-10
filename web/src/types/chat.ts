@@ -75,6 +75,9 @@ export interface Provider {
     base_url: string
     api_key: string
     model: string
+    temperature: number
+    top_p: number
+    context_messages: number
     stream: boolean     // 是否启用流式输出
     image_capable: boolean // 是否支持识图
 }

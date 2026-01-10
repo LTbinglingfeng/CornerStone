@@ -53,6 +53,7 @@ type ChatRequest struct {
 	Messages    []Message `json:"messages"`
 	Stream      bool      `json:"stream,omitempty"`
 	Temperature float64   `json:"temperature,omitempty"`
+	TopP        float64   `json:"top_p,omitempty"`
 	MaxTokens   int       `json:"max_tokens,omitempty"`
 	Tools       []Tool    `json:"tools,omitempty"` // 工具列表
 }
@@ -79,6 +80,7 @@ type OpenAIChatRequest struct {
 	Messages    []OpenAIMessage `json:"messages"`
 	Stream      bool            `json:"stream,omitempty"`
 	Temperature float64         `json:"temperature,omitempty"`
+	TopP        float64         `json:"top_p,omitempty"`
 	MaxTokens   int             `json:"max_tokens,omitempty"`
 	Tools       []Tool          `json:"tools,omitempty"` // 工具列表
 }
@@ -285,6 +287,7 @@ func buildOpenAIRequest(req ChatRequest) (OpenAIChatRequest, error) {
 		Messages:    messages,
 		Stream:      req.Stream,
 		Temperature: req.Temperature,
+		TopP:        req.TopP,
 		MaxTokens:   req.MaxTokens,
 		Tools:       req.Tools,
 	}, nil
