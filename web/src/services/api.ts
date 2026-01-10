@@ -108,7 +108,7 @@ export interface SendMessageOptions {
 
 export async function sendMessage(
   sessionId: string,
-  messages: { role: string; content: string }[],
+  messages: { role: string; content: string; image_paths?: string[] }[],
   options: SendMessageOptions = {}
 ): Promise<Response> {
   const payload: Record<string, unknown> = {
@@ -172,6 +172,16 @@ export async function getProviders(): Promise<ProvidersResponse | null> {
   } catch {
     return null
   }
+}
+
+// 获取当前激活供应商
+export async function getActiveProvider(): Promise<Provider | null> {
+    try {
+        const data = await apiFetchJson<ApiResponse<Provider>>(`${MANAGEMENT_BASE}/providers/active`)
+        return data.success && data.data ? data.data : null
+    } catch {
+        return null
+    }
 }
 
 // 添加新供应商
@@ -377,4 +387,28 @@ export async function deleteUserAvatar(): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+// 上传聊天图片
+export async function uploadChatImage(file: File): Promise<string | null> {
+    try {
+        const formData = new FormData()
+        formData.append('image', file)
+
+        const data = await apiFetchJson<ApiResponse<string>>(`${MANAGEMENT_BASE}/cache-photo`, {
+            method: 'POST',
+            body: formData,
+        })
+        return data.success && data.data ? data.data : null
+    } catch {
+        return null
+    }
+}
+
+// 获取聊天图片 URL
+export function getChatImageUrl(imagePath: string): string {
+    const normalized = imagePath.replace(/\\/g, '/')
+    const cleaned = normalized.startsWith('cache_photo/') ? normalized.slice('cache_photo/'.length) : normalized
+    const encoded = encodeURIComponent(cleaned)
+    return `${MANAGEMENT_BASE}/cache-photo/${encoded}`
 }

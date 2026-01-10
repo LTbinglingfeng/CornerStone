@@ -24,13 +24,14 @@ const (
 
 // Provider 供应商配置
 type Provider struct {
-	ID      string       `json:"id"`       // 供应商唯一标识
-	Name    string       `json:"name"`     // 显示名称
-	Type    ProviderType `json:"type"`     // 供应商类型 (openai/gemini)
-	BaseURL string       `json:"base_url"` // API基础URL
-	APIKey  string       `json:"api_key"`  // API密钥
-	Model   string       `json:"model"`    // 默认模型
-	Stream  bool         `json:"stream"`   // 是否启用流式输出
+	ID           string       `json:"id"`            // 供应商唯一标识
+	Name         string       `json:"name"`          // 显示名称
+	Type         ProviderType `json:"type"`          // 供应商类型 (openai/gemini)
+	BaseURL      string       `json:"base_url"`      // API基础URL
+	APIKey       string       `json:"api_key"`       // API密钥
+	Model        string       `json:"model"`         // 默认模型
+	Stream       bool         `json:"stream"`        // 是否启用流式输出
+	ImageCapable bool         `json:"image_capable"` // 是否支持识图
 }
 
 // Config 存储应用配置信息
@@ -50,13 +51,14 @@ type Manager struct {
 // DefaultProvider 返回默认供应商
 func DefaultProvider() Provider {
 	return Provider{
-		ID:      "default",
-		Name:    "OpenAI",
-		Type:    ProviderTypeOpenAI,
-		BaseURL: "https://api.openai.com/v1",
-		APIKey:  "",
-		Model:   "gpt-3.5-turbo",
-		Stream:  true,
+		ID:           "default",
+		Name:         "OpenAI",
+		Type:         ProviderTypeOpenAI,
+		BaseURL:      "https://api.openai.com/v1",
+		APIKey:       "",
+		Model:        "gpt-3.5-turbo",
+		Stream:       true,
+		ImageCapable: false,
 	}
 }
 

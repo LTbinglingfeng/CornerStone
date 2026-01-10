@@ -9,8 +9,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -22,15 +25,17 @@ type Handler struct {
 	promptManager *storage.PromptManager
 	chatManager   *storage.ChatManager
 	userManager   *storage.UserManager
+	cachePhotoDir string
 }
 
 // NewHandler 创建处理器
-func NewHandler(cm *config.Manager, pm *storage.PromptManager, chatMgr *storage.ChatManager, userMgr *storage.UserManager) *Handler {
+func NewHandler(cm *config.Manager, pm *storage.PromptManager, chatMgr *storage.ChatManager, userMgr *storage.UserManager, cachePhotoDir string) *Handler {
 	return &Handler{
 		configManager: cm,
 		promptManager: pm,
 		chatManager:   chatMgr,
 		userManager:   userMgr,
+		cachePhotoDir: cachePhotoDir,
 	}
 }
 
@@ -55,13 +60,14 @@ type ConfigUpdateRequest struct {
 
 // ProviderRequest 供应商请求
 type ProviderRequest struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Type    string `json:"type"` // 供应商类型 (openai/gemini)
-	BaseURL string `json:"base_url"`
-	APIKey  string `json:"api_key"`
-	Model   string `json:"model"`
-	Stream  bool   `json:"stream"` // 是否启用流式输出
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Type         string `json:"type"` // 供应商类型 (openai/gemini)
+	BaseURL      string `json:"base_url"`
+	APIKey       string `json:"api_key"`
+	Model        string `json:"model"`
+	Stream       bool   `json:"stream"`        // 是否启用流式输出
+	ImageCapable bool   `json:"image_capable"` // 是否支持识图
 }
 
 // SetActiveProviderRequest 设置激活供应商请求
@@ -99,8 +105,11 @@ type Response struct {
 }
 
 const (
-	maxJSONBodyBytes   int64 = 8 << 20  // 8MB
-	maxAvatarBodyBytes int64 = 11 << 20 // 10MB + overhead
+	maxJSONBodyBytes      int64 = 8 << 20  // 8MB
+	maxAvatarBodyBytes    int64 = 11 << 20 // 10MB + overhead
+	maxChatImageBodyBytes int64 = 11 << 20 // 10MB + overhead
+
+	cachePhotoDirName = "cache_photo"
 )
 
 func (h *Handler) decodeJSON(w http.ResponseWriter, r *http.Request, dst interface{}) bool {
@@ -148,6 +157,10 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	// 用户信息接口
 	mux.HandleFunc("/management/user", h.corsMiddleware(h.handleUser))
 	mux.HandleFunc("/management/user/avatar", h.corsMiddleware(h.handleUserAvatar))
+
+	// 聊天图片缓存接口
+	mux.HandleFunc("/management/cache-photo", h.corsMiddleware(h.handleCachePhoto))
+	mux.HandleFunc("/management/cache-photo/", h.corsMiddleware(h.handleCachePhotoByName))
 
 	// 健康检查
 	mux.HandleFunc("/management/health", h.corsMiddleware(h.handleHealth))
@@ -272,13 +285,14 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 		}
 
 		provider := config.Provider{
-			ID:      req.ID,
-			Name:    req.Name,
-			Type:    providerType,
-			BaseURL: req.BaseURL,
-			APIKey:  req.APIKey,
-			Model:   req.Model,
-			Stream:  req.Stream,
+			ID:           req.ID,
+			Name:         req.Name,
+			Type:         providerType,
+			BaseURL:      req.BaseURL,
+			APIKey:       req.APIKey,
+			Model:        req.Model,
+			Stream:       req.Stream,
+			ImageCapable: req.ImageCapable,
 		}
 
 		if err := h.configManager.AddProvider(provider); err != nil {
@@ -339,13 +353,14 @@ func (h *Handler) handleProviderByID(w http.ResponseWriter, r *http.Request) {
 		}
 
 		provider := config.Provider{
-			ID:      id,
-			Name:    req.Name,
-			Type:    providerType,
-			BaseURL: req.BaseURL,
-			APIKey:  req.APIKey,
-			Model:   req.Model,
-			Stream:  req.Stream,
+			ID:           id,
+			Name:         req.Name,
+			Type:         providerType,
+			BaseURL:      req.BaseURL,
+			APIKey:       req.APIKey,
+			Model:        req.Model,
+			Stream:       req.Stream,
+			ImageCapable: req.ImageCapable,
 		}
 
 		if err := h.configManager.UpdateProvider(provider); err != nil {
@@ -656,7 +671,7 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 	// 保存用户消息到历史记录
 	if req.SaveHistory && len(req.Messages) > 0 {
 		lastMsg := req.Messages[len(req.Messages)-1]
-		h.chatManager.AddMessage(sessionID, lastMsg.Role, lastMsg.Content)
+		h.chatManager.AddMessageWithDetails(sessionID, lastMsg.Role, lastMsg.Content, lastMsg.ReasoningContent, lastMsg.ImagePaths, lastMsg.ToolCalls)
 	}
 
 	historyMessages := req.Messages
@@ -691,6 +706,11 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	messages = append(messages, historyMessages...)
+	resolvedMessages, errResolve := h.resolveMessageImagePaths(messages)
+	if errResolve != nil {
+		h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: errResolve.Error()})
+		return
+	}
 
 	// 根据供应商类型创建对应的客户端
 	var aiClient client.AIClient
@@ -710,7 +730,7 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 
 	chatReq := client.ChatRequest{
 		Model:       provider.Model,
-		Messages:    messages,
+		Messages:    resolvedMessages,
 		Stream:      useStream,
 		Temperature: req.Temperature,
 		MaxTokens:   req.MaxTokens,
@@ -735,7 +755,7 @@ func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiCli
 	// 保存AI回复到历史记录（包含思考内容）
 	if saveHistory && len(resp.Choices) > 0 {
 		message := resp.Choices[0].Message
-		h.chatManager.AddMessageWithDetails(sessionID, "assistant", message.Content, message.ReasoningContent, message.ToolCalls)
+		h.chatManager.AddMessageWithDetails(sessionID, "assistant", message.Content, message.ReasoningContent, nil, message.ToolCalls)
 	}
 
 	// 返回响应，包含session_id
@@ -827,7 +847,7 @@ func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiCli
 	// 保存AI回复到历史记录（包含思考内容）
 	toolCalls := collectToolCalls(toolCallsMap)
 	if saveHistory && (fullContent.Len() > 0 || fullReasoningContent.Len() > 0 || len(toolCalls) > 0) {
-		h.chatManager.AddMessageWithDetails(sessionID, "assistant", fullContent.String(), fullReasoningContent.String(), toolCalls)
+		h.chatManager.AddMessageWithDetails(sessionID, "assistant", fullContent.String(), fullReasoningContent.String(), nil, toolCalls)
 	}
 
 	fmt.Fprintf(w, "data: [DONE]\n\n")
@@ -845,6 +865,7 @@ func convertChatMessages(messages []storage.ChatMessage) []client.Message {
 			Content:          msg.Content,
 			ReasoningContent: msg.ReasoningContent,
 			ToolCalls:        msg.ToolCalls,
+			ImagePaths:       msg.ImagePaths,
 		})
 	}
 	return converted
@@ -878,6 +899,161 @@ func (h *Handler) jsonResponse(w http.ResponseWriter, status int, data interface
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(data)
+}
+
+func (h *Handler) resolveCachePhotoPath(relPath string) (string, error) {
+	cleaned := strings.ReplaceAll(relPath, "\\", "/")
+	cleaned = path.Clean(cleaned)
+	if cleaned == "." || cleaned == "" {
+		return "", fmt.Errorf("invalid image path")
+	}
+
+	cleaned = strings.TrimPrefix(cleaned, "./")
+	if strings.HasPrefix(cleaned, "../") || cleaned == ".." {
+		return "", fmt.Errorf("invalid image path")
+	}
+
+	fileName := cleaned
+	if strings.HasPrefix(cleaned, cachePhotoDirName+"/") {
+		fileName = strings.TrimPrefix(cleaned, cachePhotoDirName+"/")
+	}
+	if errValidateFileName := storage.ValidateFileName(fileName); errValidateFileName != nil {
+		return "", errValidateFileName
+	}
+
+	return filepath.Join(h.cachePhotoDir, fileName), nil
+}
+
+func (h *Handler) resolveMessageImagePaths(messages []client.Message) ([]client.Message, error) {
+	if len(messages) == 0 {
+		return nil, nil
+	}
+
+	resolved := make([]client.Message, 0, len(messages))
+	for _, msg := range messages {
+		if len(msg.ImagePaths) == 0 {
+			resolved = append(resolved, msg)
+			continue
+		}
+
+		updated := msg
+		updated.ImagePaths = make([]string, 0, len(msg.ImagePaths))
+		for _, relPath := range msg.ImagePaths {
+			absPath, errResolve := h.resolveCachePhotoPath(relPath)
+			if errResolve != nil {
+				return nil, errResolve
+			}
+			updated.ImagePaths = append(updated.ImagePaths, absPath)
+		}
+		resolved = append(resolved, updated)
+	}
+
+	return resolved, nil
+}
+
+// handleCachePhoto 处理聊天图片上传
+func (h *Handler) handleCachePhoto(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		h.jsonResponse(w, http.StatusMethodNotAllowed, Response{Success: false, Error: "Method not allowed"})
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxChatImageBodyBytes)
+	if errParseForm := r.ParseMultipartForm(10 << 20); errParseForm != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(errParseForm, &maxErr) {
+			h.jsonResponse(w, http.StatusRequestEntityTooLarge, Response{Success: false, Error: "Request body too large"})
+			return
+		}
+		h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid multipart form"})
+		return
+	}
+
+	file, header, errFormFile := r.FormFile("image")
+	if errFormFile != nil {
+		h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Failed to get image file"})
+		return
+	}
+	defer func() {
+		if errClose := file.Close(); errClose != nil {
+			log.Printf("close upload file error: %v", errClose)
+		}
+	}()
+
+	ext := strings.ToLower(filepath.Ext(header.Filename))
+	if ext == "" {
+		ext = ".png"
+	}
+
+	filename := generateID() + ext
+	if errValidateFileName := storage.ValidateFileName(filename); errValidateFileName != nil {
+		filename = generateID() + ".png"
+	}
+	if errValidateFileName := storage.ValidateFileName(filename); errValidateFileName != nil {
+		h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid image filename"})
+		return
+	}
+
+	savedPath := filepath.Join(h.cachePhotoDir, filename)
+	output, errCreate := os.Create(savedPath)
+	if errCreate != nil {
+		h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: errCreate.Error()})
+		return
+	}
+	defer func() {
+		if errClose := output.Close(); errClose != nil {
+			log.Printf("close cached image error: %v", errClose)
+		}
+	}()
+
+	if _, errCopy := io.Copy(output, file); errCopy != nil {
+		h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: errCopy.Error()})
+		return
+	}
+
+	relPath := path.Join(cachePhotoDirName, filename)
+	h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: relPath})
+}
+
+// handleCachePhotoByName 读取聊天图片
+func (h *Handler) handleCachePhotoByName(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		h.jsonResponse(w, http.StatusMethodNotAllowed, Response{Success: false, Error: "Method not allowed"})
+		return
+	}
+
+	name := strings.TrimPrefix(r.URL.Path, "/management/cache-photo/")
+	if name == "" {
+		h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Image name required"})
+		return
+	}
+
+	relPath := path.Join(cachePhotoDirName, name)
+	imagePath, errResolve := h.resolveCachePhotoPath(relPath)
+	if errResolve != nil {
+		h.jsonResponse(w, http.StatusNotFound, Response{Success: false, Error: "Image not found"})
+		return
+	}
+	if _, errStat := os.Stat(imagePath); errStat != nil {
+		h.jsonResponse(w, http.StatusNotFound, Response{Success: false, Error: "Image not found"})
+		return
+	}
+
+	ext := strings.ToLower(filepath.Ext(imagePath))
+	contentType := "application/octet-stream"
+	switch ext {
+	case ".jpg", ".jpeg":
+		contentType = "image/jpeg"
+	case ".png":
+		contentType = "image/png"
+	case ".gif":
+		contentType = "image/gif"
+	case ".webp":
+		contentType = "image/webp"
+	}
+
+	w.Header().Set("Content-Type", contentType)
+	http.ServeFile(w, r, imagePath)
 }
 
 // handlePromptAvatar 处理提示词头像请求

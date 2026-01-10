@@ -34,6 +34,12 @@ type GeminiContent struct {
 type GeminiPart struct {
 	Text         string              `json:"text,omitempty"`
 	FunctionCall *GeminiFunctionCall `json:"functionCall,omitempty"`
+	InlineData   *GeminiInlineData   `json:"inlineData,omitempty"`
+}
+
+type GeminiInlineData struct {
+	MimeType string `json:"mimeType"`
+	Data     string `json:"data"`
 }
 
 // GeminiTool Gemini 工具定义
@@ -97,7 +103,7 @@ func NewGeminiClient(baseURL, apiKey string) *GeminiClient {
 }
 
 // convertToGeminiMessages 将通用消息转换为Gemini格式
-func (c *GeminiClient) convertToGeminiMessages(messages []Message) ([]GeminiContent, *GeminiContent) {
+func (c *GeminiClient) convertToGeminiMessages(messages []Message) ([]GeminiContent, *GeminiContent, error) {
 	var contents []GeminiContent
 	var systemInstruction *GeminiContent
 
@@ -116,13 +122,33 @@ func (c *GeminiClient) convertToGeminiMessages(messages []Message) ([]GeminiCont
 			role = "model"
 		}
 
+		parts := make([]GeminiPart, 0, len(msg.ImagePaths)+1)
+		if strings.TrimSpace(msg.Content) != "" {
+			parts = append(parts, GeminiPart{Text: msg.Content})
+		}
+		for _, imagePath := range msg.ImagePaths {
+			payload, errLoad := loadImagePayload(imagePath)
+			if errLoad != nil {
+				return nil, nil, errLoad
+			}
+			parts = append(parts, GeminiPart{
+				InlineData: &GeminiInlineData{
+					MimeType: payload.MimeType,
+					Data:     payload.Data,
+				},
+			})
+		}
+		if len(parts) == 0 {
+			parts = append(parts, GeminiPart{Text: ""})
+		}
+
 		contents = append(contents, GeminiContent{
 			Role:  role,
-			Parts: []GeminiPart{{Text: msg.Content}},
+			Parts: parts,
 		})
 	}
 
-	return contents, systemInstruction
+	return contents, systemInstruction, nil
 }
 
 // convertToGeminiTools 将 OpenAI 格式的 Tools 转换为 Gemini 格式
@@ -153,7 +179,10 @@ func (c *GeminiClient) convertToGeminiTools(tools []Tool) []GeminiTool {
 
 // Chat 发送聊天请求（非流式）
 func (c *GeminiClient) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
-	contents, systemInstruction := c.convertToGeminiMessages(req.Messages)
+	contents, systemInstruction, errConvert := c.convertToGeminiMessages(req.Messages)
+	if errConvert != nil {
+		return nil, fmt.Errorf("build request: %w", errConvert)
+	}
 
 	ctx, cancel := context.WithTimeout(ctx, chatRequestTimeout)
 	defer cancel()
@@ -208,7 +237,10 @@ func (c *GeminiClient) Chat(ctx context.Context, req ChatRequest) (*ChatResponse
 
 // ChatStream 发送聊天请求（流式）
 func (c *GeminiClient) ChatStream(ctx context.Context, req ChatRequest, callback func(chunk StreamChunk) error) error {
-	contents, systemInstruction := c.convertToGeminiMessages(req.Messages)
+	contents, systemInstruction, errConvert := c.convertToGeminiMessages(req.Messages)
+	if errConvert != nil {
+		return fmt.Errorf("build request: %w", errConvert)
+	}
 
 	ctx, cancel := context.WithTimeout(ctx, streamRequestTimeout)
 	defer cancel()

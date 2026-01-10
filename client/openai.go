@@ -18,6 +18,7 @@ type Message struct {
 	ReasoningContent string     `json:"reasoning_content,omitempty"` // 思考模型的推理内容
 	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`        // 工具调用
 	ToolCallID       string     `json:"tool_call_id,omitempty"`      // 工具调用ID (用于tool角色)
+	ImagePaths       []string   `json:"image_paths,omitempty"`       // 图片路径
 }
 
 // Tool 工具定义
@@ -56,6 +57,32 @@ type ChatRequest struct {
 	Tools       []Tool    `json:"tools,omitempty"` // 工具列表
 }
 
+type OpenAIContentPart struct {
+	Type     string          `json:"type"`
+	Text     string          `json:"text,omitempty"`
+	ImageURL *OpenAIImageURL `json:"image_url,omitempty"`
+}
+
+type OpenAIImageURL struct {
+	URL string `json:"url"`
+}
+
+type OpenAIMessage struct {
+	Role       string      `json:"role"`
+	Content    interface{} `json:"content"`
+	ToolCalls  []ToolCall  `json:"tool_calls,omitempty"`
+	ToolCallID string      `json:"tool_call_id,omitempty"`
+}
+
+type OpenAIChatRequest struct {
+	Model       string          `json:"model"`
+	Messages    []OpenAIMessage `json:"messages"`
+	Stream      bool            `json:"stream,omitempty"`
+	Temperature float64         `json:"temperature,omitempty"`
+	MaxTokens   int             `json:"max_tokens,omitempty"`
+	Tools       []Tool          `json:"tools,omitempty"` // 工具列表
+}
+
 // ChatResponse 非流式响应
 type ChatResponse struct {
 	ID      string   `json:"id"`
@@ -76,10 +103,10 @@ type Choice struct {
 
 // Delta 流式响应增量
 type Delta struct {
-	Role             string            `json:"role,omitempty"`
-	Content          string            `json:"content,omitempty"`
-	ReasoningContent string            `json:"reasoning_content,omitempty"` // 思考模型的推理内容
-	ToolCalls        []DeltaToolCall   `json:"tool_calls,omitempty"`        // 流式工具调用
+	Role             string          `json:"role,omitempty"`
+	Content          string          `json:"content,omitempty"`
+	ReasoningContent string          `json:"reasoning_content,omitempty"` // 思考模型的推理内容
+	ToolCalls        []DeltaToolCall `json:"tool_calls,omitempty"`        // 流式工具调用
 }
 
 // DeltaToolCall 流式工具调用增量
@@ -129,7 +156,12 @@ func (c *OpenAIClient) Chat(ctx context.Context, req ChatRequest) (*ChatResponse
 	ctx, cancel := context.WithTimeout(ctx, chatRequestTimeout)
 	defer cancel()
 
-	body, err := json.Marshal(req)
+	openAIReq, errBuild := buildOpenAIRequest(req)
+	if errBuild != nil {
+		return nil, fmt.Errorf("build request: %w", errBuild)
+	}
+
+	body, err := json.Marshal(openAIReq)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
@@ -167,7 +199,12 @@ func (c *OpenAIClient) ChatStream(ctx context.Context, req ChatRequest, callback
 	ctx, cancel := context.WithTimeout(ctx, streamRequestTimeout)
 	defer cancel()
 
-	body, err := json.Marshal(req)
+	openAIReq, errBuild := buildOpenAIRequest(req)
+	if errBuild != nil {
+		return fmt.Errorf("build request: %w", errBuild)
+	}
+
+	body, err := json.Marshal(openAIReq)
 	if err != nil {
 		return fmt.Errorf("marshal request: %w", err)
 	}
@@ -226,4 +263,57 @@ func (c *OpenAIClient) ChatStream(ctx context.Context, req ChatRequest, callback
 func (c *OpenAIClient) setHeaders(req *http.Request) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.APIKey)
+}
+
+func buildOpenAIRequest(req ChatRequest) (OpenAIChatRequest, error) {
+	messages := make([]OpenAIMessage, 0, len(req.Messages))
+	for _, msg := range req.Messages {
+		content, errContent := buildOpenAIMessageContent(msg)
+		if errContent != nil {
+			return OpenAIChatRequest{}, errContent
+		}
+		messages = append(messages, OpenAIMessage{
+			Role:       msg.Role,
+			Content:    content,
+			ToolCalls:  msg.ToolCalls,
+			ToolCallID: msg.ToolCallID,
+		})
+	}
+
+	return OpenAIChatRequest{
+		Model:       req.Model,
+		Messages:    messages,
+		Stream:      req.Stream,
+		Temperature: req.Temperature,
+		MaxTokens:   req.MaxTokens,
+		Tools:       req.Tools,
+	}, nil
+}
+
+func buildOpenAIMessageContent(msg Message) (interface{}, error) {
+	if len(msg.ImagePaths) == 0 {
+		return msg.Content, nil
+	}
+
+	parts := make([]OpenAIContentPart, 0, len(msg.ImagePaths)+1)
+	if strings.TrimSpace(msg.Content) != "" {
+		parts = append(parts, OpenAIContentPart{
+			Type: "text",
+			Text: msg.Content,
+		})
+	}
+	for _, imagePath := range msg.ImagePaths {
+		payload, errLoad := loadImagePayload(imagePath)
+		if errLoad != nil {
+			return nil, errLoad
+		}
+		parts = append(parts, OpenAIContentPart{
+			Type: "image_url",
+			ImageURL: &OpenAIImageURL{
+				URL: fmt.Sprintf("data:%s;base64,%s", payload.MimeType, payload.Data),
+			},
+		})
+	}
+
+	return parts, nil
 }

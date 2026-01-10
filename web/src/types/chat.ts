@@ -1,9 +1,10 @@
 export interface ChatMessage {
-  role: string
-  content: string
-  reasoning_content?: string
-  timestamp: string
-  tool_calls?: ToolCall[]
+    role: string
+    content: string
+    reasoning_content?: string
+    timestamp: string
+    tool_calls?: ToolCall[]
+    image_paths?: string[]
 }
 
 // 工具调用
@@ -55,13 +56,14 @@ export type ProviderType = 'openai' | 'gemini'
 
 // 供应商配置
 export interface Provider {
-  id: string
-  name: string
-  type: ProviderType  // 供应商类型 (openai/gemini)
-  base_url: string
-  api_key: string
-  model: string
-  stream: boolean     // 是否启用流式输出
+    id: string
+    name: string
+    type: ProviderType  // 供应商类型 (openai/gemini)
+    base_url: string
+    api_key: string
+    model: string
+    stream: boolean     // 是否启用流式输出
+    image_capable: boolean // 是否支持识图
 }
 
 // 供应商列表响应

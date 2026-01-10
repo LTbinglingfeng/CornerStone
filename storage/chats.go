@@ -19,6 +19,7 @@ type ChatMessage struct {
 	Content          string            `json:"content"`
 	ReasoningContent string            `json:"reasoning_content,omitempty"` // 思考模型的推理内容
 	ToolCalls        []client.ToolCall `json:"tool_calls,omitempty"`        // 工具调用
+	ImagePaths       []string          `json:"image_paths,omitempty"`       // 图片路径
 	Timestamp        time.Time         `json:"timestamp"`
 }
 
@@ -376,11 +377,11 @@ func (cm *ChatManager) AddMessage(sessionID, role, content string) error {
 
 // AddMessageWithReasoning 添加带思考内容的消息到会话
 func (cm *ChatManager) AddMessageWithReasoning(sessionID, role, content, reasoningContent string) error {
-	return cm.AddMessageWithDetails(sessionID, role, content, reasoningContent, nil)
+	return cm.AddMessageWithDetails(sessionID, role, content, reasoningContent, nil, nil)
 }
 
 // AddMessageWithDetails 添加带思考内容和工具调用的消息到会话
-func (cm *ChatManager) AddMessageWithDetails(sessionID, role, content, reasoningContent string, toolCalls []client.ToolCall) error {
+func (cm *ChatManager) AddMessageWithDetails(sessionID, role, content, reasoningContent string, imagePaths []string, toolCalls []client.ToolCall) error {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
@@ -416,18 +417,26 @@ func (cm *ChatManager) AddMessageWithDetails(sessionID, role, content, reasoning
 	if len(toolCalls) > 0 {
 		msg.ToolCalls = append([]client.ToolCall(nil), toolCalls...)
 	}
+	if len(imagePaths) > 0 {
+		msg.ImagePaths = append([]string(nil), imagePaths...)
+	}
 	record.Messages = append(record.Messages, msg)
 	record.UpdatedAt = now
 
 	// 如果是第一条用户消息，用它作为标题
 	metaChanged := false
-	if record.Title == "New Chat" && role == "user" && len(content) > 0 {
-		title := content
-		if len(title) > 50 {
-			title = title[:50] + "..."
+	if record.Title == "New Chat" && role == "user" {
+		if len(content) > 0 {
+			title := content
+			if len(title) > 50 {
+				title = title[:50] + "..."
+			}
+			record.Title = title
+			metaChanged = true
+		} else if len(imagePaths) > 0 {
+			record.Title = "图片消息"
+			metaChanged = true
 		}
-		record.Title = title
-		metaChanged = true
 	}
 
 	return cm.persistMessagesLocked(record, []ChatMessage{msg}, metaChanged)
@@ -466,12 +475,20 @@ func (cm *ChatManager) AddMessages(sessionID string, messages []ChatMessage) err
 	metaChanged := false
 	if record.Title == "New Chat" {
 		for _, msg := range messages {
-			if msg.Role == "user" && len(msg.Content) > 0 {
+			if msg.Role != "user" {
+				continue
+			}
+			if len(msg.Content) > 0 {
 				title := msg.Content
 				if len(title) > 50 {
 					title = title[:50] + "..."
 				}
 				record.Title = title
+				metaChanged = true
+				break
+			}
+			if len(msg.ImagePaths) > 0 {
+				record.Title = "图片消息"
 				metaChanged = true
 				break
 			}

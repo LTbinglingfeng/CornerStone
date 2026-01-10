@@ -37,24 +37,27 @@ func main() {
 	promptsDir := filepath.Join(baseDir, "prompts")
 	chatsDir := filepath.Join(baseDir, "chats")
 	userAboutDir := filepath.Join(baseDir, "user_about")
+	cachePhotoDir := filepath.Join(baseDir, "cache_photo")
 
 	// 初始化管理器
 	configManager := config.NewManager(configPath)
 	promptManager := storage.NewPromptManager(promptsDir)
 	chatManager := storage.NewChatManager(chatsDir)
 	userManager := storage.NewUserManager(userAboutDir)
+	os.MkdirAll(cachePhotoDir, 0755)
 
 	log.Printf("数据存储目录: %s", baseDir)
 	log.Printf("  配置文件: %s", configPath)
 	log.Printf("  提示词目录: %s", promptsDir)
 	log.Printf("  聊天记录目录: %s", chatsDir)
 	log.Printf("  用户信息目录: %s", userAboutDir)
+	log.Printf("  图片缓存目录: %s", cachePhotoDir)
 
 	// 创建路由
 	mux := http.NewServeMux()
 
 	// 注册API处理器
-	handler := api.NewHandler(configManager, promptManager, chatManager, userManager)
+	handler := api.NewHandler(configManager, promptManager, chatManager, userManager, cachePhotoDir)
 	handler.RegisterRoutes(mux)
 
 	// 启动服务
@@ -89,6 +92,8 @@ func main() {
 	log.Printf("  GET    /management/user/avatar      - 获取用户头像")
 	log.Printf("  POST   /management/user/avatar      - 上传用户头像")
 	log.Printf("  DELETE /management/user/avatar      - 删除用户头像")
+	log.Printf("  POST   /management/cache-photo      - 上传聊天图片")
+	log.Printf("  GET    /management/cache-photo/{name} - 获取聊天图片")
 	log.Printf("  GET    /management/health           - 健康检查")
 
 	server := &http.Server{

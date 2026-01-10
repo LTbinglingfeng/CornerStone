@@ -40,6 +40,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
     api_key: '',
     model: '',
     stream: true,
+    image_capable: false,
   }
 
   useEffect(() => {
@@ -251,6 +252,12 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                         {provider.stream ? '开启' : '关闭'}
                       </span>
                     </div>
+                    <div className="provider-card-row">
+                      <span className="provider-card-label">识图</span>
+                      <span className={`provider-card-value ${provider.image_capable ? 'vision-on' : 'vision-off'}`}>
+                        {provider.image_capable ? '支持' : '不支持'}
+                      </span>
+                    </div>
                   </div>
                   <div className="provider-card-actions">
                     <button
@@ -386,6 +393,21 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                     <span className="toggle-slider"></span>
                   </label>
                   <span className="toggle-label">{editingProvider.stream ? '开启' : '关闭'}</span>
+                </div>
+              </div>
+
+              <div className="modal-group">
+                <label className="modal-label">支持识图</label>
+                <div className="modal-toggle-wrapper">
+                  <label className="toggle-switch">
+                    <input
+                      type="checkbox"
+                      checked={editingProvider.image_capable}
+                      onChange={(e) => handleProviderChange('image_capable', e.target.checked)}
+                    />
+                    <span className="toggle-slider"></span>
+                  </label>
+                  <span className="toggle-label">{editingProvider.image_capable ? '支持' : '不支持'}</span>
                 </div>
               </div>
             </div>

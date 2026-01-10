@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { gsap } from 'gsap'
 import type { ChatMessage, ChatRecord, Prompt, UserInfo, ToolCall, RedPacketParams } from '../types/chat'
-import { getSession, sendMessage, getPrompt, getUserInfo, getPromptAvatarUrl, getUserAvatarUrl } from '../services/api'
+import { getSession, sendMessage, getPrompt, getUserInfo, getPromptAvatarUrl, getUserAvatarUrl, uploadChatImage, getChatImageUrl, getActiveProvider } from '../services/api'
 import ChatSettings from './ChatSettings'
 import './ChatDetail.css'
 
@@ -26,6 +26,9 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
   const [prompt, setPrompt] = useState<Prompt | null>(null)
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null)
   const [showSettings, setShowSettings] = useState(false)
+  const [pendingImages, setPendingImages] = useState<string[]>([])
+  const [uploadingImage, setUploadingImage] = useState(false)
+  const [imageCapable, setImageCapable] = useState(false)
 
   // Red Packet State
   const [activeRedPacket, setActiveRedPacket] = useState<RedPacketParams | null>(null)
@@ -35,6 +38,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
   const messageListRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const activeRequestRef = useRef<AbortController | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     activeRequestRef.current?.abort()
@@ -42,6 +46,8 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     setSending(false)
     setActiveRedPacket(null)
     setPacketStep('idle')
+    setPendingImages([])
+    setUploadingImage(false)
     if (containerRef.current) {
       gsap.fromTo(
         containerRef.current,
@@ -85,6 +91,9 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
       setUserInfo(user)
     }
 
+    const provider = await getActiveProvider()
+    setImageCapable(!!provider?.image_capable)
+
     setLoading(false)
   }
 
@@ -110,16 +119,24 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
   }
 
   const handleSend = async () => {
-    if (!inputText.trim() || sending) return
+    const trimmedText = inputText.trim()
+    const hasImages = pendingImages.length > 0
+    if ((!trimmedText && !hasImages) || sending || uploadingImage) return
+    if (hasImages && !imageCapable) {
+      alert('当前模型不支持图片输入')
+      return
+    }
 
     const userMessage: ChatMessage = {
       role: 'user',
-      content: inputText.trim(),
-      timestamp: new Date().toISOString()
+      content: trimmedText,
+      timestamp: new Date().toISOString(),
+      ...(hasImages ? { image_paths: pendingImages } : {}),
     }
 
     setMessages(prev => [...prev, userMessage])
     setInputText('')
+    setPendingImages([])
     setSending(true)
 
     if (textareaRef.current) {
@@ -340,6 +357,42 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px'
   }
 
+  const handleUploadClick = () => {
+    if (!imageCapable || uploadingImage) return
+    fileInputRef.current?.click()
+  }
+
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files ? Array.from(e.target.files) : []
+    if (files.length === 0) return
+    if (!imageCapable) {
+      e.target.value = ''
+      return
+    }
+
+    setUploadingImage(true)
+    const uploadedPaths: string[] = []
+    for (const file of files) {
+      const savedPath = await uploadChatImage(file)
+      if (savedPath) {
+        uploadedPaths.push(savedPath)
+      }
+    }
+
+    if (uploadedPaths.length > 0) {
+      setPendingImages(prev => [...prev, ...uploadedPaths])
+    } else {
+      alert('图片上传失败')
+    }
+
+    setUploadingImage(false)
+    e.target.value = ''
+  }
+
+  const handleRemovePendingImage = (index: number) => {
+    setPendingImages(prev => prev.filter((_, i) => i !== index))
+  }
+
   // 获取用户头像 URL
   const getUserAvatarSrc = () => {
     if (userInfo?.avatar) {
@@ -387,6 +440,22 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     }
   }
 
+  const renderMessageImages = (message: ChatMessage) => {
+    if (!message.image_paths || message.image_paths.length === 0) return null
+    return (
+      <div className="message-images">
+        {message.image_paths.map((imagePath, index) => (
+          <img
+            key={`${message.timestamp}-image-${index}`}
+            src={getChatImageUrl(imagePath)}
+            alt="聊天图片"
+            className="message-image"
+          />
+        ))}
+      </div>
+    )
+  }
+
   // 渲染红包卡片
   const renderRedPacket = (toolCall: ToolCall) => {
     if (toolCall.function.name !== 'send_red_packet') return null
@@ -432,7 +501,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
   const buildDisplayItems = (): DisplayItem[] => {
     const items: DisplayItem[] = []
     messages.forEach((message, index) => {
-      const hasContent = message.content && message.content.trim() !== ''
+      const hasContent = (message.content && message.content.trim() !== '') || (message.image_paths && message.image_paths.length > 0)
       const redPacketCalls = (message.tool_calls || []).filter(tc => tc.function.name === 'send_red_packet')
 
       if (hasContent) {
@@ -479,10 +548,18 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         </div>
       )
     }
-    return <div className="message-text">{item.message.content}</div>
+    const images = renderMessageImages(item.message)
+    const hasText = item.message.content && item.message.content.trim() !== ''
+    return (
+      <div className="message-content">
+        {images}
+        {hasText && <div className="message-text">{item.message.content}</div>}
+      </div>
+    )
   }
 
   const displayItems = buildDisplayItems()
+  const canSend = (inputText.trim() !== '' || pendingImages.length > 0) && !sending && !uploadingImage
 
   return (
     <div className="chat-detail" ref={containerRef}>
@@ -531,7 +608,45 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         )}
       </div>
 
+      {pendingImages.length > 0 && (
+        <div className="pending-image-list">
+          {pendingImages.map((imagePath, index) => (
+            <div key={`${imagePath}-${index}`} className="pending-image-item">
+              <img
+                src={getChatImageUrl(imagePath)}
+                alt="待发送图片"
+              />
+              <button
+                type="button"
+                className="pending-image-remove"
+                onClick={() => handleRemovePendingImage(index)}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="chat-input-area">
+        <button
+          className="upload-button"
+          onClick={handleUploadClick}
+          disabled={!imageCapable || uploadingImage}
+          title={imageCapable ? '上传图片' : '当前模型不支持图片输入'}
+        >
+          <svg viewBox="0 0 24 24">
+            <path d="M19 7h-3V5c0-1.1-.9-2-2-2h-4c-1.1 0-2 .9-2 2v2H5c-1.1 0-2 .9-2 2v9c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V9c0-1.1-.9-2-2-2zm-9 0V5h4v2h-4zm7 13H5V9h14v11zM7 18l3-4 2 3 3-4 2 5H7z" />
+          </svg>
+        </button>
+        <input
+          ref={fileInputRef}
+          className="image-input"
+          type="file"
+          accept="image/*"
+          multiple
+          onChange={handleImageChange}
+        />
         <textarea
           ref={textareaRef}
           className="chat-input"
@@ -544,7 +659,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         <button
           className="send-button"
           onClick={handleSend}
-          disabled={!inputText.trim() || sending}
+          disabled={!canSend}
         >
           <svg viewBox="0 0 24 24">
             <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
