@@ -684,6 +684,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
           onTitleUpdated={(newTitle) => {
             setSession(prev => prev ? { ...prev, title: newTitle } : prev)
           }}
+          onExitChat={handleBack}
         />
       )}
 

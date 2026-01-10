@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { gsap } from 'gsap'
 import type { ChatSession, Prompt } from '../types/chat'
-import { getSessionsByPromptId, getPromptAvatarUrl, updateSessionTitle, appendQueryParam } from '../services/api'
+import { getSessionsByPromptId, getPromptAvatarUrl, updateSessionTitle, appendQueryParam, deleteSession } from '../services/api'
 import { formatTime } from '../utils/time'
 import './ChatSettings.css'
 
@@ -12,6 +12,7 @@ interface ChatSettingsProps {
   onClose: () => void
   onSwitchSession: (sessionId: string) => void
   onTitleUpdated?: (newTitle: string) => void
+  onExitChat?: () => void
 }
 
 const ChatSettings: React.FC<ChatSettingsProps> = ({
@@ -20,13 +21,16 @@ const ChatSettings: React.FC<ChatSettingsProps> = ({
   currentSessionTitle,
   onClose,
   onSwitchSession,
-  onTitleUpdated
+  onTitleUpdated,
+  onExitChat
 }) => {
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const [loading, setLoading] = useState(true)
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleInput, setTitleInput] = useState(currentSessionTitle || '')
   const [savingTitle, setSavingTitle] = useState(false)
+  const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
   const titleInputRef = useRef<HTMLInputElement>(null)
@@ -120,12 +124,56 @@ const ChatSettings: React.FC<ChatSettingsProps> = ({
     }, 350)
   }
 
+  const handleDeleteConfirm = (sessionId: string) => {
+    setConfirmDeleteId(sessionId)
+  }
+
+  const handleCloseDeleteConfirm = () => {
+    if (deletingSessionId) return
+    setConfirmDeleteId(null)
+  }
+
+  const handleDeleteSession = async () => {
+    if (!confirmDeleteId || deletingSessionId) return
+    const sessionId = confirmDeleteId
+    setDeletingSessionId(sessionId)
+    const success = await deleteSession(sessionId)
+    setDeletingSessionId(null)
+
+    if (!success) return
+
+    const nextSessions = sessions.filter(session => session.id !== sessionId)
+    setSessions(nextSessions)
+    setConfirmDeleteId(null)
+
+    if (sessionId === currentSessionId) {
+      if (nextSessions.length > 0) {
+        handleClose()
+        setTimeout(() => {
+          onSwitchSession(nextSessions[0].id)
+        }, 350)
+      } else {
+        handleClose()
+        if (onExitChat) {
+          setTimeout(() => {
+            onExitChat()
+          }, 350)
+        }
+      }
+    }
+  }
+
   const getAvatarSrc = () => {
     if (prompt.avatar) {
       return appendQueryParam(getPromptAvatarUrl(prompt.id), 't', new Date(prompt.updated_at).getTime())
     }
     return null
   }
+
+  const confirmSessionTitle = confirmDeleteId
+    ? sessions.find(session => session.id === confirmDeleteId)?.title || '未命名'
+    : ''
+  const isDeletingConfirm = confirmDeleteId !== null && deletingSessionId === confirmDeleteId
 
   return (
     <div className="chat-settings-overlay" ref={overlayRef} onClick={handleClose}>
@@ -223,9 +271,25 @@ const ChatSettings: React.FC<ChatSettingsProps> = ({
                       <div className="session-title">{session.title}</div>
                       <div className="session-time">{formatTime(session.updated_at)}</div>
                     </div>
-                    {session.id === currentSessionId && (
-                      <div className="session-current-badge">当前</div>
-                    )}
+                    <div className="session-actions">
+                      {session.id === currentSessionId && (
+                        <div className="session-current-badge">当前</div>
+                      )}
+                      <button
+                        type="button"
+                        className="session-delete-btn"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          handleDeleteConfirm(session.id)
+                        }}
+                        disabled={deletingSessionId === session.id}
+                        title="删除会话"
+                      >
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -233,6 +297,44 @@ const ChatSettings: React.FC<ChatSettingsProps> = ({
           </div>
         </div>
       </div>
+
+      {confirmDeleteId && (
+        <div
+          className="chat-settings-confirm-overlay"
+          onClick={(event) => {
+            event.stopPropagation()
+            handleCloseDeleteConfirm()
+          }}
+        >
+          <div
+            className="chat-settings-confirm-card"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="chat-settings-confirm-title">删除会话？</div>
+            <div className="chat-settings-confirm-desc">
+              将永久删除 "{confirmSessionTitle}" 的聊天记录，无法恢复。
+            </div>
+            <div className="chat-settings-confirm-actions">
+              <button
+                type="button"
+                className="chat-settings-confirm-btn cancel"
+                onClick={handleCloseDeleteConfirm}
+                disabled={isDeletingConfirm}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="chat-settings-confirm-btn delete"
+                onClick={handleDeleteSession}
+                disabled={isDeletingConfirm}
+              >
+                {isDeletingConfirm ? '删除中...' : '删除'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

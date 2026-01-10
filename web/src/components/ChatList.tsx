@@ -237,7 +237,7 @@ const ChatList: React.FC<ChatListProps> = ({ onSelectSession, searchQuery = '' }
           onClose={handleCloseMenu}
           items={[
             {
-              label: '删除会话',
+              label: '删除上次对话',
               onClick: handleDeleteSession,
               danger: true,
             },
