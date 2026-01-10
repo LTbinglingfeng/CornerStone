@@ -115,6 +115,10 @@
   gap: 10px;
 }
 
+.message-item.red-packet-item {
+  max-width: 100%;
+}
+
 .message-item.user {
   align-self: flex-end;
   flex-direction: row;
@@ -166,15 +170,6 @@
   line-height: 1.4;
   word-wrap: break-word;
   white-space: pre-wrap;
-}
-
-.message-bubble.no-bg {
-  background-color: transparent !important;
-  padding: 0;
-}
-
-.message-bubble.no-bg::after {
-  display: none !important;
 }
 
 .message-item.user .message-bubble {
@@ -309,28 +304,23 @@
   word-wrap: break-word;
 }
 
-/* 工具调用容器 */
-.tool-calls-container {
-  margin-top: 8px;
-}
-
-.message-bubble.no-bg .tool-calls-container {
-  margin-top: 0;
-}
-
 /* 红包卡片样式 (Chat Bubble) */
 .red-packet-bubble {
   width: 240px;
   height: 90px;
-  background-color: #FA9D3B;
+  background-color: var(--red-packet-card-bg, #fa9d3b);
+  border: 1px solid var(--red-packet-card-border, transparent);
   border-radius: 12px;
   overflow: hidden;
   cursor: pointer;
   display: flex;
   flex-direction: column;
   position: relative;
+  z-index: 1;
+  flex-shrink: 0;
   user-select: none;
   transition: opacity 0.2s;
+  box-shadow: var(--red-packet-card-shadow, none);
 }
 
 .red-packet-bubble:active {
@@ -366,7 +356,7 @@
 }
 
 .rp-title {
-  color: #fff;
+  color: var(--red-packet-card-text);
   font-size: 16px;
   font-weight: 500;
   white-space: nowrap;
@@ -376,17 +366,17 @@
 }
 
 .rp-status {
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--red-packet-card-status-text);
   font-size: 12px;
 }
 
 .rp-footer {
   height: 22px;
-  background-color: rgba(255, 255, 255, 0.15);
+  background-color: var(--red-packet-card-footer-bg);
   display: flex;
   align-items: center;
   padding: 0 15px;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--red-packet-card-footer-text);
   font-size: 11px;
 }
 
@@ -407,7 +397,7 @@
 .rp-modal {
   width: 320px;
   height: 480px;
-  background-color: #CF3C32;
+  background-color: var(--red-packet-modal-bg);
   border-radius: 16px;
   position: relative;
   overflow: hidden;
@@ -462,7 +452,7 @@
   flex-direction: column;
   align-items: center;
   width: 100%;
-  background-color: #CF3C32;
+  background-color: var(--red-packet-modal-bg);
   border-radius: 0 0 50% 50% / 0 0 20% 20%;
   padding-bottom: 60px;
   position: relative;
@@ -495,7 +485,7 @@
   height: 48px;
   background-color: #fff;
   border-radius: 8px;
-  color: #CF3C32;
+  color: var(--red-packet-modal-bg);
   font-weight: bold;
   font-size: 20px;
   display: flex;
@@ -504,13 +494,13 @@
 }
 
 .rp-sender-name {
-  color: #FCE5BF;
+  color: var(--red-packet-header-text);
   font-size: 16px;
   font-weight: 500;
 }
 
 .rp-wishing {
-  color: #FCE5BF;
+  color: var(--red-packet-header-subtext);
   font-size: 22px;
   font-weight: 400;
   max-width: 80%;
@@ -523,7 +513,7 @@
   top: 260px; /* Adjust based on curve */
   width: 100px;
   height: 100px;
-  background-color: #CF3C32;
+  background-color: var(--red-packet-modal-bg);
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -536,9 +526,9 @@
   width: 88px;
   height: 88px;
   border-radius: 50%;
-  background-color: #F0CB96;
+  background-color: var(--red-packet-open-btn-bg);
   border: none;
-  color: #333;
+  color: var(--red-packet-open-btn-text);
   font-size: 36px;
   font-weight: bold;
   cursor: pointer;
@@ -555,7 +545,7 @@
 
 .rp-open-btn.opening {
   animation: coinFlip 0.8s infinite linear;
-  background-color: #F0CB96;
+  background-color: var(--red-packet-open-btn-bg);
 }
 
 @keyframes coinFlip {
@@ -578,16 +568,18 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding-top: 50px;
+  padding-top: 70px;
+  padding-bottom: 40px;
+  overflow: hidden;
 }
 
 .rp-result-top-bg {
   position: absolute;
-  top: -100px;
+  top: -120px;
   left: -50%;
   width: 200%;
-  height: 300px;
-  background-color: #CF3C32;
+  height: 360px;
+  background-color: var(--red-packet-modal-bg);
   border-radius: 0 0 50% 50%;
   z-index: 0;
 }
@@ -606,12 +598,12 @@
 }
 
 .rp-sender-name.dark {
-  color: var(--text-primary);
+  color: var(--red-packet-header-text);
   font-size: 14px;
 }
 
 .rp-wishing.dark {
-  color: var(--text-secondary);
+  color: var(--red-packet-header-subtext);
   font-size: 14px;
   z-index: 1;
   margin-bottom: 40px;
@@ -621,8 +613,11 @@
   z-index: 1;
   display: flex;
   align-items: baseline;
-  color: #CF3C32;
+  color: var(--red-packet-result-accent);
+  margin-top: 48px;
   margin-bottom: auto;
+  position: relative;
+  z-index: 2;
 }
 
 .rp-currency {
@@ -638,6 +633,6 @@
 
 .rp-result-footer {
   margin-bottom: 30px;
-  color: #576b95;
+  color: var(--red-packet-result-footer);
   font-size: 12px;
 }

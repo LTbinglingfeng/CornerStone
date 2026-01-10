@@ -19,6 +19,20 @@
   --danger-color: #ff453a;
   --message-user-bg: #07c160;
   --message-assistant-bg: #2c2c2e;
+  --red-packet-card-bg: #fa9d3b;
+  --red-packet-card-text: #ffffff;
+  --red-packet-card-status-text: rgba(255, 255, 255, 0.85);
+  --red-packet-card-footer-bg: rgba(255, 255, 255, 0.15);
+  --red-packet-card-footer-text: rgba(255, 255, 255, 0.7);
+  --red-packet-card-shadow: 0 6px 16px rgba(0, 0, 0, 0.24);
+  --red-packet-card-border: rgba(0, 0, 0, 0.18);
+  --red-packet-modal-bg: #cf3c32;
+  --red-packet-header-text: #fce5bf;
+  --red-packet-header-subtext: rgba(252, 229, 191, 0.9);
+  --red-packet-open-btn-bg: #f0cb96;
+  --red-packet-open-btn-text: #3b2e1f;
+  --red-packet-result-accent: #cf3c32;
+  --red-packet-result-footer: var(--text-secondary);
 }
 
 [data-theme="light"] {
@@ -35,6 +49,20 @@
   --danger-color: #ff3b30;
   --message-user-bg: #07c160;
   --message-assistant-bg: #e5e5ea;
+  --red-packet-card-bg: #f6a246;
+  --red-packet-card-text: #ffffff;
+  --red-packet-card-status-text: rgba(255, 255, 255, 0.85);
+  --red-packet-card-footer-bg: rgba(255, 255, 255, 0.15);
+  --red-packet-card-footer-text: rgba(255, 255, 255, 0.7);
+  --red-packet-card-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+  --red-packet-card-border: rgba(0, 0, 0, 0.12);
+  --red-packet-modal-bg: #d6453b;
+  --red-packet-header-text: #fff3d6;
+  --red-packet-header-subtext: rgba(255, 243, 214, 0.9);
+  --red-packet-open-btn-bg: #f4d3a4;
+  --red-packet-open-btn-text: #2f2418;
+  --red-packet-result-accent: #d6453b;
+  --red-packet-result-footer: var(--text-secondary);
 }
 
 html, body {

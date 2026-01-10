@@ -12,6 +12,11 @@ interface ChatDetailProps {
   onSwitchSession?: (sessionId: string, promptId?: string) => void
 }
 
+type DisplayItem =
+  | { key: string; role: string; type: 'text'; message: ChatMessage }
+  | { key: string; role: string; type: 'loading'; message: ChatMessage }
+  | { key: string; role: string; type: 'red-packet'; message: ChatMessage; toolCall: ToolCall }
+
 const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, onSwitchSession }) => {
   const [session, setSession] = useState<ChatRecord | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -391,7 +396,6 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
       return (
         <div 
           className="red-packet-bubble" 
-          key={toolCall.id}
           onClick={() => {
             setActiveRedPacket(params)
             setPacketStep('idle')
@@ -400,7 +404,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
           <div className="rp-content">
             <div className="rp-icon-wrapper">
               <svg viewBox="0 0 40 40" className="rp-icon">
-                 <path d="M35.5,14.5c0-1.6-0.8-3-2.1-3.9l-10-6.7c-2.1-1.4-4.8-1.4-6.9,0l-10,6.7C5.3,11.5,4.5,12.9,4.5,14.5v16c0,2.5,2,4.5,4.5,4.5h22c2.5,0,4.5-2,4.5-4.5V14.5z M20,9.5l8.9,6L20,21.4L11.1,15.5L20,9.5z M9,31v-8.8l7.2,4.8L9,31z M20,25.6l-2.4-1.6l-2.4,3.2c-0.9,1.2-2.3,1.9-3.7,1.9h-1.3v2H20V25.6z M31,31h-9.8v-5.5h1.3c1.5,0,2.8-0.7,3.7-1.9l-2.4-3.2l-2.4,1.6l3.8,2.5L31,22.2V31z" fill="#FCE5BF"/>
+                 <path d="M35.5,14.5c0-1.6-0.8-3-2.1-3.9l-10-6.7c-2.1-1.4-4.8-1.4-6.9,0l-10,6.7C5.3,11.5,4.5,12.9,4.5,14.5v16c0,2.5,2,4.5,4.5,4.5h22c2.5,0,4.5-2,4.5-4.5V14.5z M20,9.5l8.9,6L20,21.4L11.1,15.5L20,9.5z M9,31v-8.8l7.2,4.8L9,31z M20,25.6l-2.4-1.6l-2.4,3.2c-0.9,1.2-2.3,1.9-3.7,1.9h-1.3v2H20V25.6z M31,31h-9.8v-5.5h1.3c1.5,0,2.8-0.7,3.7-1.9l-2.4-3.2l-2.4,1.6l3.8,2.5L31,22.2V31z" fill="var(--red-packet-header-text)"/>
               </svg>
             </div>
             <div className="rp-text">
@@ -425,31 +429,60 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     }, 1000)
   }
 
-  // 渲染消息内容（包含文本和工具调用）
-  const renderMessageContent = (message: ChatMessage, index: number) => {
-    const hasToolCalls = message.tool_calls && message.tool_calls.length > 0
-    const hasContent = message.content && message.content.trim() !== ''
+  const buildDisplayItems = (): DisplayItem[] => {
+    const items: DisplayItem[] = []
+    messages.forEach((message, index) => {
+      const hasContent = message.content && message.content.trim() !== ''
+      const redPacketCalls = (message.tool_calls || []).filter(tc => tc.function.name === 'send_red_packet')
 
-    return (
-      <>
-        {hasContent && <div className="message-text">{message.content}</div>}
-        {!hasContent && !hasToolCalls && (
-          sending && index === messages.length - 1 && message.role === 'assistant' ? (
-            <div className="message-loading">
-              <span></span>
-              <span></span>
-              <span></span>
-            </div>
-          ) : ''
-        )}
-        {hasToolCalls && (
-          <div className="tool-calls-container">
-            {message.tool_calls!.map(tc => renderRedPacket(tc))}
-          </div>
-        )}
-      </>
-    )
+      if (hasContent) {
+        items.push({
+          key: `${message.timestamp}-text`,
+          role: message.role,
+          type: 'text',
+          message,
+        })
+      }
+
+      redPacketCalls.forEach((toolCall, toolIndex) => {
+        items.push({
+          key: `${message.timestamp}-rp-${toolCall.id || toolIndex}`,
+          role: message.role,
+          type: 'red-packet',
+          message,
+          toolCall,
+        })
+      })
+
+      if (!hasContent && redPacketCalls.length === 0) {
+        const shouldShowLoading = sending && index === messages.length - 1 && message.role === 'assistant'
+        if (shouldShowLoading) {
+          items.push({
+            key: `${message.timestamp}-loading`,
+            role: message.role,
+            type: 'loading',
+            message,
+          })
+        }
+      }
+    })
+    return items
   }
+
+  const renderMessageBubbleContent = (item: DisplayItem) => {
+    if (item.type === 'loading') {
+      return (
+        <div className="message-loading">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+      )
+    }
+    return <div className="message-text">{item.message.content}</div>
+  }
+
+  const displayItems = buildDisplayItems()
 
   return (
     <div className="chat-detail" ref={containerRef}>
@@ -474,18 +507,24 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
       <div className="message-list" ref={messageListRef}>
         {loading ? (
           <div className="empty-messages">加载中...</div>
-        ) : messages.length === 0 ? (
+        ) : displayItems.length === 0 ? (
           <div className="empty-messages">开始新的对话</div>
         ) : (
-          messages.map((message, index) => {
-            const isRedPacket = message.tool_calls?.some(tc => tc.function.name === 'send_red_packet')
+          displayItems.map((item) => {
+            const isRedPacket = item.type === 'red-packet'
+            const content = isRedPacket ? (
+              renderRedPacket(item.toolCall)
+            ) : (
+              <div className="message-bubble">
+                {renderMessageBubbleContent(item)}
+              </div>
+            )
+
             return (
-              <div key={index} className={`message-item ${message.role}`}>
-                {message.role === 'assistant' && renderAvatar(message.role)}
-                <div className={`message-bubble ${isRedPacket ? 'no-bg' : ''}`}>
-                  {renderMessageContent(message, index)}
-                </div>
-                {message.role === 'user' && renderAvatar(message.role)}
+              <div key={item.key} className={`message-item ${item.role} ${isRedPacket ? 'red-packet-item' : ''}`}>
+                {item.role === 'assistant' && renderAvatar(item.role)}
+                {content}
+                {item.role === 'user' && renderAvatar(item.role)}
               </div>
             )
           })
