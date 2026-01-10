@@ -712,7 +712,7 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	messages = append(messages, historyMessages...)
-	resolvedMessages, errResolve := h.resolveMessageImagePaths(messages)
+	resolvedMessages, errResolve := h.prepareMessagesForProvider(messages, provider.ImageCapable)
 	if errResolve != nil {
 		h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: errResolve.Error()})
 		return
@@ -955,6 +955,43 @@ func (h *Handler) resolveMessageImagePaths(messages []client.Message) ([]client.
 	}
 
 	return resolved, nil
+}
+
+func (h *Handler) prepareMessagesForProvider(messages []client.Message, imageCapable bool) ([]client.Message, error) {
+	if imageCapable {
+		return h.resolveMessageImagePaths(messages)
+	}
+	return flattenImagePathsToText(messages), nil
+}
+
+func flattenImagePathsToText(messages []client.Message) []client.Message {
+	if len(messages) == 0 {
+		return nil
+	}
+	converted := make([]client.Message, 0, len(messages))
+	for _, msg := range messages {
+		if len(msg.ImagePaths) == 0 {
+			converted = append(converted, msg)
+			continue
+		}
+
+		updated := msg
+		updated.Content = appendImagePathsToContent(updated.Content, msg.ImagePaths)
+		updated.ImagePaths = nil
+		converted = append(converted, updated)
+	}
+	return converted
+}
+
+func appendImagePathsToContent(content string, imagePaths []string) string {
+	if len(imagePaths) == 0 {
+		return content
+	}
+	joined := strings.Join(imagePaths, "\n")
+	if content == "" {
+		return joined
+	}
+	return content + "\n" + joined
 }
 
 // handleCachePhoto 处理聊天图片上传
