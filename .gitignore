@@ -1,0 +1,7 @@
+.claude
+node_modules
+web\node_modules
+web\dist
+src
+cornerstone.exe
+*.md

@@ -1,0 +1,191 @@
+package client
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+)
+
+// Message 表示对话消息
+type Message struct {
+	Role             string `json:"role"`
+	Content          string `json:"content"`
+	ReasoningContent string `json:"reasoning_content,omitempty"` // 思考模型的推理内容
+}
+
+// ChatRequest 聊天请求
+type ChatRequest struct {
+	Model       string    `json:"model"`
+	Messages    []Message `json:"messages"`
+	Stream      bool      `json:"stream,omitempty"`
+	Temperature float64   `json:"temperature,omitempty"`
+	MaxTokens   int       `json:"max_tokens,omitempty"`
+}
+
+// ChatResponse 非流式响应
+type ChatResponse struct {
+	ID      string   `json:"id"`
+	Object  string   `json:"object"`
+	Created int64    `json:"created"`
+	Model   string   `json:"model"`
+	Choices []Choice `json:"choices"`
+	Usage   Usage    `json:"usage"`
+}
+
+// Choice 响应选项
+type Choice struct {
+	Index        int     `json:"index"`
+	Message      Message `json:"message"`
+	Delta        Delta   `json:"delta,omitempty"`
+	FinishReason string  `json:"finish_reason"`
+}
+
+// Delta 流式响应增量
+type Delta struct {
+	Role             string `json:"role,omitempty"`
+	Content          string `json:"content,omitempty"`
+	ReasoningContent string `json:"reasoning_content,omitempty"` // 思考模型的推理内容
+}
+
+// Usage token使用情况
+type Usage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}
+
+// StreamChunk 流式响应块
+type StreamChunk struct {
+	ID      string   `json:"id"`
+	Object  string   `json:"object"`
+	Created int64    `json:"created"`
+	Model   string   `json:"model"`
+	Choices []Choice `json:"choices"`
+}
+
+// OpenAIClient OpenAI兼容客户端
+type OpenAIClient struct {
+	BaseURL    string
+	APIKey     string
+	HTTPClient *http.Client
+}
+
+// NewClient 创建新客户端
+func NewClient(baseURL, apiKey string) *OpenAIClient {
+	return &OpenAIClient{
+		BaseURL:    strings.TrimSuffix(baseURL, "/"),
+		APIKey:     apiKey,
+		HTTPClient: newHTTPClient(),
+	}
+}
+
+// Chat 发送聊天请求（非流式）
+func (c *OpenAIClient) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
+	req.Stream = false
+
+	ctx, cancel := context.WithTimeout(ctx, chatRequestTimeout)
+	defer cancel()
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.BaseURL+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	c.setHeaders(httpReq)
+
+	resp, err := c.HTTPClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("do request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
+		return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var chatResp ChatResponse
+	if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+
+	return &chatResp, nil
+}
+
+// ChatStream 发送聊天请求（流式）
+func (c *OpenAIClient) ChatStream(ctx context.Context, req ChatRequest, callback func(chunk StreamChunk) error) error {
+	req.Stream = true
+
+	ctx, cancel := context.WithTimeout(ctx, streamRequestTimeout)
+	defer cancel()
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("marshal request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.BaseURL+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+
+	c.setHeaders(httpReq)
+
+	resp, err := c.HTTPClient.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("do request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
+		return fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	scanner := bufio.NewScanner(resp.Body)
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, maxStreamLineBytes)
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		if line == "" {
+			continue
+		}
+
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+
+		data := strings.TrimPrefix(line, "data: ")
+
+		if data == "[DONE]" {
+			break
+		}
+
+		var chunk StreamChunk
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			continue
+		}
+
+		if err := callback(chunk); err != nil {
+			return err
+		}
+	}
+
+	return scanner.Err()
+}
+
+func (c *OpenAIClient) setHeaders(req *http.Request) {
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.APIKey)
+}
