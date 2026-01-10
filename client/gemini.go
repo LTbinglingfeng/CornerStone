@@ -23,6 +23,7 @@ type GeminiRequest struct {
 	Contents          []GeminiContent         `json:"contents"`
 	SystemInstruction *GeminiContent          `json:"systemInstruction,omitempty"`
 	GenerationConfig  *GeminiGenerationConfig `json:"generationConfig,omitempty"`
+	Tools             []GeminiTool            `json:"tools,omitempty"`
 }
 
 type GeminiContent struct {
@@ -31,7 +32,26 @@ type GeminiContent struct {
 }
 
 type GeminiPart struct {
-	Text string `json:"text"`
+	Text         string              `json:"text,omitempty"`
+	FunctionCall *GeminiFunctionCall `json:"functionCall,omitempty"`
+}
+
+// GeminiTool Gemini 工具定义
+type GeminiTool struct {
+	FunctionDeclarations []GeminiFunctionDeclaration `json:"functionDeclarations,omitempty"`
+}
+
+// GeminiFunctionDeclaration Gemini 函数声明
+type GeminiFunctionDeclaration struct {
+	Name        string                 `json:"name"`
+	Description string                 `json:"description"`
+	Parameters  map[string]interface{} `json:"parameters,omitempty"`
+}
+
+// GeminiFunctionCall Gemini 函数调用响应
+type GeminiFunctionCall struct {
+	Name string                 `json:"name"`
+	Args map[string]interface{} `json:"args"`
 }
 
 type GeminiGenerationConfig struct {
@@ -105,6 +125,32 @@ func (c *GeminiClient) convertToGeminiMessages(messages []Message) ([]GeminiCont
 	return contents, systemInstruction
 }
 
+// convertToGeminiTools 将 OpenAI 格式的 Tools 转换为 Gemini 格式
+func (c *GeminiClient) convertToGeminiTools(tools []Tool) []GeminiTool {
+	if len(tools) == 0 {
+		return nil
+	}
+
+	var declarations []GeminiFunctionDeclaration
+	for _, tool := range tools {
+		if tool.Type == "function" {
+			declarations = append(declarations, GeminiFunctionDeclaration{
+				Name:        tool.Function.Name,
+				Description: tool.Function.Description,
+				Parameters:  tool.Function.Parameters,
+			})
+		}
+	}
+
+	if len(declarations) == 0 {
+		return nil
+	}
+
+	return []GeminiTool{
+		{FunctionDeclarations: declarations},
+	}
+}
+
 // Chat 发送聊天请求（非流式）
 func (c *GeminiClient) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
 	contents, systemInstruction := c.convertToGeminiMessages(req.Messages)
@@ -115,6 +161,7 @@ func (c *GeminiClient) Chat(ctx context.Context, req ChatRequest) (*ChatResponse
 	geminiReq := GeminiRequest{
 		Contents:          contents,
 		SystemInstruction: systemInstruction,
+		Tools:             c.convertToGeminiTools(req.Tools),
 	}
 
 	if req.Temperature > 0 || req.MaxTokens > 0 {
@@ -169,6 +216,7 @@ func (c *GeminiClient) ChatStream(ctx context.Context, req ChatRequest, callback
 	geminiReq := GeminiRequest{
 		Contents:          contents,
 		SystemInstruction: systemInstruction,
+		Tools:             c.convertToGeminiTools(req.Tools),
 	}
 
 	if req.Temperature > 0 || req.MaxTokens > 0 {
@@ -241,15 +289,32 @@ func (c *GeminiClient) convertToOpenAIResponse(resp GeminiResponse, model string
 
 	for i, candidate := range resp.Candidates {
 		content := ""
-		if len(candidate.Content.Parts) > 0 {
-			content = candidate.Content.Parts[0].Text
+		var toolCalls []ToolCall
+
+		for j, part := range candidate.Content.Parts {
+			if part.Text != "" {
+				content += part.Text
+			}
+			if part.FunctionCall != nil {
+				// 将 Gemini FunctionCall 转换为 OpenAI ToolCall
+				argsJSON, _ := json.Marshal(part.FunctionCall.Args)
+				toolCalls = append(toolCalls, ToolCall{
+					ID:   fmt.Sprintf("call_%d_%d", i, j),
+					Type: "function",
+					Function: ToolCallFunction{
+						Name:      part.FunctionCall.Name,
+						Arguments: string(argsJSON),
+					},
+				})
+			}
 		}
 
 		choices = append(choices, Choice{
 			Index: i,
 			Message: Message{
-				Role:    "assistant",
-				Content: content,
+				Role:      "assistant",
+				Content:   content,
+				ToolCalls: toolCalls,
 			},
 			FinishReason: candidate.FinishReason,
 		})
@@ -277,15 +342,33 @@ func (c *GeminiClient) convertToStreamChunk(resp GeminiStreamResponse, model str
 
 	for i, candidate := range resp.Candidates {
 		content := ""
-		if len(candidate.Content.Parts) > 0 {
-			content = candidate.Content.Parts[0].Text
+		var deltaToolCalls []DeltaToolCall
+
+		for j, part := range candidate.Content.Parts {
+			if part.Text != "" {
+				content += part.Text
+			}
+			if part.FunctionCall != nil {
+				// 将 Gemini FunctionCall 转换为 OpenAI DeltaToolCall
+				argsJSON, _ := json.Marshal(part.FunctionCall.Args)
+				deltaToolCalls = append(deltaToolCalls, DeltaToolCall{
+					Index: j,
+					ID:    fmt.Sprintf("call_%d_%d", i, j),
+					Type:  "function",
+					Function: ToolCallFunction{
+						Name:      part.FunctionCall.Name,
+						Arguments: string(argsJSON),
+					},
+				})
+			}
 		}
 
 		choices = append(choices, Choice{
 			Index: i,
 			Delta: Delta{
-				Role:    "assistant",
-				Content: content,
+				Role:      "assistant",
+				Content:   content,
+				ToolCalls: deltaToolCalls,
 			},
 			FinishReason: candidate.FinishReason,
 		})
