@@ -13,9 +13,37 @@ import (
 
 // Message 表示对话消息
 type Message struct {
-	Role             string `json:"role"`
-	Content          string `json:"content"`
-	ReasoningContent string `json:"reasoning_content,omitempty"` // 思考模型的推理内容
+	Role             string     `json:"role"`
+	Content          string     `json:"content"`
+	ReasoningContent string     `json:"reasoning_content,omitempty"` // 思考模型的推理内容
+	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`        // 工具调用
+	ToolCallID       string     `json:"tool_call_id,omitempty"`      // 工具调用ID (用于tool角色)
+}
+
+// Tool 工具定义
+type Tool struct {
+	Type     string       `json:"type"` // 目前只支持 "function"
+	Function ToolFunction `json:"function"`
+}
+
+// ToolFunction 工具函数定义
+type ToolFunction struct {
+	Name        string                 `json:"name"`
+	Description string                 `json:"description"`
+	Parameters  map[string]interface{} `json:"parameters"`
+}
+
+// ToolCall 工具调用
+type ToolCall struct {
+	ID       string           `json:"id"`
+	Type     string           `json:"type"` // "function"
+	Function ToolCallFunction `json:"function"`
+}
+
+// ToolCallFunction 工具调用的函数信息
+type ToolCallFunction struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"` // JSON字符串
 }
 
 // ChatRequest 聊天请求
@@ -25,6 +53,7 @@ type ChatRequest struct {
 	Stream      bool      `json:"stream,omitempty"`
 	Temperature float64   `json:"temperature,omitempty"`
 	MaxTokens   int       `json:"max_tokens,omitempty"`
+	Tools       []Tool    `json:"tools,omitempty"` // 工具列表
 }
 
 // ChatResponse 非流式响应
@@ -47,9 +76,18 @@ type Choice struct {
 
 // Delta 流式响应增量
 type Delta struct {
-	Role             string `json:"role,omitempty"`
-	Content          string `json:"content,omitempty"`
-	ReasoningContent string `json:"reasoning_content,omitempty"` // 思考模型的推理内容
+	Role             string            `json:"role,omitempty"`
+	Content          string            `json:"content,omitempty"`
+	ReasoningContent string            `json:"reasoning_content,omitempty"` // 思考模型的推理内容
+	ToolCalls        []DeltaToolCall   `json:"tool_calls,omitempty"`        // 流式工具调用
+}
+
+// DeltaToolCall 流式工具调用增量
+type DeltaToolCall struct {
+	Index    int              `json:"index"`
+	ID       string           `json:"id,omitempty"`
+	Type     string           `json:"type,omitempty"`
+	Function ToolCallFunction `json:"function,omitempty"`
 }
 
 // Usage token使用情况

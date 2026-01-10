@@ -1,0 +1,496 @@
+.contacts {
+  width: 100%;
+  height: 100%;
+  background-color: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+  transition: background-color 0.3s ease;
+  position: relative;
+}
+
+.contacts-header {
+  height: 56px;
+  background-color: var(--bg-secondary);
+  display: flex;
+  align-items: center;
+  padding-left: 8px;
+  padding-right: 8px;
+  border-bottom: 0.5px solid var(--border-color);
+  transition: background-color 0.3s ease, border-color 0.3s ease;
+  flex-shrink: 0;
+}
+
+.contacts-header .back-button {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.contacts-header .back-button svg {
+  width: 24px;
+  height: 24px;
+  fill: var(--accent-color);
+}
+
+.contacts-title {
+  flex: 1;
+  color: var(--text-primary);
+  font-size: 17px;
+  font-weight: 600;
+  text-align: center;
+  transition: color 0.3s ease;
+}
+
+.contacts-header .add-button {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.contacts-header .add-button svg {
+  width: 28px;
+  height: 28px;
+  fill: var(--accent-color);
+}
+
+.contacts-loading {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  transition: color 0.3s ease;
+}
+
+.contacts-content {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.contacts-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  padding: 40px;
+  text-align: center;
+}
+
+.contacts-empty .empty-icon {
+  width: 80px;
+  height: 80px;
+  margin-bottom: 16px;
+}
+
+.contacts-empty .empty-icon svg {
+  width: 100%;
+  height: 100%;
+  fill: var(--text-secondary);
+  opacity: 0.5;
+}
+
+.contacts-empty p {
+  margin: 4px 0;
+  font-size: 15px;
+}
+
+.contacts-empty .empty-hint {
+  font-size: 13px;
+  opacity: 0.7;
+}
+
+.contacts-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 16px;
+}
+
+.contact-item {
+  display: flex;
+  align-items: center;
+  padding: 12px;
+  background-color: var(--bg-secondary);
+  border-radius: 12px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: transform 0.2s ease, background-color 0.3s ease;
+}
+
+.contact-item:hover {
+  transform: scale(0.98);
+}
+
+.contact-item:active {
+  transform: scale(0.96);
+}
+
+.contact-avatar {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  margin-right: 12px;
+}
+
+.contact-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.contact-avatar .avatar-placeholder {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, var(--accent-color), #5856d6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.contact-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.contact-name {
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 500;
+  margin-bottom: 4px;
+  transition: color 0.3s ease;
+}
+
+.contact-desc {
+  color: var(--text-secondary);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 0.3s ease;
+}
+
+.contact-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+.contact-chat {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 122, 255, 0.1);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color 0.2s ease;
+}
+
+.contact-chat:hover {
+  background: rgba(0, 122, 255, 0.2);
+}
+
+.contact-chat svg {
+  width: 18px;
+  height: 18px;
+  fill: var(--accent-color);
+}
+
+.contact-delete {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 69, 58, 0.1);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color 0.2s ease;
+}
+
+.contact-delete:hover {
+  background: rgba(255, 69, 58, 0.2);
+}
+
+.contact-delete svg {
+  width: 18px;
+  height: 18px;
+  fill: var(--danger-color);
+}
+
+.contacts-message {
+  position: absolute;
+  bottom: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 12px 24px;
+  border-radius: 10px;
+  text-align: center;
+  font-size: 14px;
+  z-index: 200;
+  animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.contacts-message.success {
+  background-color: rgba(7, 193, 96, 0.9);
+  color: white;
+}
+
+.contacts-message.error {
+  background-color: rgba(255, 69, 58, 0.9);
+  color: white;
+}
+
+/* 弹窗样式 - 复用 Settings 的样式 */
+.prompt-modal-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  padding: 20px;
+}
+
+.prompt-modal-card {
+  background-color: var(--bg-secondary);
+  border-radius: 16px;
+  width: 100%;
+  max-width: 500px;
+  max-height: 85vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
+
+.prompt-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.prompt-modal-header h3 {
+  color: var(--text-primary);
+  font-size: 17px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.prompt-modal-close {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-tertiary);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.prompt-modal-close svg {
+  width: 18px;
+  height: 18px;
+  fill: var(--text-secondary);
+}
+
+.prompt-modal-close:hover svg {
+  fill: var(--text-primary);
+}
+
+.prompt-modal-body {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* 头像上传 */
+.avatar-upload-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.avatar-upload {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  overflow: hidden;
+  cursor: pointer;
+  border: 2px dashed var(--border-color);
+  transition: border-color 0.2s ease;
+}
+
+.avatar-delete-btn {
+  margin-top: 8px;
+  padding: 6px 16px;
+  background: rgba(255, 69, 58, 0.1);
+  border: none;
+  border-radius: 8px;
+  color: var(--danger-color);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.avatar-delete-btn:hover {
+  background: rgba(255, 69, 58, 0.2);
+}
+
+.avatar-upload:hover {
+  border-color: var(--accent-color);
+}
+
+.avatar-preview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.avatar-placeholder-large {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  text-align: center;
+}
+
+.avatar-placeholder-large svg {
+  width: 36px;
+  height: 36px;
+  fill: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+/* 表单组 */
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.form-group input,
+.form-group textarea {
+  width: 100%;
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 12px 14px;
+  color: var(--text-primary);
+  font-size: 15px;
+  outline: none;
+  box-sizing: border-box;
+  font-family: inherit;
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+.form-group input::placeholder,
+.form-group textarea::placeholder {
+  color: var(--text-placeholder);
+}
+
+.form-group input:focus,
+.form-group textarea:focus {
+  border-color: var(--accent-color);
+}
+
+.form-group textarea {
+  resize: vertical;
+  min-height: 100px;
+  line-height: 1.5;
+}
+
+.prompt-modal-footer {
+  display: flex;
+  gap: 12px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--border-color);
+}
+
+.prompt-modal-btn {
+  flex: 1;
+  padding: 12px 20px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.prompt-modal-btn.cancel {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.prompt-modal-btn.cancel:hover {
+  opacity: 0.8;
+}
+
+.prompt-modal-btn.save {
+  background: var(--accent-color);
+  border: none;
+  color: white;
+}
+
+.prompt-modal-btn.save:hover {
+  opacity: 0.9;
+}
+
+.prompt-modal-btn.save:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

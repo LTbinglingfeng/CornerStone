@@ -706,6 +706,7 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 		Stream:      useStream,
 		Temperature: req.Temperature,
 		MaxTokens:   req.MaxTokens,
+		Tools:       getRedPacketTools(),
 	}
 
 	if useStream {
@@ -1028,5 +1029,33 @@ func (h *Handler) handleUserAvatar(w http.ResponseWriter, r *http.Request) {
 
 	default:
 		h.jsonResponse(w, http.StatusMethodNotAllowed, Response{Success: false, Error: "Method not allowed"})
+	}
+}
+
+// getRedPacketTools 返回红包工具定义
+func getRedPacketTools() []client.Tool {
+	return []client.Tool{
+		{
+			Type: "function",
+			Function: client.ToolFunction{
+				Name:        "send_red_packet",
+				Description: "向用户发送一个红包。当你想要给用户发红包、送礼物、表达祝福时使用此工具。",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"amount": map[string]interface{}{
+							"type":        "number",
+							"description": "红包金额（元）",
+						},
+						"message": map[string]interface{}{
+							"type":        "string",
+							"description": "红包祝福语，不超过10个字",
+							"maxLength":   10,
+						},
+					},
+					"required": []string{"amount", "message"},
+				},
+			},
+		},
 	}
 }

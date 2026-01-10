@@ -1,0 +1,121 @@
+.chat-list {
+  flex: 1;
+  overflow-y: auto;
+  background-color: var(--bg-primary);
+  transition: background-color 0.3s ease;
+}
+
+.chat-list-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-secondary);
+  font-size: 14px;
+  padding: 20px;
+  text-align: center;
+  transition: color 0.3s ease;
+}
+
+.chat-item {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  background-color: var(--bg-secondary);
+  border-bottom: 0.5px solid var(--border-color);
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.chat-item:hover {
+  background-color: var(--bg-tertiary);
+}
+
+.chat-item:active {
+  background-color: var(--bg-tertiary);
+}
+
+.avatar-container {
+  position: relative;
+}
+
+.avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 6px;
+  margin-right: 12px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  color: white;
+  font-weight: 500;
+}
+
+.avatar-img {
+  width: 48px;
+  height: 48px;
+  border-radius: 6px;
+  margin-right: 12px;
+  flex-shrink: 0;
+  object-fit: cover;
+}
+
+.chat-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.chat-name {
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 400;
+  transition: color 0.3s ease;
+}
+
+.chat-time {
+  color: var(--text-secondary);
+  font-size: 12px;
+  flex-shrink: 0;
+  margin-left: 8px;
+  transition: color 0.3s ease;
+}
+
+.chat-message {
+  color: var(--text-secondary);
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.session-count {
+  font-size: 12px;
+  color: var(--accent-color);
+  background-color: rgba(0, 122, 255, 0.1);
+  padding: 1px 6px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.orphan-section-title {
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background-color: var(--bg-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}

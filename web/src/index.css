@@ -1,0 +1,56 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  /* Dark theme (default) */
+  --bg-primary: #000000;
+  --bg-secondary: #1c1c1e;
+  --bg-tertiary: #2c2c2e;
+  --bg-input: #1c1c1e;
+  --bg-input-focus: #2c2c2e;
+  --text-primary: #ffffff;
+  --text-secondary: #8e8e93;
+  --text-placeholder: #48484a;
+  --border-color: #2c2c2e;
+  --accent-color: #07c160;
+  --danger-color: #ff453a;
+  --message-user-bg: #07c160;
+  --message-assistant-bg: #2c2c2e;
+}
+
+[data-theme="light"] {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f2f2f7;
+  --bg-tertiary: #e5e5ea;
+  --bg-input: #e5e5ea;
+  --bg-input-focus: #d1d1d6;
+  --text-primary: #000000;
+  --text-secondary: #6c6c70;
+  --text-placeholder: #aeaeb2;
+  --border-color: #c6c6c8;
+  --accent-color: #07c160;
+  --danger-color: #ff3b30;
+  --message-user-bg: #07c160;
+  --message-assistant-bg: #e5e5ea;
+}
+
+html, body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  background-color: var(--bg-primary);
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  transition: background-color 0.3s ease;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
