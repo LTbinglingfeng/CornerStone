@@ -477,15 +477,18 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         ) : messages.length === 0 ? (
           <div className="empty-messages">开始新的对话</div>
         ) : (
-          messages.map((message, index) => (
-            <div key={index} className={`message-item ${message.role}`}>
-              {message.role === 'assistant' && renderAvatar(message.role)}
-              <div className="message-bubble">
-                {renderMessageContent(message, index)}
+          messages.map((message, index) => {
+            const isRedPacket = message.tool_calls?.some(tc => tc.function.name === 'send_red_packet')
+            return (
+              <div key={index} className={`message-item ${message.role}`}>
+                {message.role === 'assistant' && renderAvatar(message.role)}
+                <div className={`message-bubble ${isRedPacket ? 'no-bg' : ''}`}>
+                  {renderMessageContent(message, index)}
+                </div>
+                {message.role === 'user' && renderAvatar(message.role)}
               </div>
-              {message.role === 'user' && renderAvatar(message.role)}
-            </div>
-          ))
+            )
+          })
         )}
       </div>
 
