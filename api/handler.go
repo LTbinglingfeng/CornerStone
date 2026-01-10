@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -658,8 +659,15 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 		h.chatManager.AddMessage(sessionID, lastMsg.Role, lastMsg.Content)
 	}
 
+	historyMessages := req.Messages
+	if req.SaveHistory {
+		if session, ok := h.chatManager.GetSession(sessionID); ok && len(session.Messages) > 0 {
+			historyMessages = convertChatMessages(session.Messages)
+		}
+	}
+
 	// 构建消息，顺序: 系统提示词 -> 用户信息 -> 人设
-	messages := make([]client.Message, 0, len(req.Messages)+1)
+	messages := make([]client.Message, 0, len(historyMessages)+1)
 
 	// 合并: 系统提示词在最前 + 用户信息在中间 + 人设在最后
 	var fullSystemPrompt string
@@ -682,7 +690,7 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 			Content: fullSystemPrompt,
 		})
 	}
-	messages = append(messages, req.Messages...)
+	messages = append(messages, historyMessages...)
 
 	// 根据供应商类型创建对应的客户端
 	var aiClient client.AIClient
@@ -726,9 +734,8 @@ func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiCli
 
 	// 保存AI回复到历史记录（包含思考内容）
 	if saveHistory && len(resp.Choices) > 0 {
-		content := resp.Choices[0].Message.Content
-		reasoningContent := resp.Choices[0].Message.ReasoningContent
-		h.chatManager.AddMessageWithReasoning(sessionID, "assistant", content, reasoningContent)
+		message := resp.Choices[0].Message
+		h.chatManager.AddMessageWithDetails(sessionID, "assistant", message.Content, message.ReasoningContent, message.ToolCalls)
 	}
 
 	// 返回响应，包含session_id
@@ -758,16 +765,46 @@ func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiCli
 
 	var fullContent strings.Builder
 	var fullReasoningContent strings.Builder
+	toolCallsMap := make(map[int]*client.ToolCall)
 
-	err := aiClient.ChatStream(r.Context(), req, func(chunk client.StreamChunk) error {
+	errChatStream := aiClient.ChatStream(r.Context(), req, func(chunk client.StreamChunk) error {
 		// 收集完整内容
 		if len(chunk.Choices) > 0 {
-			if chunk.Choices[0].Delta.Content != "" {
-				fullContent.WriteString(chunk.Choices[0].Delta.Content)
+			delta := chunk.Choices[0].Delta
+			if delta.Content != "" {
+				fullContent.WriteString(delta.Content)
 			}
 			// 收集思考内容
-			if chunk.Choices[0].Delta.ReasoningContent != "" {
-				fullReasoningContent.WriteString(chunk.Choices[0].Delta.ReasoningContent)
+			if delta.ReasoningContent != "" {
+				fullReasoningContent.WriteString(delta.ReasoningContent)
+			}
+			if len(delta.ToolCalls) > 0 {
+				for _, toolCall := range delta.ToolCalls {
+					existing, ok := toolCallsMap[toolCall.Index]
+					if !ok {
+						toolCallsMap[toolCall.Index] = &client.ToolCall{
+							ID:   toolCall.ID,
+							Type: toolCall.Type,
+							Function: client.ToolCallFunction{
+								Name:      toolCall.Function.Name,
+								Arguments: toolCall.Function.Arguments,
+							},
+						}
+						continue
+					}
+					if toolCall.ID != "" {
+						existing.ID = toolCall.ID
+					}
+					if toolCall.Type != "" {
+						existing.Type = toolCall.Type
+					}
+					if toolCall.Function.Name != "" {
+						existing.Function.Name = toolCall.Function.Name
+					}
+					if toolCall.Function.Arguments != "" {
+						existing.Function.Arguments += toolCall.Function.Arguments
+					}
+				}
 			}
 		}
 
@@ -780,20 +817,61 @@ func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiCli
 		return nil
 	})
 
-	if err != nil {
-		log.Printf("Stream error: %v", err)
-		errorPayload, _ := json.Marshal(map[string]string{"error": err.Error()})
+	if errChatStream != nil {
+		log.Printf("Stream error: %v", errChatStream)
+		errorPayload, _ := json.Marshal(map[string]string{"error": errChatStream.Error()})
 		fmt.Fprintf(w, "data: %s\n\n", errorPayload)
 		flusher.Flush()
 	}
 
 	// 保存AI回复到历史记录（包含思考内容）
-	if saveHistory && (fullContent.Len() > 0 || fullReasoningContent.Len() > 0) {
-		h.chatManager.AddMessageWithReasoning(sessionID, "assistant", fullContent.String(), fullReasoningContent.String())
+	toolCalls := collectToolCalls(toolCallsMap)
+	if saveHistory && (fullContent.Len() > 0 || fullReasoningContent.Len() > 0 || len(toolCalls) > 0) {
+		h.chatManager.AddMessageWithDetails(sessionID, "assistant", fullContent.String(), fullReasoningContent.String(), toolCalls)
 	}
 
 	fmt.Fprintf(w, "data: [DONE]\n\n")
 	flusher.Flush()
+}
+
+func convertChatMessages(messages []storage.ChatMessage) []client.Message {
+	if len(messages) == 0 {
+		return nil
+	}
+	converted := make([]client.Message, 0, len(messages))
+	for _, msg := range messages {
+		converted = append(converted, client.Message{
+			Role:             msg.Role,
+			Content:          msg.Content,
+			ReasoningContent: msg.ReasoningContent,
+			ToolCalls:        msg.ToolCalls,
+		})
+	}
+	return converted
+}
+
+func collectToolCalls(toolCallsMap map[int]*client.ToolCall) []client.ToolCall {
+	if len(toolCallsMap) == 0 {
+		return nil
+	}
+	indexes := make([]int, 0, len(toolCallsMap))
+	for index := range toolCallsMap {
+		indexes = append(indexes, index)
+	}
+	sort.Ints(indexes)
+
+	toolCalls := make([]client.ToolCall, 0, len(toolCallsMap))
+	for _, index := range indexes {
+		toolCall := toolCallsMap[index]
+		if toolCall == nil {
+			continue
+		}
+		if toolCall.Type == "" {
+			toolCall.Type = "function"
+		}
+		toolCalls = append(toolCalls, *toolCall)
+	}
+	return toolCalls
 }
 
 func (h *Handler) jsonResponse(w http.ResponseWriter, status int, data interface{}) {

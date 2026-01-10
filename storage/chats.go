@@ -2,6 +2,7 @@ package storage
 
 import (
 	"bufio"
+	"cornerstone/client"
 	"encoding/json"
 	"io"
 	"os"
@@ -14,10 +15,11 @@ import (
 
 // ChatMessage 聊天消息
 type ChatMessage struct {
-	Role             string    `json:"role"`
-	Content          string    `json:"content"`
-	ReasoningContent string    `json:"reasoning_content,omitempty"` // 思考模型的推理内容
-	Timestamp        time.Time `json:"timestamp"`
+	Role             string            `json:"role"`
+	Content          string            `json:"content"`
+	ReasoningContent string            `json:"reasoning_content,omitempty"` // 思考模型的推理内容
+	ToolCalls        []client.ToolCall `json:"tool_calls,omitempty"`        // 工具调用
+	Timestamp        time.Time         `json:"timestamp"`
 }
 
 // ChatRecord 聊天记录条目（每个会话一个JSONL文件）
@@ -374,11 +376,16 @@ func (cm *ChatManager) AddMessage(sessionID, role, content string) error {
 
 // AddMessageWithReasoning 添加带思考内容的消息到会话
 func (cm *ChatManager) AddMessageWithReasoning(sessionID, role, content, reasoningContent string) error {
+	return cm.AddMessageWithDetails(sessionID, role, content, reasoningContent, nil)
+}
+
+// AddMessageWithDetails 添加带思考内容和工具调用的消息到会话
+func (cm *ChatManager) AddMessageWithDetails(sessionID, role, content, reasoningContent string, toolCalls []client.ToolCall) error {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
-	if err := ValidateID(sessionID); err != nil {
-		return err
+	if errValidateID := ValidateID(sessionID); errValidateID != nil {
+		return errValidateID
 	}
 
 	record, ok := cm.sessions[sessionID]
@@ -395,8 +402,8 @@ func (cm *ChatManager) AddMessageWithReasoning(sessionID, role, content, reasoni
 		}
 		cm.sessions[sessionID] = record
 	}
-	if err := cm.ensureSessionFileNameLocked(record); err != nil {
-		return err
+	if errEnsureSessionFileName := cm.ensureSessionFileNameLocked(record); errEnsureSessionFileName != nil {
+		return errEnsureSessionFileName
 	}
 
 	now := time.Now()
@@ -405,6 +412,9 @@ func (cm *ChatManager) AddMessageWithReasoning(sessionID, role, content, reasoni
 		Content:          content,
 		ReasoningContent: reasoningContent,
 		Timestamp:        now,
+	}
+	if len(toolCalls) > 0 {
+		msg.ToolCalls = append([]client.ToolCall(nil), toolCalls...)
 	}
 	record.Messages = append(record.Messages, msg)
 	record.UpdatedAt = now
