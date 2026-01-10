@@ -1,7 +1,8 @@
 .claude
 node_modules
 web\node_modules
-web\dist
+web\dist\
 /src
 cornerstone.exe
 *.md
+web\dist\assets

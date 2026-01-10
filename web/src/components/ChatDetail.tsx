@@ -21,6 +21,11 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
   const [prompt, setPrompt] = useState<Prompt | null>(null)
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null)
   const [showSettings, setShowSettings] = useState(false)
+
+  // Red Packet State
+  const [activeRedPacket, setActiveRedPacket] = useState<RedPacketParams | null>(null)
+  const [packetStep, setPacketStep] = useState<'idle' | 'opening' | 'opened'>('idle')
+
   const containerRef = useRef<HTMLDivElement>(null)
   const messageListRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -30,6 +35,8 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     activeRequestRef.current?.abort()
     activeRequestRef.current = null
     setSending(false)
+    setActiveRedPacket(null)
+    setPacketStep('idle')
     if (containerRef.current) {
       gsap.fromTo(
         containerRef.current,
@@ -382,27 +389,40 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     try {
       const params: RedPacketParams = JSON.parse(toolCall.function.arguments)
       return (
-        <div className="red-packet-card" key={toolCall.id}>
-          <div className="red-packet-header">
-            <div className="red-packet-icon">
-              <svg viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1.41 16.09V20h-2.67v-1.93c-1.71-.36-3.16-1.46-3.27-3.4h1.96c.1 1.05.82 1.87 2.65 1.87 1.96 0 2.4-.98 2.4-1.59 0-.83-.44-1.61-2.67-2.14-2.48-.6-4.18-1.62-4.18-3.67 0-1.72 1.39-2.84 3.11-3.21V4h2.67v1.95c1.86.45 2.79 1.86 2.85 3.39H14.3c-.05-1.11-.64-1.87-2.22-1.87-1.5 0-2.4.68-2.4 1.64 0 .84.65 1.39 2.67 1.91s4.18 1.39 4.18 3.91c-.01 1.83-1.38 2.83-3.12 3.16z"/>
+        <div 
+          className="red-packet-bubble" 
+          key={toolCall.id}
+          onClick={() => {
+            setActiveRedPacket(params)
+            setPacketStep('idle')
+          }}
+        >
+          <div className="rp-content">
+            <div className="rp-icon-wrapper">
+              <svg viewBox="0 0 40 40" className="rp-icon">
+                 <path d="M35.5,14.5c0-1.6-0.8-3-2.1-3.9l-10-6.7c-2.1-1.4-4.8-1.4-6.9,0l-10,6.7C5.3,11.5,4.5,12.9,4.5,14.5v16c0,2.5,2,4.5,4.5,4.5h22c2.5,0,4.5-2,4.5-4.5V14.5z M20,9.5l8.9,6L20,21.4L11.1,15.5L20,9.5z M9,31v-8.8l7.2,4.8L9,31z M20,25.6l-2.4-1.6l-2.4,3.2c-0.9,1.2-2.3,1.9-3.7,1.9h-1.3v2H20V25.6z M31,31h-9.8v-5.5h1.3c1.5,0,2.8-0.7,3.7-1.9l-2.4-3.2l-2.4,1.6l3.8,2.5L31,22.2V31z" fill="#FCE5BF"/>
               </svg>
             </div>
-            <div className="red-packet-title">红包</div>
+            <div className="rp-text">
+              <div className="rp-title">{params.message || '恭喜发财，大吉大利'}</div>
+              <div className="rp-status">领取红包</div>
+            </div>
           </div>
-          <div className="red-packet-body">
-            <div className="red-packet-amount">¥{params.amount.toFixed(2)}</div>
-            <div className="red-packet-message">{params.message}</div>
-          </div>
-          <div className="red-packet-footer">
-            点击领取红包
+          <div className="rp-footer">
+            微信红包
           </div>
         </div>
       )
     } catch {
       return null
     }
+  }
+
+  const handleOpenPacket = () => {
+    setPacketStep('opening')
+    setTimeout(() => {
+      setPacketStep('opened')
+    }, 1000)
   }
 
   // 渲染消息内容（包含文本和工具调用）
@@ -507,6 +527,71 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
             setSession(prev => prev ? { ...prev, title: newTitle } : prev)
           }}
         />
+      )}
+
+      {/* Red Packet Modal */}
+      {activeRedPacket && (
+        <div className="rp-modal-overlay">
+          <div className={`rp-modal ${packetStep === 'opened' ? 'opened' : ''}`}>
+            <button className="rp-close-btn" onClick={() => setActiveRedPacket(null)}>×</button>
+            
+            {packetStep !== 'opened' ? (
+              <div className="rp-modal-front">
+                <div className="rp-modal-top">
+                  <div className="rp-sender-row">
+                    {getPromptAvatarSrc() ? (
+                        <img src={getPromptAvatarSrc()!} className="rp-avatar-img" alt="avatar" />
+                    ) : (
+                        <div className="rp-avatar-placeholder">
+                            {prompt?.name?.charAt(0)?.toUpperCase() || 'A'}
+                        </div>
+                    )}
+                    <span className="rp-sender-name">{prompt?.name || 'AI Assistant'}</span>
+                  </div>
+                  <div className="rp-wishing">
+                    {activeRedPacket.message || '恭喜发财，大吉大利'}
+                  </div>
+                </div>
+                <div className="rp-modal-open-btn-wrapper">
+                   <button 
+                     className={`rp-open-btn ${packetStep === 'opening' ? 'opening' : ''}`}
+                     onClick={handleOpenPacket}
+                   >
+                     開
+                   </button>
+                </div>
+              </div>
+            ) : (
+              <div className="rp-modal-result">
+                <div className="rp-result-header">
+                  <div className="rp-result-top-bg"></div>
+                  <div className="rp-sender-row small">
+                    {getPromptAvatarSrc() ? (
+                        <img src={getPromptAvatarSrc()!} className="rp-avatar-img small" alt="avatar" />
+                    ) : (
+                        <div className="rp-avatar-placeholder small">
+                            {prompt?.name?.charAt(0)?.toUpperCase() || 'A'}
+                        </div>
+                    )}
+                    <span className="rp-sender-name dark">{prompt?.name || 'AI Assistant'}的红包</span>
+                  </div>
+                  <div className="rp-wishing dark">
+                    {activeRedPacket.message || '恭喜发财，大吉大利'}
+                  </div>
+                </div>
+                
+                <div className="rp-result-amount">
+                  <span className="rp-currency">¥</span>
+                  <span className="rp-num">{activeRedPacket.amount.toFixed(2)}</span>
+                </div>
+
+                <div className="rp-result-footer">
+                  已存入零钱，可直接使用
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   )

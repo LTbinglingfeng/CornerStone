@@ -305,79 +305,326 @@
   margin-top: 8px;
 }
 
-/* 红包卡片样式 */
-.red-packet-card {
-  width: 220px;
-  background: linear-gradient(135deg, #FA5151 0%, #E84040 100%);
+/* 红包卡片样式 (Chat Bubble) */
+.red-packet-bubble {
+  width: 240px;
+  height: 90px;
+  background-color: #FA9D3B;
   border-radius: 12px;
   overflow: hidden;
   cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-  box-shadow: 0 2px 8px rgba(250, 81, 81, 0.3);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  user-select: none;
+  transition: opacity 0.2s;
 }
 
-.red-packet-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(250, 81, 81, 0.4);
+.red-packet-bubble:active {
+  opacity: 0.8;
 }
 
-.red-packet-card:active {
-  transform: scale(0.98);
-}
-
-.red-packet-header {
+.rp-content {
+  flex: 1;
   display: flex;
   align-items: center;
-  padding: 12px 14px;
-  gap: 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 10px 15px;
+  gap: 12px;
 }
 
-.red-packet-icon {
-  width: 28px;
-  height: 28px;
-  background-color: rgba(255, 255, 255, 0.2);
-  border-radius: 50%;
+.rp-icon-wrapper {
+  width: 40px;
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.red-packet-icon svg {
-  width: 18px;
-  height: 18px;
-  fill: #FFD700;
+.rp-icon {
+  width: 100%;
+  height: 100%;
 }
 
-.red-packet-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #ffffff;
+.rp-text {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
 }
 
-.red-packet-body {
-  padding: 16px 14px;
+.rp-title {
+  color: #fff;
+  font-size: 16px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 2px;
+}
+
+.rp-status {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 12px;
+}
+
+.rp-footer {
+  height: 22px;
+  background-color: rgba(255, 255, 255, 0.15);
+  display: flex;
+  align-items: center;
+  padding: 0 15px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 11px;
+}
+
+/* Red Packet Modal */
+.rp-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.6);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rp-modal {
+  width: 320px;
+  height: 480px;
+  background-color: #CF3C32;
+  border-radius: 16px;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  animation: popIn 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+}
+
+.rp-modal.opened {
+  background-color: #f5f5f5;
+}
+
+@keyframes popIn {
+  0% { transform: scale(0.8); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.rp-close-btn {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  width: 30px;
+  height: 30px;
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rp-modal.opened .rp-close-btn {
+  color: #333;
+}
+
+/* Front View (Unopened) */
+.rp-modal-front {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+}
+
+.rp-modal-top {
+  padding-top: 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  background-color: #CF3C32;
+  border-radius: 0 0 50% 50% / 0 0 20% 20%;
+  padding-bottom: 60px;
+  position: relative;
+  z-index: 2;
+}
+
+.rp-sender-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.rp-avatar-img {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.rp-avatar-img.small {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+}
+
+.rp-avatar-placeholder {
+  width: 48px;
+  height: 48px;
+  background-color: #fff;
+  border-radius: 8px;
+  color: #CF3C32;
+  font-weight: bold;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rp-sender-name {
+  color: #FCE5BF;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.rp-wishing {
+  color: #FCE5BF;
+  font-size: 22px;
+  font-weight: 400;
+  max-width: 80%;
   text-align: center;
-}
-
-.red-packet-amount {
-  font-size: 28px;
-  font-weight: 700;
-  color: #FFD700;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-  margin-bottom: 6px;
-}
-
-.red-packet-message {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.9);
   line-height: 1.4;
 }
 
-.red-packet-footer {
-  padding: 10px 14px;
-  text-align: center;
+.rp-modal-open-btn-wrapper {
+  position: absolute;
+  top: 260px; /* Adjust based on curve */
+  width: 100px;
+  height: 100px;
+  background-color: #CF3C32;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3;
+  box-shadow: 0 4px 0 rgba(0,0,0,0.1);
+}
+
+.rp-open-btn {
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  background-color: #F0CB96;
+  border: none;
+  color: #333;
+  font-size: 36px;
+  font-weight: bold;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s;
+}
+
+.rp-open-btn:active {
+  transform: scale(0.95);
+}
+
+.rp-open-btn.opening {
+  animation: coinFlip 0.8s infinite linear;
+  background-color: #F0CB96;
+}
+
+@keyframes coinFlip {
+  0% { transform: rotateY(0); }
+  100% { transform: rotateY(360deg); }
+}
+
+/* Result View (Opened) */
+.rp-modal-result {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+}
+
+.rp-result-header {
+  width: 100%;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 50px;
+}
+
+.rp-result-top-bg {
+  position: absolute;
+  top: -100px;
+  left: -50%;
+  width: 200%;
+  height: 200px;
+  background-color: #CF3C32;
+  border-radius: 0 0 50% 50%;
+  z-index: 0;
+}
+
+.rp-sender-row.small {
+  flex-direction: row;
+  z-index: 1;
+  margin-bottom: 8px;
+}
+
+.rp-avatar-placeholder.small {
+  width: 24px;
+  height: 24px;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.7);
-  background-color: rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+}
+
+.rp-sender-name.dark {
+  color: #333;
+  font-size: 14px;
+}
+
+.rp-wishing.dark {
+  color: #999;
+  font-size: 14px;
+  z-index: 1;
+  margin-bottom: 40px;
+}
+
+.rp-result-amount {
+  z-index: 1;
+  display: flex;
+  align-items: baseline;
+  color: #CF3C32;
+  margin-bottom: auto;
+}
+
+.rp-currency {
+  font-size: 24px;
+  margin-right: 4px;
+  font-weight: bold;
+}
+
+.rp-num {
+  font-size: 50px;
+  font-weight: bold;
+}
+
+.rp-result-footer {
+  margin-bottom: 30px;
+  color: #576b95;
+  font-size: 12px;
 }
