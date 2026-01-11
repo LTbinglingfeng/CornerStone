@@ -71,13 +71,13 @@ export interface AuthSession {
 }
 
 // 供应商类型
-export type ProviderType = 'openai' | 'gemini' | 'anthropic'
+export type ProviderType = 'openai' | 'openai_response' | 'gemini' | 'anthropic'
 
 // 供应商配置
 export interface Provider {
     id: string
     name: string
-    type: ProviderType  // 供应商类型 (openai/gemini/anthropic)
+    type: ProviderType  // 供应商类型 (openai/openai_response/gemini/anthropic)
     base_url: string
     api_key: string
     model: string
@@ -85,9 +85,9 @@ export interface Provider {
     top_p: number
     thinking_budget: number
     reasoning_effort: string
-    gemini_thinking_mode: string
-    gemini_thinking_level: string
-    gemini_thinking_budget: number
+    gemini_thinking_mode?: string
+    gemini_thinking_level?: string
+    gemini_thinking_budget?: number
     context_messages: number
     stream: boolean     // 是否启用流式输出
     image_capable: boolean // 是否支持识图

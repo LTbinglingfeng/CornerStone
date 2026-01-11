@@ -13,6 +13,7 @@ import './ProviderSettings.css'
 // 供应商类型选项
 const PROVIDER_TYPES: { value: ProviderType; label: string }[] = [
   { value: 'openai', label: 'OpenAI 兼容' },
+  { value: 'openai_response', label: 'OpenAI Responses' },
   { value: 'gemini', label: 'Google Gemini' },
   { value: 'anthropic', label: 'Anthropic Claude' },
 ]
@@ -484,9 +485,9 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                 />
               </div>
 
-              {editingProvider.type === 'openai' && (
+              {(editingProvider.type === 'openai' || editingProvider.type === 'openai_response') && (
                 <div className="modal-group">
-                  <label className="modal-label">思考强度 (reasoning_effort)</label>
+                  <label className="modal-label">思考量 (reasoning effort)</label>
                   <select
                     className="modal-input modal-select"
                     value={editingProvider.reasoning_effort}

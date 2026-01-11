@@ -66,7 +66,7 @@ type ConfigUpdateRequest struct {
 type ProviderRequest struct {
 	ID                   string   `json:"id"`
 	Name                 string   `json:"name"`
-	Type                 string   `json:"type"` // 供应商类型 (openai/gemini/anthropic)
+	Type                 string   `json:"type"` // 供应商类型 (openai/openai_response/gemini/anthropic)
 	BaseURL              string   `json:"base_url"`
 	APIKey               string   `json:"api_key"`
 	Model                string   `json:"model"`
@@ -309,9 +309,6 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 		topP := defaultProvider.TopP
 		thinkingBudget := defaultProvider.ThinkingBudget
 		reasoningEffort := defaultProvider.ReasoningEffort
-		geminiThinkingMode := defaultProvider.GeminiThinkingMode
-		geminiThinkingLevel := defaultProvider.GeminiThinkingLevel
-		geminiThinkingBudget := defaultProvider.GeminiThinkingBudget
 		contextMessages := defaultProvider.ContextMessages
 		if req.Temperature != nil {
 			temperature = *req.Temperature
@@ -325,20 +322,32 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 		if req.ReasoningEffort != nil {
 			reasoningEffort = *req.ReasoningEffort
 		}
-		if req.GeminiThinkingMode != nil {
-			geminiThinkingMode = *req.GeminiThinkingMode
-		}
-		if req.GeminiThinkingLevel != nil {
-			geminiThinkingLevel = *req.GeminiThinkingLevel
-		}
-		if req.GeminiThinkingBudget != nil {
-			geminiThinkingBudget = *req.GeminiThinkingBudget
-		}
 		if req.ContextMessages != nil {
 			contextMessages = *req.ContextMessages
 		}
 		if providerType == config.ProviderTypeAnthropic {
 			temperature = 1
+		}
+
+		var geminiThinkingMode *string
+		var geminiThinkingLevel *string
+		var geminiThinkingBudget *int
+		if providerType == config.ProviderTypeGemini {
+			mode := "none"
+			level := "low"
+			budget := 128
+			if req.GeminiThinkingMode != nil {
+				mode = strings.TrimSpace(*req.GeminiThinkingMode)
+			}
+			if req.GeminiThinkingLevel != nil {
+				level = strings.TrimSpace(*req.GeminiThinkingLevel)
+			}
+			if req.GeminiThinkingBudget != nil {
+				budget = *req.GeminiThinkingBudget
+			}
+			geminiThinkingMode = &mode
+			geminiThinkingLevel = &level
+			geminiThinkingBudget = &budget
 		}
 
 		provider := config.Provider{
@@ -431,18 +440,27 @@ func (h *Handler) handleProviderByID(w http.ResponseWriter, r *http.Request) {
 		topP := defaultProvider.TopP
 		thinkingBudget := defaultProvider.ThinkingBudget
 		reasoningEffort := defaultProvider.ReasoningEffort
-		geminiThinkingMode := defaultProvider.GeminiThinkingMode
-		geminiThinkingLevel := defaultProvider.GeminiThinkingLevel
-		geminiThinkingBudget := defaultProvider.GeminiThinkingBudget
 		contextMessages := defaultProvider.ContextMessages
+
+		geminiMode := "none"
+		geminiLevel := "low"
+		geminiBudget := 128
 		if existingProvider != nil {
 			temperature = existingProvider.Temperature
 			topP = existingProvider.TopP
 			thinkingBudget = existingProvider.ThinkingBudget
 			reasoningEffort = existingProvider.ReasoningEffort
-			geminiThinkingMode = existingProvider.GeminiThinkingMode
-			geminiThinkingLevel = existingProvider.GeminiThinkingLevel
-			geminiThinkingBudget = existingProvider.GeminiThinkingBudget
+			if existingProvider.Type == config.ProviderTypeGemini {
+				if existingProvider.GeminiThinkingMode != nil {
+					geminiMode = *existingProvider.GeminiThinkingMode
+				}
+				if existingProvider.GeminiThinkingLevel != nil {
+					geminiLevel = *existingProvider.GeminiThinkingLevel
+				}
+				if existingProvider.GeminiThinkingBudget != nil {
+					geminiBudget = *existingProvider.GeminiThinkingBudget
+				}
+			}
 			contextMessages = existingProvider.ContextMessages
 		}
 		if req.Temperature != nil {
@@ -457,20 +475,29 @@ func (h *Handler) handleProviderByID(w http.ResponseWriter, r *http.Request) {
 		if req.ReasoningEffort != nil {
 			reasoningEffort = *req.ReasoningEffort
 		}
-		if req.GeminiThinkingMode != nil {
-			geminiThinkingMode = *req.GeminiThinkingMode
-		}
-		if req.GeminiThinkingLevel != nil {
-			geminiThinkingLevel = *req.GeminiThinkingLevel
-		}
-		if req.GeminiThinkingBudget != nil {
-			geminiThinkingBudget = *req.GeminiThinkingBudget
-		}
 		if req.ContextMessages != nil {
 			contextMessages = *req.ContextMessages
 		}
 		if providerType == config.ProviderTypeAnthropic {
 			temperature = 1
+		}
+
+		var geminiThinkingMode *string
+		var geminiThinkingLevel *string
+		var geminiThinkingBudget *int
+		if providerType == config.ProviderTypeGemini {
+			if req.GeminiThinkingMode != nil {
+				geminiMode = strings.TrimSpace(*req.GeminiThinkingMode)
+			}
+			if req.GeminiThinkingLevel != nil {
+				geminiLevel = strings.TrimSpace(*req.GeminiThinkingLevel)
+			}
+			if req.GeminiThinkingBudget != nil {
+				geminiBudget = *req.GeminiThinkingBudget
+			}
+			geminiThinkingMode = &geminiMode
+			geminiThinkingLevel = &geminiLevel
+			geminiThinkingBudget = &geminiBudget
 		}
 
 		provider := config.Provider{
@@ -855,6 +882,8 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 	// 根据供应商类型创建对应的客户端
 	var aiClient client.AIClient
 	switch provider.Type {
+	case config.ProviderTypeOpenAIResponse:
+		aiClient = client.NewResponsesClient(provider.BaseURL, provider.APIKey)
 	case config.ProviderTypeGemini:
 		aiClient = client.NewGeminiClient(provider.BaseURL, provider.APIKey)
 	case config.ProviderTypeAnthropic:
@@ -891,9 +920,21 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 	case config.ProviderTypeAnthropic:
 		chatReq.ThinkingBudget = provider.ThinkingBudget
 	case config.ProviderTypeGemini:
-		chatReq.GeminiThinkingMode = provider.GeminiThinkingMode
-		chatReq.GeminiThinkingLevel = provider.GeminiThinkingLevel
-		chatReq.GeminiThinkingBudget = provider.GeminiThinkingBudget
+		geminiMode := "none"
+		geminiLevel := "low"
+		geminiBudget := 128
+		if provider.GeminiThinkingMode != nil {
+			geminiMode = *provider.GeminiThinkingMode
+		}
+		if provider.GeminiThinkingLevel != nil {
+			geminiLevel = *provider.GeminiThinkingLevel
+		}
+		if provider.GeminiThinkingBudget != nil {
+			geminiBudget = *provider.GeminiThinkingBudget
+		}
+		chatReq.GeminiThinkingMode = geminiMode
+		chatReq.GeminiThinkingLevel = geminiLevel
+		chatReq.GeminiThinkingBudget = geminiBudget
 	default:
 		chatReq.ReasoningEffort = provider.ReasoningEffort
 	}
