@@ -42,6 +42,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
     model: '',
     temperature: 0.8,
     top_p: 1,
+    thinking_budget: 0,
     context_messages: 64,
     stream: true,
     image_capable: false,
@@ -113,7 +114,12 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
   }
 
   const handleEditProvider = (provider: Provider) => {
-    setEditingProvider({ ...provider, api_key: '' })
+    setEditingProvider({
+      ...provider,
+      api_key: '',
+      thinking_budget: provider.thinking_budget ?? 0,
+      temperature: provider.type === 'anthropic' ? 1 : provider.temperature,
+    })
     setIsAddingNew(false)
     setShowModal(true)
   }
@@ -190,6 +196,16 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
 
   const handleProviderChange = (field: keyof Provider, value: string | boolean | number) => {
     if (!editingProvider) return
+    if (field === 'type') {
+      const nextType = value as ProviderType
+      const nextProvider: Provider = {
+        ...editingProvider,
+        type: nextType,
+        temperature: nextType === 'anthropic' ? 1 : editingProvider.temperature,
+      }
+      setEditingProvider(nextProvider)
+      return
+    }
     setEditingProvider({ ...editingProvider, [field]: value })
   }
 
@@ -408,6 +424,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                   value={editingProvider.temperature}
                   onChange={(e) => handleProviderChange('temperature', Number(e.target.value) || 0)}
                   placeholder="0.8"
+                  disabled={editingProvider.type === 'anthropic'}
                 />
               </div>
 
@@ -424,6 +441,21 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                   placeholder="1"
                 />
               </div>
+
+              {editingProvider.type === 'anthropic' && (
+                <div className="modal-group">
+                  <label className="modal-label">思考预算 (tokens)</label>
+                  <input
+                    type="number"
+                    className="modal-input"
+                    min={0}
+                    step={1}
+                    value={editingProvider.thinking_budget}
+                    onChange={(e) => handleProviderChange('thinking_budget', Number(e.target.value) || 0)}
+                    placeholder="0"
+                  />
+                </div>
+              )}
 
               <div className="modal-group">
                 <label className="modal-label">上下文轮数</label>

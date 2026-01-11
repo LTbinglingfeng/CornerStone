@@ -72,6 +72,7 @@ type ProviderRequest struct {
 	Model           string   `json:"model"`
 	Temperature     *float64 `json:"temperature,omitempty"`
 	TopP            *float64 `json:"top_p,omitempty"`
+	ThinkingBudget  *int     `json:"thinking_budget,omitempty"`
 	ContextMessages *int     `json:"context_messages,omitempty"`
 	Stream          bool     `json:"stream"`        // 是否启用流式输出
 	ImageCapable    bool     `json:"image_capable"` // 是否支持识图
@@ -266,6 +267,9 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 		activeID := h.configManager.GetActiveProviderID()
 		// 隐藏API密钥
 		for i := range providers {
+			if providers[i].Type == config.ProviderTypeAnthropic {
+				providers[i].Temperature = 1
+			}
 			if len(providers[i].APIKey) > 8 {
 				providers[i].APIKey = providers[i].APIKey[:4] + "****" + providers[i].APIKey[len(providers[i].APIKey)-4:]
 			} else if len(providers[i].APIKey) > 0 {
@@ -299,6 +303,7 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 		defaultProvider := config.DefaultProvider()
 		temperature := defaultProvider.Temperature
 		topP := defaultProvider.TopP
+		thinkingBudget := defaultProvider.ThinkingBudget
 		contextMessages := defaultProvider.ContextMessages
 		if req.Temperature != nil {
 			temperature = *req.Temperature
@@ -306,8 +311,14 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 		if req.TopP != nil {
 			topP = *req.TopP
 		}
+		if req.ThinkingBudget != nil {
+			thinkingBudget = *req.ThinkingBudget
+		}
 		if req.ContextMessages != nil {
 			contextMessages = *req.ContextMessages
+		}
+		if providerType == config.ProviderTypeAnthropic {
+			temperature = 1
 		}
 
 		provider := config.Provider{
@@ -319,6 +330,7 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 			Model:           req.Model,
 			Temperature:     temperature,
 			TopP:            topP,
+			ThinkingBudget:  thinkingBudget,
 			ContextMessages: contextMessages,
 			Stream:          req.Stream,
 			ImageCapable:    req.ImageCapable,
@@ -361,6 +373,9 @@ func (h *Handler) handleProviderByID(w http.ResponseWriter, r *http.Request) {
 			h.jsonResponse(w, http.StatusNotFound, Response{Success: false, Error: "Provider not found"})
 			return
 		}
+		if provider.Type == config.ProviderTypeAnthropic {
+			provider.Temperature = 1
+		}
 		// 隐藏API密钥
 		if len(provider.APIKey) > 8 {
 			provider.APIKey = provider.APIKey[:4] + "****" + provider.APIKey[len(provider.APIKey)-4:]
@@ -390,10 +405,12 @@ func (h *Handler) handleProviderByID(w http.ResponseWriter, r *http.Request) {
 
 		temperature := defaultProvider.Temperature
 		topP := defaultProvider.TopP
+		thinkingBudget := defaultProvider.ThinkingBudget
 		contextMessages := defaultProvider.ContextMessages
 		if existingProvider != nil {
 			temperature = existingProvider.Temperature
 			topP = existingProvider.TopP
+			thinkingBudget = existingProvider.ThinkingBudget
 			contextMessages = existingProvider.ContextMessages
 		}
 		if req.Temperature != nil {
@@ -402,8 +419,14 @@ func (h *Handler) handleProviderByID(w http.ResponseWriter, r *http.Request) {
 		if req.TopP != nil {
 			topP = *req.TopP
 		}
+		if req.ThinkingBudget != nil {
+			thinkingBudget = *req.ThinkingBudget
+		}
 		if req.ContextMessages != nil {
 			contextMessages = *req.ContextMessages
+		}
+		if providerType == config.ProviderTypeAnthropic {
+			temperature = 1
 		}
 
 		provider := config.Provider{
@@ -415,6 +438,7 @@ func (h *Handler) handleProviderByID(w http.ResponseWriter, r *http.Request) {
 			Model:           req.Model,
 			Temperature:     temperature,
 			TopP:            topP,
+			ThinkingBudget:  thinkingBudget,
 			ContextMessages: contextMessages,
 			Stream:          req.Stream,
 			ImageCapable:    req.ImageCapable,
@@ -456,6 +480,9 @@ func (h *Handler) handleActiveProvider(w http.ResponseWriter, r *http.Request) {
 		if provider == nil {
 			h.jsonResponse(w, http.StatusNotFound, Response{Success: false, Error: "No active provider"})
 			return
+		}
+		if provider.Type == config.ProviderTypeAnthropic {
+			provider.Temperature = 1
 		}
 		// 隐藏API密钥
 		if len(provider.APIKey) > 8 {
@@ -792,15 +819,19 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 	if req.Temperature != nil {
 		temperature = *req.Temperature
 	}
+	if provider.Type == config.ProviderTypeAnthropic {
+		temperature = 1
+	}
 
 	chatReq := client.ChatRequest{
-		Model:       provider.Model,
-		Messages:    resolvedMessages,
-		Stream:      useStream,
-		Temperature: temperature,
-		TopP:        provider.TopP,
-		MaxTokens:   req.MaxTokens,
-		Tools:       getChatTools(),
+		Model:          provider.Model,
+		Messages:       resolvedMessages,
+		Stream:         useStream,
+		Temperature:    temperature,
+		TopP:           provider.TopP,
+		MaxTokens:      req.MaxTokens,
+		ThinkingBudget: provider.ThinkingBudget,
+		Tools:          getChatTools(),
 	}
 
 	if useStream {

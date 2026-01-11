@@ -49,13 +49,14 @@ type ToolCallFunction struct {
 
 // ChatRequest 聊天请求
 type ChatRequest struct {
-	Model       string    `json:"model"`
-	Messages    []Message `json:"messages"`
-	Stream      bool      `json:"stream,omitempty"`
-	Temperature float64   `json:"temperature,omitempty"`
-	TopP        float64   `json:"top_p,omitempty"`
-	MaxTokens   int       `json:"max_tokens,omitempty"`
-	Tools       []Tool    `json:"tools,omitempty"` // 工具列表
+	Model          string    `json:"model"`
+	Messages       []Message `json:"messages"`
+	Stream         bool      `json:"stream,omitempty"`
+	Temperature    float64   `json:"temperature,omitempty"`
+	TopP           float64   `json:"top_p,omitempty"`
+	MaxTokens      int       `json:"max_tokens,omitempty"`
+	ThinkingBudget int       `json:"thinking_budget,omitempty"` // Anthropic思考预算
+	Tools          []Tool    `json:"tools,omitempty"`           // 工具列表
 }
 
 type OpenAIContentPart struct {

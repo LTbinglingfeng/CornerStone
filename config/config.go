@@ -39,6 +39,7 @@ type Provider struct {
 	Model           string       `json:"model"`            // 默认模型
 	Temperature     float64      `json:"temperature"`      // 温度
 	TopP            float64      `json:"top_p"`            // Top P
+	ThinkingBudget  int          `json:"thinking_budget"`  // 思考预算（Anthropic）
 	ContextMessages int          `json:"context_messages"` // 上下文消息轮数
 	Stream          bool         `json:"stream"`           // 是否启用流式输出
 	ImageCapable    bool         `json:"image_capable"`    // 是否支持识图
@@ -69,6 +70,7 @@ func DefaultProvider() Provider {
 		Model:           "gpt-3.5-turbo",
 		Temperature:     DefaultProviderTemperature,
 		TopP:            DefaultProviderTopP,
+		ThinkingBudget:  0,
 		ContextMessages: DefaultProviderContextMessages,
 		Stream:          true,
 		ImageCapable:    false,

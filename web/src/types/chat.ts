@@ -83,6 +83,7 @@ export interface Provider {
     model: string
     temperature: number
     top_p: number
+    thinking_budget: number
     context_messages: number
     stream: boolean     // 是否启用流式输出
     image_capable: boolean // 是否支持识图

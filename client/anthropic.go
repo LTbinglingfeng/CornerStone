@@ -30,6 +30,7 @@ type AnthropicRequest struct {
 	MaxTokens   int                `json:"max_tokens"`
 	Temperature float64            `json:"temperature,omitempty"`
 	TopP        float64            `json:"top_p,omitempty"`
+	Thinking    *AnthropicThinking `json:"thinking,omitempty"`
 	Tools       []AnthropicTool    `json:"tools,omitempty"`
 }
 
@@ -59,6 +60,11 @@ type AnthropicTool struct {
 	Name        string                 `json:"name"`
 	Description string                 `json:"description,omitempty"`
 	InputSchema map[string]interface{} `json:"input_schema"`
+}
+
+type AnthropicThinking struct {
+	Type         string `json:"type"`
+	BudgetTokens int    `json:"budget_tokens"`
 }
 
 type AnthropicResponse struct {
@@ -96,6 +102,7 @@ type anthropicStreamDelta struct {
 	Text        string `json:"text,omitempty"`
 	PartialJSON string `json:"partial_json,omitempty"`
 	StopReason  string `json:"stop_reason,omitempty"`
+	Thinking    string `json:"thinking,omitempty"`
 }
 
 type anthropicToolUseState struct {
@@ -303,6 +310,24 @@ func (c *AnthropicClient) ChatStream(ctx context.Context, req ChatRequest, callb
 				if errCallback := callback(chunk); errCallback != nil {
 					return errCallback
 				}
+			case "thinking_delta":
+				if event.Delta.Thinking == "" {
+					continue
+				}
+				chunk := StreamChunk{
+					Model: streamModel,
+					Choices: []Choice{
+						{
+							Index: 0,
+							Delta: Delta{
+								ReasoningContent: event.Delta.Thinking,
+							},
+						},
+					},
+				}
+				if errCallback := callback(chunk); errCallback != nil {
+					return errCallback
+				}
 			case "input_json_delta":
 				if event.Delta.PartialJSON == "" {
 					continue
@@ -390,6 +415,12 @@ func buildAnthropicRequest(req ChatRequest) (AnthropicRequest, error) {
 		Stream:    req.Stream,
 		MaxTokens: maxTokens,
 		Tools:     convertToAnthropicTools(req.Tools),
+	}
+	if req.ThinkingBudget > 0 {
+		anthropicReq.Thinking = &AnthropicThinking{
+			Type:         "enabled",
+			BudgetTokens: req.ThinkingBudget,
+		}
 	}
 	if req.Temperature > 0 {
 		anthropicReq.Temperature = req.Temperature
