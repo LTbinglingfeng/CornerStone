@@ -376,36 +376,6 @@
   padding: 8px;
 }
 
-.thinking-mode-tabs {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.thinking-mode-tab {
-  background-color: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 10px 8px;
-  color: var(--text-secondary);
-  font-size: 12px;
-  line-height: 1.2;
-  text-align: center;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.thinking-mode-tab:hover {
-  border-color: var(--accent-color);
-  color: var(--text-primary);
-}
-
-.thinking-mode-tab.active {
-  background-color: var(--accent-color);
-  border-color: var(--accent-color);
-  color: white;
-}
-
 .modal-footer {
   display: flex;
   gap: 12px;

@@ -505,18 +505,17 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                 <>
                   <div className="modal-group">
                     <label className="modal-label">Gemini 思考模式</label>
-                    <div className="thinking-mode-tabs">
+                    <select
+                      className="modal-input modal-select"
+                      value={editingProvider.gemini_thinking_mode}
+                      onChange={(e) => handleProviderChange('gemini_thinking_mode', e.target.value)}
+                    >
                       {GEMINI_THINKING_MODES.map((mode) => (
-                        <button
-                          key={mode.value}
-                          type="button"
-                          className={`thinking-mode-tab${editingProvider.gemini_thinking_mode === mode.value ? ' active' : ''}`}
-                          onClick={() => handleProviderChange('gemini_thinking_mode', mode.value)}
-                        >
+                        <option key={mode.value} value={mode.value}>
                           {mode.label}
-                        </button>
+                        </option>
                       ))}
-                    </div>
+                    </select>
                   </div>
 
                   <div className="modal-group">

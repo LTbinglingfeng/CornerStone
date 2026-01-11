@@ -1,0 +1,2 @@
+window.__CORNERSTONE_API_BASE__ = ''
+window.__CORNERSTONE_MANAGEMENT_BASE__ = ''

@@ -879,18 +879,23 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	chatReq := client.ChatRequest{
-		Model:                provider.Model,
-		Messages:             resolvedMessages,
-		Stream:               useStream,
-		Temperature:          temperature,
-		TopP:                 provider.TopP,
-		MaxTokens:            req.MaxTokens,
-		ThinkingBudget:       provider.ThinkingBudget,
-		ReasoningEffort:      provider.ReasoningEffort,
-		GeminiThinkingMode:   provider.GeminiThinkingMode,
-		GeminiThinkingLevel:  provider.GeminiThinkingLevel,
-		GeminiThinkingBudget: provider.GeminiThinkingBudget,
-		Tools:                getChatTools(),
+		Model:       provider.Model,
+		Messages:    resolvedMessages,
+		Stream:      useStream,
+		Temperature: temperature,
+		TopP:        provider.TopP,
+		MaxTokens:   req.MaxTokens,
+		Tools:       getChatTools(),
+	}
+	switch provider.Type {
+	case config.ProviderTypeAnthropic:
+		chatReq.ThinkingBudget = provider.ThinkingBudget
+	case config.ProviderTypeGemini:
+		chatReq.GeminiThinkingMode = provider.GeminiThinkingMode
+		chatReq.GeminiThinkingLevel = provider.GeminiThinkingLevel
+		chatReq.GeminiThinkingBudget = provider.GeminiThinkingBudget
+	default:
+		chatReq.ReasoningEffort = provider.ReasoningEffort
 	}
 
 	if useStream {
