@@ -1,11 +1,11 @@
 package api
 
 import (
+	"cornerstone/logging"
 	"cornerstone/storage"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
-	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -191,7 +191,7 @@ func (h *Handler) handleAuthSetup(w http.ResponseWriter, r *http.Request) {
 
 	if h.userManager != nil {
 		if _, err := h.userManager.Update(info.Username, ""); err != nil {
-			log.Printf("sync username failed: %v", err)
+			logging.Errorf("sync username failed: %v", err)
 		}
 	}
 

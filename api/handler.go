@@ -3,6 +3,7 @@ package api
 import (
 	"cornerstone/client"
 	"cornerstone/config"
+	"cornerstone/logging"
 	"cornerstone/storage"
 	"crypto/rand"
 	"encoding/hex"
@@ -10,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path"
@@ -755,7 +755,14 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 	// 保存用户消息到历史记录
 	if req.SaveHistory && len(req.Messages) > 0 {
 		lastMsg := req.Messages[len(req.Messages)-1]
-		h.chatManager.AddMessageWithDetails(sessionID, lastMsg.Role, lastMsg.Content, lastMsg.ReasoningContent, lastMsg.ImagePaths, lastMsg.ToolCalls)
+		if errSaveHistory := h.chatManager.AddMessageWithDetails(sessionID, lastMsg.Role, lastMsg.Content, lastMsg.ReasoningContent, lastMsg.ImagePaths, lastMsg.ToolCalls); errSaveHistory != nil {
+			if errors.Is(errSaveHistory, storage.ErrInvalidID) {
+				h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid session ID"})
+				return
+			}
+			h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: errSaveHistory.Error()})
+			return
+		}
 	}
 
 	historyMessages := req.Messages
@@ -852,7 +859,14 @@ func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiCli
 	// 保存AI回复到历史记录（包含思考内容）
 	if saveHistory && len(resp.Choices) > 0 {
 		message := resp.Choices[0].Message
-		h.chatManager.AddMessageWithDetails(sessionID, "assistant", message.Content, message.ReasoningContent, nil, message.ToolCalls)
+		if errSaveHistory := h.chatManager.AddMessageWithDetails(sessionID, "assistant", message.Content, message.ReasoningContent, nil, message.ToolCalls); errSaveHistory != nil {
+			if errors.Is(errSaveHistory, storage.ErrInvalidID) {
+				h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid session ID"})
+				return
+			}
+			h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: errSaveHistory.Error()})
+			return
+		}
 	}
 
 	// 返回响应，包含session_id
@@ -935,7 +949,7 @@ func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiCli
 	})
 
 	if errChatStream != nil {
-		log.Printf("Stream error: %v", errChatStream)
+		logging.Errorf("Stream error: %v", errChatStream)
 		errorPayload, _ := json.Marshal(map[string]string{"error": errChatStream.Error()})
 		fmt.Fprintf(w, "data: %s\n\n", errorPayload)
 		flusher.Flush()
@@ -944,7 +958,16 @@ func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiCli
 	// 保存AI回复到历史记录（包含思考内容）
 	toolCalls := collectToolCalls(toolCallsMap)
 	if saveHistory && (fullContent.Len() > 0 || fullReasoningContent.Len() > 0 || len(toolCalls) > 0) {
-		h.chatManager.AddMessageWithDetails(sessionID, "assistant", fullContent.String(), fullReasoningContent.String(), nil, toolCalls)
+		if errSaveHistory := h.chatManager.AddMessageWithDetails(sessionID, "assistant", fullContent.String(), fullReasoningContent.String(), nil, toolCalls); errSaveHistory != nil {
+			logging.Errorf("save stream history error: %v", errSaveHistory)
+			errorMessage := errSaveHistory.Error()
+			if errors.Is(errSaveHistory, storage.ErrInvalidID) {
+				errorMessage = "Invalid session ID"
+			}
+			errorPayload, _ := json.Marshal(map[string]string{"error": errorMessage})
+			fmt.Fprintf(w, "data: %s\n\n", errorPayload)
+			flusher.Flush()
+		}
 	}
 
 	fmt.Fprintf(w, "data: [DONE]\n\n")
@@ -1131,7 +1154,7 @@ func (h *Handler) handleCachePhoto(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() {
 		if errClose := file.Close(); errClose != nil {
-			log.Printf("close upload file error: %v", errClose)
+			logging.Warnf("close upload file error: %v", errClose)
 		}
 	}()
 
@@ -1157,7 +1180,7 @@ func (h *Handler) handleCachePhoto(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() {
 		if errClose := output.Close(); errClose != nil {
-			log.Printf("close cached image error: %v", errClose)
+			logging.Warnf("close cached image error: %v", errClose)
 		}
 	}()
 
@@ -1358,7 +1381,7 @@ func (h *Handler) handleUser(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.Username != "" && h.authManager != nil {
 			if err := h.authManager.UpdateUsername(req.Username); err != nil && !errors.Is(err, storage.ErrAuthNotSetup) {
-				log.Printf("sync auth username failed: %v", err)
+				logging.Errorf("sync auth username failed: %v", err)
 			}
 		}
 

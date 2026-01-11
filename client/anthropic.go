@@ -4,10 +4,10 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"cornerstone/logging"
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 )
@@ -152,7 +152,7 @@ func (c *AnthropicClient) Chat(ctx context.Context, req ChatRequest) (*ChatRespo
 	}
 	defer func() {
 		if errClose := resp.Body.Close(); errClose != nil {
-			log.Printf("close anthropic response body error: %v", errClose)
+			logging.Warnf("close anthropic response body error: %v", errClose)
 		}
 	}()
 
@@ -199,7 +199,7 @@ func (c *AnthropicClient) ChatStream(ctx context.Context, req ChatRequest, callb
 	}
 	defer func() {
 		if errClose := resp.Body.Close(); errClose != nil {
-			log.Printf("close anthropic response body error: %v", errClose)
+			logging.Warnf("close anthropic response body error: %v", errClose)
 		}
 	}()
 
