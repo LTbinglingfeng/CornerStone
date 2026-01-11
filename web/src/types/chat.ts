@@ -84,6 +84,10 @@ export interface Provider {
     temperature: number
     top_p: number
     thinking_budget: number
+    reasoning_effort: string
+    gemini_thinking_mode: string
+    gemini_thinking_level: string
+    gemini_thinking_budget: number
     context_messages: number
     stream: boolean     // 是否启用流式输出
     image_capable: boolean // 是否支持识图

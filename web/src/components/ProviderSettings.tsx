@@ -17,6 +17,24 @@ const PROVIDER_TYPES: { value: ProviderType; label: string }[] = [
   { value: 'anthropic', label: 'Anthropic Claude' },
 ]
 
+const OPENAI_REASONING_EFFORT_OPTIONS = [
+  { value: '', label: '默认' },
+  { value: 'low', label: '低 (low)' },
+  { value: 'medium', label: '中 (medium)' },
+  { value: 'high', label: '高 (high)' },
+]
+
+const GEMINI_THINKING_MODES = [
+  { value: 'none', label: '不思考' },
+  { value: 'thinking_level', label: 'thinkingLevel (Gemini 3 系列)' },
+  { value: 'thinking_budget', label: 'thinkingBudget (Gemini 2.5 系列)' },
+]
+
+const GEMINI_THINKING_LEVELS = [
+  { value: 'low', label: '低 (low)' },
+  { value: 'high', label: '高 (high)' },
+]
+
 interface ProviderSettingsProps {
   onBack: () => void
 }
@@ -43,6 +61,10 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
     temperature: 0.8,
     top_p: 1,
     thinking_budget: 0,
+    reasoning_effort: '',
+    gemini_thinking_mode: 'none',
+    gemini_thinking_level: 'low',
+    gemini_thinking_budget: 128,
     context_messages: 64,
     stream: true,
     image_capable: false,
@@ -118,6 +140,10 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
       ...provider,
       api_key: '',
       thinking_budget: provider.thinking_budget ?? 0,
+      reasoning_effort: provider.reasoning_effort ?? '',
+      gemini_thinking_mode: provider.gemini_thinking_mode || 'none',
+      gemini_thinking_level: provider.gemini_thinking_level || 'low',
+      gemini_thinking_budget: provider.gemini_thinking_budget || 128,
       temperature: provider.type === 'anthropic' ? 1 : provider.temperature,
     })
     setIsAddingNew(false)
@@ -202,6 +228,22 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
         ...editingProvider,
         type: nextType,
         temperature: nextType === 'anthropic' ? 1 : editingProvider.temperature,
+      }
+      setEditingProvider(nextProvider)
+      return
+    }
+    if (field === 'gemini_thinking_mode') {
+      const nextMode = value as string
+      const nextProvider: Provider = {
+        ...editingProvider,
+        gemini_thinking_mode: nextMode,
+      }
+      if (nextMode === 'thinking_level' && !nextProvider.gemini_thinking_level) {
+        nextProvider.gemini_thinking_level = 'low'
+      }
+      if (nextMode === 'thinking_budget') {
+        const nextBudget = Number(nextProvider.gemini_thinking_budget) || 128
+        nextProvider.gemini_thinking_budget = Math.min(Math.max(nextBudget, 128), 32768)
       }
       setEditingProvider(nextProvider)
       return
@@ -441,6 +483,80 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                   placeholder="1"
                 />
               </div>
+
+              {editingProvider.type === 'openai' && (
+                <div className="modal-group">
+                  <label className="modal-label">思考强度 (reasoning_effort)</label>
+                  <select
+                    className="modal-input modal-select"
+                    value={editingProvider.reasoning_effort}
+                    onChange={(e) => handleProviderChange('reasoning_effort', e.target.value)}
+                  >
+                    {OPENAI_REASONING_EFFORT_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {editingProvider.type === 'gemini' && (
+                <>
+                  <div className="modal-group">
+                    <label className="modal-label">Gemini 思考模式</label>
+                    <div className="thinking-mode-tabs">
+                      {GEMINI_THINKING_MODES.map((mode) => (
+                        <button
+                          key={mode.value}
+                          type="button"
+                          className={`thinking-mode-tab${editingProvider.gemini_thinking_mode === mode.value ? ' active' : ''}`}
+                          onClick={() => handleProviderChange('gemini_thinking_mode', mode.value)}
+                        >
+                          {mode.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="modal-group">
+                    <label className="modal-label">思考级别 / 预算</label>
+                    {editingProvider.gemini_thinking_mode === 'thinking_level' && (
+                      <select
+                        className="modal-input modal-select"
+                        value={editingProvider.gemini_thinking_level}
+                        onChange={(e) => handleProviderChange('gemini_thinking_level', e.target.value)}
+                      >
+                        {GEMINI_THINKING_LEVELS.map((level) => (
+                          <option key={level.value} value={level.value}>
+                            {level.label}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    {editingProvider.gemini_thinking_mode === 'thinking_budget' && (
+                      <input
+                        type="number"
+                        className="modal-input"
+                        min={128}
+                        max={32768}
+                        step={1}
+                        value={editingProvider.gemini_thinking_budget}
+                        onChange={(e) => handleProviderChange('gemini_thinking_budget', Number(e.target.value) || 0)}
+                        placeholder="128-32768"
+                      />
+                    )}
+                    {editingProvider.gemini_thinking_mode === 'none' && (
+                      <input
+                        type="text"
+                        className="modal-input"
+                        value="已关闭"
+                        disabled
+                      />
+                    )}
+                  </div>
+                </>
+              )}
 
               {editingProvider.type === 'anthropic' && (
                 <div className="modal-group">

@@ -49,14 +49,18 @@ type ToolCallFunction struct {
 
 // ChatRequest 聊天请求
 type ChatRequest struct {
-	Model          string    `json:"model"`
-	Messages       []Message `json:"messages"`
-	Stream         bool      `json:"stream,omitempty"`
-	Temperature    float64   `json:"temperature,omitempty"`
-	TopP           float64   `json:"top_p,omitempty"`
-	MaxTokens      int       `json:"max_tokens,omitempty"`
-	ThinkingBudget int       `json:"thinking_budget,omitempty"` // Anthropic思考预算
-	Tools          []Tool    `json:"tools,omitempty"`           // 工具列表
+	Model                string    `json:"model"`
+	Messages             []Message `json:"messages"`
+	Stream               bool      `json:"stream,omitempty"`
+	Temperature          float64   `json:"temperature,omitempty"`
+	TopP                 float64   `json:"top_p,omitempty"`
+	MaxTokens            int       `json:"max_tokens,omitempty"`
+	ThinkingBudget       int       `json:"thinking_budget,omitempty"`        // Anthropic思考预算
+	ReasoningEffort      string    `json:"reasoning_effort,omitempty"`       // OpenAI兼容思考强度
+	GeminiThinkingMode   string    `json:"gemini_thinking_mode,omitempty"`   // Gemini思考模式
+	GeminiThinkingLevel  string    `json:"gemini_thinking_level,omitempty"`  // Gemini思考级别
+	GeminiThinkingBudget int       `json:"gemini_thinking_budget,omitempty"` // Gemini思考预算
+	Tools                []Tool    `json:"tools,omitempty"`                  // 工具列表
 }
 
 type OpenAIContentPart struct {
@@ -77,13 +81,14 @@ type OpenAIMessage struct {
 }
 
 type OpenAIChatRequest struct {
-	Model       string          `json:"model"`
-	Messages    []OpenAIMessage `json:"messages"`
-	Stream      bool            `json:"stream,omitempty"`
-	Temperature float64         `json:"temperature,omitempty"`
-	TopP        float64         `json:"top_p,omitempty"`
-	MaxTokens   int             `json:"max_tokens,omitempty"`
-	Tools       []Tool          `json:"tools,omitempty"` // 工具列表
+	Model           string          `json:"model"`
+	Messages        []OpenAIMessage `json:"messages"`
+	Stream          bool            `json:"stream,omitempty"`
+	Temperature     float64         `json:"temperature,omitempty"`
+	TopP            float64         `json:"top_p,omitempty"`
+	MaxTokens       int             `json:"max_tokens,omitempty"`
+	ReasoningEffort string          `json:"reasoning_effort,omitempty"`
+	Tools           []Tool          `json:"tools,omitempty"` // 工具列表
 }
 
 // ChatResponse 非流式响应
@@ -284,13 +289,14 @@ func buildOpenAIRequest(req ChatRequest) (OpenAIChatRequest, error) {
 	}
 
 	return OpenAIChatRequest{
-		Model:       req.Model,
-		Messages:    messages,
-		Stream:      req.Stream,
-		Temperature: req.Temperature,
-		TopP:        req.TopP,
-		MaxTokens:   req.MaxTokens,
-		Tools:       req.Tools,
+		Model:           req.Model,
+		Messages:        messages,
+		Stream:          req.Stream,
+		Temperature:     req.Temperature,
+		TopP:            req.TopP,
+		MaxTokens:       req.MaxTokens,
+		ReasoningEffort: req.ReasoningEffort,
+		Tools:           req.Tools,
 	}, nil
 }
 

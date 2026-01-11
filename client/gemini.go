@@ -23,6 +23,7 @@ type GeminiRequest struct {
 	Contents          []GeminiContent         `json:"contents"`
 	SystemInstruction *GeminiContent          `json:"systemInstruction,omitempty"`
 	GenerationConfig  *GeminiGenerationConfig `json:"generationConfig,omitempty"`
+	ThinkingConfig    *GeminiThinkingConfig   `json:"thinkingConfig,omitempty"`
 	Tools             []GeminiTool            `json:"tools,omitempty"`
 }
 
@@ -64,6 +65,12 @@ type GeminiGenerationConfig struct {
 	Temperature     float64 `json:"temperature,omitempty"`
 	TopP            float64 `json:"topP,omitempty"`
 	MaxOutputTokens int     `json:"maxOutputTokens,omitempty"`
+}
+
+type GeminiThinkingConfig struct {
+	IncludeThoughts bool   `json:"includeThoughts"`
+	ThinkingLevel   string `json:"thinkingLevel,omitempty"`
+	ThinkingBudget  int    `json:"thinkingBudget,omitempty"`
 }
 
 // Gemini API 响应结构
@@ -194,6 +201,11 @@ func (c *GeminiClient) Chat(ctx context.Context, req ChatRequest) (*ChatResponse
 		Tools:             c.convertToGeminiTools(req.Tools),
 	}
 
+	thinkingConfig := buildGeminiThinkingConfig(req)
+	if thinkingConfig != nil {
+		geminiReq.ThinkingConfig = thinkingConfig
+	}
+
 	if req.Temperature > 0 || req.TopP > 0 || req.MaxTokens > 0 {
 		geminiReq.GenerationConfig = &GeminiGenerationConfig{
 			Temperature:     req.Temperature,
@@ -251,6 +263,11 @@ func (c *GeminiClient) ChatStream(ctx context.Context, req ChatRequest, callback
 		Contents:          contents,
 		SystemInstruction: systemInstruction,
 		Tools:             c.convertToGeminiTools(req.Tools),
+	}
+
+	thinkingConfig := buildGeminiThinkingConfig(req)
+	if thinkingConfig != nil {
+		geminiReq.ThinkingConfig = thinkingConfig
 	}
 
 	if req.Temperature > 0 || req.TopP > 0 || req.MaxTokens > 0 {
@@ -412,5 +429,38 @@ func (c *GeminiClient) convertToStreamChunk(resp GeminiStreamResponse, model str
 	return StreamChunk{
 		Model:   model,
 		Choices: choices,
+	}
+}
+
+func buildGeminiThinkingConfig(req ChatRequest) *GeminiThinkingConfig {
+	mode := strings.TrimSpace(req.GeminiThinkingMode)
+	switch mode {
+	case "none":
+		return &GeminiThinkingConfig{
+			IncludeThoughts: false,
+		}
+	case "thinking_level":
+		level := strings.ToLower(strings.TrimSpace(req.GeminiThinkingLevel))
+		if level != "high" {
+			level = "low"
+		}
+		return &GeminiThinkingConfig{
+			IncludeThoughts: true,
+			ThinkingLevel:   level,
+		}
+	case "thinking_budget":
+		budget := req.GeminiThinkingBudget
+		if budget < 128 {
+			budget = 128
+		}
+		if budget > 32768 {
+			budget = 32768
+		}
+		return &GeminiThinkingConfig{
+			IncludeThoughts: true,
+			ThinkingBudget:  budget,
+		}
+	default:
+		return nil
 	}
 }

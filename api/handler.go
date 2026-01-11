@@ -64,18 +64,22 @@ type ConfigUpdateRequest struct {
 
 // ProviderRequest 供应商请求
 type ProviderRequest struct {
-	ID              string   `json:"id"`
-	Name            string   `json:"name"`
-	Type            string   `json:"type"` // 供应商类型 (openai/gemini/anthropic)
-	BaseURL         string   `json:"base_url"`
-	APIKey          string   `json:"api_key"`
-	Model           string   `json:"model"`
-	Temperature     *float64 `json:"temperature,omitempty"`
-	TopP            *float64 `json:"top_p,omitempty"`
-	ThinkingBudget  *int     `json:"thinking_budget,omitempty"`
-	ContextMessages *int     `json:"context_messages,omitempty"`
-	Stream          bool     `json:"stream"`        // 是否启用流式输出
-	ImageCapable    bool     `json:"image_capable"` // 是否支持识图
+	ID                   string   `json:"id"`
+	Name                 string   `json:"name"`
+	Type                 string   `json:"type"` // 供应商类型 (openai/gemini/anthropic)
+	BaseURL              string   `json:"base_url"`
+	APIKey               string   `json:"api_key"`
+	Model                string   `json:"model"`
+	Temperature          *float64 `json:"temperature,omitempty"`
+	TopP                 *float64 `json:"top_p,omitempty"`
+	ThinkingBudget       *int     `json:"thinking_budget,omitempty"`
+	ReasoningEffort      *string  `json:"reasoning_effort,omitempty"`
+	GeminiThinkingMode   *string  `json:"gemini_thinking_mode,omitempty"`
+	GeminiThinkingLevel  *string  `json:"gemini_thinking_level,omitempty"`
+	GeminiThinkingBudget *int     `json:"gemini_thinking_budget,omitempty"`
+	ContextMessages      *int     `json:"context_messages,omitempty"`
+	Stream               bool     `json:"stream"`        // 是否启用流式输出
+	ImageCapable         bool     `json:"image_capable"` // 是否支持识图
 }
 
 // SetActiveProviderRequest 设置激活供应商请求
@@ -304,6 +308,10 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 		temperature := defaultProvider.Temperature
 		topP := defaultProvider.TopP
 		thinkingBudget := defaultProvider.ThinkingBudget
+		reasoningEffort := defaultProvider.ReasoningEffort
+		geminiThinkingMode := defaultProvider.GeminiThinkingMode
+		geminiThinkingLevel := defaultProvider.GeminiThinkingLevel
+		geminiThinkingBudget := defaultProvider.GeminiThinkingBudget
 		contextMessages := defaultProvider.ContextMessages
 		if req.Temperature != nil {
 			temperature = *req.Temperature
@@ -314,6 +322,18 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 		if req.ThinkingBudget != nil {
 			thinkingBudget = *req.ThinkingBudget
 		}
+		if req.ReasoningEffort != nil {
+			reasoningEffort = *req.ReasoningEffort
+		}
+		if req.GeminiThinkingMode != nil {
+			geminiThinkingMode = *req.GeminiThinkingMode
+		}
+		if req.GeminiThinkingLevel != nil {
+			geminiThinkingLevel = *req.GeminiThinkingLevel
+		}
+		if req.GeminiThinkingBudget != nil {
+			geminiThinkingBudget = *req.GeminiThinkingBudget
+		}
 		if req.ContextMessages != nil {
 			contextMessages = *req.ContextMessages
 		}
@@ -322,18 +342,22 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 		}
 
 		provider := config.Provider{
-			ID:              req.ID,
-			Name:            req.Name,
-			Type:            providerType,
-			BaseURL:         req.BaseURL,
-			APIKey:          req.APIKey,
-			Model:           req.Model,
-			Temperature:     temperature,
-			TopP:            topP,
-			ThinkingBudget:  thinkingBudget,
-			ContextMessages: contextMessages,
-			Stream:          req.Stream,
-			ImageCapable:    req.ImageCapable,
+			ID:                   req.ID,
+			Name:                 req.Name,
+			Type:                 providerType,
+			BaseURL:              req.BaseURL,
+			APIKey:               req.APIKey,
+			Model:                req.Model,
+			Temperature:          temperature,
+			TopP:                 topP,
+			ThinkingBudget:       thinkingBudget,
+			ReasoningEffort:      reasoningEffort,
+			GeminiThinkingMode:   geminiThinkingMode,
+			GeminiThinkingLevel:  geminiThinkingLevel,
+			GeminiThinkingBudget: geminiThinkingBudget,
+			ContextMessages:      contextMessages,
+			Stream:               req.Stream,
+			ImageCapable:         req.ImageCapable,
 		}
 
 		if err := h.configManager.AddProvider(provider); err != nil {
@@ -406,11 +430,19 @@ func (h *Handler) handleProviderByID(w http.ResponseWriter, r *http.Request) {
 		temperature := defaultProvider.Temperature
 		topP := defaultProvider.TopP
 		thinkingBudget := defaultProvider.ThinkingBudget
+		reasoningEffort := defaultProvider.ReasoningEffort
+		geminiThinkingMode := defaultProvider.GeminiThinkingMode
+		geminiThinkingLevel := defaultProvider.GeminiThinkingLevel
+		geminiThinkingBudget := defaultProvider.GeminiThinkingBudget
 		contextMessages := defaultProvider.ContextMessages
 		if existingProvider != nil {
 			temperature = existingProvider.Temperature
 			topP = existingProvider.TopP
 			thinkingBudget = existingProvider.ThinkingBudget
+			reasoningEffort = existingProvider.ReasoningEffort
+			geminiThinkingMode = existingProvider.GeminiThinkingMode
+			geminiThinkingLevel = existingProvider.GeminiThinkingLevel
+			geminiThinkingBudget = existingProvider.GeminiThinkingBudget
 			contextMessages = existingProvider.ContextMessages
 		}
 		if req.Temperature != nil {
@@ -422,6 +454,18 @@ func (h *Handler) handleProviderByID(w http.ResponseWriter, r *http.Request) {
 		if req.ThinkingBudget != nil {
 			thinkingBudget = *req.ThinkingBudget
 		}
+		if req.ReasoningEffort != nil {
+			reasoningEffort = *req.ReasoningEffort
+		}
+		if req.GeminiThinkingMode != nil {
+			geminiThinkingMode = *req.GeminiThinkingMode
+		}
+		if req.GeminiThinkingLevel != nil {
+			geminiThinkingLevel = *req.GeminiThinkingLevel
+		}
+		if req.GeminiThinkingBudget != nil {
+			geminiThinkingBudget = *req.GeminiThinkingBudget
+		}
 		if req.ContextMessages != nil {
 			contextMessages = *req.ContextMessages
 		}
@@ -430,18 +474,22 @@ func (h *Handler) handleProviderByID(w http.ResponseWriter, r *http.Request) {
 		}
 
 		provider := config.Provider{
-			ID:              id,
-			Name:            req.Name,
-			Type:            providerType,
-			BaseURL:         req.BaseURL,
-			APIKey:          apiKey,
-			Model:           req.Model,
-			Temperature:     temperature,
-			TopP:            topP,
-			ThinkingBudget:  thinkingBudget,
-			ContextMessages: contextMessages,
-			Stream:          req.Stream,
-			ImageCapable:    req.ImageCapable,
+			ID:                   id,
+			Name:                 req.Name,
+			Type:                 providerType,
+			BaseURL:              req.BaseURL,
+			APIKey:               apiKey,
+			Model:                req.Model,
+			Temperature:          temperature,
+			TopP:                 topP,
+			ThinkingBudget:       thinkingBudget,
+			ReasoningEffort:      reasoningEffort,
+			GeminiThinkingMode:   geminiThinkingMode,
+			GeminiThinkingLevel:  geminiThinkingLevel,
+			GeminiThinkingBudget: geminiThinkingBudget,
+			ContextMessages:      contextMessages,
+			Stream:               req.Stream,
+			ImageCapable:         req.ImageCapable,
 		}
 
 		if err := h.configManager.UpdateProvider(provider); err != nil {
@@ -831,14 +879,18 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	chatReq := client.ChatRequest{
-		Model:          provider.Model,
-		Messages:       resolvedMessages,
-		Stream:         useStream,
-		Temperature:    temperature,
-		TopP:           provider.TopP,
-		MaxTokens:      req.MaxTokens,
-		ThinkingBudget: provider.ThinkingBudget,
-		Tools:          getChatTools(),
+		Model:                provider.Model,
+		Messages:             resolvedMessages,
+		Stream:               useStream,
+		Temperature:          temperature,
+		TopP:                 provider.TopP,
+		MaxTokens:            req.MaxTokens,
+		ThinkingBudget:       provider.ThinkingBudget,
+		ReasoningEffort:      provider.ReasoningEffort,
+		GeminiThinkingMode:   provider.GeminiThinkingMode,
+		GeminiThinkingLevel:  provider.GeminiThinkingLevel,
+		GeminiThinkingBudget: provider.GeminiThinkingBudget,
+		Tools:                getChatTools(),
 	}
 
 	if useStream {

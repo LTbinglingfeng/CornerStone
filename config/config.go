@@ -31,18 +31,22 @@ const (
 
 // Provider 供应商配置
 type Provider struct {
-	ID              string       `json:"id"`               // 供应商唯一标识
-	Name            string       `json:"name"`             // 显示名称
-	Type            ProviderType `json:"type"`             // 供应商类型 (openai/gemini/anthropic)
-	BaseURL         string       `json:"base_url"`         // API基础URL
-	APIKey          string       `json:"api_key"`          // API密钥
-	Model           string       `json:"model"`            // 默认模型
-	Temperature     float64      `json:"temperature"`      // 温度
-	TopP            float64      `json:"top_p"`            // Top P
-	ThinkingBudget  int          `json:"thinking_budget"`  // 思考预算（Anthropic）
-	ContextMessages int          `json:"context_messages"` // 上下文消息轮数
-	Stream          bool         `json:"stream"`           // 是否启用流式输出
-	ImageCapable    bool         `json:"image_capable"`    // 是否支持识图
+	ID                   string       `json:"id"`                     // 供应商唯一标识
+	Name                 string       `json:"name"`                   // 显示名称
+	Type                 ProviderType `json:"type"`                   // 供应商类型 (openai/gemini/anthropic)
+	BaseURL              string       `json:"base_url"`               // API基础URL
+	APIKey               string       `json:"api_key"`                // API密钥
+	Model                string       `json:"model"`                  // 默认模型
+	Temperature          float64      `json:"temperature"`            // 温度
+	TopP                 float64      `json:"top_p"`                  // Top P
+	ThinkingBudget       int          `json:"thinking_budget"`        // 思考预算（Anthropic）
+	ReasoningEffort      string       `json:"reasoning_effort"`       // 思考强度（OpenAI兼容）
+	GeminiThinkingMode   string       `json:"gemini_thinking_mode"`   // Gemini思考模式 (none/thinking_level/thinking_budget)
+	GeminiThinkingLevel  string       `json:"gemini_thinking_level"`  // Gemini思考级别 (low/high)
+	GeminiThinkingBudget int          `json:"gemini_thinking_budget"` // Gemini思考预算 (128-32768)
+	ContextMessages      int          `json:"context_messages"`       // 上下文消息轮数
+	Stream               bool         `json:"stream"`                 // 是否启用流式输出
+	ImageCapable         bool         `json:"image_capable"`          // 是否支持识图
 }
 
 // Config 存储应用配置信息
@@ -62,18 +66,22 @@ type Manager struct {
 // DefaultProvider 返回默认供应商
 func DefaultProvider() Provider {
 	return Provider{
-		ID:              "default",
-		Name:            "OpenAI",
-		Type:            ProviderTypeOpenAI,
-		BaseURL:         "https://api.openai.com/v1",
-		APIKey:          "",
-		Model:           "gpt-3.5-turbo",
-		Temperature:     DefaultProviderTemperature,
-		TopP:            DefaultProviderTopP,
-		ThinkingBudget:  0,
-		ContextMessages: DefaultProviderContextMessages,
-		Stream:          true,
-		ImageCapable:    false,
+		ID:                   "default",
+		Name:                 "OpenAI",
+		Type:                 ProviderTypeOpenAI,
+		BaseURL:              "https://api.openai.com/v1",
+		APIKey:               "",
+		Model:                "gpt-3.5-turbo",
+		Temperature:          DefaultProviderTemperature,
+		TopP:                 DefaultProviderTopP,
+		ThinkingBudget:       0,
+		ReasoningEffort:      "",
+		GeminiThinkingMode:   "none",
+		GeminiThinkingLevel:  "low",
+		GeminiThinkingBudget: 128,
+		ContextMessages:      DefaultProviderContextMessages,
+		Stream:               true,
+		ImageCapable:         false,
 	}
 }
 
