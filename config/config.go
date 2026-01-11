@@ -18,8 +18,9 @@ var (
 type ProviderType string
 
 const (
-	ProviderTypeOpenAI ProviderType = "openai" // OpenAI兼容API
-	ProviderTypeGemini ProviderType = "gemini" // Google Gemini API
+	ProviderTypeOpenAI    ProviderType = "openai"    // OpenAI兼容API
+	ProviderTypeGemini    ProviderType = "gemini"    // Google Gemini API
+	ProviderTypeAnthropic ProviderType = "anthropic" // Anthropic Claude API
 )
 
 const (
@@ -32,7 +33,7 @@ const (
 type Provider struct {
 	ID              string       `json:"id"`               // 供应商唯一标识
 	Name            string       `json:"name"`             // 显示名称
-	Type            ProviderType `json:"type"`             // 供应商类型 (openai/gemini)
+	Type            ProviderType `json:"type"`             // 供应商类型 (openai/gemini/anthropic)
 	BaseURL         string       `json:"base_url"`         // API基础URL
 	APIKey          string       `json:"api_key"`          // API密钥
 	Model           string       `json:"model"`            // 默认模型

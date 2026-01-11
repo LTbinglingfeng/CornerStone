@@ -66,7 +66,7 @@ type ConfigUpdateRequest struct {
 type ProviderRequest struct {
 	ID              string   `json:"id"`
 	Name            string   `json:"name"`
-	Type            string   `json:"type"` // 供应商类型 (openai/gemini)
+	Type            string   `json:"type"` // 供应商类型 (openai/gemini/anthropic)
 	BaseURL         string   `json:"base_url"`
 	APIKey          string   `json:"api_key"`
 	Model           string   `json:"model"`
@@ -775,6 +775,8 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 	switch provider.Type {
 	case config.ProviderTypeGemini:
 		aiClient = client.NewGeminiClient(provider.BaseURL, provider.APIKey)
+	case config.ProviderTypeAnthropic:
+		aiClient = client.NewAnthropicClient(provider.BaseURL, provider.APIKey)
 	default:
 		// 默认使用 OpenAI 兼容客户端
 		aiClient = client.NewClient(provider.BaseURL, provider.APIKey)

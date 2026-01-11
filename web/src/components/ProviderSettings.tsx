@@ -14,6 +14,7 @@ import './ProviderSettings.css'
 const PROVIDER_TYPES: { value: ProviderType; label: string }[] = [
   { value: 'openai', label: 'OpenAI 兼容' },
   { value: 'gemini', label: 'Google Gemini' },
+  { value: 'anthropic', label: 'Anthropic Claude' },
 ]
 
 interface ProviderSettingsProps {

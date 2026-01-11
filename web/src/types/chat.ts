@@ -71,13 +71,13 @@ export interface AuthSession {
 }
 
 // 供应商类型
-export type ProviderType = 'openai' | 'gemini'
+export type ProviderType = 'openai' | 'gemini' | 'anthropic'
 
 // 供应商配置
 export interface Provider {
     id: string
     name: string
-    type: ProviderType  // 供应商类型 (openai/gemini)
+    type: ProviderType  // 供应商类型 (openai/gemini/anthropic)
     base_url: string
     api_key: string
     model: string
