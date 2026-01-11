@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 )
 
@@ -143,8 +144,11 @@ type openAIResponsesStreamTextDeltaEvent struct {
 
 type openAIResponsesToolCallState struct {
 	CallID             string
+	ItemID             string
 	Name               string
 	SeenArgumentsDelta bool
+	HeaderEmitted      bool
+	BufferedArguments  strings.Builder
 }
 
 // OpenAIResponsesClient OpenAI Responses API 客户端（/v1/responses）
@@ -339,7 +343,18 @@ func (c *OpenAIResponsesClient) ChatStream(ctx context.Context, req ChatRequest,
 				state = &openAIResponsesToolCallState{}
 				toolCalls[ev.OutputIndex] = state
 			}
+			if state.ItemID == "" && strings.TrimSpace(ev.ItemID) != "" {
+				state.ItemID = ev.ItemID
+			}
 			state.SeenArgumentsDelta = true
+
+			if errEmit := emitResponsesToolCallHeaderIfReady(state, ev.OutputIndex, req.Model, callback); errEmit != nil {
+				return errEmit
+			}
+			if !state.HeaderEmitted {
+				state.BufferedArguments.WriteString(ev.Delta)
+				continue
+			}
 
 			chunk := StreamChunk{
 				Model: req.Model,
@@ -377,58 +392,17 @@ func (c *OpenAIResponsesClient) ChatStream(ctx context.Context, req ChatRequest,
 				state = &openAIResponsesToolCallState{}
 				toolCalls[ev.OutputIndex] = state
 			}
-			if state.Name == "" && ev.Name != "" {
-				state.Name = ev.Name
-				chunk := StreamChunk{
-					Model: req.Model,
-					Choices: []Choice{
-						{
-							Index: 0,
-							Delta: Delta{
-								ToolCalls: []DeltaToolCall{
-									{
-										Index: ev.OutputIndex,
-										ID:    state.CallID,
-										Type:  "function",
-										Function: ToolCallFunction{
-											Name: ev.Name,
-										},
-									},
-								},
-							},
-						},
-					},
-				}
-				if errCallback := callback(chunk); errCallback != nil {
-					return errCallback
-				}
+			if state.ItemID == "" && strings.TrimSpace(ev.ItemID) != "" {
+				state.ItemID = ev.ItemID
 			}
-
-			if !state.SeenArgumentsDelta && ev.Arguments != "" {
-				chunk := StreamChunk{
-					Model: req.Model,
-					Choices: []Choice{
-						{
-							Index: 0,
-							Delta: Delta{
-								ToolCalls: []DeltaToolCall{
-									{
-										Index: ev.OutputIndex,
-										ID:    state.CallID,
-										Type:  "function",
-										Function: ToolCallFunction{
-											Name:      state.Name,
-											Arguments: ev.Arguments,
-										},
-									},
-								},
-							},
-						},
-					},
-				}
-				if errCallback := callback(chunk); errCallback != nil {
-					return errCallback
-				}
+			if state.Name == "" && strings.TrimSpace(ev.Name) != "" {
+				state.Name = ev.Name
+			}
+			if !state.SeenArgumentsDelta && strings.TrimSpace(ev.Arguments) != "" {
+				state.BufferedArguments.WriteString(ev.Arguments)
+			}
+			if errEmit := emitResponsesToolCallHeaderIfReady(state, ev.OutputIndex, req.Model, callback); errEmit != nil {
+				return errEmit
 			}
 
 		case "error":
@@ -478,6 +452,26 @@ func handleResponsesOutputItemAdded(ev openAIResponsesStreamOutputItemEvent, too
 		state.Name = call.Name
 	}
 
+	return emitResponsesToolCallHeaderIfReady(state, ev.OutputIndex, model, callback)
+}
+
+func emitResponsesToolCallHeaderIfReady(state *openAIResponsesToolCallState, outputIndex int, model string, callback func(chunk StreamChunk) error) error {
+	if state == nil || state.HeaderEmitted {
+		return nil
+	}
+	if strings.TrimSpace(state.Name) == "" {
+		return nil
+	}
+
+	id := strings.TrimSpace(state.CallID)
+	if id == "" {
+		id = strings.TrimSpace(state.ItemID)
+	}
+	if id == "" {
+		id = fmt.Sprintf("call_%d", outputIndex)
+	}
+	state.CallID = id
+
 	chunk := StreamChunk{
 		Model: model,
 		Choices: []Choice{
@@ -486,8 +480,8 @@ func handleResponsesOutputItemAdded(ev openAIResponsesStreamOutputItemEvent, too
 				Delta: Delta{
 					ToolCalls: []DeltaToolCall{
 						{
-							Index: ev.OutputIndex,
-							ID:    state.CallID,
+							Index: outputIndex,
+							ID:    id,
 							Type:  "function",
 							Function: ToolCallFunction{
 								Name: state.Name,
@@ -499,6 +493,39 @@ func handleResponsesOutputItemAdded(ev openAIResponsesStreamOutputItemEvent, too
 		},
 	}
 	if errCallback := callback(chunk); errCallback != nil {
+		return errCallback
+	}
+	state.HeaderEmitted = true
+
+	if state.BufferedArguments.Len() == 0 {
+		return nil
+	}
+
+	args := state.BufferedArguments.String()
+	state.BufferedArguments = strings.Builder{}
+
+	argsChunk := StreamChunk{
+		Model: model,
+		Choices: []Choice{
+			{
+				Index: 0,
+				Delta: Delta{
+					ToolCalls: []DeltaToolCall{
+						{
+							Index: outputIndex,
+							ID:    id,
+							Type:  "function",
+							Function: ToolCallFunction{
+								Name:      state.Name,
+								Arguments: args,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	if errCallback := callback(argsChunk); errCallback != nil {
 		return errCallback
 	}
 	return nil
@@ -618,8 +645,13 @@ func convertToOpenAIResponsesTools(tools []Tool) []openAIResponsesTool {
 		}
 		params := tool.Function.Parameters
 		if params == nil {
-			params = map[string]interface{}{"type": "object", "properties": map[string]interface{}{}}
+			params = map[string]interface{}{
+				"type":                 "object",
+				"properties":           map[string]interface{}{},
+				"additionalProperties": false,
+			}
 		}
+		ensureStrictToolJSONSchema(params)
 		converted = append(converted, openAIResponsesTool{
 			Type:        "function",
 			Name:        tool.Function.Name,
@@ -629,6 +661,58 @@ func convertToOpenAIResponsesTools(tools []Tool) []openAIResponsesTool {
 		})
 	}
 	return converted
+}
+
+func ensureStrictToolJSONSchema(schema map[string]interface{}) {
+	ensureAdditionalPropertiesFalse(schema)
+	ensureRequiredAllProperties(schema)
+}
+
+func ensureAdditionalPropertiesFalse(schema interface{}) {
+	schemaMap, ok := schema.(map[string]interface{})
+	if !ok {
+		return
+	}
+
+	if schemaType, ok := schemaMap["type"].(string); ok && schemaType == "object" {
+		schemaMap["additionalProperties"] = false
+		if properties, ok := schemaMap["properties"].(map[string]interface{}); ok {
+			for _, propertySchema := range properties {
+				ensureAdditionalPropertiesFalse(propertySchema)
+			}
+		}
+	}
+
+	if items, ok := schemaMap["items"]; ok {
+		ensureAdditionalPropertiesFalse(items)
+	}
+}
+
+func ensureRequiredAllProperties(schema interface{}) {
+	schemaMap, ok := schema.(map[string]interface{})
+	if !ok {
+		return
+	}
+
+	if schemaType, ok := schemaMap["type"].(string); ok && schemaType == "object" {
+		properties, ok := schemaMap["properties"].(map[string]interface{})
+		if ok {
+			required := make([]string, 0, len(properties))
+			for key := range properties {
+				required = append(required, key)
+			}
+			sort.Strings(required)
+			schemaMap["required"] = required
+
+			for _, propertySchema := range properties {
+				ensureRequiredAllProperties(propertySchema)
+			}
+		}
+	}
+
+	if items, ok := schemaMap["items"]; ok {
+		ensureRequiredAllProperties(items)
+	}
 }
 
 func convertResponsesToChatResponse(resp openAIResponsesResponse, fallbackModel string) *ChatResponse {
@@ -680,6 +764,11 @@ func convertResponsesToChatResponse(resp openAIResponsesResponse, fallbackModel 
 		ToolCalls:        toolCalls,
 	}
 
+	finishReason := "stop"
+	if len(toolCalls) > 0 {
+		finishReason = "tool_calls"
+	}
+
 	return &ChatResponse{
 		ID:      resp.ID,
 		Object:  "chat.completion",
@@ -689,7 +778,7 @@ func convertResponsesToChatResponse(resp openAIResponsesResponse, fallbackModel 
 			{
 				Index:        0,
 				Message:      message,
-				FinishReason: "stop",
+				FinishReason: finishReason,
 			},
 		},
 		Usage: Usage{
