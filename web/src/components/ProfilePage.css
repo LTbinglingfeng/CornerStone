@@ -221,6 +221,8 @@
   bottom: 0;
   z-index: 100;
   background-color: var(--bg-primary);
+  will-change: transform;
+  backface-visibility: hidden;
 }
 
 /* 弹窗样式 */

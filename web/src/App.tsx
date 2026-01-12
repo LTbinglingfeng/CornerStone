@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef, useEffect, useLayoutEffect } from 'react'
 import { gsap } from 'gsap'
 import Header from './components/Header'
 import SearchBar from './components/SearchBar'
@@ -34,7 +34,6 @@ function App() {
   const [activeTab, setActiveTab] = useState<'chat' | 'contacts' | 'settings'>('chat')
   const [showPromptSelector, setShowPromptSelector] = useState(false)
   const viewsContainerRef = useRef<HTMLDivElement>(null)
-  const wrapperRef = useRef<HTMLDivElement>(null)
 
   const handleSelectSession = useCallback((id: string, promptId?: string) => {
     setSelectedSessionId(id)
@@ -73,15 +72,20 @@ function App() {
     }
   }
 
+  const setTabPosition = useCallback((index: number) => {
+    if (!viewsContainerRef.current) return
+    gsap.set(viewsContainerRef.current, { xPercent: -100 * index, force3D: true })
+  }, [])
+
   const animateToTab = useCallback((index: number) => {
-    if (viewsContainerRef.current && wrapperRef.current) {
-      const containerWidth = wrapperRef.current.offsetWidth
-      gsap.to(viewsContainerRef.current, {
-        x: -index * containerWidth,
-        duration: 0.3,
-        ease: 'power2.out'
-      })
-    }
+    if (!viewsContainerRef.current) return
+    gsap.to(viewsContainerRef.current, {
+      xPercent: -100 * index,
+      duration: 0.3,
+      ease: 'power2.out',
+      force3D: true,
+      overwrite: 'auto',
+    })
   }, [])
 
   const handleTabChange = useCallback((tab: 'chat' | 'contacts' | 'settings') => {
@@ -103,12 +107,10 @@ function App() {
     setSelectedPromptId(promptId)
   }, [])
 
-  // 初始化位置
-  useEffect(() => {
-    if (viewsContainerRef.current) {
-      gsap.set(viewsContainerRef.current, { x: 0 })
-    }
-  }, [])
+  // 初始化位置：在首帧绘制前设置，避免闪屏
+  useLayoutEffect(() => {
+    setTabPosition(getTabIndex(activeTab))
+  }, [setTabPosition])
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -178,19 +180,6 @@ function App() {
     }
   }, [])
 
-  // 窗口大小变化时重新定位
-  useEffect(() => {
-    const handleResize = () => {
-      const index = getTabIndex(activeTab)
-      if (viewsContainerRef.current && wrapperRef.current) {
-        const containerWidth = wrapperRef.current.offsetWidth
-        gsap.set(viewsContainerRef.current, { x: -index * containerWidth })
-      }
-    }
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
-  }, [activeTab])
-
   if (authMode !== 'ready') {
     return (
       <div className="app-wrapper">
@@ -206,7 +195,7 @@ function App() {
   }
 
   return (
-    <div className="app-wrapper" ref={wrapperRef}>
+    <div className="app-wrapper">
       {/* 平行视窗容器 */}
       <div className="views-container" ref={viewsContainerRef}>
         {/* 聊天页面 */}

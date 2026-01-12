@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { gsap } from 'gsap'
 import { getUserInfo, updateUserInfo, uploadUserAvatar, getUserAvatarUrl, appendQueryParam } from '../services/api'
 import type { UserInfo } from '../types/chat'
@@ -20,7 +20,7 @@ const ProfilePage: React.FC = () => {
   const settingsRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    loadUserInfo()
+    loadUserInfo({ showLoading: true })
   }, [])
 
   useEffect(() => {
@@ -35,22 +35,24 @@ const ProfilePage: React.FC = () => {
 
   useEffect(() => {
     if (showSettings && settingsRef.current) {
-      gsap.set(settingsRef.current, { x: '100%' })
+      gsap.set(settingsRef.current, { x: '100%', force3D: true })
       gsap.to(settingsRef.current, {
         x: 0,
         duration: 0.3,
-        ease: 'power2.out'
+        ease: 'power2.out',
+        force3D: true,
+        overwrite: 'auto',
       })
     }
   }, [showSettings])
 
-  const loadUserInfo = async () => {
-    setLoading(true)
+  const loadUserInfo = async ({ showLoading }: { showLoading: boolean }) => {
+    if (showLoading) setLoading(true)
     const userData = await getUserInfo()
     if (userData) {
       setUserInfo(userData)
     }
-    setLoading(false)
+    if (showLoading) setLoading(false)
   }
 
   const showMessageToast = (msg: string) => {
@@ -64,7 +66,7 @@ const ProfilePage: React.FC = () => {
       description: userInfo?.description || ''
     })
     if (userInfo?.avatar) {
-      setUserAvatarPreview(appendQueryParam(getUserAvatarUrl(), 't', Date.now()))
+      setUserAvatarPreview(appendQueryParam(getUserAvatarUrl(), 't', new Date(userInfo.updated_at).getTime()))
     } else {
       setUserAvatarPreview(null)
     }
@@ -115,7 +117,7 @@ const ProfilePage: React.FC = () => {
         setUserInfo(updated)
         showMessageToast('个人信息已保存')
         handleCloseUserModal()
-        loadUserInfo()
+        await loadUserInfo({ showLoading: false })
       } else {
         showMessageToast('保存失败')
       }
@@ -134,23 +136,23 @@ const ProfilePage: React.FC = () => {
         x: '100%',
         duration: 0.3,
         ease: 'power2.in',
+        force3D: true,
+        overwrite: 'auto',
         onComplete: () => {
           setShowSettings(false)
-          loadUserInfo()
+          loadUserInfo({ showLoading: false })
         },
       })
     } else {
       setShowSettings(false)
-      loadUserInfo()
+      loadUserInfo({ showLoading: false })
     }
   }
 
-  const getAvatarUrl = () => {
-    if (userInfo?.avatar) {
-      return appendQueryParam(getUserAvatarUrl(), 't', Date.now())
-    }
-    return null
-  }
+  const avatarUrl = useMemo(() => {
+    if (!userInfo?.avatar) return null
+    return appendQueryParam(getUserAvatarUrl(), 't', new Date(userInfo.updated_at).getTime())
+  }, [userInfo?.avatar, userInfo?.updated_at])
 
   return (
     <div className="profile-page">
@@ -167,8 +169,8 @@ const ProfilePage: React.FC = () => {
           {/* 个人信息卡片 */}
           <div className="profile-card" onClick={handleOpenUserModal}>
             <div className="profile-avatar-wrapper">
-              {getAvatarUrl() ? (
-                <img src={getAvatarUrl()!} alt="Avatar" className="profile-avatar" />
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="Avatar" className="profile-avatar" />
               ) : (
                 <div className="profile-avatar-default">
                   <svg viewBox="0 0 24 24">
