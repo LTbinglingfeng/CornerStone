@@ -1,7 +1,7 @@
 import type { ApiResponse, ChatSession, ChatRecord, AppConfig, Provider, ProvidersResponse, Prompt, UserInfo, AuthStatus, AuthSession } from '../types/chat'
 
-const API_BASE = 'http://localhost:1205/api'
-const MANAGEMENT_BASE = 'http://localhost:1205/management'
+const API_BASE = '/api'
+const MANAGEMENT_BASE = '/management'
 const AUTH_TOKEN_KEY = 'cornerstone.auth.token'
 
 export function getAuthToken(): string | null {

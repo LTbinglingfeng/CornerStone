@@ -1,8 +1,8 @@
-.claude
-node_modules
-web\node_modules
-web\dist\
-/src
+.claude/
+node_modules/
+web/node_modules/
+web/dist/
+/src/
 cornerstone.exe
+test-output
 *.md
-web\dist\assets

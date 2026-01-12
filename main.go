@@ -9,25 +9,75 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 	"time"
 )
+
+func fileExists(path string) bool {
+	info, errStat := os.Stat(path)
+	return errStat == nil && !info.IsDir()
+}
+
+func registerFrontend(mux *http.ServeMux, distDir string) {
+	fileSystem := http.Dir(distDir)
+	fileServer := http.FileServer(fileSystem)
+	indexPath := filepath.Join(distDir, "index.html")
+
+	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			http.NotFound(w, r)
+			return
+		}
+
+		cleanedPath := path.Clean(r.URL.Path)
+		if cleanedPath == "/" {
+			http.ServeFile(w, r, indexPath)
+			return
+		}
+
+		relativePath := strings.TrimPrefix(cleanedPath, "/")
+		file, errOpen := fileSystem.Open(relativePath)
+		if errOpen == nil {
+			defer func() {
+				if errClose := file.Close(); errClose != nil {
+					logging.Errorf("关闭前端静态文件失败: %v", errClose)
+				}
+			}()
+
+			if info, errInfo := file.Stat(); errInfo == nil && !info.IsDir() {
+				fileServer.ServeHTTP(w, r)
+				return
+			}
+		}
+
+		if path.Ext(cleanedPath) != "" {
+			http.NotFound(w, r)
+			return
+		}
+
+		http.ServeFile(w, r, indexPath)
+	}))
+}
 
 func main() {
 	// 命令行参数
 	port := flag.Int("port", 1205, "服务端口")
 	dataDir := flag.String("data", "", "数据存储目录")
+	webDir := flag.String("web", "", "前端构建目录(默认为 web/dist，需通过HTTP访问)")
 	flag.Parse()
+
+	// 获取可执行文件所在目录
+	exePath, errExecutable := os.Executable()
+	if errExecutable != nil {
+		logging.Fatalf("无法获取程序路径: %v", errExecutable)
+	}
+	exeDir := filepath.Dir(exePath)
 
 	// 确定数据目录
 	baseDir := *dataDir
 	if baseDir == "" {
-		// 获取可执行文件所在目录
-		exePath, err := os.Executable()
-		if err != nil {
-			logging.Fatalf("无法获取程序路径: %v", err)
-		}
-		exeDir := filepath.Dir(exePath)
 		baseDir = filepath.Join(exeDir, "src")
 	}
 	os.MkdirAll(baseDir, 0755)
@@ -72,6 +122,28 @@ func main() {
 	// 注册API处理器
 	handler := api.NewHandler(configManager, promptManager, chatManager, userManager, authManager, cachePhotoDir)
 	handler.RegisterRoutes(mux)
+
+	// 注册前端静态文件
+	distDir := *webDir
+	if distDir == "" {
+		candidates := []string{
+			filepath.Join(exeDir, "web", "dist"),
+			filepath.Join(".", "web", "dist"),
+		}
+		for _, candidateDir := range candidates {
+			if fileExists(filepath.Join(candidateDir, "index.html")) {
+				distDir = candidateDir
+				break
+			}
+		}
+	}
+	if distDir != "" && fileExists(filepath.Join(distDir, "index.html")) {
+		registerFrontend(mux, distDir)
+		logging.Infof("前端静态目录: %s", distDir)
+		logging.Infof("前端页面: http://localhost:%d/", *port)
+	} else {
+		logging.Infof("未找到前端构建产物，请先执行: cd web && npm run build")
+	}
 
 	// 启动服务
 	addr := fmt.Sprintf(":%d", *port)

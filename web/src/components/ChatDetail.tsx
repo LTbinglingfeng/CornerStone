@@ -18,6 +18,20 @@ type DisplayItem =
   | { key: string; role: string; type: 'red-packet'; message: ChatMessage; toolCall: ToolCall }
   | { key: string; role: string; type: 'pat-banner'; message: ChatMessage; toolCall: ToolCall }
 
+const assistantMessageSplitToken = '→'
+
+const splitAssistantMessageContent = (content: string): string[] => {
+  if (!content) return []
+  if (!content.includes(assistantMessageSplitToken)) {
+    return content.trim() ? [content] : []
+  }
+
+  return content
+    .split(assistantMessageSplitToken)
+    .map(part => part.trim())
+    .filter(part => part !== '')
+}
+
 const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, onSwitchSession }) => {
   const [session, setSession] = useState<ChatRecord | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -521,17 +535,47 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
   const buildDisplayItems = (): DisplayItem[] => {
     const items: DisplayItem[] = []
     messages.forEach((message, index) => {
-      const hasContent = (message.content && message.content.trim() !== '') || (message.image_paths && message.image_paths.length > 0)
+      const hasImages = !!(message.image_paths && message.image_paths.length > 0)
       const toolCalls = message.tool_calls || []
       const supportedCalls = toolCalls.filter(tc => tc.function.name === 'send_red_packet' || tc.function.name === 'send_pat')
 
+      const isAssistant = message.role === 'assistant'
+      const assistantSegments = isAssistant ? splitAssistantMessageContent(message.content) : []
+      const hasText = isAssistant ? assistantSegments.length > 0 : message.content.trim() !== ''
+      const hasContent = hasText || hasImages
+
       if (hasContent) {
-        items.push({
-          key: `${message.timestamp}-text`,
-          role: message.role,
-          type: 'text',
-          message,
-        })
+        if (isAssistant) {
+          if (assistantSegments.length > 0) {
+            assistantSegments.forEach((segment, segmentIndex) => {
+              const segmentMessage: ChatMessage = {
+                ...message,
+                content: segment,
+                ...(segmentIndex === 0 ? {} : { image_paths: undefined }),
+              }
+              items.push({
+                key: `${message.timestamp}-text-${segmentIndex}`,
+                role: message.role,
+                type: 'text',
+                message: segmentMessage,
+              })
+            })
+          } else {
+            items.push({
+              key: `${message.timestamp}-text-0`,
+              role: message.role,
+              type: 'text',
+              message: { ...message, content: '' },
+            })
+          }
+        } else {
+          items.push({
+            key: `${message.timestamp}-text`,
+            role: message.role,
+            type: 'text',
+            message,
+          })
+        }
       }
 
       supportedCalls.forEach((toolCall, toolIndex) => {
