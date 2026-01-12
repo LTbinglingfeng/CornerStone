@@ -1,4 +1,5 @@
 import { useTheme } from '../contexts/ThemeContext'
+import { logoBlackDataUrl, logoWhiteDataUrl } from 'virtual:cornerstone-logos'
 import './Header.css'
 
 interface HeaderProps {
@@ -8,10 +9,14 @@ interface HeaderProps {
 
 const Header: React.FC<HeaderProps> = ({ title, onAdd }) => {
   const { theme, toggleTheme } = useTheme()
+  const logoSrc = theme === 'dark' ? logoBlackDataUrl : logoWhiteDataUrl
 
   return (
     <div className="header">
-      <div className="header-title">{title}</div>
+      <div className="header-left">
+        <img className="header-logo" src={logoSrc} alt={title} />
+        <div className="header-title">{title}</div>
+      </div>
       <div className="header-icons">
         <div className="header-icon" onClick={toggleTheme}>
           {theme === 'dark' ? (

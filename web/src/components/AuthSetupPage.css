@@ -20,6 +20,20 @@
   gap: 16px;
 }
 
+.auth-logo-wrapper {
+  display: flex;
+  justify-content: center;
+  padding-top: 4px;
+}
+
+.auth-logo {
+  width: 68px;
+  height: 68px;
+  border-radius: 18px;
+  object-fit: cover;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.25);
+}
+
 .auth-title {
   font-size: 20px;
   font-weight: 600;

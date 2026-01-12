@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { useTheme } from '../contexts/ThemeContext'
+import { logoBlackDataUrl, logoWhiteDataUrl } from 'virtual:cornerstone-logos'
 import './AuthLoginPage.css'
 
 interface AuthLoginPageProps {
@@ -8,9 +10,12 @@ interface AuthLoginPageProps {
 }
 
 const AuthLoginPage: React.FC<AuthLoginPageProps> = ({ username, onSubmit, loading = false }) => {
+  const { theme } = useTheme()
   const [inputUsername, setInputUsername] = useState(username || '')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
+
+  const logoSrc = theme === 'dark' ? logoBlackDataUrl : logoWhiteDataUrl
 
   useEffect(() => {
     if (username) {
@@ -41,6 +46,9 @@ const AuthLoginPage: React.FC<AuthLoginPageProps> = ({ username, onSubmit, loadi
   return (
     <div className="auth-page">
       <div className="auth-card">
+        <div className="auth-logo-wrapper">
+          <img className="auth-logo" src={logoSrc} alt="CornerStone" />
+        </div>
         <div className="auth-title">输入密码</div>
         <div className="auth-subtitle">欢迎回来，请验证密码</div>
         <form className="auth-form" onSubmit={handleSubmit}>

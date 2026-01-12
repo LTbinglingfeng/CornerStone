@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { useTheme } from '../contexts/ThemeContext'
+import { logoBlackDataUrl, logoWhiteDataUrl } from 'virtual:cornerstone-logos'
 import './AuthSetupPage.css'
 
 interface AuthSetupPageProps {
@@ -7,10 +9,13 @@ interface AuthSetupPageProps {
 }
 
 const AuthSetupPage: React.FC<AuthSetupPageProps> = ({ onSubmit, loading = false }) => {
+  const { theme } = useTheme()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
+
+  const logoSrc = theme === 'dark' ? logoBlackDataUrl : logoWhiteDataUrl
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -37,6 +42,9 @@ const AuthSetupPage: React.FC<AuthSetupPageProps> = ({ onSubmit, loading = false
   return (
     <div className="auth-page">
       <div className="auth-card">
+        <div className="auth-logo-wrapper">
+          <img className="auth-logo" src={logoSrc} alt="CornerStone" />
+        </div>
         <div className="auth-title">设置账号</div>
         <div className="auth-subtitle">首次启动，请创建用户名与密码</div>
         <form className="auth-form" onSubmit={handleSubmit}>

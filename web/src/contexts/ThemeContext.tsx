@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+import { logoBlackDataUrl, logoWhiteDataUrl } from 'virtual:cornerstone-logos'
 
 type Theme = 'dark' | 'light'
 
@@ -18,6 +19,12 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   useEffect(() => {
     localStorage.setItem('theme', theme)
     document.documentElement.setAttribute('data-theme', theme)
+
+    const favicon = document.getElementById('cornerstone-favicon') as HTMLLinkElement | null
+    if (favicon) {
+      favicon.type = 'image/jpeg'
+      favicon.href = theme === 'dark' ? logoBlackDataUrl : logoWhiteDataUrl
+    }
   }, [theme])
 
   const toggleTheme = () => {
