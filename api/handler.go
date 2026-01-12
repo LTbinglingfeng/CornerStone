@@ -1611,7 +1611,7 @@ func getChatTools() []client.Tool {
 							"maxLength":   6,
 						},
 					},
-					"required": []string{"name"},
+					"required": []string{"name", "target"},
 				},
 			},
 		},
