@@ -36,6 +36,23 @@ const GEMINI_THINKING_LEVELS = [
   { value: 'high', label: '高 (high)' },
 ]
 
+const getGeminiThinkingBudgetRange = (model: string): { min: number; max: number } => {
+  const normalized = (model || '').trim().toLowerCase()
+
+  // Based on https://ai.google.dev/gemini-api/docs/thinking
+  if (normalized.includes('flash-lite')) return { min: 512, max: 24576 }
+  if (normalized.includes('flash')) return { min: 0, max: 24576 }
+  if (normalized.includes('pro')) return { min: 128, max: 32768 }
+  if (normalized.includes('robotics-er')) return { min: 0, max: 24576 }
+  return { min: 128, max: 32768 }
+}
+
+const clampGeminiThinkingBudget = (model: string, budget: number): number => {
+  if (budget === -1) return -1
+  const { min, max } = getGeminiThinkingBudgetRange(model)
+  return Math.min(Math.max(budget, min), max)
+}
+
 interface ProviderSettingsProps {
   onBack: () => void
 }
@@ -223,6 +240,18 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
 
   const handleProviderChange = (field: keyof Provider, value: string | boolean | number) => {
     if (!editingProvider) return
+
+    if (field === 'model') {
+      const nextModel = String(value || '')
+      const nextProvider: Provider = { ...editingProvider, model: nextModel }
+      if (nextProvider.type === 'gemini' && nextProvider.gemini_thinking_mode === 'thinking_budget') {
+        const nextBudget = Number(nextProvider.gemini_thinking_budget) || 0
+        nextProvider.gemini_thinking_budget = clampGeminiThinkingBudget(nextModel, nextBudget)
+      }
+      setEditingProvider(nextProvider)
+      return
+    }
+
     if (field === 'type') {
       const nextType = value as ProviderType
       const nextProvider: Provider = {
@@ -243,12 +272,22 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
         nextProvider.gemini_thinking_level = 'low'
       }
       if (nextMode === 'thinking_budget') {
-        const nextBudget = Number(nextProvider.gemini_thinking_budget) || 128
-        nextProvider.gemini_thinking_budget = Math.min(Math.max(nextBudget, 128), 32768)
+        const nextBudget = Number(nextProvider.gemini_thinking_budget) || getGeminiThinkingBudgetRange(nextProvider.model).min
+        nextProvider.gemini_thinking_budget = clampGeminiThinkingBudget(nextProvider.model, nextBudget)
       }
       setEditingProvider(nextProvider)
       return
     }
+
+    if (field === 'gemini_thinking_budget') {
+      const nextBudget = Number(value) || 0
+      setEditingProvider({
+        ...editingProvider,
+        gemini_thinking_budget: clampGeminiThinkingBudget(editingProvider.model, nextBudget),
+      })
+      return
+    }
+
     setEditingProvider({ ...editingProvider, [field]: value })
   }
 
@@ -538,12 +577,12 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                       <input
                         type="number"
                         className="modal-input"
-                        min={128}
-                        max={32768}
+                        min={getGeminiThinkingBudgetRange(editingProvider.model).min}
+                        max={getGeminiThinkingBudgetRange(editingProvider.model).max}
                         step={1}
                         value={editingProvider.gemini_thinking_budget}
                         onChange={(e) => handleProviderChange('gemini_thinking_budget', Number(e.target.value) || 0)}
-                        placeholder="128-32768"
+                        placeholder={`${getGeminiThinkingBudgetRange(editingProvider.model).min}-${getGeminiThinkingBudgetRange(editingProvider.model).max}`}
                       />
                     )}
                     {editingProvider.gemini_thinking_mode === 'none' && (

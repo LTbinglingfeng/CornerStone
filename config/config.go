@@ -44,8 +44,8 @@ type Provider struct {
 	ThinkingBudget       int          `json:"thinking_budget"`                  // 思考预算（Anthropic）
 	ReasoningEffort      string       `json:"reasoning_effort"`                 // 思考强度（OpenAI兼容）
 	GeminiThinkingMode   *string      `json:"gemini_thinking_mode,omitempty"`   // Gemini思考模式 (none/thinking_level/thinking_budget)
-	GeminiThinkingLevel  *string      `json:"gemini_thinking_level,omitempty"`  // Gemini思考级别 (low/high)
-	GeminiThinkingBudget *int         `json:"gemini_thinking_budget,omitempty"` // Gemini思考预算 (128-32768)
+	GeminiThinkingLevel  *string      `json:"gemini_thinking_level,omitempty"`  // Gemini思考级别 (model-dependent, e.g. low/high/minimal/medium)
+	GeminiThinkingBudget *int         `json:"gemini_thinking_budget,omitempty"` // Gemini思考预算 (model-dependent, e.g. 0-24576 or 128-32768)
 	ContextMessages      int          `json:"context_messages"`                 // 上下文消息轮数
 	Stream               bool         `json:"stream"`                           // 是否启用流式输出
 	ImageCapable         bool         `json:"image_capable"`                    // 是否支持识图
@@ -231,23 +231,24 @@ func (m *Manager) applyProviderDefaults(rawProviders []map[string]json.RawMessag
 		if level == "" {
 			level = "low"
 		}
-		if level != "low" && level != "high" {
-			level = "low"
-		}
+		level = normalizeGeminiThinkingLevel(provider.Model, level)
 		if provider.GeminiThinkingLevel == nil || *provider.GeminiThinkingLevel != level {
 			provider.GeminiThinkingLevel = &level
 			changed = true
 		}
 
-		budget := 128
-		if provider.GeminiThinkingBudget != nil && *provider.GeminiThinkingBudget > 0 {
+		minBudget, maxBudget := geminiThinkingBudgetRange(provider.Model)
+		budget := minBudget
+		if provider.GeminiThinkingBudget != nil {
 			budget = *provider.GeminiThinkingBudget
 		}
-		if budget < 128 {
-			budget = 128
-		}
-		if budget > 32768 {
-			budget = 32768
+		if budget != -1 {
+			if budget < minBudget {
+				budget = minBudget
+			}
+			if budget > maxBudget {
+				budget = maxBudget
+			}
 		}
 		if provider.GeminiThinkingBudget == nil || *provider.GeminiThinkingBudget != budget {
 			provider.GeminiThinkingBudget = &budget
@@ -255,6 +256,45 @@ func (m *Manager) applyProviderDefaults(rawProviders []map[string]json.RawMessag
 		}
 	}
 	return changed
+}
+
+func normalizeGeminiThinkingLevel(model, level string) string {
+	model = strings.ToLower(strings.TrimSpace(model))
+	level = strings.ToLower(strings.TrimSpace(level))
+
+	// Gemini 3 Flash supports: minimal/low/medium/high.
+	if strings.Contains(model, "gemini-3") && strings.Contains(model, "flash") {
+		switch level {
+		case "minimal", "low", "medium", "high":
+			return level
+		default:
+			return "low"
+		}
+	}
+
+	// Default: low/high.
+	if level == "high" {
+		return "high"
+	}
+	return "low"
+}
+
+func geminiThinkingBudgetRange(model string) (minBudget, maxBudget int) {
+	model = strings.ToLower(strings.TrimSpace(model))
+
+	// Defaults based on https://ai.google.dev/gemini-api/docs/thinking
+	switch {
+	case strings.Contains(model, "flash-lite"):
+		return 512, 24576
+	case strings.Contains(model, "flash"):
+		return 0, 24576
+	case strings.Contains(model, "pro"):
+		return 128, 32768
+	case strings.Contains(model, "robotics-er"):
+		return 0, 24576
+	default:
+		return 128, 32768
+	}
 }
 
 // Save 保存配置到文件

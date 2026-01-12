@@ -23,7 +23,6 @@ type GeminiRequest struct {
 	Contents          []GeminiContent         `json:"contents"`
 	SystemInstruction *GeminiContent          `json:"systemInstruction,omitempty"`
 	GenerationConfig  *GeminiGenerationConfig `json:"generationConfig,omitempty"`
-	ThinkingConfig    *GeminiThinkingConfig   `json:"thinkingConfig,omitempty"`
 	Tools             []GeminiTool            `json:"tools,omitempty"`
 }
 
@@ -34,6 +33,7 @@ type GeminiContent struct {
 
 type GeminiPart struct {
 	Text         string              `json:"text,omitempty"`
+	Thought      bool                `json:"thought,omitempty"`
 	FunctionCall *GeminiFunctionCall `json:"functionCall,omitempty"`
 	InlineData   *GeminiInlineData   `json:"inlineData,omitempty"`
 }
@@ -62,15 +62,16 @@ type GeminiFunctionCall struct {
 }
 
 type GeminiGenerationConfig struct {
-	Temperature     float64 `json:"temperature,omitempty"`
-	TopP            float64 `json:"topP,omitempty"`
-	MaxOutputTokens int     `json:"maxOutputTokens,omitempty"`
+	Temperature     float64               `json:"temperature,omitempty"`
+	TopP            float64               `json:"topP,omitempty"`
+	MaxOutputTokens int                   `json:"maxOutputTokens,omitempty"`
+	ThinkingConfig  *GeminiThinkingConfig `json:"thinkingConfig,omitempty"`
 }
 
 type GeminiThinkingConfig struct {
 	IncludeThoughts bool   `json:"includeThoughts"`
 	ThinkingLevel   string `json:"thinkingLevel,omitempty"`
-	ThinkingBudget  int    `json:"thinkingBudget,omitempty"`
+	ThinkingBudget  *int   `json:"thinkingBudget,omitempty"`
 }
 
 // Gemini API 响应结构
@@ -202,16 +203,22 @@ func (c *GeminiClient) Chat(ctx context.Context, req ChatRequest) (*ChatResponse
 	}
 
 	thinkingConfig := buildGeminiThinkingConfig(req)
-	if thinkingConfig != nil {
-		geminiReq.ThinkingConfig = thinkingConfig
-	}
-
+	var generationConfig *GeminiGenerationConfig
 	if req.Temperature > 0 || req.TopP > 0 || req.MaxTokens > 0 {
-		geminiReq.GenerationConfig = &GeminiGenerationConfig{
+		generationConfig = &GeminiGenerationConfig{
 			Temperature:     req.Temperature,
 			TopP:            req.TopP,
 			MaxOutputTokens: req.MaxTokens,
 		}
+	}
+	if thinkingConfig != nil {
+		if generationConfig == nil {
+			generationConfig = &GeminiGenerationConfig{}
+		}
+		generationConfig.ThinkingConfig = thinkingConfig
+	}
+	if generationConfig != nil {
+		geminiReq.GenerationConfig = generationConfig
 	}
 
 	body, err := json.Marshal(geminiReq)
@@ -266,16 +273,22 @@ func (c *GeminiClient) ChatStream(ctx context.Context, req ChatRequest, callback
 	}
 
 	thinkingConfig := buildGeminiThinkingConfig(req)
-	if thinkingConfig != nil {
-		geminiReq.ThinkingConfig = thinkingConfig
-	}
-
+	var generationConfig *GeminiGenerationConfig
 	if req.Temperature > 0 || req.TopP > 0 || req.MaxTokens > 0 {
-		geminiReq.GenerationConfig = &GeminiGenerationConfig{
+		generationConfig = &GeminiGenerationConfig{
 			Temperature:     req.Temperature,
 			TopP:            req.TopP,
 			MaxOutputTokens: req.MaxTokens,
 		}
+	}
+	if thinkingConfig != nil {
+		if generationConfig == nil {
+			generationConfig = &GeminiGenerationConfig{}
+		}
+		generationConfig.ThinkingConfig = thinkingConfig
+	}
+	if generationConfig != nil {
+		geminiReq.GenerationConfig = generationConfig
 	}
 
 	body, err := json.Marshal(geminiReq)
@@ -340,12 +353,17 @@ func (c *GeminiClient) convertToOpenAIResponse(resp GeminiResponse, model string
 	var choices []Choice
 
 	for i, candidate := range resp.Candidates {
-		content := ""
+		var content strings.Builder
+		var reasoning strings.Builder
 		var toolCalls []ToolCall
 
 		for j, part := range candidate.Content.Parts {
 			if part.Text != "" {
-				content += part.Text
+				if part.Thought {
+					reasoning.WriteString(part.Text)
+				} else {
+					content.WriteString(part.Text)
+				}
 			}
 			if part.FunctionCall != nil {
 				// 将 Gemini FunctionCall 转换为 OpenAI ToolCall
@@ -364,9 +382,10 @@ func (c *GeminiClient) convertToOpenAIResponse(resp GeminiResponse, model string
 		choices = append(choices, Choice{
 			Index: i,
 			Message: Message{
-				Role:      "assistant",
-				Content:   content,
-				ToolCalls: toolCalls,
+				Role:             "assistant",
+				Content:          content.String(),
+				ReasoningContent: reasoning.String(),
+				ToolCalls:        toolCalls,
 			},
 			FinishReason: candidate.FinishReason,
 		})
@@ -393,12 +412,17 @@ func (c *GeminiClient) convertToStreamChunk(resp GeminiStreamResponse, model str
 	var choices []Choice
 
 	for i, candidate := range resp.Candidates {
-		content := ""
+		var content strings.Builder
+		var reasoning strings.Builder
 		var deltaToolCalls []DeltaToolCall
 
 		for j, part := range candidate.Content.Parts {
 			if part.Text != "" {
-				content += part.Text
+				if part.Thought {
+					reasoning.WriteString(part.Text)
+				} else {
+					content.WriteString(part.Text)
+				}
 			}
 			if part.FunctionCall != nil {
 				// 将 Gemini FunctionCall 转换为 OpenAI DeltaToolCall
@@ -418,9 +442,10 @@ func (c *GeminiClient) convertToStreamChunk(resp GeminiStreamResponse, model str
 		choices = append(choices, Choice{
 			Index: i,
 			Delta: Delta{
-				Role:      "assistant",
-				Content:   content,
-				ToolCalls: deltaToolCalls,
+				Role:             "assistant",
+				Content:          content.String(),
+				ReasoningContent: reasoning.String(),
+				ToolCalls:        deltaToolCalls,
 			},
 			FinishReason: candidate.FinishReason,
 		})
@@ -436,31 +461,70 @@ func buildGeminiThinkingConfig(req ChatRequest) *GeminiThinkingConfig {
 	mode := strings.TrimSpace(req.GeminiThinkingMode)
 	switch mode {
 	case "none":
-		return &GeminiThinkingConfig{
-			IncludeThoughts: false,
-		}
+		return nil
 	case "thinking_level":
-		level := strings.ToLower(strings.TrimSpace(req.GeminiThinkingLevel))
-		if level != "high" {
-			level = "low"
-		}
+		level := normalizeGeminiThinkingLevel(req.Model, req.GeminiThinkingLevel)
 		return &GeminiThinkingConfig{
 			IncludeThoughts: true,
 			ThinkingLevel:   level,
 		}
 	case "thinking_budget":
 		budget := req.GeminiThinkingBudget
-		if budget < 128 {
-			budget = 128
+		// -1 enables dynamic thinking (model adjusts budget based on complexity).
+		if budget != -1 {
+			minBudget, maxBudget := geminiThinkingBudgetRange(req.Model)
+			if budget < minBudget {
+				budget = minBudget
+			}
+			if budget > maxBudget {
+				budget = maxBudget
+			}
 		}
-		if budget > 32768 {
-			budget = 32768
-		}
+		includeThoughts := budget != 0
 		return &GeminiThinkingConfig{
-			IncludeThoughts: true,
-			ThinkingBudget:  budget,
+			IncludeThoughts: includeThoughts,
+			ThinkingBudget:  &budget,
 		}
 	default:
 		return nil
+	}
+}
+
+func normalizeGeminiThinkingLevel(model, level string) string {
+	model = strings.ToLower(strings.TrimSpace(model))
+	level = strings.ToLower(strings.TrimSpace(level))
+
+	// Gemini 3 Flash supports: minimal/low/medium/high.
+	if strings.Contains(model, "gemini-3") && strings.Contains(model, "flash") {
+		switch level {
+		case "minimal", "low", "medium", "high":
+			return level
+		default:
+			return "low"
+		}
+	}
+
+	// Default: low/high.
+	if level == "high" {
+		return "high"
+	}
+	return "low"
+}
+
+func geminiThinkingBudgetRange(model string) (minBudget, maxBudget int) {
+	model = strings.ToLower(strings.TrimSpace(model))
+
+	// Defaults based on https://ai.google.dev/gemini-api/docs/thinking
+	switch {
+	case strings.Contains(model, "flash-lite"):
+		return 512, 24576
+	case strings.Contains(model, "flash"):
+		return 0, 24576
+	case strings.Contains(model, "pro"):
+		return 128, 32768
+	case strings.Contains(model, "robotics-er"):
+		return 0, 24576
+	default:
+		return 128, 32768
 	}
 }
