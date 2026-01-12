@@ -317,6 +317,7 @@ func (c *GeminiClient) ChatStream(ctx context.Context, req ChatRequest, callback
 		return fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(bodyBytes))
 	}
 
+	nextToolCallIndex := 0
 	scanner := bufio.NewScanner(resp.Body)
 	buf := make([]byte, 0, 64*1024)
 	scanner.Buffer(buf, maxStreamLineBytes)
@@ -339,7 +340,7 @@ func (c *GeminiClient) ChatStream(ctx context.Context, req ChatRequest, callback
 		}
 
 		// 转换为通用流式响应块
-		chunk := c.convertToStreamChunk(geminiResp, req.Model)
+		chunk := c.convertToStreamChunk(geminiResp, req.Model, &nextToolCallIndex)
 		if err := callback(chunk); err != nil {
 			return err
 		}
@@ -408,7 +409,7 @@ func (c *GeminiClient) convertToOpenAIResponse(resp GeminiResponse, model string
 }
 
 // convertToStreamChunk 将Gemini流式响应转换为OpenAI格式
-func (c *GeminiClient) convertToStreamChunk(resp GeminiStreamResponse, model string) StreamChunk {
+func (c *GeminiClient) convertToStreamChunk(resp GeminiStreamResponse, model string, nextToolCallIndex *int) StreamChunk {
 	var choices []Choice
 
 	for i, candidate := range resp.Candidates {
@@ -427,9 +428,16 @@ func (c *GeminiClient) convertToStreamChunk(resp GeminiStreamResponse, model str
 			if part.FunctionCall != nil {
 				// 将 Gemini FunctionCall 转换为 OpenAI DeltaToolCall
 				argsJSON, _ := json.Marshal(part.FunctionCall.Args)
+				callIndex := j
+				callID := fmt.Sprintf("call_%d_%d", i, j)
+				if nextToolCallIndex != nil {
+					callIndex = *nextToolCallIndex
+					callID = fmt.Sprintf("call_%d", callIndex)
+					*nextToolCallIndex++
+				}
 				deltaToolCalls = append(deltaToolCalls, DeltaToolCall{
-					Index: j,
-					ID:    fmt.Sprintf("call_%d_%d", i, j),
+					Index: callIndex,
+					ID:    callID,
 					Type:  "function",
 					Function: ToolCallFunction{
 						Name:      part.FunctionCall.Name,
