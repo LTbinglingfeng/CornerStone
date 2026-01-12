@@ -54,10 +54,17 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const activeRequestRef = useRef<AbortController | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const streamingAssistantTimestampRef = useRef<string | null>(null)
+  const finalizeSendTimeoutRef = useRef<number | null>(null)
 
   useEffect(() => {
     activeRequestRef.current?.abort()
     activeRequestRef.current = null
+    if (finalizeSendTimeoutRef.current !== null) {
+      window.clearTimeout(finalizeSendTimeoutRef.current)
+      finalizeSendTimeoutRef.current = null
+    }
+    streamingAssistantTimestampRef.current = null
     setSending(false)
     setActiveRedPacket(null)
     setPacketStep('idle')
@@ -76,6 +83,10 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
   useEffect(() => {
     return () => {
       activeRequestRef.current?.abort()
+      if (finalizeSendTimeoutRef.current !== null) {
+        window.clearTimeout(finalizeSendTimeoutRef.current)
+        finalizeSendTimeoutRef.current = null
+      }
     }
   }, [])
 
@@ -150,6 +161,12 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
       ...(hasImages ? { image_paths: pendingImages } : {}),
     }
 
+    if (finalizeSendTimeoutRef.current !== null) {
+      window.clearTimeout(finalizeSendTimeoutRef.current)
+      finalizeSendTimeoutRef.current = null
+    }
+    streamingAssistantTimestampRef.current = null
+
     setMessages(prev => [...prev, userMessage])
     setInputText('')
     setPendingImages([])
@@ -158,8 +175,6 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     if (textareaRef.current) {
       textareaRef.current.style.height = '36px'
     }
-
-    let streamingAssistantTimestamp: string | null = null
 
     try {
       activeRequestRef.current?.abort()
@@ -190,7 +205,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         // 用于收集流式 tool_calls
         const toolCallsMap: Map<number, { id: string; type: string; name: string; arguments: string }> = new Map()
         const assistantTimestamp = new Date().toISOString()
-        streamingAssistantTimestamp = assistantTimestamp
+        streamingAssistantTimestampRef.current = assistantTimestamp
         const assistantMessage: ChatMessage = {
           role: 'assistant',
           content: '',
@@ -333,11 +348,11 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
 
       const message = error instanceof Error && error.message ? error.message : '发送失败，请重试'
       setMessages(prev => {
-        if (streamingAssistantTimestamp) {
+        if (streamingAssistantTimestampRef.current) {
           const next = [...prev]
           for (let i = next.length - 1; i >= 0; i--) {
             const msg = next[i]
-            if (msg.role === 'assistant' && msg.timestamp === streamingAssistantTimestamp) {
+            if (msg.role === 'assistant' && msg.timestamp === streamingAssistantTimestampRef.current) {
               next[i] = { ...msg, content: message }
               return next
             }
@@ -354,8 +369,16 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         ]
       })
     } finally {
-      setSending(false)
       activeRequestRef.current = null
+      if (finalizeSendTimeoutRef.current !== null) {
+        window.clearTimeout(finalizeSendTimeoutRef.current)
+        finalizeSendTimeoutRef.current = null
+      }
+      finalizeSendTimeoutRef.current = window.setTimeout(() => {
+        streamingAssistantTimestampRef.current = null
+        setSending(false)
+        finalizeSendTimeoutRef.current = null
+      }, 0)
     }
   }
 
@@ -540,7 +563,22 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
       const supportedCalls = toolCalls.filter(tc => tc.function.name === 'send_red_packet' || tc.function.name === 'send_pat')
 
       const isAssistant = message.role === 'assistant'
-      const assistantSegments = isAssistant ? splitAssistantMessageContent(message.content) : []
+      const isStreamingAssistantMessage =
+        isAssistant &&
+        sending &&
+        streamingAssistantTimestampRef.current !== null &&
+        message.timestamp === streamingAssistantTimestampRef.current
+
+      let assistantSegments = isAssistant ? splitAssistantMessageContent(message.content) : []
+      const hasSplitToken = isAssistant && message.content.includes(assistantMessageSplitToken)
+      const endsWithSplitToken = isAssistant && message.content.trimEnd().endsWith(assistantMessageSplitToken)
+
+      const shouldHoldTrailingSegment =
+        isStreamingAssistantMessage && hasSplitToken && !endsWithSplitToken && assistantSegments.length > 1
+
+      if (shouldHoldTrailingSegment) {
+        assistantSegments = assistantSegments.slice(0, -1)
+      }
       const hasText = isAssistant ? assistantSegments.length > 0 : message.content.trim() !== ''
       const hasContent = hasText || hasImages
 
@@ -560,6 +598,21 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
                 message: segmentMessage,
               })
             })
+
+            const shouldShowStreamingSegmentLoading =
+              isStreamingAssistantMessage &&
+              hasSplitToken &&
+              assistantSegments.length > 0 &&
+              (endsWithSplitToken || shouldHoldTrailingSegment)
+
+            if (shouldShowStreamingSegmentLoading) {
+              items.push({
+                key: `${message.timestamp}-loading-split`,
+                role: message.role,
+                type: 'loading',
+                message,
+              })
+            }
           } else {
             items.push({
               key: `${message.timestamp}-text-0`,

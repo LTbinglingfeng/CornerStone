@@ -122,3 +122,10 @@ html, body {
   justify-content: center;
   align-items: center;
 }
+
+@media (pointer: coarse) {
+  #root {
+    justify-content: flex-start;
+    align-items: stretch;
+  }
+}
