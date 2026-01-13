@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { gsap } from 'gsap'
 import type { ChatMessage, ChatRecord, Prompt, UserInfo, ToolCall, RedPacketParams, PatParams } from '../types/chat'
-import { getSession, sendMessage, getPrompt, getUserInfo, getPromptAvatarUrl, getUserAvatarUrl, uploadChatImage, getChatImageUrl, getActiveProvider, appendQueryParam, updateSessionMessage, deleteSessionMessage, recallSessionMessage } from '../services/api'
+import { getSession, sendMessage, getPrompt, getUserInfo, getPromptAvatarUrl, getUserAvatarUrl, uploadChatImage, getChatImageUrl, getActiveProvider, appendQueryParam, updateSessionMessage, deleteSessionMessage, recallSessionMessage, openSessionRedPacket } from '../services/api'
 import ChatSettings from './ChatSettings'
 import ContextMenu, { type MenuItem } from './ContextMenu'
 import './ChatDetail.css'
@@ -18,6 +18,7 @@ type DisplayItem =
   | { key: string; role: string; type: 'text'; message: ChatMessage; messageIndex: number }
   | { key: string; role: string; type: 'loading'; message: ChatMessage; messageIndex: number }
   | { key: string; role: string; type: 'red-packet'; message: ChatMessage; toolCall: ToolCall; messageIndex: number }
+  | { key: string; role: string; type: 'red-packet-received-banner'; message: ChatMessage; toolCall: ToolCall; messageIndex: number }
   | { key: string; role: string; type: 'pat-banner'; message: ChatMessage; toolCall: ToolCall; messageIndex: number }
   | { key: string; role: string; type: 'recall-banner'; message: ChatMessage; messageIndex: number }
 
@@ -73,6 +74,11 @@ type SelectTextState = {
   text: string
 }
 
+type ActiveRedPacketState = {
+  params: RedPacketParams
+  packetKey: string
+}
+
 const splitAssistantMessageContent = (content: string): string[] => {
   if (!content) return []
   if (!content.includes(assistantMessageSplitToken)) {
@@ -104,7 +110,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
   const [selectTextCopied, setSelectTextCopied] = useState(false)
 
   // Red Packet State
-  const [activeRedPacket, setActiveRedPacket] = useState<RedPacketParams | null>(null)
+  const [activeRedPacket, setActiveRedPacket] = useState<ActiveRedPacketState | null>(null)
   const [packetStep, setPacketStep] = useState<'idle' | 'opening' | 'opened'>('idle')
 
   const containerRef = useRef<HTMLDivElement>(null)
@@ -117,6 +123,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
   const finalizeSendTimeoutRef = useRef<number | null>(null)
   const longPressTimeoutRef = useRef<number | null>(null)
   const longPressStartRef = useRef<{ x: number; y: number } | null>(null)
+  const redPacketOpenTimeoutRef = useRef<number | null>(null)
 
   useEffect(() => {
     activeRequestRef.current?.abort()
@@ -128,6 +135,10 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     if (longPressTimeoutRef.current !== null) {
       window.clearTimeout(longPressTimeoutRef.current)
       longPressTimeoutRef.current = null
+    }
+    if (redPacketOpenTimeoutRef.current !== null) {
+      window.clearTimeout(redPacketOpenTimeoutRef.current)
+      redPacketOpenTimeoutRef.current = null
     }
     streamingAssistantTimestampRef.current = null
     setSending(false)
@@ -160,6 +171,10 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
       if (longPressTimeoutRef.current !== null) {
         window.clearTimeout(longPressTimeoutRef.current)
         longPressTimeoutRef.current = null
+      }
+      if (redPacketOpenTimeoutRef.current !== null) {
+        window.clearTimeout(redPacketOpenTimeoutRef.current)
+        redPacketOpenTimeoutRef.current = null
       }
     }
   }, [])
@@ -756,18 +771,39 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     )
   }
 
+  const openedRedPacketKeys = useMemo(() => {
+    const keys = new Set<string>()
+    messages.forEach((message) => {
+      const toolCalls = message.tool_calls || []
+      toolCalls.forEach((toolCall) => {
+        if (toolCall.function.name !== 'red_packet_received') return
+        try {
+          const args = JSON.parse(toolCall.function.arguments || '{}') as { packet_key?: unknown }
+          const packetKey = typeof args.packet_key === 'string' ? args.packet_key.trim() : ''
+          if (packetKey) keys.add(packetKey)
+        } catch {
+          // ignore invalid payload
+        }
+      })
+    })
+    return keys
+  }, [messages])
+
+  const normalizePacketKey = (rawKey: string) => rawKey.replace(/[^a-zA-Z0-9_-]/g, '_')
+
   // 渲染红包卡片
-  const renderRedPacket = (toolCall: ToolCall) => {
+  const renderRedPacket = (toolCall: ToolCall, rawKey: string) => {
     if (toolCall.function.name !== 'send_red_packet') return null
 
     try {
       const params: RedPacketParams = JSON.parse(toolCall.function.arguments)
+      const packetKey = normalizePacketKey(rawKey)
       return (
         <div 
           className="red-packet-bubble" 
           onClick={() => {
-            setActiveRedPacket(params)
-            setPacketStep('idle')
+            setActiveRedPacket({ params, packetKey })
+            setPacketStep(openedRedPacketKeys.has(packetKey) ? 'opened' : 'idle')
           }}
         >
           <div className="rp-content">
@@ -791,6 +827,41 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     }
   }
 
+  const renderRedPacketReceivedBanner = (toolCall: ToolCall) => {
+    if (toolCall.function.name !== 'red_packet_received') return null
+
+    let receiverName = userInfo?.username?.trim() || '你'
+    let senderName = prompt?.name?.trim() || 'AI Assistant'
+
+    try {
+      const args = JSON.parse(toolCall.function.arguments || '{}') as {
+        receiver_name?: unknown
+        sender_name?: unknown
+      }
+      if (typeof args.receiver_name === 'string' && args.receiver_name.trim() !== '') {
+        receiverName = args.receiver_name.trim()
+      }
+      if (typeof args.sender_name === 'string' && args.sender_name.trim() !== '') {
+        senderName = args.sender_name.trim()
+      }
+    } catch {
+      // ignore invalid payload
+    }
+
+    return (
+      <div className="red-packet-received-banner">
+        <svg className="red-packet-received-banner-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="3" y="3" width="18" height="18" rx="4" fill="#e8554e" />
+          <circle cx="12" cy="12" r="3.6" fill="#f5d27a" />
+          <circle cx="12" cy="12" r="1.4" fill="#d4a94a" />
+        </svg>
+        <span className="red-packet-received-banner-text">
+          {receiverName}领取了{senderName}的<span className="red-packet-received-banner-highlight">红包</span>
+        </span>
+      </div>
+    )
+  }
+
   const renderPatBanner = (toolCall: ToolCall) => {
     if (toolCall.function.name !== 'send_pat') return null
 
@@ -809,10 +880,35 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     }
   }
 
+  const closeRedPacketModal = () => {
+    if (redPacketOpenTimeoutRef.current !== null) {
+      window.clearTimeout(redPacketOpenTimeoutRef.current)
+      redPacketOpenTimeoutRef.current = null
+    }
+    setActiveRedPacket(null)
+  }
+
   const handleOpenPacket = () => {
+    if (!activeRedPacket) return
+    if (packetStep !== 'idle') return
+
+    const packetKey = activeRedPacket.packetKey
+    const receiverName = userInfo?.username?.trim() || '你'
+    const senderName = prompt?.name?.trim() || 'AI Assistant'
+
     setPacketStep('opening')
-    setTimeout(() => {
+    if (redPacketOpenTimeoutRef.current !== null) {
+      window.clearTimeout(redPacketOpenTimeoutRef.current)
+    }
+    redPacketOpenTimeoutRef.current = window.setTimeout(() => {
+      redPacketOpenTimeoutRef.current = null
       setPacketStep('opened')
+      void (async () => {
+        const updated = await openSessionRedPacket(sessionId, packetKey, receiverName, senderName)
+        if (!updated) return
+        setSession(updated)
+        setMessages(updated.messages || [])
+      })()
     }, 1000)
   }
 
@@ -821,7 +917,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     messages.forEach((message, index) => {
       const hasImages = !!(message.image_paths && message.image_paths.length > 0)
       const toolCalls = message.tool_calls || []
-      const supportedCalls = toolCalls.filter(tc => tc.function.name === 'send_red_packet' || tc.function.name === 'send_pat')
+      const supportedCalls = toolCalls.filter(tc => tc.function.name === 'send_red_packet' || tc.function.name === 'send_pat' || tc.function.name === 'red_packet_received')
 
       const isAssistant = message.role === 'assistant'
       const isStreamingAssistantMessage =
@@ -927,6 +1023,16 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
             messageIndex: index,
           })
         }
+        if (toolCall.function.name === 'red_packet_received') {
+          items.push({
+            key: `${message.timestamp}-rp-received-${toolCall.id || toolIndex}`,
+            role: message.role,
+            type: 'red-packet-received-banner',
+            message,
+            toolCall,
+            messageIndex: index,
+          })
+        }
       })
 
       if (!hasContent && supportedCalls.length === 0) {
@@ -1000,8 +1106,18 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
 	        ) : (
 	          displayItems.map((item) => {
 	            const isRedPacket = item.type === 'red-packet'
+	            const isRedPacketReceivedBanner = item.type === 'red-packet-received-banner'
 	            const isPatBanner = item.type === 'pat-banner'
 	            const isRecallBanner = item.type === 'recall-banner'
+	            if (isRedPacketReceivedBanner) {
+	              const banner = renderRedPacketReceivedBanner(item.toolCall)
+	              if (!banner) return null
+	              return (
+	                <div key={item.key} className="message-item pat-banner-item">
+	                  {banner}
+	                </div>
+	              )
+	            }
 	            if (isPatBanner) {
 	              const banner = renderPatBanner(item.toolCall)
 	              if (!banner) return null
@@ -1021,7 +1137,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
 	            }
 	
 	            const content = isRedPacket ? (
-	              renderRedPacket(item.toolCall)
+	              renderRedPacket(item.toolCall, item.key)
 	            ) : (
               <div
                 className="message-bubble"
@@ -1255,7 +1371,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
       {activeRedPacket && (
         <div className="rp-modal-overlay">
           <div className={`rp-modal ${packetStep === 'opened' ? 'opened' : ''}`}>
-            <button className="rp-close-btn" onClick={() => setActiveRedPacket(null)}>×</button>
+            <button className="rp-close-btn" onClick={closeRedPacketModal}>×</button>
             
             {packetStep !== 'opened' ? (
               <div className="rp-modal-front">
@@ -1271,7 +1387,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
                     <span className="rp-sender-name">{prompt?.name || 'AI Assistant'}</span>
                   </div>
                   <div className="rp-wishing">
-                    {activeRedPacket.message || '恭喜发财，大吉大利'}
+                    {activeRedPacket.params.message || '恭喜发财，大吉大利'}
                   </div>
                 </div>
                 <div className="rp-modal-open-btn-wrapper">
@@ -1298,13 +1414,13 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
                     <span className="rp-sender-name dark">{prompt?.name || 'AI Assistant'}的红包</span>
                   </div>
                   <div className="rp-wishing dark">
-                    {activeRedPacket.message || '恭喜发财，大吉大利'}
+                    {activeRedPacket.params.message || '恭喜发财，大吉大利'}
                   </div>
                 </div>
                 
                 <div className="rp-result-amount">
                   <span className="rp-currency">¥</span>
-                  <span className="rp-num">{activeRedPacket.amount.toFixed(2)}</span>
+                  <span className="rp-num">{activeRedPacket.params.amount.toFixed(2)}</span>
                 </div>
 
                 <div className="rp-result-footer">

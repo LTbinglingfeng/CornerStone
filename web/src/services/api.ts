@@ -194,6 +194,24 @@ export async function recallSessionMessage(id: string, index: number): Promise<C
   }
 }
 
+export async function openSessionRedPacket(
+  id: string,
+  packetKey: string,
+  receiverName?: string,
+  senderName?: string
+): Promise<ChatRecord | null> {
+  try {
+    const data = await apiFetchJson<ApiResponse<ChatRecord>>(`${MANAGEMENT_BASE}/sessions/${id}/messages/red-packet-open`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ packet_key: packetKey, receiver_name: receiverName, sender_name: senderName }),
+    })
+    return data.success && data.data ? data.data : null
+  } catch {
+    return null
+  }
+}
+
 // 根据提示词ID获取所有会话
 export async function getSessionsByPromptId(promptId: string): Promise<ChatSession[]> {
   try {

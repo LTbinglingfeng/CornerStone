@@ -112,6 +112,12 @@ type SessionMessageDeleteRequest struct {
 	Index int `json:"index"`
 }
 
+type SessionRedPacketOpenRequest struct {
+	PacketKey    string `json:"packet_key"`
+	ReceiverName string `json:"receiver_name,omitempty"`
+	SenderName   string `json:"sender_name,omitempty"`
+}
+
 // UserInfoRequest 用户信息请求
 type UserInfoRequest struct {
 	Username    string `json:"username,omitempty"`
@@ -886,6 +892,38 @@ func (h *Handler) handleSessionMessages(w http.ResponseWriter, r *http.Request, 
 			}
 			if errors.Is(err, os.ErrInvalid) {
 				h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid message index"})
+				return
+			}
+			if errors.Is(err, os.ErrNotExist) {
+				h.jsonResponse(w, http.StatusNotFound, Response{Success: false, Error: "Session not found"})
+				return
+			}
+			h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: err.Error()})
+			return
+		}
+
+		updated, _ := h.chatManager.GetSession(sessionID)
+		h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: updated})
+		return
+
+	case "red-packet-open":
+		if r.Method != http.MethodPost {
+			h.jsonResponse(w, http.StatusMethodNotAllowed, Response{Success: false, Error: "Method not allowed"})
+			return
+		}
+
+		var req SessionRedPacketOpenRequest
+		if !h.decodeJSON(w, r, &req) {
+			return
+		}
+
+		if err := h.chatManager.AddRedPacketReceivedBanner(sessionID, req.PacketKey, req.ReceiverName, req.SenderName); err != nil {
+			if errors.Is(err, storage.ErrInvalidID) {
+				h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid session ID"})
+				return
+			}
+			if errors.Is(err, os.ErrInvalid) {
+				h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid red packet key"})
 				return
 			}
 			if errors.Is(err, os.ErrNotExist) {

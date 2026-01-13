@@ -646,6 +646,107 @@ func (cm *ChatManager) DeleteMessageByIndex(sessionID string, index int) error {
 	return cm.saveSession(record)
 }
 
+type redPacketReceivedArgs struct {
+	PacketKey    string `json:"packet_key"`
+	ReceiverName string `json:"receiver_name,omitempty"`
+	SenderName   string `json:"sender_name,omitempty"`
+}
+
+func sanitizeToolCallID(raw string) string {
+	if raw == "" {
+		return "unknown"
+	}
+	var builder strings.Builder
+	builder.Grow(len(raw))
+	for _, r := range raw {
+		switch {
+		case r >= 'a' && r <= 'z':
+			builder.WriteRune(r)
+		case r >= 'A' && r <= 'Z':
+			builder.WriteRune(r)
+		case r >= '0' && r <= '9':
+			builder.WriteRune(r)
+		case r == '_' || r == '-':
+			builder.WriteRune(r)
+		default:
+			builder.WriteByte('_')
+		}
+	}
+	sanitized := builder.String()
+	if len(sanitized) > 120 {
+		return sanitized[:120]
+	}
+	return sanitized
+}
+
+// AddRedPacketReceivedBanner 记录红包被用户打开，并追加一条“领取红包”横幅消息（幂等）
+func (cm *ChatManager) AddRedPacketReceivedBanner(sessionID, packetKey, receiverName, senderName string) error {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	if err := ValidateID(sessionID); err != nil {
+		return err
+	}
+	if strings.TrimSpace(packetKey) == "" {
+		return os.ErrInvalid
+	}
+
+	record, ok := cm.sessions[sessionID]
+	if !ok {
+		return os.ErrNotExist
+	}
+
+	// 幂等：如果已存在同 packetKey 的记录，不再重复写入
+	for _, msg := range record.Messages {
+		for _, toolCall := range msg.ToolCalls {
+			if toolCall.Function.Name != "red_packet_received" {
+				continue
+			}
+			var args redPacketReceivedArgs
+			if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); err != nil {
+				continue
+			}
+			if args.PacketKey == packetKey {
+				return nil
+			}
+		}
+	}
+
+	if err := cm.ensureSessionFileNameLocked(record); err != nil {
+		return err
+	}
+
+	now := time.Now()
+	arguments, errMarshal := json.Marshal(redPacketReceivedArgs{
+		PacketKey:    packetKey,
+		ReceiverName: receiverName,
+		SenderName:   senderName,
+	})
+	if errMarshal != nil {
+		return errMarshal
+	}
+
+	bannerMessage := ChatMessage{
+		Role:      "assistant",
+		Content:   "",
+		Timestamp: now,
+		ToolCalls: []client.ToolCall{
+			{
+				ID:   "red_packet_received_" + sanitizeToolCallID(packetKey),
+				Type: "function",
+				Function: client.ToolCallFunction{
+					Name:      "red_packet_received",
+					Arguments: string(arguments),
+				},
+			},
+		},
+	}
+
+	record.Messages = append(record.Messages, bannerMessage)
+	record.UpdatedAt = now
+	return cm.persistMessagesLocked(record, []ChatMessage{bannerMessage}, false)
+}
+
 // GetSessionsByPromptID 根据 Prompt ID 获取所有相关的聊天会话
 func (cm *ChatManager) GetSessionsByPromptID(promptID string) []ChatSession {
 	cm.mu.RLock()
