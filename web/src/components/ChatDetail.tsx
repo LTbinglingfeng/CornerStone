@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { gsap } from 'gsap'
 import type { ChatMessage, ChatRecord, Prompt, UserInfo, ToolCall, RedPacketParams, PatParams } from '../types/chat'
-import { getSession, sendMessage, getPrompt, getUserInfo, getPromptAvatarUrl, getUserAvatarUrl, uploadChatImage, getChatImageUrl, getActiveProvider, appendQueryParam } from '../services/api'
+import { getSession, sendMessage, getPrompt, getUserInfo, getPromptAvatarUrl, getUserAvatarUrl, uploadChatImage, getChatImageUrl, getActiveProvider, appendQueryParam, updateSessionMessage, deleteSessionMessage } from '../services/api'
 import ChatSettings from './ChatSettings'
+import ContextMenu from './ContextMenu'
 import './ChatDetail.css'
 
 interface ChatDetailProps {
@@ -13,12 +15,52 @@ interface ChatDetailProps {
 }
 
 type DisplayItem =
-  | { key: string; role: string; type: 'text'; message: ChatMessage }
-  | { key: string; role: string; type: 'loading'; message: ChatMessage }
-  | { key: string; role: string; type: 'red-packet'; message: ChatMessage; toolCall: ToolCall }
-  | { key: string; role: string; type: 'pat-banner'; message: ChatMessage; toolCall: ToolCall }
+  | { key: string; role: string; type: 'text'; message: ChatMessage; messageIndex: number }
+  | { key: string; role: string; type: 'loading'; message: ChatMessage; messageIndex: number }
+  | { key: string; role: string; type: 'red-packet'; message: ChatMessage; toolCall: ToolCall; messageIndex: number }
+  | { key: string; role: string; type: 'pat-banner'; message: ChatMessage; toolCall: ToolCall; messageIndex: number }
 
 const assistantMessageSplitToken = '→'
+const quotePrefixCandidates = ['引用的信息:', '引用的信息：']
+
+const parseQuotedMessageContent = (content: string): { quoteLine: string; text: string } | null => {
+  if (!content) return null
+  for (const prefix of quotePrefixCandidates) {
+    if (!content.startsWith(prefix)) continue
+    const payload = content.slice(prefix.length).trimStart()
+    const newlineIndex = payload.indexOf('\n')
+    if (newlineIndex === -1) {
+      return { quoteLine: payload.trim(), text: '' }
+    }
+    return {
+      quoteLine: payload.slice(0, newlineIndex).trim(),
+      text: payload.slice(newlineIndex + 1),
+    }
+  }
+  return null
+}
+
+const buildQuotedOutgoingContent = (quoteLine: string, text: string): string => {
+  const header = `引用的信息: ${quoteLine}`
+  if (text.trim() === '') return header
+  return `${header}\n${text}`
+}
+
+type QuoteDraft = {
+  line: string
+}
+
+type MessageMenuState = {
+  position: { x: number; y: number }
+  messageIndex: number
+  message: ChatMessage
+}
+
+type MessageEditState = {
+  messageIndex: number
+  quoteLine: string | null
+  text: string
+}
 
 const splitAssistantMessageContent = (content: string): string[] => {
   if (!content) return []
@@ -44,6 +86,9 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
   const [pendingImages, setPendingImages] = useState<string[]>([])
   const [uploadingImage, setUploadingImage] = useState(false)
   const [imageCapable, setImageCapable] = useState(false)
+  const [quoteDraft, setQuoteDraft] = useState<QuoteDraft | null>(null)
+  const [messageMenu, setMessageMenu] = useState<MessageMenuState | null>(null)
+  const [editState, setEditState] = useState<MessageEditState | null>(null)
 
   // Red Packet State
   const [activeRedPacket, setActiveRedPacket] = useState<RedPacketParams | null>(null)
@@ -56,6 +101,8 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
   const fileInputRef = useRef<HTMLInputElement>(null)
   const streamingAssistantTimestampRef = useRef<string | null>(null)
   const finalizeSendTimeoutRef = useRef<number | null>(null)
+  const longPressTimeoutRef = useRef<number | null>(null)
+  const longPressStartRef = useRef<{ x: number; y: number } | null>(null)
 
   useEffect(() => {
     activeRequestRef.current?.abort()
@@ -64,12 +111,19 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
       window.clearTimeout(finalizeSendTimeoutRef.current)
       finalizeSendTimeoutRef.current = null
     }
+    if (longPressTimeoutRef.current !== null) {
+      window.clearTimeout(longPressTimeoutRef.current)
+      longPressTimeoutRef.current = null
+    }
     streamingAssistantTimestampRef.current = null
     setSending(false)
     setActiveRedPacket(null)
     setPacketStep('idle')
     setPendingImages([])
     setUploadingImage(false)
+    setQuoteDraft(null)
+    setMessageMenu(null)
+    setEditState(null)
     if (containerRef.current) {
       gsap.fromTo(
         containerRef.current,
@@ -86,6 +140,10 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
       if (finalizeSendTimeoutRef.current !== null) {
         window.clearTimeout(finalizeSendTimeoutRef.current)
         finalizeSendTimeoutRef.current = null
+      }
+      if (longPressTimeoutRef.current !== null) {
+        window.clearTimeout(longPressTimeoutRef.current)
+        longPressTimeoutRef.current = null
       }
     }
   }, [])
@@ -154,9 +212,10 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
       return
     }
 
+    const finalText = quoteDraft ? buildQuotedOutgoingContent(quoteDraft.line, trimmedText) : trimmedText
     const userMessage: ChatMessage = {
       role: 'user',
-      content: trimmedText,
+      content: finalText,
       timestamp: new Date().toISOString(),
       ...(hasImages ? { image_paths: pendingImages } : {}),
     }
@@ -169,6 +228,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
 
     setMessages(prev => [...prev, userMessage])
     setInputText('')
+    setQuoteDraft(null)
     setPendingImages([])
     setSending(true)
 
@@ -432,6 +492,122 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     setPendingImages(prev => prev.filter((_, i) => i !== index))
   }
 
+  const getRoleDisplayName = (role: string) => {
+    if (role === 'assistant') return prompt?.name || 'AI'
+    return userInfo?.username || '我'
+  }
+
+  const buildQuoteLineFromMessage = (message: ChatMessage) => {
+    const name = getRoleDisplayName(message.role)
+    const parsed = parseQuotedMessageContent(message.content)
+    let quoteText = (parsed ? parsed.text : message.content).trim()
+    if (!quoteText && message.image_paths && message.image_paths.length > 0) {
+      quoteText = '图片'
+    }
+    quoteText = quoteText.replace(/\s+/g, ' ').trim()
+    const maxLen = 80
+    if (quoteText.length > maxLen) {
+      quoteText = quoteText.slice(0, maxLen) + '...'
+    }
+    return `${name}：${quoteText || '...'}`
+  }
+
+  const cancelLongPress = () => {
+    if (longPressTimeoutRef.current !== null) {
+      window.clearTimeout(longPressTimeoutRef.current)
+      longPressTimeoutRef.current = null
+    }
+    longPressStartRef.current = null
+  }
+
+  const openMessageMenuAt = (position: { x: number; y: number }, messageIndex: number, message: ChatMessage) => {
+    cancelLongPress()
+    setMessageMenu({ position, messageIndex, message })
+  }
+
+  const handleMessageContextMenu = (e: React.MouseEvent, item: DisplayItem) => {
+    if (item.type !== 'text') return
+    e.preventDefault()
+    openMessageMenuAt({ x: e.clientX, y: e.clientY }, item.messageIndex, item.message)
+  }
+
+  const handleMessagePointerDown = (e: React.PointerEvent, item: DisplayItem) => {
+    if (item.type !== 'text') return
+    if (e.pointerType === 'mouse' && e.button !== 0) return
+    cancelLongPress()
+
+    const position = { x: e.clientX, y: e.clientY }
+    longPressStartRef.current = position
+    longPressTimeoutRef.current = window.setTimeout(() => {
+      longPressTimeoutRef.current = null
+      openMessageMenuAt(position, item.messageIndex, item.message)
+    }, 500)
+  }
+
+  const handleMessagePointerMove = (e: React.PointerEvent) => {
+    if (longPressTimeoutRef.current === null || !longPressStartRef.current) return
+    const dx = e.clientX - longPressStartRef.current.x
+    const dy = e.clientY - longPressStartRef.current.y
+    if (Math.hypot(dx, dy) > 10) {
+      cancelLongPress()
+    }
+  }
+
+  const handleMessagePointerUp = () => {
+    cancelLongPress()
+  }
+
+  const handleMessagePointerCancel = () => {
+    cancelLongPress()
+  }
+
+  const handleMessagePointerLeave = () => {
+    cancelLongPress()
+  }
+
+  const handleStartEditMessage = (messageIndex: number) => {
+    const message = messages[messageIndex]
+    if (!message) return
+    const parsed = parseQuotedMessageContent(message.content)
+    const quoteLine = parsed?.quoteLine || null
+    const text = parsed ? parsed.text : message.content
+    setEditState({ messageIndex, quoteLine, text })
+    setMessageMenu(null)
+  }
+
+  const handleSaveEditMessage = async () => {
+    if (!editState) return
+    const content = editState.quoteLine ? buildQuotedOutgoingContent(editState.quoteLine, editState.text) : editState.text
+    const updated = await updateSessionMessage(sessionId, editState.messageIndex, content)
+    if (!updated) {
+      alert('编辑失败，请重试')
+      return
+    }
+    setSession(updated)
+    setMessages(updated.messages || [])
+    setEditState(null)
+  }
+
+  const handleDeleteMessage = async (messageIndex: number) => {
+    const ok = window.confirm('确定删除这条消息吗？')
+    if (!ok) return
+
+    const updated = await deleteSessionMessage(sessionId, messageIndex)
+    if (!updated) {
+      alert('删除失败，请重试')
+      return
+    }
+    setSession(updated)
+    setMessages(updated.messages || [])
+    setMessageMenu(null)
+  }
+
+  const handleQuoteMessage = (message: ChatMessage) => {
+    setQuoteDraft({ line: buildQuoteLineFromMessage(message) })
+    setMessageMenu(null)
+    textareaRef.current?.focus()
+  }
+
   // 获取用户头像 URL
   const getUserAvatarSrc = () => {
     if (userInfo?.avatar) {
@@ -596,6 +772,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
                 role: message.role,
                 type: 'text',
                 message: segmentMessage,
+                messageIndex: index,
               })
             })
 
@@ -605,12 +782,13 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
               assistantSegments.length > 0 &&
               (endsWithSplitToken || shouldHoldTrailingSegment)
 
-            if (shouldShowStreamingSegmentLoading) {
+              if (shouldShowStreamingSegmentLoading) {
               items.push({
                 key: `${message.timestamp}-loading-split`,
                 role: message.role,
                 type: 'loading',
                 message,
+                messageIndex: index,
               })
             }
           } else {
@@ -619,6 +797,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
               role: message.role,
               type: 'text',
               message: { ...message, content: '' },
+              messageIndex: index,
             })
           }
         } else {
@@ -627,6 +806,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
             role: message.role,
             type: 'text',
             message,
+            messageIndex: index,
           })
         }
       }
@@ -639,6 +819,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
             type: 'red-packet',
             message,
             toolCall,
+            messageIndex: index,
           })
         }
         if (toolCall.function.name === 'send_pat') {
@@ -648,6 +829,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
             type: 'pat-banner',
             message,
             toolCall,
+            messageIndex: index,
           })
         }
       })
@@ -660,6 +842,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
             role: message.role,
             type: 'loading',
             message,
+            messageIndex: index,
           })
         }
       }
@@ -677,12 +860,16 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         </div>
       )
     }
+    const parsedQuote = parseQuotedMessageContent(item.message.content)
+    const quoteLine = parsedQuote?.quoteLine || ''
+    const text = parsedQuote ? parsedQuote.text : item.message.content
     const images = renderMessageImages(item.message)
-    const hasText = item.message.content && item.message.content.trim() !== ''
+    const hasText = text && text.trim() !== ''
     return (
       <div className="message-content">
+        {quoteLine && <div className="message-quote">{quoteLine}</div>}
         {images}
-        {hasText && <div className="message-text">{item.message.content}</div>}
+        {hasText && <div className="message-text">{text}</div>}
       </div>
     )
   }
@@ -704,7 +891,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         {prompt && (
           <button className="settings-button" onClick={() => setShowSettings(true)}>
             <svg viewBox="0 0 24 24">
-              <path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/>
+              <path d="M6 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
             </svg>
           </button>
         )}
@@ -732,7 +919,15 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
             const content = isRedPacket ? (
               renderRedPacket(item.toolCall)
             ) : (
-              <div className="message-bubble">
+              <div
+                className="message-bubble"
+                onContextMenu={(e) => handleMessageContextMenu(e, item)}
+                onPointerDown={(e) => handleMessagePointerDown(e, item)}
+                onPointerMove={handleMessagePointerMove}
+                onPointerUp={handleMessagePointerUp}
+                onPointerCancel={handleMessagePointerCancel}
+                onPointerLeave={handleMessagePointerLeave}
+              >
                 {renderMessageBubbleContent(item)}
               </div>
             )
@@ -769,43 +964,118 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
       )}
 
       <div className="chat-input-area">
-        <button
-          className="upload-button"
-          onClick={handleUploadClick}
-          disabled={!imageCapable || uploadingImage}
-          title={imageCapable ? '上传图片' : '当前模型不支持图片输入'}
-        >
-          <svg viewBox="0 0 24 24">
-            <path d="M19 7h-3V5c0-1.1-.9-2-2-2h-4c-1.1 0-2 .9-2 2v2H5c-1.1 0-2 .9-2 2v9c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V9c0-1.1-.9-2-2-2zm-9 0V5h4v2h-4zm7 13H5V9h14v11zM7 18l3-4 2 3 3-4 2 5H7z" />
-          </svg>
-        </button>
-        <input
-          ref={fileInputRef}
-          className="image-input"
-          type="file"
-          accept="image/*"
-          multiple
-          onChange={handleImageChange}
-        />
-        <textarea
-          ref={textareaRef}
-          className="chat-input"
-          placeholder="输入消息..."
-          value={inputText}
-          onChange={handleInputChange}
-          onKeyDown={handleKeyDown}
-          rows={1}
-        />
-        <button
-          className="send-button"
-          onClick={handleSend}
-          disabled={!canSend}
-        >
-          <svg viewBox="0 0 24 24">
-            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-          </svg>
-        </button>
+        {quoteDraft && (
+          <div className="chat-quote-preview">
+            <div className="chat-quote-preview-text">{quoteDraft.line}</div>
+            <button
+              type="button"
+              className="chat-quote-preview-close"
+              onClick={() => setQuoteDraft(null)}
+              aria-label="关闭引用"
+            >
+              ×
+            </button>
+          </div>
+        )}
+
+        <div className="chat-input-row">
+          <button
+            className="upload-button"
+            onClick={handleUploadClick}
+            disabled={!imageCapable || uploadingImage}
+            title={imageCapable ? '上传图片' : '当前模型不支持图片输入'}
+          >
+            <svg viewBox="0 0 24 24">
+              <path d="M19 7h-3V5c0-1.1-.9-2-2-2h-4c-1.1 0-2 .9-2 2v2H5c-1.1 0-2 .9-2 2v9c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V9c0-1.1-.9-2-2-2zm-9 0V5h4v2h-4zm7 13H5V9h14v11zM7 18l3-4 2 3 3-4 2 5H7z" />
+            </svg>
+          </button>
+          <input
+            ref={fileInputRef}
+            className="image-input"
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={handleImageChange}
+          />
+          <textarea
+            ref={textareaRef}
+            className="chat-input"
+            placeholder="输入消息..."
+            value={inputText}
+            onChange={handleInputChange}
+            onKeyDown={handleKeyDown}
+            rows={1}
+          />
+          <button
+            className="send-button"
+            onClick={handleSend}
+            disabled={!canSend}
+          >
+            <svg viewBox="0 0 24 24">
+              <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+            </svg>
+          </button>
+        </div>
       </div>
+
+      {messageMenu && (
+        <ContextMenu
+          items={[
+            ...(sending
+              ? []
+              : [
+                  { label: '编辑', onClick: () => handleStartEditMessage(messageMenu.messageIndex) },
+                  { label: '删除', danger: true, onClick: () => handleDeleteMessage(messageMenu.messageIndex) },
+                ]),
+            { label: '引用', onClick: () => handleQuoteMessage(messageMenu.message) },
+          ]}
+          position={messageMenu.position}
+          onClose={() => setMessageMenu(null)}
+        />
+      )}
+
+      {editState &&
+        createPortal(
+          <div className="message-edit-overlay" onClick={() => setEditState(null)}>
+            <div className="message-edit-card" onClick={(e) => e.stopPropagation()}>
+              <div className="message-edit-header">
+                <div className="message-edit-title">编辑消息</div>
+                <button
+                  type="button"
+                  className="message-edit-close"
+                  onClick={() => setEditState(null)}
+                  aria-label="关闭编辑"
+                >
+                  ×
+                </button>
+              </div>
+
+              {editState.quoteLine && <div className="message-edit-quote">{editState.quoteLine}</div>}
+
+              <textarea
+                className="message-edit-input"
+                value={editState.text}
+                onChange={(e) => setEditState(prev => (prev ? { ...prev, text: e.target.value } : prev))}
+                rows={6}
+              />
+
+              <div className="message-edit-footer">
+                <button type="button" className="message-edit-btn cancel" onClick={() => setEditState(null)}>
+                  取消
+                </button>
+                <button
+                  type="button"
+                  className="message-edit-btn save"
+                  onClick={handleSaveEditMessage}
+                  disabled={!editState.quoteLine && editState.text.trim() === ''}
+                >
+                  保存
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
 
       {/* 设置面板 */}
       {showSettings && prompt && (

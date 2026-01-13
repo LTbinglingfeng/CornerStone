@@ -565,6 +565,52 @@ func (cm *ChatManager) ClearSession(sessionID string) error {
 	return cm.saveSession(record)
 }
 
+// UpdateMessageContentByIndex 更新指定索引的消息内容
+func (cm *ChatManager) UpdateMessageContentByIndex(sessionID string, index int, content string) error {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	if err := ValidateID(sessionID); err != nil {
+		return err
+	}
+
+	record, ok := cm.sessions[sessionID]
+	if !ok {
+		return os.ErrNotExist
+	}
+
+	if index < 0 || index >= len(record.Messages) {
+		return os.ErrInvalid
+	}
+
+	record.Messages[index].Content = content
+	record.UpdatedAt = time.Now()
+	return cm.saveSession(record)
+}
+
+// DeleteMessageByIndex 删除指定索引的消息
+func (cm *ChatManager) DeleteMessageByIndex(sessionID string, index int) error {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	if err := ValidateID(sessionID); err != nil {
+		return err
+	}
+
+	record, ok := cm.sessions[sessionID]
+	if !ok {
+		return os.ErrNotExist
+	}
+
+	if index < 0 || index >= len(record.Messages) {
+		return os.ErrInvalid
+	}
+
+	record.Messages = append(record.Messages[:index], record.Messages[index+1:]...)
+	record.UpdatedAt = time.Now()
+	return cm.saveSession(record)
+}
+
 // GetSessionsByPromptID 根据 Prompt ID 获取所有相关的聊天会话
 func (cm *ChatManager) GetSessionsByPromptID(promptID string) []ChatSession {
 	cm.mu.RLock()

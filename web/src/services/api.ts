@@ -155,6 +155,32 @@ export async function updateSessionTitle(id: string, title: string): Promise<boo
   }
 }
 
+export async function updateSessionMessage(id: string, index: number, content: string): Promise<ChatRecord | null> {
+  try {
+    const data = await apiFetchJson<ApiResponse<ChatRecord>>(`${MANAGEMENT_BASE}/sessions/${id}/messages/update`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ index, content }),
+    })
+    return data.success && data.data ? data.data : null
+  } catch {
+    return null
+  }
+}
+
+export async function deleteSessionMessage(id: string, index: number): Promise<ChatRecord | null> {
+  try {
+    const data = await apiFetchJson<ApiResponse<ChatRecord>>(`${MANAGEMENT_BASE}/sessions/${id}/messages/delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ index }),
+    })
+    return data.success && data.data ? data.data : null
+  } catch {
+    return null
+  }
+}
+
 // 根据提示词ID获取所有会话
 export async function getSessionsByPromptId(promptId: string): Promise<ChatSession[]> {
   try {
