@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import type { ChatSession, Prompt } from '../types/chat'
 import { getSessions, getPrompts, getPromptAvatarUrl, appendQueryParam } from '../services/api'
 import { formatTime } from '../utils/time'
@@ -9,6 +9,7 @@ import './ChatList.css'
 interface ChatListProps {
   onSelectSession: (id: string, promptId?: string) => void
   searchQuery?: string
+  refreshToken?: number
 }
 
 interface PromptWithLatestChat {
@@ -23,10 +24,11 @@ interface MenuState {
   position: { x: number; y: number }
 }
 
-const ChatList: React.FC<ChatListProps> = ({ onSelectSession, searchQuery = '' }) => {
+const ChatList: React.FC<ChatListProps> = ({ onSelectSession, searchQuery = '', refreshToken }) => {
   const [promptsWithChats, setPromptsWithChats] = useState<PromptWithLatestChat[]>([])
   const [orphanSessions, setOrphanSessions] = useState<ChatSession[]>([])
   const [loading, setLoading] = useState(true)
+  const lastRefreshTokenRef = useRef<number | undefined>(undefined)
   const [menuState, setMenuState] = useState<MenuState>({
     visible: false,
     sessionId: '',
@@ -34,11 +36,23 @@ const ChatList: React.FC<ChatListProps> = ({ onSelectSession, searchQuery = '' }
   })
 
   useEffect(() => {
-    loadData()
+    if (typeof refreshToken === 'number') {
+      lastRefreshTokenRef.current = refreshToken
+    }
+    loadData(true)
   }, [])
 
-  const loadData = async () => {
-    setLoading(true)
+  useEffect(() => {
+    if (typeof refreshToken !== 'number') return
+    if (lastRefreshTokenRef.current === refreshToken) return
+    lastRefreshTokenRef.current = refreshToken
+    loadData(false)
+  }, [refreshToken])
+
+  const loadData = async (showLoading: boolean) => {
+    if (showLoading) {
+      setLoading(true)
+    }
     const [sessions, prompts] = await Promise.all([
       getSessions(),
       getPrompts()
@@ -108,7 +122,7 @@ const ChatList: React.FC<ChatListProps> = ({ onSelectSession, searchQuery = '' }
   const handleDeleteSession = useCallback(async () => {
     const success = await deleteSession(menuState.sessionId)
     if (success) {
-      loadData()
+      loadData(false)
     }
   }, [menuState.sessionId])
 

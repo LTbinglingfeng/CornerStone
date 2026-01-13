@@ -22,7 +22,7 @@ type DisplayItem =
   | { key: string; role: string; type: 'recall-banner'; message: ChatMessage; messageIndex: number }
 
 const assistantMessageSplitToken = '→'
-const assistantBubbleIntervalMs = 500
+const assistantBubbleIntervalMs = 1500
 const quotePrefixCandidates = ['引用的信息:', '引用的信息：']
 const recalledMessageSuffix = '(已撤回)'
 
@@ -54,6 +54,17 @@ const buildQuotedOutgoingContent = (quoteLine: string, text: string): string => 
   return `${header}\n${text}`
 }
 
+const normalizeAssistantContent = (content: string): string => {
+  if (!content) return ''
+  const withoutBlocks = content.replace(/<think[^>]*>[\s\S]*?<\/think\s*>/gi, '')
+  const lower = withoutBlocks.toLowerCase()
+  const openIndex = lower.indexOf('<think')
+  if (openIndex !== -1) {
+    return withoutBlocks.slice(0, openIndex)
+  }
+  return withoutBlocks.replace(/<\/think\s*>/gi, '')
+}
+
 type QuoteDraft = {
   line: string
 }
@@ -80,12 +91,13 @@ type ActiveRedPacketState = {
 }
 
 const splitAssistantMessageContent = (content: string): string[] => {
-  if (!content) return []
-  if (!content.includes(assistantMessageSplitToken)) {
-    return content.trim() ? [content] : []
+  const normalized = normalizeAssistantContent(content)
+  if (!normalized) return []
+  if (!normalized.includes(assistantMessageSplitToken)) {
+    return normalized.trim() ? [normalized] : []
   }
 
-  return content
+  return normalized
     .split(assistantMessageSplitToken)
     .map(part => part.trim())
     .filter(part => part !== '')
@@ -129,6 +141,8 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
   const assistantRevealLastAtRef = useRef(0)
   const animatedBubbleKeysRef = useRef<Set<string>>(new Set())
   const bubbleKeysSeededRef = useRef(false)
+  const keyboardOffsetRef = useRef(0)
+  const keyboardOffsetRafRef = useRef<number | null>(null)
   const longPressTimeoutRef = useRef<number | null>(null)
   const longPressStartRef = useRef<{ x: number; y: number } | null>(null)
   const redPacketOpenTimeoutRef = useRef<number | null>(null)
@@ -168,14 +182,10 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
 	    setSelectTextState(null)
 	    setSelectTextCopied(false)
 	    if (containerRef.current) {
-	      gsap.fromTo(
-	        containerRef.current,
-	        { x: '100%' },
-        { x: '0%', duration: 0.3, ease: 'power2.out' }
-      )
-    }
-    loadSession()
-  }, [sessionId])
+	      gsap.set(containerRef.current, { x: '0%' })
+	    }
+	    loadSession()
+	  }, [sessionId])
 
   useEffect(() => {
     return () => {
@@ -195,21 +205,70 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     }
   }, [])
 
-  useEffect(() => {
-    if (!selectTextState) return
-    setSelectTextCopied(false)
-    window.setTimeout(() => {
-      const textarea = selectTextTextareaRef.current
-      if (!textarea) return
-      textarea.focus()
-      textarea.select()
-    }, 0)
-  }, [selectTextState])
+	  useEffect(() => {
+	    if (!selectTextState) return
+	    setSelectTextCopied(false)
+	    window.setTimeout(() => {
+	      const textarea = selectTextTextareaRef.current
+	      if (!textarea) return
+	      textarea.focus()
+	      textarea.select()
+	    }, 0)
+	  }, [selectTextState])
 
 	  useEffect(() => {
-	    if (loading) return
-	    scrollToBottom()
-	  }, [messages, loading])
+	    const target = containerRef.current
+	    if (!target) return
+
+	    const applyOffset = (nextOffset: number) => {
+	      const offset = Math.max(0, Math.round(nextOffset))
+	      if (offset === keyboardOffsetRef.current) return
+	      keyboardOffsetRef.current = offset
+	      target.style.setProperty('--chat-keyboard-offset', `${offset}px`)
+	      if (offset > 0) {
+	        window.setTimeout(() => {
+	          if (!messageListRef.current) return
+	          messageListRef.current.scrollTop = messageListRef.current.scrollHeight
+	        }, 0)
+	      }
+	    }
+
+	    const update = () => {
+	      if (keyboardOffsetRafRef.current !== null) return
+	      keyboardOffsetRafRef.current = window.requestAnimationFrame(() => {
+	        keyboardOffsetRafRef.current = null
+	        const viewport = window.visualViewport
+	        if (!viewport) {
+	          applyOffset(0)
+	          return
+	        }
+	        applyOffset(window.innerHeight - viewport.height - viewport.offsetTop)
+	      })
+	    }
+
+	    const viewport = window.visualViewport
+	    update()
+	    window.addEventListener('resize', update)
+	    viewport?.addEventListener('resize', update)
+	    viewport?.addEventListener('scroll', update)
+
+	    return () => {
+	      window.removeEventListener('resize', update)
+	      viewport?.removeEventListener('resize', update)
+	      viewport?.removeEventListener('scroll', update)
+	      if (keyboardOffsetRafRef.current !== null) {
+	        window.cancelAnimationFrame(keyboardOffsetRafRef.current)
+	        keyboardOffsetRafRef.current = null
+	      }
+	      keyboardOffsetRef.current = 0
+	      target.style.setProperty('--chat-keyboard-offset', '0px')
+	    }
+	  }, [])
+
+		  useEffect(() => {
+		    if (loading) return
+		    scrollToBottom()
+		  }, [messages, loading])
 
 	  useEffect(() => {
 	    if (!sending) return
@@ -218,12 +277,13 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
 	    const currentAssistantMessage = messages.find(
 	      (message) => message.role === 'assistant' && message.timestamp === revealingAssistantTimestamp
 	    )
-	    if (!currentAssistantMessage) return
-
-	    const isStreamingAssistantMessage = streamingAssistantTimestampRef.current === revealingAssistantTimestamp
-	    let assistantSegments = splitAssistantMessageContent(currentAssistantMessage.content)
-	    const hasSplitToken = currentAssistantMessage.content.includes(assistantMessageSplitToken)
-	    const endsWithSplitToken = currentAssistantMessage.content.trimEnd().endsWith(assistantMessageSplitToken)
+		    if (!currentAssistantMessage) return
+	
+		    const isStreamingAssistantMessage = streamingAssistantTimestampRef.current === revealingAssistantTimestamp
+		    let assistantSegments = splitAssistantMessageContent(currentAssistantMessage.content)
+		    const normalizedContent = normalizeAssistantContent(currentAssistantMessage.content)
+		    const hasSplitToken = normalizedContent.includes(assistantMessageSplitToken)
+		    const endsWithSplitToken = normalizedContent.trimEnd().endsWith(assistantMessageSplitToken)
 
 	    const shouldHoldTrailingSegment =
 	      isStreamingAssistantMessage && hasSplitToken && !endsWithSplitToken && assistantSegments.length > 1
@@ -355,14 +415,20 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     let aborted = false
     try {
       activeRequestRef.current?.abort()
-      const abortController = new AbortController()
-      activeRequestRef.current = abortController
-
-      const allMessages = [...messages, userMessage]
-      const response = await sendMessage(sessionId, allMessages, {
-        promptId,
-        signal: abortController.signal,
-      })
+	      const abortController = new AbortController()
+	      activeRequestRef.current = abortController
+	
+	      const sanitizedHistory = messages.map((message) => {
+	        if (message.role !== 'assistant') return message
+	        const normalizedContent = normalizeAssistantContent(message.content)
+	        if (normalizedContent === message.content) return message
+	        return { ...message, content: normalizedContent }
+	      })
+	      const allMessages = [...sanitizedHistory, userMessage]
+	      const response = await sendMessage(sessionId, allMessages, {
+	        promptId,
+	        signal: abortController.signal,
+	      })
 
       // 检查响应类型，判断是流式还是非流式
       const contentType = response.headers.get('Content-Type') || ''
@@ -632,18 +698,19 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     return userInfo?.username || '我'
   }
 
-  const buildQuoteLineFromMessage = (message: ChatMessage) => {
-    const name = getRoleDisplayName(message.role)
-    const parsed = parseQuotedMessageContent(message.content)
-    let quoteText = (parsed ? parsed.text : message.content).trim()
-    if (!quoteText && message.image_paths && message.image_paths.length > 0) {
-      quoteText = '图片'
-    }
-    quoteText = quoteText.replace(/\s+/g, ' ').trim()
+	  const buildQuoteLineFromMessage = (message: ChatMessage) => {
+	    const name = getRoleDisplayName(message.role)
+	    const rawContent = message.role === 'assistant' ? normalizeAssistantContent(message.content) : message.content
+	    const parsed = parseQuotedMessageContent(rawContent)
+	    let quoteText = (parsed ? parsed.text : rawContent).trim()
+	    if (!quoteText && message.image_paths && message.image_paths.length > 0) {
+	      quoteText = '图片'
+	    }
+	    quoteText = quoteText.replace(/\s+/g, ' ').trim()
     const maxLen = 80
     if (quoteText.length > maxLen) {
       quoteText = quoteText.slice(0, maxLen) + '...'
-    }
+	  }
     return `${name}：${quoteText || '...'}`
   }
 
@@ -743,16 +810,17 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     textareaRef.current?.focus()
   }
 
-  const buildSelectableText = (message: ChatMessage) => {
-    const parsed = parseQuotedMessageContent(message.content)
-    if (!parsed) return message.content
-    const quoteLine = parsed.quoteLine.trim()
-    const text = parsed.text
-    if (quoteLine && text.trim() !== '') {
-      return `${quoteLine}\n${text}`
-    }
-    return quoteLine || text
-  }
+	  const buildSelectableText = (message: ChatMessage) => {
+	    const rawContent = message.role === 'assistant' ? normalizeAssistantContent(message.content) : message.content
+	    const parsed = parseQuotedMessageContent(rawContent)
+	    if (!parsed) return rawContent
+	    const quoteLine = parsed.quoteLine.trim()
+	    const text = parsed.text
+	    if (quoteLine && text.trim() !== '') {
+	      return `${quoteLine}\n${text}`
+	    }
+	    return quoteLine || text
+	  }
 
   const handleCopySelectText = async () => {
     if (!selectTextState) return
@@ -1014,15 +1082,16 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
       const supportedCalls = toolCalls.filter(tc => tc.function.name === 'send_red_packet' || tc.function.name === 'send_pat' || tc.function.name === 'red_packet_received')
 
       const isAssistant = message.role === 'assistant'
-      const isStreamingAssistantMessage =
-        isAssistant &&
-        sending &&
-        streamingAssistantTimestampRef.current !== null &&
-        message.timestamp === streamingAssistantTimestampRef.current
-
-      let assistantSegments = isAssistant ? splitAssistantMessageContent(message.content) : []
-      const hasSplitToken = isAssistant && message.content.includes(assistantMessageSplitToken)
-      const endsWithSplitToken = isAssistant && message.content.trimEnd().endsWith(assistantMessageSplitToken)
+	      const isStreamingAssistantMessage =
+	        isAssistant &&
+	        sending &&
+	        streamingAssistantTimestampRef.current !== null &&
+	        message.timestamp === streamingAssistantTimestampRef.current
+	
+	      let assistantSegments = isAssistant ? splitAssistantMessageContent(message.content) : []
+	      const normalizedContent = isAssistant ? normalizeAssistantContent(message.content) : ''
+	      const hasSplitToken = isAssistant && normalizedContent.includes(assistantMessageSplitToken)
+	      const endsWithSplitToken = isAssistant && normalizedContent.trimEnd().endsWith(assistantMessageSplitToken)
 
       const shouldHoldTrailingSegment =
         isStreamingAssistantMessage && hasSplitToken && !endsWithSplitToken && assistantSegments.length > 1
@@ -1320,15 +1389,16 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
             multiple
             onChange={handleImageChange}
           />
-          <textarea
-            ref={textareaRef}
-            className="chat-input"
-            placeholder="输入消息..."
-            value={inputText}
-            onChange={handleInputChange}
-            onKeyDown={handleKeyDown}
-            rows={1}
-          />
+	          <textarea
+	            ref={textareaRef}
+	            className="chat-input"
+	            placeholder="输入消息..."
+	            value={inputText}
+	            onChange={handleInputChange}
+	            onFocus={() => window.setTimeout(scrollToBottom, 0)}
+	            onKeyDown={handleKeyDown}
+	            rows={1}
+	          />
           <button
             className="send-button"
             onClick={handleSend}

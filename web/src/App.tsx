@@ -204,7 +204,7 @@ function App() {
             <div className="main-content">
               <Header title="CornerStone" onAdd={handleCreateSession} />
               <SearchBar value={searchQuery} onChange={setSearchQuery} />
-              <ChatList key={refreshKey} onSelectSession={handleSelectSession} searchQuery={searchQuery} />
+              <ChatList onSelectSession={handleSelectSession} searchQuery={searchQuery} refreshToken={refreshKey} />
             </div>
           </div>
         </div>
