@@ -1,4 +1,4 @@
-import type { ApiResponse, ChatSession, ChatRecord, AppConfig, Provider, ProvidersResponse, Prompt, UserInfo, AuthStatus, AuthSession } from '../types/chat'
+import type { ApiResponse, ChatSession, ChatRecord, AppConfig, Provider, ProvidersResponse, Prompt, UserInfo, AuthStatus, AuthSession, ToolCall } from '../types/chat'
 
 const API_BASE = '/api'
 const MANAGEMENT_BASE = '/management'
@@ -231,7 +231,7 @@ export interface SendMessageOptions {
 
 export async function sendMessage(
   sessionId: string,
-  messages: { role: string; content: string; image_paths?: string[] }[],
+  messages: { role: string; content: string; image_paths?: string[]; tool_calls?: ToolCall[] }[],
   options: SendMessageOptions = {}
 ): Promise<Response> {
   const payload: Record<string, unknown> = {

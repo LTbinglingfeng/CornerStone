@@ -88,6 +88,9 @@ type SelectTextState = {
 type ActiveRedPacketState = {
   params: RedPacketParams
   packetKey: string
+  senderRole: 'user' | 'assistant'
+  senderName: string
+  senderAvatarSrc: string | null
 }
 
 const splitAssistantMessageContent = (content: string): string[] => {
@@ -118,6 +121,11 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
   const [pendingImages, setPendingImages] = useState<string[]>([])
   const [uploadingImage, setUploadingImage] = useState(false)
   const [imageCapable, setImageCapable] = useState(false)
+  const [showAttachmentMenu, setShowAttachmentMenu] = useState(false)
+  const [redPacketComposerOpen, setRedPacketComposerOpen] = useState(false)
+  const [redPacketAmountDraft, setRedPacketAmountDraft] = useState('')
+  const [redPacketBlessingDraft, setRedPacketBlessingDraft] = useState('')
+  const [redPacketComposerError, setRedPacketComposerError] = useState<string | null>(null)
   const [quoteDraft, setQuoteDraft] = useState<QuoteDraft | null>(null)
   const [messageMenu, setMessageMenu] = useState<MessageMenuState | null>(null)
   const [editState, setEditState] = useState<MessageEditState | null>(null)
@@ -134,6 +142,8 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
   const selectTextTextareaRef = useRef<HTMLTextAreaElement>(null)
   const activeRequestRef = useRef<AbortController | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const attachmentMenuRef = useRef<HTMLDivElement>(null)
+  const redPacketAmountInputRef = useRef<HTMLInputElement>(null)
   const streamingAssistantTimestampRef = useRef<string | null>(null)
   const revealingAssistantTimestampRef = useRef<string | null>(null)
   const assistantRevealReadySegmentsRef = useRef(0)
@@ -146,6 +156,30 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
   const longPressTimeoutRef = useRef<number | null>(null)
   const longPressStartRef = useRef<{ x: number; y: number } | null>(null)
   const redPacketOpenTimeoutRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (!showAttachmentMenu) return
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node | null
+      if (!target) return
+      if (attachmentMenuRef.current && attachmentMenuRef.current.contains(target)) return
+      setShowAttachmentMenu(false)
+    }
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('touchstart', handlePointerDown)
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('touchstart', handlePointerDown)
+    }
+  }, [showAttachmentMenu])
+
+  useEffect(() => {
+    if (!redPacketComposerOpen) return
+    setRedPacketComposerError(null)
+    window.setTimeout(() => {
+      redPacketAmountInputRef.current?.focus()
+    }, 0)
+  }, [redPacketComposerOpen])
 
   useEffect(() => {
     activeRequestRef.current?.abort()
@@ -181,6 +215,11 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
 	    setEditState(null)
 	    setSelectTextState(null)
 	    setSelectTextCopied(false)
+      setShowAttachmentMenu(false)
+      setRedPacketComposerOpen(false)
+      setRedPacketAmountDraft('')
+      setRedPacketBlessingDraft('')
+      setRedPacketComposerError(null)
 	    if (containerRef.current) {
 	      gsap.set(containerRef.current, { x: '0%' })
 	    }
@@ -373,22 +412,15 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     }
   }
 
-  const handleSend = async () => {
-    const trimmedText = inputText.trim()
-    const hasImages = pendingImages.length > 0
-    if ((!trimmedText && !hasImages) || sending || uploadingImage) return
-    if (hasImages && !imageCapable) {
-      alert('当前模型不支持图片输入')
-      return
-    }
+  type SendOutgoingOptions = {
+    clearChatInput?: boolean
+    clearQuoteDraft?: boolean
+    clearPendingImages?: boolean
+    resetTextareaHeight?: boolean
+  }
 
-    const finalText = quoteDraft ? buildQuotedOutgoingContent(quoteDraft.line, trimmedText) : trimmedText
-    const userMessage: ChatMessage = {
-      role: 'user',
-      content: finalText,
-      timestamp: new Date().toISOString(),
-      ...(hasImages ? { image_paths: pendingImages } : {}),
-    }
+  const sendOutgoingMessage = async (userMessage: ChatMessage, options: SendOutgoingOptions = {}) => {
+    if (sending || uploadingImage) return
 
     if (assistantRevealTimeoutRef.current !== null) {
       window.clearTimeout(assistantRevealTimeoutRef.current)
@@ -403,32 +435,40 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     setAssistantVisibleSegments(0)
 
     setMessages(prev => [...prev, userMessage])
-    setInputText('')
-    setQuoteDraft(null)
-    setPendingImages([])
+
+    if (options.clearChatInput) {
+      setInputText('')
+    }
+    if (options.clearQuoteDraft) {
+      setQuoteDraft(null)
+    }
+    if (options.clearPendingImages) {
+      setPendingImages([])
+    }
+
     setSending(true)
 
-    if (textareaRef.current) {
+    if (options.resetTextareaHeight && textareaRef.current) {
       textareaRef.current.style.height = '36px'
     }
 
     let aborted = false
     try {
       activeRequestRef.current?.abort()
-	      const abortController = new AbortController()
-	      activeRequestRef.current = abortController
-	
-	      const sanitizedHistory = messages.map((message) => {
-	        if (message.role !== 'assistant') return message
-	        const normalizedContent = normalizeAssistantContent(message.content)
-	        if (normalizedContent === message.content) return message
-	        return { ...message, content: normalizedContent }
-	      })
-	      const allMessages = [...sanitizedHistory, userMessage]
-	      const response = await sendMessage(sessionId, allMessages, {
-	        promptId,
-	        signal: abortController.signal,
-	      })
+      const abortController = new AbortController()
+      activeRequestRef.current = abortController
+
+      const sanitizedHistory = messages.map((message) => {
+        if (message.role !== 'assistant') return message
+        const normalizedContent = normalizeAssistantContent(message.content)
+        if (normalizedContent === message.content) return message
+        return { ...message, content: normalizedContent }
+      })
+      const allMessages = [...sanitizedHistory, userMessage]
+      const response = await sendMessage(sessionId, allMessages, {
+        promptId,
+        signal: abortController.signal,
+      })
 
       // 检查响应类型，判断是流式还是非流式
       const contentType = response.headers.get('Content-Type') || ''
@@ -491,9 +531,9 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
           })
         }
 
-	        while (!sseDone) {
-	          const { done, value } = await reader.read()
-	          if (done) break
+        while (!sseDone) {
+          const { done, value } = await reader.read()
+          if (done) break
 
           buffer += decoder.decode(value, { stream: true })
           const events = buffer.split(/\r?\n\r?\n/)
@@ -560,88 +600,113 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
               }
             }
 
-	            applyStreamUpdate()
-	          }
-	        }
-	        streamingAssistantTimestampRef.current = null
-	        setAssistantResponseDone(true)
-	      } else {
-	        // 非流式响应处理
-	        const result = await response.json()
+            applyStreamUpdate()
+          }
+        }
+        streamingAssistantTimestampRef.current = null
+        setAssistantResponseDone(true)
+      } else {
+        // 非流式响应处理
+        const result = await response.json()
 
-	        if (result.success && result.data?.response?.choices?.[0]?.message) {
-	          const msg = result.data.response.choices[0].message
-	          const assistantTimestamp = new Date().toISOString()
-	          revealingAssistantTimestampRef.current = assistantTimestamp
-	          setRevealingAssistantTimestamp(assistantTimestamp)
-	          const assistantMessage: ChatMessage = {
-	            role: 'assistant',
-	            content: msg.content || '',
-	            reasoning_content: msg.reasoning_content,
-	            tool_calls: msg.tool_calls,
-	            timestamp: assistantTimestamp
-	          }
-	          setMessages(prev => [...prev, assistantMessage])
-	          setAssistantResponseDone(true)
-	        } else if (result.success === false && result.error) {
-	          throw new Error(result.error)
-	        } else {
+        if (result.success && result.data?.response?.choices?.[0]?.message) {
+          const msg = result.data.response.choices[0].message
+          const assistantTimestamp = new Date().toISOString()
+          revealingAssistantTimestampRef.current = assistantTimestamp
+          setRevealingAssistantTimestamp(assistantTimestamp)
+          const assistantMessage: ChatMessage = {
+            role: 'assistant',
+            content: msg.content || '',
+            reasoning_content: msg.reasoning_content,
+            tool_calls: msg.tool_calls,
+            timestamp: assistantTimestamp
+          }
+          setMessages(prev => [...prev, assistantMessage])
+          setAssistantResponseDone(true)
+        } else if (result.success === false && result.error) {
+          throw new Error(result.error)
+        } else {
           throw new Error('Invalid response format')
         }
       }
-	    } catch (error) {
-	      if (error instanceof DOMException && error.name === 'AbortError') {
-	        aborted = true
-	        return
-	      }
-	      if (error instanceof Error && (error as Error & { name?: string }).name === 'AbortError') {
-	        aborted = true
-	        return
-	      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        aborted = true
+        return
+      }
+      if (error instanceof Error && (error as Error & { name?: string }).name === 'AbortError') {
+        aborted = true
+        return
+      }
 
-	      const message = error instanceof Error && error.message ? error.message : '发送失败，请重试'
-	      const fallbackAssistantTimestamp = new Date().toISOString()
-	      const streamingTimestamp = streamingAssistantTimestampRef.current
-	      if (!streamingTimestamp) {
-	        revealingAssistantTimestampRef.current = fallbackAssistantTimestamp
-	        setRevealingAssistantTimestamp(fallbackAssistantTimestamp)
-	      }
-	      setMessages(prev => {
-	        if (streamingTimestamp) {
-	          const next = [...prev]
-	          for (let i = next.length - 1; i >= 0; i--) {
-	            const msg = next[i]
-	            if (msg.role === 'assistant' && msg.timestamp === streamingTimestamp) {
-	              next[i] = { ...msg, content: message }
-	              return next
-	            }
-	          }
-	        }
+      const message = error instanceof Error && error.message ? error.message : '发送失败，请重试'
+      const fallbackAssistantTimestamp = new Date().toISOString()
+      const streamingTimestamp = streamingAssistantTimestampRef.current
+      if (!streamingTimestamp) {
+        revealingAssistantTimestampRef.current = fallbackAssistantTimestamp
+        setRevealingAssistantTimestamp(fallbackAssistantTimestamp)
+      }
+      setMessages(prev => {
+        if (streamingTimestamp) {
+          const next = [...prev]
+          for (let i = next.length - 1; i >= 0; i--) {
+            const msg = next[i]
+            if (msg.role === 'assistant' && msg.timestamp === streamingTimestamp) {
+              next[i] = { ...msg, content: message }
+              return next
+            }
+          }
+        }
 
-	        return [
-	          ...prev,
-	          {
-	            role: 'assistant',
-	            content: message,
-	            timestamp: fallbackAssistantTimestamp,
-	          },
-	        ]
-	      })
-	      streamingAssistantTimestampRef.current = null
-	      setAssistantResponseDone(true)
-	    } finally {
-	      activeRequestRef.current = null
-	      if (aborted) {
-	        streamingAssistantTimestampRef.current = null
-	        revealingAssistantTimestampRef.current = null
-	        assistantRevealReadySegmentsRef.current = 0
-	        setAssistantResponseDone(false)
-	        setRevealingAssistantTimestamp(null)
-	        setAssistantVisibleSegments(0)
-	        setSending(false)
-	      }
-	    }
-	  }
+        return [
+          ...prev,
+          {
+            role: 'assistant',
+            content: message,
+            timestamp: fallbackAssistantTimestamp,
+          },
+        ]
+      })
+      streamingAssistantTimestampRef.current = null
+      setAssistantResponseDone(true)
+    } finally {
+      activeRequestRef.current = null
+      if (aborted) {
+        streamingAssistantTimestampRef.current = null
+        revealingAssistantTimestampRef.current = null
+        assistantRevealReadySegmentsRef.current = 0
+        setAssistantResponseDone(false)
+        setRevealingAssistantTimestamp(null)
+        setAssistantVisibleSegments(0)
+        setSending(false)
+      }
+    }
+  }
+
+  const handleSend = async () => {
+    const trimmedText = inputText.trim()
+    const hasImages = pendingImages.length > 0
+    if ((!trimmedText && !hasImages) || sending || uploadingImage) return
+    if (hasImages && !imageCapable) {
+      alert('当前模型不支持图片输入')
+      return
+    }
+
+    const finalText = quoteDraft ? buildQuotedOutgoingContent(quoteDraft.line, trimmedText) : trimmedText
+    const userMessage: ChatMessage = {
+      role: 'user',
+      content: finalText,
+      timestamp: new Date().toISOString(),
+      ...(hasImages ? { image_paths: pendingImages } : {}),
+    }
+
+    await sendOutgoingMessage(userMessage, {
+      clearChatInput: true,
+      clearQuoteDraft: true,
+      clearPendingImages: true,
+      resetTextareaHeight: true,
+    })
+  }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -660,6 +725,70 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
   const handleUploadClick = () => {
     if (!imageCapable || uploadingImage) return
     fileInputRef.current?.click()
+  }
+
+  const handleAttachmentButtonClick = () => {
+    setShowAttachmentMenu(prev => !prev)
+  }
+
+  const openRedPacketComposer = () => {
+    if (sending) return
+    setShowAttachmentMenu(false)
+    setRedPacketAmountDraft('')
+    setRedPacketBlessingDraft('')
+    setRedPacketComposerError(null)
+    setRedPacketComposerOpen(true)
+  }
+
+  const closeRedPacketComposer = () => {
+    setRedPacketComposerOpen(false)
+    setRedPacketComposerError(null)
+  }
+
+  const handleRedPacketComposerSend = () => {
+    setRedPacketComposerError(null)
+    const amountValue = Number.parseFloat(redPacketAmountDraft)
+    if (!Number.isFinite(amountValue) || amountValue <= 0) {
+      setRedPacketComposerError('请输入正确的金额')
+      return
+    }
+    const blessing = redPacketBlessingDraft.trim()
+    if (!blessing) {
+      setRedPacketComposerError('请输入祝福语')
+      return
+    }
+    if (blessing.length > 10) {
+      setRedPacketComposerError('祝福语不能超过10个字')
+      return
+    }
+
+    const normalizedAmount = Math.round(amountValue * 100) / 100
+    const rawId =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`
+    const toolCallId = `rp_${rawId.replace(/[^a-zA-Z0-9]/g, '')}`
+
+    const toolCall: ToolCall = {
+      id: toolCallId,
+      type: 'function',
+      function: {
+        name: 'send_red_packet',
+        arguments: JSON.stringify({ amount: normalizedAmount, message: blessing }),
+      },
+    }
+
+    const userMessage: ChatMessage = {
+      role: 'user',
+      content: '',
+      timestamp: new Date().toISOString(),
+      tool_calls: [toolCall],
+    }
+
+    setRedPacketComposerOpen(false)
+    setRedPacketAmountDraft('')
+    setRedPacketBlessingDraft('')
+    void sendOutgoingMessage(userMessage)
   }
 
   const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -951,21 +1080,32 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
   }, [messages])
 
   const normalizePacketKey = (rawKey: string) => rawKey.replace(/[^a-zA-Z0-9_-]/g, '_')
+  const derivePacketKeys = (toolCall: ToolCall, rawKey: string) => {
+    const legacyKey = normalizePacketKey(rawKey)
+    const primaryKey =
+      typeof toolCall.id === 'string' && toolCall.id.trim() !== '' ? normalizePacketKey(toolCall.id.trim()) : legacyKey
+    return { primaryKey, legacyKey }
+  }
 
   // 渲染红包卡片
-  const renderRedPacket = (toolCall: ToolCall, rawKey: string) => {
+  const renderRedPacket = (toolCall: ToolCall, rawKey: string, role: 'user' | 'assistant') => {
     if (toolCall.function.name !== 'send_red_packet') return null
 
     try {
       const params: RedPacketParams = JSON.parse(toolCall.function.arguments)
-      const packetKey = normalizePacketKey(rawKey)
+      const { primaryKey, legacyKey } = derivePacketKeys(toolCall, rawKey)
+      const opened = openedRedPacketKeys.has(primaryKey) || openedRedPacketKeys.has(legacyKey)
+      const shouldTreatAsOpened = role === 'user' || opened
+      const packetKey = openedRedPacketKeys.has(legacyKey) ? legacyKey : primaryKey
+      const senderName = role === 'user' ? userInfo?.username?.trim() || '我' : prompt?.name?.trim() || 'AI Assistant'
+      const senderAvatarSrc = role === 'user' ? getUserAvatarSrc() : getPromptAvatarSrc()
 	      return (
 	        <div 
 	          className="red-packet-bubble"
 	          data-bubble-key={rawKey}
 	          onClick={() => {
-	            setActiveRedPacket({ params, packetKey })
-	            setPacketStep(openedRedPacketKeys.has(packetKey) ? 'opened' : 'idle')
+	            setActiveRedPacket({ params, packetKey, senderRole: role, senderName, senderAvatarSrc })
+	            setPacketStep(shouldTreatAsOpened ? 'opened' : 'idle')
 	          }}
 	        >
           <div className="rp-content">
@@ -976,7 +1116,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
             </div>
             <div className="rp-text">
               <div className="rp-title">{params.message || '恭喜发财，大吉大利'}</div>
-              <div className="rp-status">领取红包</div>
+              <div className="rp-status">{role === 'user' ? '查看红包' : shouldTreatAsOpened ? '已领取' : '领取红包'}</div>
             </div>
           </div>
           <div className="rp-footer">
@@ -1306,7 +1446,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
 	            }
 	
 	            const content = isRedPacket ? (
-	              renderRedPacket(item.toolCall, item.key)
+	              renderRedPacket(item.toolCall, item.key, item.role === 'user' ? 'user' : 'assistant')
 	            ) : (
 	              <div
 	                className="message-bubble"
@@ -1371,16 +1511,51 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         )}
 
         <div className="chat-input-row">
-          <button
-            className="upload-button"
-            onClick={handleUploadClick}
-            disabled={!imageCapable || uploadingImage}
-            title={imageCapable ? '上传图片' : '当前模型不支持图片输入'}
-          >
-            <svg viewBox="0 0 24 24">
-              <path d="M19 7h-3V5c0-1.1-.9-2-2-2h-4c-1.1 0-2 .9-2 2v2H5c-1.1 0-2 .9-2 2v9c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V9c0-1.1-.9-2-2-2zm-9 0V5h4v2h-4zm7 13H5V9h14v11zM7 18l3-4 2 3 3-4 2 5H7z" />
-            </svg>
-          </button>
+          <div className="attachment-menu" ref={attachmentMenuRef}>
+            <button
+              type="button"
+              className={`attachment-button ${showAttachmentMenu ? 'open' : ''}`}
+              onClick={handleAttachmentButtonClick}
+              aria-label="更多功能"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M19 11H13V5a1 1 0 0 0-2 0v6H5a1 1 0 0 0 0 2h6v6a1 1 0 0 0 2 0v-6h6a1 1 0 0 0 0-2z" />
+              </svg>
+            </button>
+
+            {showAttachmentMenu && (
+              <div className="attachment-menu-panel" role="menu">
+                <button
+                  type="button"
+                  className="attachment-menu-item"
+                  onClick={() => {
+                    setShowAttachmentMenu(false)
+                    handleUploadClick()
+                  }}
+                  disabled={!imageCapable || uploadingImage}
+                  title={imageCapable ? '上传图片' : '当前模型不支持图片输入'}
+                  role="menuitem"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M19 7h-3V5c0-1.1-.9-2-2-2h-4c-1.1 0-2 .9-2 2v2H5c-1.1 0-2 .9-2 2v9c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V9c0-1.1-.9-2-2-2zm-9 0V5h4v2h-4zm7 13H5V9h14v11zM7 18l3-4 2 3 3-4 2 5H7z" />
+                  </svg>
+                  <span>照片</span>
+                </button>
+                <button
+                  type="button"
+                  className="attachment-menu-item"
+                  onClick={openRedPacketComposer}
+                  disabled={sending}
+                  role="menuitem"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M7 3h10a2 2 0 0 1 2 2v4a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V5a2 2 0 0 1 2-2zm0 12h10a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-2a2 2 0 0 1 2-2zm5-10a1.2 1.2 0 1 0 0 2.4A1.2 1.2 0 0 0 12 5zm0 12a1.2 1.2 0 1 0 0 2.4A1.2 1.2 0 0 0 12 17z" />
+                  </svg>
+                  <span>红包</span>
+                </button>
+              </div>
+            )}
+          </div>
           <input
             ref={fileInputRef}
             className="image-input"
@@ -1548,14 +1723,14 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
               <div className="rp-modal-front">
                 <div className="rp-modal-top">
                   <div className="rp-sender-row">
-                    {getPromptAvatarSrc() ? (
-                        <img src={getPromptAvatarSrc()!} className="rp-avatar-img" alt="avatar" />
+                    {activeRedPacket.senderAvatarSrc ? (
+                      <img src={activeRedPacket.senderAvatarSrc} className="rp-avatar-img" alt="avatar" />
                     ) : (
-                        <div className="rp-avatar-placeholder">
-                            {prompt?.name?.charAt(0)?.toUpperCase() || 'A'}
-                        </div>
+                      <div className="rp-avatar-placeholder">
+                        {activeRedPacket.senderName.charAt(0)?.toUpperCase() || 'A'}
+                      </div>
                     )}
-                    <span className="rp-sender-name">{prompt?.name || 'AI Assistant'}</span>
+                    <span className="rp-sender-name">{activeRedPacket.senderName}</span>
                   </div>
                   <div className="rp-wishing">
                     {activeRedPacket.params.message || '恭喜发财，大吉大利'}
@@ -1575,14 +1750,14 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
                 <div className="rp-result-header">
                   <div className="rp-result-top-bg"></div>
                   <div className="rp-sender-row small">
-                    {getPromptAvatarSrc() ? (
-                        <img src={getPromptAvatarSrc()!} className="rp-avatar-img small" alt="avatar" />
+                    {activeRedPacket.senderAvatarSrc ? (
+                      <img src={activeRedPacket.senderAvatarSrc} className="rp-avatar-img small" alt="avatar" />
                     ) : (
-                        <div className="rp-avatar-placeholder small">
-                            {prompt?.name?.charAt(0)?.toUpperCase() || 'A'}
-                        </div>
+                      <div className="rp-avatar-placeholder small">
+                        {activeRedPacket.senderName.charAt(0)?.toUpperCase() || 'A'}
+                      </div>
                     )}
-                    <span className="rp-sender-name dark">{prompt?.name || 'AI Assistant'}的红包</span>
+                    <span className="rp-sender-name dark">{activeRedPacket.senderName}的红包</span>
                   </div>
                   <div className="rp-wishing dark">
                     {activeRedPacket.params.message || '恭喜发财，大吉大利'}
@@ -1595,13 +1770,110 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
                 </div>
 
                 <div className="rp-result-footer">
-                  已存入零钱，可直接使用
+                  {(() => {
+                    const receiverFromBanner = (() => {
+                      for (const message of messages) {
+                        const toolCalls = message.tool_calls || []
+                        for (const toolCall of toolCalls) {
+                          if (toolCall.function.name !== 'red_packet_received') continue
+                          try {
+                            const args = JSON.parse(toolCall.function.arguments || '{}') as {
+                              packet_key?: unknown
+                              receiver_name?: unknown
+                            }
+                            const packetKey = typeof args.packet_key === 'string' ? args.packet_key.trim() : ''
+                            if (!packetKey || packetKey !== activeRedPacket.packetKey) continue
+                            const receiverName =
+                              typeof args.receiver_name === 'string' && args.receiver_name.trim() !== ''
+                                ? args.receiver_name.trim()
+                                : ''
+                            if (receiverName) return receiverName
+                          } catch {
+                            // ignore invalid payload
+                          }
+                        }
+                      }
+                      return ''
+                    })()
+                    const receiverName =
+                      receiverFromBanner ||
+                      (activeRedPacket.senderRole === 'assistant'
+                        ? userInfo?.username?.trim() || '你'
+                        : prompt?.name?.trim() || 'AI Assistant')
+                    return (
+                      <div className="rp-result-meta">
+                        <div className="rp-result-meta-row">
+                          <span className="rp-result-meta-label">领取者</span>
+                          <span className="rp-result-meta-value">{receiverName}</span>
+                        </div>
+                        <div className="rp-result-meta-hint">
+                          {activeRedPacket.senderRole === 'assistant' ? '已存入零钱，可直接使用' : `已被${receiverName}领取`}
+                        </div>
+                      </div>
+                    )
+                  })()}
                 </div>
               </div>
             )}
           </div>
         </div>
       )}
+
+      {redPacketComposerOpen &&
+        createPortal(
+          <div className="rp-compose-overlay" onClick={closeRedPacketComposer}>
+            <div className="rp-compose-card" onClick={(e) => e.stopPropagation()}>
+              <div className="rp-compose-header">
+                <div className="rp-compose-title">发红包</div>
+                <button type="button" className="rp-compose-close" onClick={closeRedPacketComposer} aria-label="关闭">
+                  ×
+                </button>
+              </div>
+
+              <div className="rp-compose-body">
+                <label className="rp-compose-field">
+                  <div className="rp-compose-label">金额</div>
+                  <div className="rp-compose-input-row">
+                    <span className="rp-compose-currency">¥</span>
+                    <input
+                      ref={redPacketAmountInputRef}
+                      className="rp-compose-input amount"
+                      type="number"
+                      inputMode="decimal"
+                      min="0.01"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={redPacketAmountDraft}
+                      onChange={(e) => setRedPacketAmountDraft(e.target.value)}
+                    />
+                  </div>
+                </label>
+
+                <label className="rp-compose-field">
+                  <div className="rp-compose-label">祝福语</div>
+                  <input
+                    className="rp-compose-input"
+                    type="text"
+                    placeholder="恭喜发财"
+                    value={redPacketBlessingDraft}
+                    maxLength={10}
+                    onChange={(e) => setRedPacketBlessingDraft(e.target.value)}
+                  />
+                  <div className="rp-compose-hint">{redPacketBlessingDraft.length}/10</div>
+                </label>
+
+                {redPacketComposerError && <div className="rp-compose-error">{redPacketComposerError}</div>}
+              </div>
+
+              <div className="rp-compose-footer">
+                <button type="button" className="rp-compose-send" onClick={handleRedPacketComposerSend} disabled={sending}>
+                  发送
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   )
 }

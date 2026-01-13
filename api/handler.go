@@ -1041,6 +1041,7 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	messages = append(messages, historyMessages...)
+	messages = normalizeMessagesForProvider(messages)
 	resolvedMessages, errResolve := h.prepareMessagesForProvider(messages, provider.ImageCapable)
 	if errResolve != nil {
 		h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: errResolve.Error()})
@@ -1276,6 +1277,65 @@ func limitMessagesByTurns(messages []client.Message, maxTurns int) []client.Mess
 		return messages
 	}
 	return messages[startIndex:]
+}
+
+type redPacketToolArgs struct {
+	Amount  float64 `json:"amount"`
+	Message string  `json:"message"`
+}
+
+func buildUserToolCallNotice(toolCalls []client.ToolCall) string {
+	if len(toolCalls) == 0 {
+		return ""
+	}
+
+	lines := make([]string, 0, len(toolCalls))
+	for _, toolCall := range toolCalls {
+		if toolCall.Function.Name != "send_red_packet" {
+			continue
+		}
+		var args redPacketToolArgs
+		if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); err != nil {
+			continue
+		}
+		message := strings.TrimSpace(args.Message)
+		if message == "" {
+			message = "恭喜发财，大吉大利"
+		}
+		lines = append(lines, fmt.Sprintf("[用户发红包] 金额: %.2f 元, 祝福语: %s", args.Amount, message))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func normalizeMessagesForProvider(messages []client.Message) []client.Message {
+	if len(messages) == 0 {
+		return nil
+	}
+	normalized := make([]client.Message, 0, len(messages))
+	for _, msg := range messages {
+		updated := msg
+
+		if msg.Role == "user" && len(msg.ToolCalls) > 0 {
+			notice := buildUserToolCallNotice(msg.ToolCalls)
+			if strings.TrimSpace(notice) != "" {
+				if strings.TrimSpace(updated.Content) == "" {
+					updated.Content = notice
+				} else {
+					updated.Content = strings.TrimSpace(updated.Content) + "\n" + notice
+				}
+			}
+		}
+
+		if msg.Role != "assistant" {
+			updated.ToolCalls = nil
+			if msg.Role != "tool" {
+				updated.ToolCallID = ""
+			}
+		}
+
+		normalized = append(normalized, updated)
+	}
+	return normalized
 }
 
 func collectToolCalls(toolCallsMap map[int]*client.ToolCall) []client.ToolCall {
