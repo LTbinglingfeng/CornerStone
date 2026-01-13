@@ -56,6 +56,11 @@
   transition: color 0.3s ease;
 }
 
+.chat-detail-title.typing {
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
 .settings-button {
   display: flex;
   align-items: center;
@@ -206,6 +211,7 @@
   position: relative;
   padding: 10px 14px;
   border-radius: var(--chat-bubble-radius);
+  will-change: transform, opacity;
   font-size: 15px;
   line-height: 1.4;
   word-wrap: break-word;
@@ -244,37 +250,6 @@
 .message-item.assistant .message-bubble::after {
   left: calc(var(--chat-bubble-tail-size) * -1 + 1px);
   clip-path: polygon(100% 0, 0 50%, 100% 100%);
-}
-
-.message-loading {
-  display: flex;
-  gap: 4px;
-  padding: 12px 16px;
-}
-
-.message-loading span {
-  width: 8px;
-  height: 8px;
-  background-color: var(--text-secondary);
-  border-radius: 50%;
-  animation: loading-bounce 1.4s infinite ease-in-out both;
-}
-
-.message-loading span:nth-child(1) {
-  animation-delay: -0.32s;
-}
-
-.message-loading span:nth-child(2) {
-  animation-delay: -0.16s;
-}
-
-@keyframes loading-bounce {
-  0%, 80%, 100% {
-    transform: scale(0);
-  }
-  40% {
-    transform: scale(1);
-  }
 }
 
 .chat-input-area {
@@ -721,6 +696,7 @@
   background-color: var(--red-packet-card-bg, #fa9d3b);
   border: 1px solid var(--red-packet-card-border, transparent);
   border-radius: 12px;
+  will-change: transform, opacity;
   overflow: hidden;
   cursor: pointer;
   display: flex;

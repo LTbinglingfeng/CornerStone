@@ -16,13 +16,13 @@ interface ChatDetailProps {
 
 type DisplayItem =
   | { key: string; role: string; type: 'text'; message: ChatMessage; messageIndex: number }
-  | { key: string; role: string; type: 'loading'; message: ChatMessage; messageIndex: number }
   | { key: string; role: string; type: 'red-packet'; message: ChatMessage; toolCall: ToolCall; messageIndex: number }
   | { key: string; role: string; type: 'red-packet-received-banner'; message: ChatMessage; toolCall: ToolCall; messageIndex: number }
   | { key: string; role: string; type: 'pat-banner'; message: ChatMessage; toolCall: ToolCall; messageIndex: number }
   | { key: string; role: string; type: 'recall-banner'; message: ChatMessage; messageIndex: number }
 
 const assistantMessageSplitToken = '→'
+const assistantBubbleIntervalMs = 500
 const quotePrefixCandidates = ['引用的信息:', '引用的信息：']
 const recalledMessageSuffix = '(已撤回)'
 
@@ -97,6 +97,9 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
   const [inputText, setInputText] = useState('')
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
+  const [assistantResponseDone, setAssistantResponseDone] = useState(false)
+  const [revealingAssistantTimestamp, setRevealingAssistantTimestamp] = useState<string | null>(null)
+  const [assistantVisibleSegments, setAssistantVisibleSegments] = useState(0)
   const [prompt, setPrompt] = useState<Prompt | null>(null)
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null)
   const [showSettings, setShowSettings] = useState(false)
@@ -120,7 +123,12 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
   const activeRequestRef = useRef<AbortController | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const streamingAssistantTimestampRef = useRef<string | null>(null)
-  const finalizeSendTimeoutRef = useRef<number | null>(null)
+  const revealingAssistantTimestampRef = useRef<string | null>(null)
+  const assistantRevealReadySegmentsRef = useRef(0)
+  const assistantRevealTimeoutRef = useRef<number | null>(null)
+  const assistantRevealLastAtRef = useRef(0)
+  const animatedBubbleKeysRef = useRef<Set<string>>(new Set())
+  const bubbleKeysSeededRef = useRef(false)
   const longPressTimeoutRef = useRef<number | null>(null)
   const longPressStartRef = useRef<{ x: number; y: number } | null>(null)
   const redPacketOpenTimeoutRef = useRef<number | null>(null)
@@ -128,9 +136,9 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
   useEffect(() => {
     activeRequestRef.current?.abort()
     activeRequestRef.current = null
-    if (finalizeSendTimeoutRef.current !== null) {
-      window.clearTimeout(finalizeSendTimeoutRef.current)
-      finalizeSendTimeoutRef.current = null
+    if (assistantRevealTimeoutRef.current !== null) {
+      window.clearTimeout(assistantRevealTimeoutRef.current)
+      assistantRevealTimeoutRef.current = null
     }
     if (longPressTimeoutRef.current !== null) {
       window.clearTimeout(longPressTimeoutRef.current)
@@ -141,7 +149,15 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
       redPacketOpenTimeoutRef.current = null
     }
     streamingAssistantTimestampRef.current = null
+    revealingAssistantTimestampRef.current = null
+    assistantRevealReadySegmentsRef.current = 0
+    assistantRevealLastAtRef.current = 0
+    animatedBubbleKeysRef.current.clear()
+    bubbleKeysSeededRef.current = false
     setSending(false)
+    setAssistantResponseDone(false)
+    setRevealingAssistantTimestamp(null)
+    setAssistantVisibleSegments(0)
     setActiveRedPacket(null)
     setPacketStep('idle')
     setPendingImages([])
@@ -164,9 +180,9 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
   useEffect(() => {
     return () => {
       activeRequestRef.current?.abort()
-      if (finalizeSendTimeoutRef.current !== null) {
-        window.clearTimeout(finalizeSendTimeoutRef.current)
-        finalizeSendTimeoutRef.current = null
+      if (assistantRevealTimeoutRef.current !== null) {
+        window.clearTimeout(assistantRevealTimeoutRef.current)
+        assistantRevealTimeoutRef.current = null
       }
       if (longPressTimeoutRef.current !== null) {
         window.clearTimeout(longPressTimeoutRef.current)
@@ -190,10 +206,62 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     }, 0)
   }, [selectTextState])
 
-  useEffect(() => {
-    if (loading) return
-    scrollToBottom()
-  }, [messages, loading])
+	  useEffect(() => {
+	    if (loading) return
+	    scrollToBottom()
+	  }, [messages, loading])
+
+	  useEffect(() => {
+	    if (!sending) return
+	    if (!revealingAssistantTimestamp) return
+
+	    const currentAssistantMessage = messages.find(
+	      (message) => message.role === 'assistant' && message.timestamp === revealingAssistantTimestamp
+	    )
+	    if (!currentAssistantMessage) return
+
+	    const isStreamingAssistantMessage = streamingAssistantTimestampRef.current === revealingAssistantTimestamp
+	    let assistantSegments = splitAssistantMessageContent(currentAssistantMessage.content)
+	    const hasSplitToken = currentAssistantMessage.content.includes(assistantMessageSplitToken)
+	    const endsWithSplitToken = currentAssistantMessage.content.trimEnd().endsWith(assistantMessageSplitToken)
+
+	    const shouldHoldTrailingSegment =
+	      isStreamingAssistantMessage && hasSplitToken && !endsWithSplitToken && assistantSegments.length > 1
+	    if (shouldHoldTrailingSegment) {
+	      assistantSegments = assistantSegments.slice(0, -1)
+	    }
+
+	    assistantRevealReadySegmentsRef.current = assistantSegments.length
+	    if (assistantRevealTimeoutRef.current !== null) return
+	    if (assistantVisibleSegments >= assistantRevealReadySegmentsRef.current) return
+
+	    const now = performance.now()
+	    const elapsed = now - assistantRevealLastAtRef.current
+	    const delay = Math.max(0, assistantBubbleIntervalMs - elapsed)
+	    assistantRevealTimeoutRef.current = window.setTimeout(() => {
+	      assistantRevealTimeoutRef.current = null
+	      assistantRevealLastAtRef.current = performance.now()
+	      setAssistantVisibleSegments((prev) => Math.min(prev + 1, assistantRevealReadySegmentsRef.current))
+	    }, delay)
+	  }, [messages, revealingAssistantTimestamp, assistantVisibleSegments, sending])
+
+	  useEffect(() => {
+	    if (!sending) return
+	    if (!assistantResponseDone) return
+	    if (!revealingAssistantTimestamp) return
+
+	    if (assistantVisibleSegments < assistantRevealReadySegmentsRef.current) return
+	    if (assistantRevealTimeoutRef.current !== null) {
+	      window.clearTimeout(assistantRevealTimeoutRef.current)
+	      assistantRevealTimeoutRef.current = null
+	    }
+	    assistantRevealReadySegmentsRef.current = 0
+	    revealingAssistantTimestampRef.current = null
+	    setAssistantResponseDone(false)
+	    setRevealingAssistantTimestamp(null)
+	    setAssistantVisibleSegments(0)
+	    setSending(false)
+	  }, [assistantResponseDone, assistantVisibleSegments, revealingAssistantTimestamp, sending])
 
   const loadSession = async () => {
     setLoading(true)
@@ -262,11 +330,17 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
       ...(hasImages ? { image_paths: pendingImages } : {}),
     }
 
-    if (finalizeSendTimeoutRef.current !== null) {
-      window.clearTimeout(finalizeSendTimeoutRef.current)
-      finalizeSendTimeoutRef.current = null
+    if (assistantRevealTimeoutRef.current !== null) {
+      window.clearTimeout(assistantRevealTimeoutRef.current)
+      assistantRevealTimeoutRef.current = null
     }
+    assistantRevealReadySegmentsRef.current = 0
+    assistantRevealLastAtRef.current = performance.now()
+    revealingAssistantTimestampRef.current = null
     streamingAssistantTimestampRef.current = null
+    setAssistantResponseDone(false)
+    setRevealingAssistantTimestamp(null)
+    setAssistantVisibleSegments(0)
 
     setMessages(prev => [...prev, userMessage])
     setInputText('')
@@ -278,6 +352,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
       textareaRef.current.style.height = '36px'
     }
 
+    let aborted = false
     try {
       activeRequestRef.current?.abort()
       const abortController = new AbortController()
@@ -308,6 +383,8 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         const toolCallsMap: Map<number, { id: string; type: string; name: string; arguments: string }> = new Map()
         const assistantTimestamp = new Date().toISOString()
         streamingAssistantTimestampRef.current = assistantTimestamp
+        revealingAssistantTimestampRef.current = assistantTimestamp
+        setRevealingAssistantTimestamp(assistantTimestamp)
         const assistantMessage: ChatMessage = {
           role: 'assistant',
           content: '',
@@ -348,9 +425,9 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
           })
         }
 
-        while (!sseDone) {
-          const { done, value } = await reader.read()
-          if (done) break
+	        while (!sseDone) {
+	          const { done, value } = await reader.read()
+	          if (done) break
 
           buffer += decoder.decode(value, { stream: true })
           const events = buffer.split(/\r?\n\r?\n/)
@@ -417,72 +494,88 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
               }
             }
 
-            applyStreamUpdate()
-          }
-        }
-      } else {
-        // 非流式响应处理
-        const result = await response.json()
+	            applyStreamUpdate()
+	          }
+	        }
+	        streamingAssistantTimestampRef.current = null
+	        setAssistantResponseDone(true)
+	      } else {
+	        // 非流式响应处理
+	        const result = await response.json()
 
-        if (result.success && result.data?.response?.choices?.[0]?.message) {
-          const msg = result.data.response.choices[0].message
-          const assistantMessage: ChatMessage = {
-            role: 'assistant',
-            content: msg.content || '',
-            reasoning_content: msg.reasoning_content,
-            tool_calls: msg.tool_calls,
-            timestamp: new Date().toISOString()
-          }
-          setMessages(prev => [...prev, assistantMessage])
-        } else if (result.success === false && result.error) {
-          throw new Error(result.error)
-        } else {
+	        if (result.success && result.data?.response?.choices?.[0]?.message) {
+	          const msg = result.data.response.choices[0].message
+	          const assistantTimestamp = new Date().toISOString()
+	          revealingAssistantTimestampRef.current = assistantTimestamp
+	          setRevealingAssistantTimestamp(assistantTimestamp)
+	          const assistantMessage: ChatMessage = {
+	            role: 'assistant',
+	            content: msg.content || '',
+	            reasoning_content: msg.reasoning_content,
+	            tool_calls: msg.tool_calls,
+	            timestamp: assistantTimestamp
+	          }
+	          setMessages(prev => [...prev, assistantMessage])
+	          setAssistantResponseDone(true)
+	        } else if (result.success === false && result.error) {
+	          throw new Error(result.error)
+	        } else {
           throw new Error('Invalid response format')
         }
       }
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        return
-      }
-      if (error instanceof Error && (error as Error & { name?: string }).name === 'AbortError') {
-        return
-      }
+	    } catch (error) {
+	      if (error instanceof DOMException && error.name === 'AbortError') {
+	        aborted = true
+	        return
+	      }
+	      if (error instanceof Error && (error as Error & { name?: string }).name === 'AbortError') {
+	        aborted = true
+	        return
+	      }
 
-      const message = error instanceof Error && error.message ? error.message : '发送失败，请重试'
-      setMessages(prev => {
-        if (streamingAssistantTimestampRef.current) {
-          const next = [...prev]
-          for (let i = next.length - 1; i >= 0; i--) {
-            const msg = next[i]
-            if (msg.role === 'assistant' && msg.timestamp === streamingAssistantTimestampRef.current) {
-              next[i] = { ...msg, content: message }
-              return next
-            }
-          }
-        }
+	      const message = error instanceof Error && error.message ? error.message : '发送失败，请重试'
+	      const fallbackAssistantTimestamp = new Date().toISOString()
+	      const streamingTimestamp = streamingAssistantTimestampRef.current
+	      if (!streamingTimestamp) {
+	        revealingAssistantTimestampRef.current = fallbackAssistantTimestamp
+	        setRevealingAssistantTimestamp(fallbackAssistantTimestamp)
+	      }
+	      setMessages(prev => {
+	        if (streamingTimestamp) {
+	          const next = [...prev]
+	          for (let i = next.length - 1; i >= 0; i--) {
+	            const msg = next[i]
+	            if (msg.role === 'assistant' && msg.timestamp === streamingTimestamp) {
+	              next[i] = { ...msg, content: message }
+	              return next
+	            }
+	          }
+	        }
 
-        return [
-          ...prev,
-          {
-            role: 'assistant',
-            content: message,
-            timestamp: new Date().toISOString(),
-          },
-        ]
-      })
-    } finally {
-      activeRequestRef.current = null
-      if (finalizeSendTimeoutRef.current !== null) {
-        window.clearTimeout(finalizeSendTimeoutRef.current)
-        finalizeSendTimeoutRef.current = null
-      }
-      finalizeSendTimeoutRef.current = window.setTimeout(() => {
-        streamingAssistantTimestampRef.current = null
-        setSending(false)
-        finalizeSendTimeoutRef.current = null
-      }, 0)
-    }
-  }
+	        return [
+	          ...prev,
+	          {
+	            role: 'assistant',
+	            content: message,
+	            timestamp: fallbackAssistantTimestamp,
+	          },
+	        ]
+	      })
+	      streamingAssistantTimestampRef.current = null
+	      setAssistantResponseDone(true)
+	    } finally {
+	      activeRequestRef.current = null
+	      if (aborted) {
+	        streamingAssistantTimestampRef.current = null
+	        revealingAssistantTimestampRef.current = null
+	        assistantRevealReadySegmentsRef.current = 0
+	        setAssistantResponseDone(false)
+	        setRevealingAssistantTimestamp(null)
+	        setAssistantVisibleSegments(0)
+	        setSending(false)
+	      }
+	    }
+	  }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -798,14 +891,15 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     try {
       const params: RedPacketParams = JSON.parse(toolCall.function.arguments)
       const packetKey = normalizePacketKey(rawKey)
-      return (
-        <div 
-          className="red-packet-bubble" 
-          onClick={() => {
-            setActiveRedPacket({ params, packetKey })
-            setPacketStep(openedRedPacketKeys.has(packetKey) ? 'opened' : 'idle')
-          }}
-        >
+	      return (
+	        <div 
+	          className="red-packet-bubble"
+	          data-bubble-key={rawKey}
+	          onClick={() => {
+	            setActiveRedPacket({ params, packetKey })
+	            setPacketStep(openedRedPacketKeys.has(packetKey) ? 'opened' : 'idle')
+	          }}
+	        >
           <div className="rp-content">
             <div className="rp-icon-wrapper">
               <svg viewBox="0 0 40 40" className="rp-icon">
@@ -936,6 +1030,12 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
       if (shouldHoldTrailingSegment) {
         assistantSegments = assistantSegments.slice(0, -1)
       }
+
+      const isRevealingAssistantMessage =
+        isAssistant && revealingAssistantTimestamp !== null && message.timestamp === revealingAssistantTimestamp
+      if (isRevealingAssistantMessage) {
+        assistantSegments = assistantSegments.slice(0, assistantVisibleSegments)
+      }
       const hasText = isAssistant ? assistantSegments.length > 0 : message.content.trim() !== ''
       const hasContent = hasText || hasImages
 
@@ -957,21 +1057,6 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
               })
             })
 
-            const shouldShowStreamingSegmentLoading =
-              isStreamingAssistantMessage &&
-              hasSplitToken &&
-              assistantSegments.length > 0 &&
-              (endsWithSplitToken || shouldHoldTrailingSegment)
-
-              if (shouldShowStreamingSegmentLoading) {
-              items.push({
-                key: `${message.timestamp}-loading-split`,
-                role: message.role,
-                type: 'loading',
-                message,
-                messageIndex: index,
-              })
-            }
           } else {
             items.push({
               key: `${message.timestamp}-text-0`,
@@ -1035,32 +1120,11 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         }
       })
 
-      if (!hasContent && supportedCalls.length === 0) {
-        const shouldShowLoading = sending && index === messages.length - 1 && message.role === 'assistant'
-        if (shouldShowLoading) {
-          items.push({
-            key: `${message.timestamp}-loading`,
-            role: message.role,
-            type: 'loading',
-            message,
-            messageIndex: index,
-          })
-        }
-      }
     })
     return items
   }
 
   const renderMessageBubbleContent = (item: DisplayItem) => {
-    if (item.type === 'loading') {
-      return (
-        <div className="message-loading">
-          <span></span>
-          <span></span>
-          <span></span>
-        </div>
-      )
-    }
     const parsedQuote = parseQuotedMessageContent(item.message.content)
     const quoteLine = parsedQuote?.quoteLine || ''
     const text = parsedQuote ? parsedQuote.text : item.message.content
@@ -1078,6 +1142,42 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
   const displayItems = buildDisplayItems()
   const canSend = (inputText.trim() !== '' || pendingImages.length > 0) && !sending && !uploadingImage
 
+  useEffect(() => {
+    if (loading) return
+    if (!messageListRef.current) return
+
+    if (!bubbleKeysSeededRef.current) {
+      displayItems.forEach((item) => animatedBubbleKeysRef.current.add(item.key))
+      bubbleKeysSeededRef.current = true
+      return
+    }
+
+    const escapeForSelector = (value: string) => {
+      if (typeof window !== 'undefined' && window.CSS && typeof window.CSS.escape === 'function') {
+        return window.CSS.escape(value)
+      }
+      return value.replace(/["\\]/g, '\\$&')
+    }
+
+    displayItems.forEach((item) => {
+      if (animatedBubbleKeysRef.current.has(item.key)) return
+      animatedBubbleKeysRef.current.add(item.key)
+
+      if (item.type !== 'text' && item.type !== 'red-packet') return
+      const target = messageListRef.current?.querySelector<HTMLElement>(
+        `[data-bubble-key="${escapeForSelector(item.key)}"]`
+      )
+      if (!target) return
+
+      gsap.killTweensOf(target)
+      gsap.fromTo(
+        target,
+        { opacity: 0, y: 12, scale: 0.97 },
+        { opacity: 1, y: 0, scale: 1, duration: 0.32, ease: 'power2.out', clearProps: 'transform,opacity' }
+      )
+    })
+  }, [displayItems, loading])
+
   return (
     <div className="chat-detail" ref={containerRef}>
       <div className="chat-detail-header">
@@ -1085,18 +1185,18 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
           <svg viewBox="0 0 24 24">
             <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
           </svg>
-        </button>
-        <div className="chat-detail-title">
-          {session?.title || '对话'}
-        </div>
-        {prompt && (
-          <button className="settings-button" onClick={() => setShowSettings(true)}>
-            <svg viewBox="0 0 24 24">
-              <path d="M6 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
-            </svg>
-          </button>
-        )}
-      </div>
+	        </button>
+	        <div className={`chat-detail-title${sending && assistantVisibleSegments === 0 ? ' typing' : ''}`}>
+	          {sending && assistantVisibleSegments === 0 ? '对方正在输入中…' : (session?.title || '对话')}
+	        </div>
+	        {prompt && (
+	          <button className="settings-button" onClick={() => setShowSettings(true)}>
+	            <svg viewBox="0 0 24 24">
+	              <path d="M6 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
+	            </svg>
+	          </button>
+	        )}
+	      </div>
 
       <div className="message-list" ref={messageListRef}>
         {loading ? (
@@ -1139,12 +1239,13 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
 	            const content = isRedPacket ? (
 	              renderRedPacket(item.toolCall, item.key)
 	            ) : (
-              <div
-                className="message-bubble"
-                onContextMenu={(e) => handleMessageContextMenu(e, item)}
-                onCopy={(e) => e.preventDefault()}
-                onCut={(e) => e.preventDefault()}
-                onPointerDown={(e) => handleMessagePointerDown(e, item)}
+	              <div
+	                className="message-bubble"
+	                data-bubble-key={item.key}
+	                onContextMenu={(e) => handleMessageContextMenu(e, item)}
+	                onCopy={(e) => e.preventDefault()}
+	                onCut={(e) => e.preventDefault()}
+	                onPointerDown={(e) => handleMessagePointerDown(e, item)}
                 onPointerMove={handleMessagePointerMove}
                 onPointerUp={handleMessagePointerUp}
                 onPointerCancel={handleMessagePointerCancel}
