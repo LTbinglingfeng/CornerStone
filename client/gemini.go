@@ -1,14 +1,16 @@
 package client
 
 import (
-	"bufio"
-	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"net/http"
+	"net/url"
 	"strings"
+
+	"google.golang.org/genai"
 )
 
 // GeminiClient Google Gemini API 客户端
@@ -16,86 +18,9 @@ type GeminiClient struct {
 	BaseURL    string
 	APIKey     string
 	HTTPClient *http.Client
-}
 
-// Gemini API 请求结构
-type GeminiRequest struct {
-	Contents          []GeminiContent         `json:"contents"`
-	SystemInstruction *GeminiContent          `json:"systemInstruction,omitempty"`
-	GenerationConfig  *GeminiGenerationConfig `json:"generationConfig,omitempty"`
-	Tools             []GeminiTool            `json:"tools,omitempty"`
-}
-
-type GeminiContent struct {
-	Role  string       `json:"role,omitempty"`
-	Parts []GeminiPart `json:"parts"`
-}
-
-type GeminiPart struct {
-	Text         string              `json:"text,omitempty"`
-	Thought      bool                `json:"thought,omitempty"`
-	FunctionCall *GeminiFunctionCall `json:"functionCall,omitempty"`
-	InlineData   *GeminiInlineData   `json:"inlineData,omitempty"`
-}
-
-type GeminiInlineData struct {
-	MimeType string `json:"mimeType"`
-	Data     string `json:"data"`
-}
-
-// GeminiTool Gemini 工具定义
-type GeminiTool struct {
-	FunctionDeclarations []GeminiFunctionDeclaration `json:"functionDeclarations,omitempty"`
-}
-
-// GeminiFunctionDeclaration Gemini 函数声明
-type GeminiFunctionDeclaration struct {
-	Name        string                 `json:"name"`
-	Description string                 `json:"description"`
-	Parameters  map[string]interface{} `json:"parameters,omitempty"`
-}
-
-// GeminiFunctionCall Gemini 函数调用响应
-type GeminiFunctionCall struct {
-	Name string                 `json:"name"`
-	Args map[string]interface{} `json:"args"`
-}
-
-type GeminiGenerationConfig struct {
-	Temperature     float64               `json:"temperature,omitempty"`
-	TopP            float64               `json:"topP,omitempty"`
-	MaxOutputTokens int                   `json:"maxOutputTokens,omitempty"`
-	ThinkingConfig  *GeminiThinkingConfig `json:"thinkingConfig,omitempty"`
-}
-
-type GeminiThinkingConfig struct {
-	IncludeThoughts bool   `json:"includeThoughts"`
-	ThinkingLevel   string `json:"thinkingLevel,omitempty"`
-	ThinkingBudget  *int   `json:"thinkingBudget,omitempty"`
-}
-
-// Gemini API 响应结构
-type GeminiResponse struct {
-	Candidates    []GeminiCandidate `json:"candidates"`
-	UsageMetadata *GeminiUsage      `json:"usageMetadata,omitempty"`
-}
-
-type GeminiCandidate struct {
-	Content      GeminiContent `json:"content"`
-	FinishReason string        `json:"finishReason"`
-	Index        int           `json:"index"`
-}
-
-type GeminiUsage struct {
-	PromptTokenCount     int `json:"promptTokenCount"`
-	CandidatesTokenCount int `json:"candidatesTokenCount"`
-	TotalTokenCount      int `json:"totalTokenCount"`
-}
-
-// Gemini 流式响应
-type GeminiStreamResponse struct {
-	Candidates    []GeminiCandidate `json:"candidates"`
-	UsageMetadata *GeminiUsage      `json:"usageMetadata,omitempty"`
+	genaiBaseURL string
+	genaiVersion string
 }
 
 // NewGeminiClient 创建新的Gemini客户端
@@ -104,23 +29,40 @@ func NewGeminiClient(baseURL, apiKey string) *GeminiClient {
 	if baseURL == "" {
 		baseURL = "https://generativelanguage.googleapis.com/v1beta"
 	}
+	genaiBaseURL, genaiVersion := normalizeGeminiBaseURL(baseURL)
 	return &GeminiClient{
-		BaseURL:    strings.TrimSuffix(baseURL, "/"),
-		APIKey:     apiKey,
-		HTTPClient: newHTTPClient(),
+		BaseURL:      strings.TrimSuffix(baseURL, "/"),
+		APIKey:       apiKey,
+		HTTPClient:   newHTTPClient(),
+		genaiBaseURL: genaiBaseURL,
+		genaiVersion: genaiVersion,
 	}
 }
 
-// convertToGeminiMessages 将通用消息转换为Gemini格式
-func (c *GeminiClient) convertToGeminiMessages(messages []Message) ([]GeminiContent, *GeminiContent, error) {
-	var contents []GeminiContent
-	var systemInstruction *GeminiContent
+func (c *GeminiClient) newGenAIClient(ctx context.Context) (*genai.Client, error) {
+	cfg := &genai.ClientConfig{
+		APIKey:     c.APIKey,
+		Backend:    genai.BackendGeminiAPI,
+		HTTPClient: c.HTTPClient,
+	}
+	if c.genaiBaseURL != "" {
+		cfg.HTTPOptions.BaseURL = c.genaiBaseURL
+	}
+	if c.genaiVersion != "" {
+		cfg.HTTPOptions.APIVersion = c.genaiVersion
+	}
+	return genai.NewClient(ctx, cfg)
+}
+
+// convertToGenAIContents 将通用消息转换为 genai 格式
+func (c *GeminiClient) convertToGenAIContents(messages []Message) ([]*genai.Content, *genai.Content, error) {
+	contents := make([]*genai.Content, 0, len(messages))
+	var systemInstruction *genai.Content
 
 	for _, msg := range messages {
 		if msg.Role == "system" {
-			// Gemini 使用 systemInstruction 字段处理系统消息
-			systemInstruction = &GeminiContent{
-				Parts: []GeminiPart{{Text: msg.Content}},
+			systemInstruction = &genai.Content{
+				Parts: []*genai.Part{{Text: msg.Content}},
 			}
 			continue
 		}
@@ -131,49 +73,48 @@ func (c *GeminiClient) convertToGeminiMessages(messages []Message) ([]GeminiCont
 			role = "model"
 		}
 
-		parts := make([]GeminiPart, 0, len(msg.ImagePaths)+1)
+		parts := make([]*genai.Part, 0, len(msg.ImagePaths)+1)
 		if strings.TrimSpace(msg.Content) != "" {
-			parts = append(parts, GeminiPart{Text: msg.Content})
+			parts = append(parts, genai.NewPartFromText(msg.Content))
 		}
 		for _, imagePath := range msg.ImagePaths {
 			payload, errLoad := loadImagePayload(imagePath)
 			if errLoad != nil {
 				return nil, nil, errLoad
 			}
-			parts = append(parts, GeminiPart{
-				InlineData: &GeminiInlineData{
-					MimeType: payload.MimeType,
-					Data:     payload.Data,
-				},
-			})
+			raw, errDecode := base64.StdEncoding.DecodeString(payload.Data)
+			if errDecode != nil {
+				return nil, nil, fmt.Errorf("decode image payload: %w", errDecode)
+			}
+			parts = append(parts, genai.NewPartFromBytes(raw, payload.MimeType))
 		}
 		if len(parts) == 0 {
-			parts = append(parts, GeminiPart{Text: ""})
+			parts = append(parts, genai.NewPartFromText(""))
 		}
 
-		contents = append(contents, GeminiContent{
-			Role:  role,
-			Parts: parts,
-		})
+		contents = append(contents, &genai.Content{Role: role, Parts: parts})
 	}
 
 	return contents, systemInstruction, nil
 }
 
-// convertToGeminiTools 将 OpenAI 格式的 Tools 转换为 Gemini 格式
-func (c *GeminiClient) convertToGeminiTools(tools []Tool) []GeminiTool {
+// convertToGenAITools 将 OpenAI 格式的 Tools 转换为 genai.Tools
+func (c *GeminiClient) convertToGenAITools(tools []Tool) []*genai.Tool {
 	if len(tools) == 0 {
 		return nil
 	}
 
-	var declarations []GeminiFunctionDeclaration
+	declarations := make([]*genai.FunctionDeclaration, 0, len(tools))
 	for _, tool := range tools {
 		if tool.Type == "function" {
-			declarations = append(declarations, GeminiFunctionDeclaration{
+			declaration := &genai.FunctionDeclaration{
 				Name:        tool.Function.Name,
 				Description: tool.Function.Description,
-				Parameters:  tool.Function.Parameters,
-			})
+			}
+			if tool.Function.Parameters != nil {
+				declaration.ParametersJsonSchema = tool.Function.Parameters
+			}
+			declarations = append(declarations, declaration)
 		}
 	}
 
@@ -181,14 +122,12 @@ func (c *GeminiClient) convertToGeminiTools(tools []Tool) []GeminiTool {
 		return nil
 	}
 
-	return []GeminiTool{
-		{FunctionDeclarations: declarations},
-	}
+	return []*genai.Tool{{FunctionDeclarations: declarations}}
 }
 
 // Chat 发送聊天请求（非流式）
 func (c *GeminiClient) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
-	contents, systemInstruction, errConvert := c.convertToGeminiMessages(req.Messages)
+	contents, systemInstruction, errConvert := c.convertToGenAIContents(req.Messages)
 	if errConvert != nil {
 		return nil, fmt.Errorf("build request: %w", errConvert)
 	}
@@ -196,69 +135,24 @@ func (c *GeminiClient) Chat(ctx context.Context, req ChatRequest) (*ChatResponse
 	ctx, cancel := context.WithTimeout(ctx, chatRequestTimeout)
 	defer cancel()
 
-	geminiReq := GeminiRequest{
-		Contents:          contents,
-		SystemInstruction: systemInstruction,
-		Tools:             c.convertToGeminiTools(req.Tools),
+	genaiClient, errInit := c.newGenAIClient(ctx)
+	if errInit != nil {
+		return nil, fmt.Errorf("init genai client: %w", errInit)
 	}
 
-	thinkingConfig := buildGeminiThinkingConfig(req)
-	var generationConfig *GeminiGenerationConfig
-	if req.Temperature > 0 || req.TopP > 0 || req.MaxTokens > 0 {
-		generationConfig = &GeminiGenerationConfig{
-			Temperature:     req.Temperature,
-			TopP:            req.TopP,
-			MaxOutputTokens: req.MaxTokens,
-		}
-	}
-	if thinkingConfig != nil {
-		if generationConfig == nil {
-			generationConfig = &GeminiGenerationConfig{}
-		}
-		generationConfig.ThinkingConfig = thinkingConfig
-	}
-	if generationConfig != nil {
-		geminiReq.GenerationConfig = generationConfig
-	}
-
-	body, err := json.Marshal(geminiReq)
+	generationConfig := buildGenAIGenerateContentConfig(req, systemInstruction, c.convertToGenAITools(req.Tools))
+	resp, err := genaiClient.Models.GenerateContent(ctx, req.Model, contents, generationConfig)
 	if err != nil {
-		return nil, fmt.Errorf("marshal request: %w", err)
-	}
-
-	// 构建请求URL
-	url := fmt.Sprintf("%s/models/%s:generateContent?key=%s", c.BaseURL, req.Model, c.APIKey)
-
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.HTTPClient.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("do request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
-		return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	var geminiResp GeminiResponse
-	if err := json.NewDecoder(resp.Body).Decode(&geminiResp); err != nil {
-		return nil, fmt.Errorf("decode response: %w", err)
+		return nil, translateGenAIError(err)
 	}
 
 	// 转换为通用响应格式
-	return c.convertToOpenAIResponse(geminiResp, req.Model), nil
+	return c.convertToOpenAIResponse(resp, req.Model), nil
 }
 
 // ChatStream 发送聊天请求（流式）
 func (c *GeminiClient) ChatStream(ctx context.Context, req ChatRequest, callback func(chunk StreamChunk) error) error {
-	contents, systemInstruction, errConvert := c.convertToGeminiMessages(req.Messages)
+	contents, systemInstruction, errConvert := c.convertToGenAIContents(req.Messages)
 	if errConvert != nil {
 		return fmt.Errorf("build request: %w", errConvert)
 	}
@@ -266,117 +160,64 @@ func (c *GeminiClient) ChatStream(ctx context.Context, req ChatRequest, callback
 	ctx, cancel := context.WithTimeout(ctx, streamRequestTimeout)
 	defer cancel()
 
-	geminiReq := GeminiRequest{
-		Contents:          contents,
-		SystemInstruction: systemInstruction,
-		Tools:             c.convertToGeminiTools(req.Tools),
-	}
-
-	thinkingConfig := buildGeminiThinkingConfig(req)
-	var generationConfig *GeminiGenerationConfig
-	if req.Temperature > 0 || req.TopP > 0 || req.MaxTokens > 0 {
-		generationConfig = &GeminiGenerationConfig{
-			Temperature:     req.Temperature,
-			TopP:            req.TopP,
-			MaxOutputTokens: req.MaxTokens,
-		}
-	}
-	if thinkingConfig != nil {
-		if generationConfig == nil {
-			generationConfig = &GeminiGenerationConfig{}
-		}
-		generationConfig.ThinkingConfig = thinkingConfig
-	}
-	if generationConfig != nil {
-		geminiReq.GenerationConfig = generationConfig
-	}
-
-	body, err := json.Marshal(geminiReq)
-	if err != nil {
-		return fmt.Errorf("marshal request: %w", err)
-	}
-
-	// 构建流式请求URL
-	url := fmt.Sprintf("%s/models/%s:streamGenerateContent?key=%s&alt=sse", c.BaseURL, req.Model, c.APIKey)
-
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("create request: %w", err)
-	}
-
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.HTTPClient.Do(httpReq)
-	if err != nil {
-		return fmt.Errorf("do request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
-		return fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(bodyBytes))
+	genaiClient, errInit := c.newGenAIClient(ctx)
+	if errInit != nil {
+		return fmt.Errorf("init genai client: %w", errInit)
 	}
 
 	nextToolCallIndex := 0
-	scanner := bufio.NewScanner(resp.Body)
-	buf := make([]byte, 0, 64*1024)
-	scanner.Buffer(buf, maxStreamLineBytes)
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		if line == "" {
-			continue
+	generationConfig := buildGenAIGenerateContentConfig(req, systemInstruction, c.convertToGenAITools(req.Tools))
+	for resp, err := range genaiClient.Models.GenerateContentStream(ctx, req.Model, contents, generationConfig) {
+		if err != nil {
+			return translateGenAIError(err)
 		}
-
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-
-		data := strings.TrimPrefix(line, "data: ")
-
-		var geminiResp GeminiStreamResponse
-		if err := json.Unmarshal([]byte(data), &geminiResp); err != nil {
-			continue
-		}
-
-		// 转换为通用流式响应块
-		chunk := c.convertToStreamChunk(geminiResp, req.Model, &nextToolCallIndex)
-		if err := callback(chunk); err != nil {
-			return err
+		chunk := c.convertToStreamChunk(resp, req.Model, &nextToolCallIndex)
+		if errCallback := callback(chunk); errCallback != nil {
+			return errCallback
 		}
 	}
-
-	return scanner.Err()
+	return nil
 }
 
 // convertToOpenAIResponse 将Gemini响应转换为OpenAI格式
-func (c *GeminiClient) convertToOpenAIResponse(resp GeminiResponse, model string) *ChatResponse {
+func (c *GeminiClient) convertToOpenAIResponse(resp *genai.GenerateContentResponse, model string) *ChatResponse {
 	var choices []Choice
 
+	if resp == nil {
+		return &ChatResponse{Model: model}
+	}
+
 	for i, candidate := range resp.Candidates {
+		if candidate == nil {
+			continue
+		}
 		var content strings.Builder
 		var reasoning strings.Builder
 		var toolCalls []ToolCall
 
-		for j, part := range candidate.Content.Parts {
-			if part.Text != "" {
-				if part.Thought {
-					reasoning.WriteString(part.Text)
-				} else {
-					content.WriteString(part.Text)
+		if candidate.Content != nil {
+			for j, part := range candidate.Content.Parts {
+				if part == nil {
+					continue
 				}
-			}
-			if part.FunctionCall != nil {
-				// 将 Gemini FunctionCall 转换为 OpenAI ToolCall
-				argsJSON, _ := json.Marshal(part.FunctionCall.Args)
-				toolCalls = append(toolCalls, ToolCall{
-					ID:   fmt.Sprintf("call_%d_%d", i, j),
-					Type: "function",
-					Function: ToolCallFunction{
-						Name:      part.FunctionCall.Name,
-						Arguments: string(argsJSON),
-					},
-				})
+				if part.Text != "" {
+					if part.Thought {
+						reasoning.WriteString(part.Text)
+					} else {
+						content.WriteString(part.Text)
+					}
+				}
+				if part.FunctionCall != nil {
+					argsJSON, _ := json.Marshal(part.FunctionCall.Args)
+					toolCalls = append(toolCalls, ToolCall{
+						ID:   fmt.Sprintf("call_%d_%d", i, j),
+						Type: "function",
+						Function: ToolCallFunction{
+							Name:      part.FunctionCall.Name,
+							Arguments: string(argsJSON),
+						},
+					})
+				}
 			}
 		}
 
@@ -388,16 +229,16 @@ func (c *GeminiClient) convertToOpenAIResponse(resp GeminiResponse, model string
 				ReasoningContent: reasoning.String(),
 				ToolCalls:        toolCalls,
 			},
-			FinishReason: candidate.FinishReason,
+			FinishReason: string(candidate.FinishReason),
 		})
 	}
 
 	var usage Usage
 	if resp.UsageMetadata != nil {
 		usage = Usage{
-			PromptTokens:     resp.UsageMetadata.PromptTokenCount,
-			CompletionTokens: resp.UsageMetadata.CandidatesTokenCount,
-			TotalTokens:      resp.UsageMetadata.TotalTokenCount,
+			PromptTokens:     int(resp.UsageMetadata.PromptTokenCount),
+			CompletionTokens: int(resp.UsageMetadata.CandidatesTokenCount),
+			TotalTokens:      int(resp.UsageMetadata.TotalTokenCount),
 		}
 	}
 
@@ -409,41 +250,52 @@ func (c *GeminiClient) convertToOpenAIResponse(resp GeminiResponse, model string
 }
 
 // convertToStreamChunk 将Gemini流式响应转换为OpenAI格式
-func (c *GeminiClient) convertToStreamChunk(resp GeminiStreamResponse, model string, nextToolCallIndex *int) StreamChunk {
+func (c *GeminiClient) convertToStreamChunk(resp *genai.GenerateContentResponse, model string, nextToolCallIndex *int) StreamChunk {
 	var choices []Choice
 
+	if resp == nil {
+		return StreamChunk{Model: model}
+	}
+
 	for i, candidate := range resp.Candidates {
+		if candidate == nil {
+			continue
+		}
 		var content strings.Builder
 		var reasoning strings.Builder
 		var deltaToolCalls []DeltaToolCall
 
-		for j, part := range candidate.Content.Parts {
-			if part.Text != "" {
-				if part.Thought {
-					reasoning.WriteString(part.Text)
-				} else {
-					content.WriteString(part.Text)
+		if candidate.Content != nil {
+			for j, part := range candidate.Content.Parts {
+				if part == nil {
+					continue
 				}
-			}
-			if part.FunctionCall != nil {
-				// 将 Gemini FunctionCall 转换为 OpenAI DeltaToolCall
-				argsJSON, _ := json.Marshal(part.FunctionCall.Args)
-				callIndex := j
-				callID := fmt.Sprintf("call_%d_%d", i, j)
-				if nextToolCallIndex != nil {
-					callIndex = *nextToolCallIndex
-					callID = fmt.Sprintf("call_%d", callIndex)
-					*nextToolCallIndex++
+				if part.Text != "" {
+					if part.Thought {
+						reasoning.WriteString(part.Text)
+					} else {
+						content.WriteString(part.Text)
+					}
 				}
-				deltaToolCalls = append(deltaToolCalls, DeltaToolCall{
-					Index: callIndex,
-					ID:    callID,
-					Type:  "function",
-					Function: ToolCallFunction{
-						Name:      part.FunctionCall.Name,
-						Arguments: string(argsJSON),
-					},
-				})
+				if part.FunctionCall != nil {
+					argsJSON, _ := json.Marshal(part.FunctionCall.Args)
+					callIndex := j
+					callID := fmt.Sprintf("call_%d_%d", i, j)
+					if nextToolCallIndex != nil {
+						callIndex = *nextToolCallIndex
+						callID = fmt.Sprintf("call_%d", callIndex)
+						*nextToolCallIndex++
+					}
+					deltaToolCalls = append(deltaToolCalls, DeltaToolCall{
+						Index: callIndex,
+						ID:    callID,
+						Type:  "function",
+						Function: ToolCallFunction{
+							Name:      part.FunctionCall.Name,
+							Arguments: string(argsJSON),
+						},
+					})
+				}
 			}
 		}
 
@@ -455,7 +307,7 @@ func (c *GeminiClient) convertToStreamChunk(resp GeminiStreamResponse, model str
 				ReasoningContent: reasoning.String(),
 				ToolCalls:        deltaToolCalls,
 			},
-			FinishReason: candidate.FinishReason,
+			FinishReason: string(candidate.FinishReason),
 		})
 	}
 
@@ -465,16 +317,29 @@ func (c *GeminiClient) convertToStreamChunk(resp GeminiStreamResponse, model str
 	}
 }
 
-func buildGeminiThinkingConfig(req ChatRequest) *GeminiThinkingConfig {
+type genAIThinkingBuild struct {
+	ThinkingConfig *genai.ThinkingConfig
+	ExtraBody      map[string]any
+}
+
+func buildGeminiThinkingConfig(req ChatRequest) genAIThinkingBuild {
 	mode := strings.TrimSpace(req.GeminiThinkingMode)
 	switch mode {
 	case "none":
-		return nil
+		return genAIThinkingBuild{}
 	case "thinking_level":
 		level := normalizeGeminiThinkingLevel(req.Model, req.GeminiThinkingLevel)
-		return &GeminiThinkingConfig{
-			IncludeThoughts: true,
-			ThinkingLevel:   level,
+		return genAIThinkingBuild{
+			ThinkingConfig: &genai.ThinkingConfig{
+				IncludeThoughts: true,
+			},
+			ExtraBody: map[string]any{
+				"generationConfig": map[string]any{
+					"thinkingConfig": map[string]any{
+						"thinkingLevel": level,
+					},
+				},
+			},
 		}
 	case "thinking_budget":
 		budget := req.GeminiThinkingBudget
@@ -489,12 +354,94 @@ func buildGeminiThinkingConfig(req ChatRequest) *GeminiThinkingConfig {
 			}
 		}
 		includeThoughts := budget != 0
-		return &GeminiThinkingConfig{
-			IncludeThoughts: includeThoughts,
-			ThinkingBudget:  &budget,
+		budget32 := int32(budget)
+		return genAIThinkingBuild{
+			ThinkingConfig: &genai.ThinkingConfig{
+				IncludeThoughts: includeThoughts,
+				ThinkingBudget:  &budget32,
+			},
 		}
 	default:
-		return nil
+		return genAIThinkingBuild{}
+	}
+}
+
+func buildGenAIGenerateContentConfig(req ChatRequest, systemInstruction *genai.Content, tools []*genai.Tool) *genai.GenerateContentConfig {
+	cfg := &genai.GenerateContentConfig{
+		SystemInstruction: systemInstruction,
+		Tools:             tools,
+	}
+
+	if req.Temperature > 0 {
+		cfg.Temperature = genai.Ptr(float32(req.Temperature))
+	}
+	if req.TopP > 0 {
+		cfg.TopP = genai.Ptr(float32(req.TopP))
+	}
+	if req.MaxTokens > 0 {
+		cfg.MaxOutputTokens = int32(req.MaxTokens)
+	}
+
+	thinking := buildGeminiThinkingConfig(req)
+	if thinking.ThinkingConfig != nil {
+		cfg.ThinkingConfig = thinking.ThinkingConfig
+	}
+	if thinking.ExtraBody != nil {
+		cfg.HTTPOptions = &genai.HTTPOptions{ExtraBody: thinking.ExtraBody}
+	}
+
+	return cfg
+}
+
+func translateGenAIError(err error) error {
+	var apiErr genai.APIError
+	if errors.As(err, &apiErr) {
+		msg := strings.TrimSpace(apiErr.Message)
+		if msg == "" {
+			msg = strings.TrimSpace(apiErr.Status)
+		}
+		if msg == "" {
+			msg = apiErr.Error()
+		}
+		return fmt.Errorf("API error (status %d): %s", apiErr.Code, msg)
+	}
+	return fmt.Errorf("generate content: %w", err)
+}
+
+func normalizeGeminiBaseURL(baseURL string) (cleanBaseURL, apiVersion string) {
+	baseURL = strings.TrimSpace(baseURL)
+	if baseURL == "" {
+		return "", ""
+	}
+
+	trimmed := strings.TrimSuffix(baseURL, "/")
+	parsed, err := url.Parse(trimmed)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return trimmed, ""
+	}
+
+	parsed.Path = strings.TrimSuffix(parsed.Path, "/")
+	if parsed.Path == "" || parsed.Path == "." {
+		return parsed.String(), ""
+	}
+
+	segments := strings.Split(parsed.Path, "/")
+	last := segments[len(segments)-1]
+	if isGeminiAPIVersion(last) {
+		apiVersion = last
+		segments = segments[:len(segments)-1]
+		parsed.Path = strings.Join(segments, "/")
+	}
+
+	return strings.TrimSuffix(parsed.String(), "/"), apiVersion
+}
+
+func isGeminiAPIVersion(segment string) bool {
+	switch segment {
+	case "v1", "v1beta", "v1beta1", "v1alpha", "v1alpha1":
+		return true
+	default:
+		return false
 	}
 }
 
