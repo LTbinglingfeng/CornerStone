@@ -588,6 +588,41 @@ func (cm *ChatManager) UpdateMessageContentByIndex(sessionID string, index int, 
 	return cm.saveSession(record)
 }
 
+// RecallMessageByIndex 撤回指定索引的用户消息（在内容末尾追加“(已撤回)”）
+func (cm *ChatManager) RecallMessageByIndex(sessionID string, index int) error {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	if err := ValidateID(sessionID); err != nil {
+		return err
+	}
+
+	record, ok := cm.sessions[sessionID]
+	if !ok {
+		return os.ErrNotExist
+	}
+
+	if index < 0 || index >= len(record.Messages) {
+		return os.ErrInvalid
+	}
+
+	msg := &record.Messages[index]
+	if msg.Role != "user" {
+		return os.ErrPermission
+	}
+
+	const suffix = "(已撤回)"
+	trimmed := strings.TrimRight(msg.Content, " \t\r\n")
+	if strings.HasSuffix(trimmed, suffix) {
+		msg.Content = trimmed
+	} else {
+		msg.Content = trimmed + suffix
+	}
+
+	record.UpdatedAt = time.Now()
+	return cm.saveSession(record)
+}
+
 // DeleteMessageByIndex 删除指定索引的消息
 func (cm *ChatManager) DeleteMessageByIndex(sessionID string, index int) error {
 	cm.mu.Lock()

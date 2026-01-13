@@ -181,6 +181,19 @@ export async function deleteSessionMessage(id: string, index: number): Promise<C
   }
 }
 
+export async function recallSessionMessage(id: string, index: number): Promise<ChatRecord | null> {
+  try {
+    const data = await apiFetchJson<ApiResponse<ChatRecord>>(`${MANAGEMENT_BASE}/sessions/${id}/messages/recall`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ index }),
+    })
+    return data.success && data.data ? data.data : null
+  } catch {
+    return null
+  }
+}
+
 // 根据提示词ID获取所有会话
 export async function getSessionsByPromptId(promptId: string): Promise<ChatSession[]> {
   try {

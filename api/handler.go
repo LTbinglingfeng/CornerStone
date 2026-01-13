@@ -836,6 +836,40 @@ func (h *Handler) handleSessionMessages(w http.ResponseWriter, r *http.Request, 
 		h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: updated})
 		return
 
+	case "recall":
+		if r.Method != http.MethodPost {
+			h.jsonResponse(w, http.StatusMethodNotAllowed, Response{Success: false, Error: "Method not allowed"})
+			return
+		}
+		var req SessionMessageDeleteRequest
+		if !h.decodeJSON(w, r, &req) {
+			return
+		}
+		if err := h.chatManager.RecallMessageByIndex(sessionID, req.Index); err != nil {
+			if errors.Is(err, storage.ErrInvalidID) {
+				h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid session ID"})
+				return
+			}
+			if errors.Is(err, os.ErrInvalid) {
+				h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid message index"})
+				return
+			}
+			if errors.Is(err, os.ErrPermission) {
+				h.jsonResponse(w, http.StatusForbidden, Response{Success: false, Error: "Only user messages can be recalled"})
+				return
+			}
+			if errors.Is(err, os.ErrNotExist) {
+				h.jsonResponse(w, http.StatusNotFound, Response{Success: false, Error: "Session not found"})
+				return
+			}
+			h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: err.Error()})
+			return
+		}
+
+		updated, _ := h.chatManager.GetSession(sessionID)
+		h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: updated})
+		return
+
 	case "delete":
 		if r.Method != http.MethodPost {
 			h.jsonResponse(w, http.StatusMethodNotAllowed, Response{Success: false, Error: "Method not allowed"})

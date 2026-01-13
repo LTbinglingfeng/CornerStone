@@ -2,9 +2,9 @@ import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { gsap } from 'gsap'
 import type { ChatMessage, ChatRecord, Prompt, UserInfo, ToolCall, RedPacketParams, PatParams } from '../types/chat'
-import { getSession, sendMessage, getPrompt, getUserInfo, getPromptAvatarUrl, getUserAvatarUrl, uploadChatImage, getChatImageUrl, getActiveProvider, appendQueryParam, updateSessionMessage, deleteSessionMessage } from '../services/api'
+import { getSession, sendMessage, getPrompt, getUserInfo, getPromptAvatarUrl, getUserAvatarUrl, uploadChatImage, getChatImageUrl, getActiveProvider, appendQueryParam, updateSessionMessage, deleteSessionMessage, recallSessionMessage } from '../services/api'
 import ChatSettings from './ChatSettings'
-import ContextMenu from './ContextMenu'
+import ContextMenu, { type MenuItem } from './ContextMenu'
 import './ChatDetail.css'
 
 interface ChatDetailProps {
@@ -19,9 +19,16 @@ type DisplayItem =
   | { key: string; role: string; type: 'loading'; message: ChatMessage; messageIndex: number }
   | { key: string; role: string; type: 'red-packet'; message: ChatMessage; toolCall: ToolCall; messageIndex: number }
   | { key: string; role: string; type: 'pat-banner'; message: ChatMessage; toolCall: ToolCall; messageIndex: number }
+  | { key: string; role: string; type: 'recall-banner'; message: ChatMessage; messageIndex: number }
 
 const assistantMessageSplitToken = '→'
 const quotePrefixCandidates = ['引用的信息:', '引用的信息：']
+const recalledMessageSuffix = '(已撤回)'
+
+const isRecalledMessage = (message: ChatMessage): boolean => {
+  if (message.role !== 'user') return false
+  return message.content.trimEnd().endsWith(recalledMessageSuffix)
+}
 
 const parseQuotedMessageContent = (content: string): { quoteLine: string; text: string } | null => {
   if (!content) return null
@@ -62,6 +69,10 @@ type MessageEditState = {
   text: string
 }
 
+type SelectTextState = {
+  text: string
+}
+
 const splitAssistantMessageContent = (content: string): string[] => {
   if (!content) return []
   if (!content.includes(assistantMessageSplitToken)) {
@@ -89,6 +100,8 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
   const [quoteDraft, setQuoteDraft] = useState<QuoteDraft | null>(null)
   const [messageMenu, setMessageMenu] = useState<MessageMenuState | null>(null)
   const [editState, setEditState] = useState<MessageEditState | null>(null)
+  const [selectTextState, setSelectTextState] = useState<SelectTextState | null>(null)
+  const [selectTextCopied, setSelectTextCopied] = useState(false)
 
   // Red Packet State
   const [activeRedPacket, setActiveRedPacket] = useState<RedPacketParams | null>(null)
@@ -97,6 +110,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
   const containerRef = useRef<HTMLDivElement>(null)
   const messageListRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const selectTextTextareaRef = useRef<HTMLTextAreaElement>(null)
   const activeRequestRef = useRef<AbortController | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const streamingAssistantTimestampRef = useRef<string | null>(null)
@@ -121,13 +135,15 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     setPacketStep('idle')
     setPendingImages([])
     setUploadingImage(false)
-    setQuoteDraft(null)
-    setMessageMenu(null)
-    setEditState(null)
-    if (containerRef.current) {
-      gsap.fromTo(
-        containerRef.current,
-        { x: '100%' },
+	    setQuoteDraft(null)
+	    setMessageMenu(null)
+	    setEditState(null)
+	    setSelectTextState(null)
+	    setSelectTextCopied(false)
+	    if (containerRef.current) {
+	      gsap.fromTo(
+	        containerRef.current,
+	        { x: '100%' },
         { x: '0%', duration: 0.3, ease: 'power2.out' }
       )
     }
@@ -147,6 +163,17 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
       }
     }
   }, [])
+
+  useEffect(() => {
+    if (!selectTextState) return
+    setSelectTextCopied(false)
+    window.setTimeout(() => {
+      const textarea = selectTextTextareaRef.current
+      if (!textarea) return
+      textarea.focus()
+      textarea.select()
+    }, 0)
+  }, [selectTextState])
 
   useEffect(() => {
     if (loading) return
@@ -608,6 +635,64 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     textareaRef.current?.focus()
   }
 
+  const buildSelectableText = (message: ChatMessage) => {
+    const parsed = parseQuotedMessageContent(message.content)
+    if (!parsed) return message.content
+    const quoteLine = parsed.quoteLine.trim()
+    const text = parsed.text
+    if (quoteLine && text.trim() !== '') {
+      return `${quoteLine}\n${text}`
+    }
+    return quoteLine || text
+  }
+
+  const handleCopySelectText = async () => {
+    if (!selectTextState) return
+    const text = selectTextState.text
+    let copied = false
+
+    if (navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(text)
+        copied = true
+      } catch {
+        copied = false
+      }
+    }
+
+    if (!copied) {
+      const textarea = selectTextTextareaRef.current
+      if (textarea) {
+        textarea.focus()
+        textarea.select()
+        try {
+          copied = document.execCommand('copy')
+        } catch {
+          copied = false
+        }
+      }
+    }
+
+    if (!copied) {
+      alert('复制失败，请手动选择文本复制')
+      return
+    }
+
+    setSelectTextCopied(true)
+    window.setTimeout(() => setSelectTextCopied(false), 1500)
+  }
+
+  const handleRecallMessage = async (messageIndex: number) => {
+    const updated = await recallSessionMessage(sessionId, messageIndex)
+    if (!updated) {
+      alert('撤回失败，请重试')
+      return
+    }
+    setSession(updated)
+    setMessages(updated.messages || [])
+    setMessageMenu(null)
+  }
+
   // 获取用户头像 URL
   const getUserAvatarSrc = () => {
     if (userInfo?.avatar) {
@@ -800,16 +885,26 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
               messageIndex: index,
             })
           }
-        } else {
-          items.push({
-            key: `${message.timestamp}-text`,
-            role: message.role,
-            type: 'text',
-            message,
-            messageIndex: index,
-          })
-        }
-      }
+	        } else {
+	          if (isRecalledMessage(message)) {
+	            items.push({
+	              key: `${message.timestamp}-recalled`,
+	              role: message.role,
+	              type: 'recall-banner',
+	              message,
+	              messageIndex: index,
+	            })
+	          } else {
+	            items.push({
+	              key: `${message.timestamp}-text`,
+	              role: message.role,
+	              type: 'text',
+	              message,
+	              messageIndex: index,
+	            })
+	          }
+	        }
+	      }
 
       supportedCalls.forEach((toolCall, toolIndex) => {
         if (toolCall.function.name === 'send_red_packet') {
@@ -902,26 +997,37 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
           <div className="empty-messages">加载中...</div>
         ) : displayItems.length === 0 ? (
           <div className="empty-messages">开始新的对话</div>
-        ) : (
-          displayItems.map((item) => {
-            const isRedPacket = item.type === 'red-packet'
-            const isPatBanner = item.type === 'pat-banner'
-            if (isPatBanner) {
-              const banner = renderPatBanner(item.toolCall)
-              if (!banner) return null
-              return (
-                <div key={item.key} className="message-item pat-banner-item">
-                  {banner}
-                </div>
-              )
-            }
-
-            const content = isRedPacket ? (
-              renderRedPacket(item.toolCall)
-            ) : (
+	        ) : (
+	          displayItems.map((item) => {
+	            const isRedPacket = item.type === 'red-packet'
+	            const isPatBanner = item.type === 'pat-banner'
+	            const isRecallBanner = item.type === 'recall-banner'
+	            if (isPatBanner) {
+	              const banner = renderPatBanner(item.toolCall)
+	              if (!banner) return null
+	              return (
+	                <div key={item.key} className="message-item pat-banner-item">
+	                  {banner}
+	                </div>
+	              )
+	            }
+	
+	            if (isRecallBanner) {
+	              return (
+	                <div key={item.key} className="message-item pat-banner-item">
+	                  <div className="pat-banner">你撤回了一条消息</div>
+	                </div>
+	              )
+	            }
+	
+	            const content = isRedPacket ? (
+	              renderRedPacket(item.toolCall)
+	            ) : (
               <div
                 className="message-bubble"
                 onContextMenu={(e) => handleMessageContextMenu(e, item)}
+                onCopy={(e) => e.preventDefault()}
+                onCut={(e) => e.preventDefault()}
                 onPointerDown={(e) => handleMessagePointerDown(e, item)}
                 onPointerMove={handleMessagePointerMove}
                 onPointerUp={handleMessagePointerUp}
@@ -1018,25 +1124,73 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         </div>
       </div>
 
-      {messageMenu && (
-        <ContextMenu
-          items={[
-            ...(sending
-              ? []
-              : [
-                  { label: '编辑', onClick: () => handleStartEditMessage(messageMenu.messageIndex) },
-                  { label: '删除', danger: true, onClick: () => handleDeleteMessage(messageMenu.messageIndex) },
-                ]),
-            { label: '引用', onClick: () => handleQuoteMessage(messageMenu.message) },
-          ]}
-          position={messageMenu.position}
-          onClose={() => setMessageMenu(null)}
-        />
-      )}
+	      {messageMenu && (
+	        <ContextMenu
+	          items={(() => {
+	            const items: MenuItem[] = []
+	            const selectableText = buildSelectableText(messageMenu.message).trim()
+	            if (selectableText) {
+	              items.push({ label: '选择文本', onClick: () => setSelectTextState({ text: selectableText }) })
+	            }
+	
+	            if (!sending && messageMenu.message.role === 'user' && !isRecalledMessage(messageMenu.message)) {
+	              items.push({ label: '撤回', onClick: () => handleRecallMessage(messageMenu.messageIndex) })
+	            }
+	
+	            if (!sending) {
+	              items.push({ label: '编辑', onClick: () => handleStartEditMessage(messageMenu.messageIndex) })
+	              items.push({ label: '删除', danger: true, onClick: () => handleDeleteMessage(messageMenu.messageIndex) })
+	            }
+	
+	            items.push({ label: '引用', onClick: () => handleQuoteMessage(messageMenu.message) })
+	            return items
+	          })()}
+	          position={messageMenu.position}
+	          onClose={() => setMessageMenu(null)}
+	        />
+	      )}
 
-      {editState &&
-        createPortal(
-          <div className="message-edit-overlay" onClick={() => setEditState(null)}>
+	      {selectTextState &&
+	        createPortal(
+	          <div className="select-text-overlay" onClick={() => setSelectTextState(null)}>
+	            <div className="select-text-card" onClick={(e) => e.stopPropagation()}>
+	              <div className="select-text-header">
+	                <div className="select-text-title">选择文本</div>
+	                <button
+	                  type="button"
+	                  className="select-text-close"
+	                  onClick={() => setSelectTextState(null)}
+	                  aria-label="关闭选择文本"
+	                >
+	                  ×
+	                </button>
+	              </div>
+
+	              <textarea
+	                ref={selectTextTextareaRef}
+	                className="select-text-textarea"
+	                value={selectTextState.text}
+	                readOnly
+	                rows={6}
+	              />
+
+	              <div className="select-text-footer">
+	                {selectTextCopied && <div className="select-text-hint">已复制</div>}
+	                <button type="button" className="select-text-btn copy" onClick={handleCopySelectText}>
+	                  复制
+	                </button>
+	                <button type="button" className="select-text-btn" onClick={() => setSelectTextState(null)}>
+	                  关闭
+	                </button>
+	              </div>
+	            </div>
+	          </div>,
+	          document.body
+	        )}
+	
+	      {editState &&
+	        createPortal(
+	          <div className="message-edit-overlay" onClick={() => setEditState(null)}>
             <div className="message-edit-card" onClick={(e) => e.stopPropagation()}>
               <div className="message-edit-header">
                 <div className="message-edit-title">编辑消息</div>
