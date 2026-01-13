@@ -142,7 +142,8 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
   const selectTextTextareaRef = useRef<HTMLTextAreaElement>(null)
   const activeRequestRef = useRef<AbortController | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const attachmentMenuRef = useRef<HTMLDivElement>(null)
+  const attachmentButtonRef = useRef<HTMLButtonElement>(null)
+  const attachmentPanelRef = useRef<HTMLDivElement>(null)
   const redPacketAmountInputRef = useRef<HTMLInputElement>(null)
   const streamingAssistantTimestampRef = useRef<string | null>(null)
   const revealingAssistantTimestampRef = useRef<string | null>(null)
@@ -162,7 +163,8 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     const handlePointerDown = (event: MouseEvent | TouchEvent) => {
       const target = event.target as Node | null
       if (!target) return
-      if (attachmentMenuRef.current && attachmentMenuRef.current.contains(target)) return
+      if (attachmentButtonRef.current && attachmentButtonRef.current.contains(target)) return
+      if (attachmentPanelRef.current && attachmentPanelRef.current.contains(target)) return
       setShowAttachmentMenu(false)
     }
     document.addEventListener('mousedown', handlePointerDown)
@@ -1087,6 +1089,67 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     return { primaryKey, legacyKey }
   }
 
+  const getRedPacketReceivedRecord = (packetKey: string) => {
+    const normalizedTarget = normalizePacketKey(packetKey)
+    for (const message of messages) {
+      const toolCalls = message.tool_calls || []
+      for (const toolCall of toolCalls) {
+        if (toolCall.function.name !== 'red_packet_received') continue
+        try {
+          const args = JSON.parse(toolCall.function.arguments || '{}') as {
+            packet_key?: unknown
+            receiver_name?: unknown
+            sender_name?: unknown
+          }
+          const rawKey = typeof args.packet_key === 'string' ? args.packet_key.trim() : ''
+          if (!rawKey) continue
+          if (normalizePacketKey(rawKey) !== normalizedTarget) continue
+
+          const receiverName =
+            typeof args.receiver_name === 'string' && args.receiver_name.trim() !== '' ? args.receiver_name.trim() : ''
+          const senderName =
+            typeof args.sender_name === 'string' && args.sender_name.trim() !== '' ? args.sender_name.trim() : ''
+
+          return { receiverName, senderName, timestamp: message.timestamp }
+        } catch {
+          // ignore invalid payload
+        }
+      }
+    }
+    return null as null | { receiverName: string; senderName: string; timestamp: string }
+  }
+
+  const formatRedPacketTime = (timestamp: string) => {
+    const date = new Date(timestamp)
+    if (!Number.isFinite(date.getTime())) return ''
+    const month = date.getMonth() + 1
+    const day = date.getDate()
+    const hours = String(date.getHours()).padStart(2, '0')
+    const minutes = String(date.getMinutes()).padStart(2, '0')
+    return `${month}月${day}日 ${hours}:${minutes}`
+  }
+
+  const inferRedPacketParties = (packetKey: string) => {
+    const normalizedTarget = normalizePacketKey(packetKey)
+    for (const message of messages) {
+      const toolCalls = message.tool_calls || []
+      for (let toolIndex = 0; toolIndex < toolCalls.length; toolIndex++) {
+        const toolCall = toolCalls[toolIndex]
+        if (toolCall.function.name !== 'send_red_packet') continue
+        const rawKey = `${message.timestamp}-rp-${toolCall.id || toolIndex}`
+        const { primaryKey, legacyKey } = derivePacketKeys(toolCall, rawKey)
+        if (primaryKey !== normalizedTarget && legacyKey !== normalizedTarget) continue
+
+        const senderRole = message.role === 'user' ? 'user' : 'assistant'
+        const senderName = senderRole === 'user' ? userInfo?.username?.trim() || '你' : prompt?.name?.trim() || 'AI Assistant'
+        const receiverName =
+          senderRole === 'user' ? prompt?.name?.trim() || 'AI Assistant' : userInfo?.username?.trim() || '你'
+        return { senderName, receiverName }
+      }
+    }
+    return null as null | { senderName: string; receiverName: string }
+  }
+
   // 渲染红包卡片
   const renderRedPacket = (toolCall: ToolCall, rawKey: string, role: 'user' | 'assistant') => {
     if (toolCall.function.name !== 'send_red_packet') return null
@@ -1134,12 +1197,26 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
 
     let receiverName = userInfo?.username?.trim() || '你'
     let senderName = prompt?.name?.trim() || 'AI Assistant'
+    let packetKey = ''
 
     try {
       const args = JSON.parse(toolCall.function.arguments || '{}') as {
+        packet_key?: unknown
         receiver_name?: unknown
         sender_name?: unknown
       }
+      if (typeof args.packet_key === 'string' && args.packet_key.trim() !== '') {
+        packetKey = args.packet_key.trim()
+      }
+
+      if (packetKey) {
+        const inferred = inferRedPacketParties(packetKey)
+        if (inferred) {
+          receiverName = inferred.receiverName
+          senderName = inferred.senderName
+        }
+      }
+
       if (typeof args.receiver_name === 'string' && args.receiver_name.trim() !== '') {
         receiverName = args.receiver_name.trim()
       }
@@ -1510,52 +1587,59 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
           </div>
         )}
 
-        <div className="chat-input-row">
-          <div className="attachment-menu" ref={attachmentMenuRef}>
-            <button
-              type="button"
-              className={`attachment-button ${showAttachmentMenu ? 'open' : ''}`}
-              onClick={handleAttachmentButtonClick}
-              aria-label="更多功能"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M19 11H13V5a1 1 0 0 0-2 0v6H5a1 1 0 0 0 0 2h6v6a1 1 0 0 0 2 0v-6h6a1 1 0 0 0 0-2z" />
-              </svg>
-            </button>
-
-            {showAttachmentMenu && (
-              <div className="attachment-menu-panel" role="menu">
-                <button
-                  type="button"
-                  className="attachment-menu-item"
-                  onClick={() => {
-                    setShowAttachmentMenu(false)
-                    handleUploadClick()
-                  }}
-                  disabled={!imageCapable || uploadingImage}
-                  title={imageCapable ? '上传图片' : '当前模型不支持图片输入'}
-                  role="menuitem"
-                >
+        {showAttachmentMenu && (
+          <div className="attachment-expand-panel" ref={attachmentPanelRef} role="menu">
+            <div className="attachment-grid">
+              <button
+                type="button"
+                className="attachment-tile"
+                onClick={() => {
+                  setShowAttachmentMenu(false)
+                  handleUploadClick()
+                }}
+                disabled={!imageCapable || uploadingImage}
+                aria-label="相册"
+                role="menuitem"
+              >
+                <div className="attachment-tile-icon">
                   <svg viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M19 7h-3V5c0-1.1-.9-2-2-2h-4c-1.1 0-2 .9-2 2v2H5c-1.1 0-2 .9-2 2v9c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V9c0-1.1-.9-2-2-2zm-9 0V5h4v2h-4zm7 13H5V9h14v11zM7 18l3-4 2 3 3-4 2 5H7z" />
                   </svg>
-                  <span>照片</span>
-                </button>
-                <button
-                  type="button"
-                  className="attachment-menu-item"
-                  onClick={openRedPacketComposer}
-                  disabled={sending}
-                  role="menuitem"
-                >
+                </div>
+                <div className="attachment-tile-label">相册</div>
+              </button>
+
+              <button
+                type="button"
+                className="attachment-tile"
+                onClick={openRedPacketComposer}
+                disabled={sending}
+                aria-label="红包"
+                role="menuitem"
+              >
+                <div className="attachment-tile-icon">
                   <svg viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M7 3h10a2 2 0 0 1 2 2v4a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V5a2 2 0 0 1 2-2zm0 12h10a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-2a2 2 0 0 1 2-2zm5-10a1.2 1.2 0 1 0 0 2.4A1.2 1.2 0 0 0 12 5zm0 12a1.2 1.2 0 1 0 0 2.4A1.2 1.2 0 0 0 12 17z" />
                   </svg>
-                  <span>红包</span>
-                </button>
-              </div>
-            )}
+                </div>
+                <div className="attachment-tile-label">红包</div>
+              </button>
+            </div>
           </div>
+        )}
+
+        <div className="chat-input-row">
+          <button
+            ref={attachmentButtonRef}
+            type="button"
+            className={`attachment-button ${showAttachmentMenu ? 'open' : ''}`}
+            onClick={handleAttachmentButtonClick}
+            aria-label="更多功能"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M19 11H13V5a1 1 0 0 0-2 0v6H5a1 1 0 0 0 0 2h6v6a1 1 0 0 0 2 0v-6h6a1 1 0 0 0 0-2z" />
+            </svg>
+          </button>
           <input
             ref={fileInputRef}
             className="image-input"
@@ -1715,92 +1799,118 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
 
       {/* Red Packet Modal */}
       {activeRedPacket && (
-        <div className="rp-modal-overlay">
-          <div className={`rp-modal ${packetStep === 'opened' ? 'opened' : ''}`}>
-            <button className="rp-close-btn" onClick={closeRedPacketModal}>×</button>
-            
-            {packetStep !== 'opened' ? (
-              <div className="rp-modal-front">
-                <div className="rp-modal-top">
-                  <div className="rp-sender-row">
+        (() => {
+          const received = getRedPacketReceivedRecord(activeRedPacket.packetKey)
+          const senderName = activeRedPacket.senderName
+          const senderMessage = activeRedPacket.params.message || '恭喜发财，大吉大利'
+
+          if (packetStep === 'opened' && activeRedPacket.senderRole === 'user') {
+            const receiverName = received?.receiverName || prompt?.name?.trim() || 'AI Assistant'
+            const receiverTime = received?.timestamp ? formatRedPacketTime(received.timestamp) : ''
+            const receiverAvatarSrc = getPromptAvatarSrc()
+            return (
+              <div className="rp-detail-overlay">
+                <div className="rp-detail-top">
+                  <div className="rp-detail-nav">
+                    <button type="button" className="rp-detail-back" onClick={closeRedPacketModal} aria-label="返回">
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M15.5 5.5a1 1 0 0 1 0 1.4L10.4 12l5.1 5.1a1 1 0 1 1-1.4 1.4l-5.8-5.8a1 1 0 0 1 0-1.4l5.8-5.8a1 1 0 0 1 1.4 0z" />
+                      </svg>
+                    </button>
+                    <div className="rp-detail-nav-spacer" />
+                  </div>
+
+                  <div className="rp-detail-header">
                     {activeRedPacket.senderAvatarSrc ? (
-                      <img src={activeRedPacket.senderAvatarSrc} className="rp-avatar-img" alt="avatar" />
+                      <img className="rp-detail-avatar" src={activeRedPacket.senderAvatarSrc} alt="avatar" />
                     ) : (
-                      <div className="rp-avatar-placeholder">
-                        {activeRedPacket.senderName.charAt(0)?.toUpperCase() || 'A'}
-                      </div>
+                      <div className="rp-detail-avatar placeholder">{senderName.charAt(0)?.toUpperCase() || 'U'}</div>
                     )}
-                    <span className="rp-sender-name">{activeRedPacket.senderName}</span>
+                    <div className="rp-detail-title">{senderName}的红包</div>
+                    <div className="rp-detail-message">{senderMessage}</div>
                   </div>
-                  <div className="rp-wishing">
-                    {activeRedPacket.params.message || '恭喜发财，大吉大利'}
-                  </div>
-                </div>
-                <div className="rp-modal-open-btn-wrapper">
-                   <button 
-                     className={`rp-open-btn ${packetStep === 'opening' ? 'opening' : ''}`}
-                     onClick={handleOpenPacket}
-                   >
-                     開
-                   </button>
-                </div>
-              </div>
-            ) : (
-              <div className="rp-modal-result">
-                <div className="rp-result-header">
-                  <div className="rp-result-top-bg"></div>
-                  <div className="rp-sender-row small">
-                    {activeRedPacket.senderAvatarSrc ? (
-                      <img src={activeRedPacket.senderAvatarSrc} className="rp-avatar-img small" alt="avatar" />
-                    ) : (
-                      <div className="rp-avatar-placeholder small">
-                        {activeRedPacket.senderName.charAt(0)?.toUpperCase() || 'A'}
-                      </div>
-                    )}
-                    <span className="rp-sender-name dark">{activeRedPacket.senderName}的红包</span>
-                  </div>
-                  <div className="rp-wishing dark">
-                    {activeRedPacket.params.message || '恭喜发财，大吉大利'}
-                  </div>
-                </div>
-                
-                <div className="rp-result-amount">
-                  <span className="rp-currency">¥</span>
-                  <span className="rp-num">{activeRedPacket.params.amount.toFixed(2)}</span>
                 </div>
 
-                <div className="rp-result-footer">
-                  {(() => {
-                    const receiverFromBanner = (() => {
-                      for (const message of messages) {
-                        const toolCalls = message.tool_calls || []
-                        for (const toolCall of toolCalls) {
-                          if (toolCall.function.name !== 'red_packet_received') continue
-                          try {
-                            const args = JSON.parse(toolCall.function.arguments || '{}') as {
-                              packet_key?: unknown
-                              receiver_name?: unknown
-                            }
-                            const packetKey = typeof args.packet_key === 'string' ? args.packet_key.trim() : ''
-                            if (!packetKey || packetKey !== activeRedPacket.packetKey) continue
-                            const receiverName =
-                              typeof args.receiver_name === 'string' && args.receiver_name.trim() !== ''
-                                ? args.receiver_name.trim()
-                                : ''
-                            if (receiverName) return receiverName
-                          } catch {
-                            // ignore invalid payload
-                          }
-                        }
-                      }
-                      return ''
-                    })()
-                    const receiverName =
-                      receiverFromBanner ||
-                      (activeRedPacket.senderRole === 'assistant'
-                        ? userInfo?.username?.trim() || '你'
-                        : prompt?.name?.trim() || 'AI Assistant')
-                    return (
+                <div className="rp-detail-body">
+                  <div className="rp-detail-summary">1个红包共{activeRedPacket.params.amount.toFixed(2)}元</div>
+
+                  <div className="rp-detail-list">
+                    <div className="rp-detail-item">
+                      {receiverAvatarSrc ? (
+                        <img className="rp-detail-item-avatar" src={receiverAvatarSrc} alt="avatar" />
+                      ) : (
+                        <div className="rp-detail-item-avatar placeholder">{receiverName.charAt(0)?.toUpperCase() || 'A'}</div>
+                      )}
+                      <div className="rp-detail-item-main">
+                        <div className="rp-detail-item-name">{receiverName}</div>
+                        <div className="rp-detail-item-time">{receiverTime || '未领取'}</div>
+                      </div>
+                      <div className="rp-detail-item-amount">{activeRedPacket.params.amount.toFixed(2)}元</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )
+          }
+
+          const receiverName =
+            received?.receiverName ||
+            (activeRedPacket.senderRole === 'assistant'
+              ? userInfo?.username?.trim() || '你'
+              : prompt?.name?.trim() || 'AI Assistant')
+
+          return (
+            <div className="rp-modal-overlay">
+              <div className={`rp-modal ${packetStep === 'opened' ? 'opened' : ''}`}>
+                <button className="rp-close-btn" onClick={closeRedPacketModal}>×</button>
+
+                {packetStep !== 'opened' ? (
+                  <div className="rp-modal-front">
+                    <div className="rp-modal-top">
+                      <div className="rp-sender-row">
+                        {activeRedPacket.senderAvatarSrc ? (
+                          <img src={activeRedPacket.senderAvatarSrc} className="rp-avatar-img" alt="avatar" />
+                        ) : (
+                          <div className="rp-avatar-placeholder">
+                            {senderName.charAt(0)?.toUpperCase() || 'A'}
+                          </div>
+                        )}
+                        <span className="rp-sender-name">{senderName}</span>
+                      </div>
+                      <div className="rp-wishing">{senderMessage}</div>
+                    </div>
+                    <div className="rp-modal-open-btn-wrapper">
+                      <button
+                        className={`rp-open-btn ${packetStep === 'opening' ? 'opening' : ''}`}
+                        onClick={handleOpenPacket}
+                      >
+                        開
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rp-modal-result">
+                    <div className="rp-result-header">
+                      <div className="rp-result-top-bg"></div>
+                      <div className="rp-sender-row small">
+                        {activeRedPacket.senderAvatarSrc ? (
+                          <img src={activeRedPacket.senderAvatarSrc} className="rp-avatar-img small" alt="avatar" />
+                        ) : (
+                          <div className="rp-avatar-placeholder small">
+                            {senderName.charAt(0)?.toUpperCase() || 'A'}
+                          </div>
+                        )}
+                        <span className="rp-sender-name dark">{senderName}的红包</span>
+                      </div>
+                      <div className="rp-wishing dark">{senderMessage}</div>
+                    </div>
+
+                    <div className="rp-result-amount">
+                      <span className="rp-currency">¥</span>
+                      <span className="rp-num">{activeRedPacket.params.amount.toFixed(2)}</span>
+                    </div>
+
+                    <div className="rp-result-footer">
                       <div className="rp-result-meta">
                         <div className="rp-result-meta-row">
                           <span className="rp-result-meta-label">领取者</span>
@@ -1810,66 +1920,93 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
                           {activeRedPacket.senderRole === 'assistant' ? '已存入零钱，可直接使用' : `已被${receiverName}领取`}
                         </div>
                       </div>
-                    )
-                  })()}
-                </div>
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        </div>
+            </div>
+          )
+        })()
       )}
 
       {redPacketComposerOpen &&
         createPortal(
-          <div className="rp-compose-overlay" onClick={closeRedPacketComposer}>
-            <div className="rp-compose-card" onClick={(e) => e.stopPropagation()}>
-              <div className="rp-compose-header">
-                <div className="rp-compose-title">发红包</div>
-                <button type="button" className="rp-compose-close" onClick={closeRedPacketComposer} aria-label="关闭">
-                  ×
-                </button>
-              </div>
+          <div className="rp-compose-overlay">
+            <div className="rp-compose-topbar">
+              <button
+                type="button"
+                className="rp-compose-back"
+                onClick={closeRedPacketComposer}
+                aria-label="返回"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M15.5 5.5a1 1 0 0 1 0 1.4L10.4 12l5.1 5.1a1 1 0 1 1-1.4 1.4l-5.8-5.8a1 1 0 0 1 0-1.4l5.8-5.8a1 1 0 0 1 1.4 0z" />
+                </svg>
+              </button>
+              <div className="rp-compose-topbar-title">发红包</div>
+              <div className="rp-compose-topbar-spacer" />
+            </div>
 
-              <div className="rp-compose-body">
-                <label className="rp-compose-field">
-                  <div className="rp-compose-label">金额</div>
-                  <div className="rp-compose-input-row">
-                    <span className="rp-compose-currency">¥</span>
-                    <input
-                      ref={redPacketAmountInputRef}
-                      className="rp-compose-input amount"
-                      type="number"
-                      inputMode="decimal"
-                      min="0.01"
-                      step="0.01"
-                      placeholder="0.00"
-                      value={redPacketAmountDraft}
-                      onChange={(e) => setRedPacketAmountDraft(e.target.value)}
-                    />
-                  </div>
-                </label>
-
-                <label className="rp-compose-field">
-                  <div className="rp-compose-label">祝福语</div>
+            <div className="rp-compose-content">
+              <div className="rp-compose-form">
+                <div className="rp-compose-row">
                   <input
-                    className="rp-compose-input"
+                    ref={redPacketAmountInputRef}
+                    className="rp-compose-row-input"
+                    type="number"
+                    inputMode="decimal"
+                    min="0.01"
+                    step="0.01"
+                    placeholder="单个金额"
+                    value={redPacketAmountDraft}
+                    onChange={(e) => setRedPacketAmountDraft(e.target.value)}
+                  />
+                  <div className="rp-compose-row-right">
+                    ¥
+                    {(() => {
+                      const value = Number.parseFloat(redPacketAmountDraft)
+                      if (!Number.isFinite(value) || value <= 0) return '0.00'
+                      return value.toFixed(2)
+                    })()}
+                  </div>
+                </div>
+
+                <div className="rp-compose-row">
+                  <input
+                    className="rp-compose-row-input"
                     type="text"
-                    placeholder="恭喜发财"
+                    placeholder="恭喜发财，大吉大利"
                     value={redPacketBlessingDraft}
                     maxLength={10}
                     onChange={(e) => setRedPacketBlessingDraft(e.target.value)}
                   />
-                  <div className="rp-compose-hint">{redPacketBlessingDraft.length}/10</div>
-                </label>
-
-                {redPacketComposerError && <div className="rp-compose-error">{redPacketComposerError}</div>}
+                  <div className="rp-compose-row-right subtle">{redPacketBlessingDraft.length}/10</div>
+                </div>
               </div>
 
-              <div className="rp-compose-footer">
-                <button type="button" className="rp-compose-send" onClick={handleRedPacketComposerSend} disabled={sending}>
-                  发送
-                </button>
+              <div className="rp-compose-amount-preview">
+                <span className="rp-compose-amount-currency">¥</span>
+                <span className="rp-compose-amount-value">
+                  {(() => {
+                    const value = Number.parseFloat(redPacketAmountDraft)
+                    if (!Number.isFinite(value) || value <= 0) return '0.00'
+                    return value.toFixed(2)
+                  })()}
+                </span>
               </div>
+
+              {redPacketComposerError && <div className="rp-compose-error">{redPacketComposerError}</div>}
+
+              <button
+                type="button"
+                className="rp-compose-send"
+                onClick={handleRedPacketComposerSend}
+                disabled={sending}
+              >
+                塞钱进红包
+              </button>
+
+              <div className="rp-compose-footnote">未领取的红包，将于24小时后发起退款</div>
             </div>
           </div>,
           document.body

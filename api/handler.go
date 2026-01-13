@@ -1034,6 +1034,18 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 	// 去除末尾多余换行
 	fullSystemPrompt = strings.TrimSpace(fullSystemPrompt)
 
+	redPacketGuide := strings.TrimSpace(`[红包交互]
+当消息中出现 [用户发红包] 时，表示用户给你发了红包，并会提供 packet_key/amount/message。
+如果你决定领取，请调用工具 red_packet_received 并传入 packet_key。`)
+
+	if redPacketGuide != "" {
+		if fullSystemPrompt == "" {
+			fullSystemPrompt = redPacketGuide
+		} else {
+			fullSystemPrompt = strings.TrimSpace(fullSystemPrompt + "\n\n" + redPacketGuide)
+		}
+	}
+
 	if fullSystemPrompt != "" {
 		messages = append(messages, client.Message{
 			Role:    "system",
@@ -1284,6 +1296,33 @@ type redPacketToolArgs struct {
 	Message string  `json:"message"`
 }
 
+func normalizePacketKey(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	var builder strings.Builder
+	builder.Grow(len(raw))
+	for _, r := range raw {
+		switch {
+		case r >= 'a' && r <= 'z':
+			builder.WriteRune(r)
+		case r >= 'A' && r <= 'Z':
+			builder.WriteRune(r)
+		case r >= '0' && r <= '9':
+			builder.WriteRune(r)
+		case r == '_' || r == '-':
+			builder.WriteRune(r)
+		default:
+			builder.WriteByte('_')
+		}
+	}
+	normalized := builder.String()
+	if len(normalized) > 180 {
+		return normalized[:180]
+	}
+	return normalized
+}
+
 func buildUserToolCallNotice(toolCalls []client.ToolCall) string {
 	if len(toolCalls) == 0 {
 		return ""
@@ -1298,11 +1337,15 @@ func buildUserToolCallNotice(toolCalls []client.ToolCall) string {
 		if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); err != nil {
 			continue
 		}
+		packetKey := normalizePacketKey(toolCall.ID)
+		if packetKey == "" {
+			packetKey = "unknown"
+		}
 		message := strings.TrimSpace(args.Message)
 		if message == "" {
 			message = "恭喜发财，大吉大利"
 		}
-		lines = append(lines, fmt.Sprintf("[用户发红包] 金额: %.2f 元, 祝福语: %s", args.Amount, message))
+		lines = append(lines, fmt.Sprintf("[用户发红包]\npacket_key: %s\namount: %.2f\nmessage: %s\n你可以调用 red_packet_received 领取此红包。\n", packetKey, args.Amount, message))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -1817,6 +1860,34 @@ func getChatTools() []client.Tool {
 						},
 					},
 					"required": []string{"amount", "message"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: client.ToolFunction{
+				Name:        "red_packet_received",
+				Description: "领取用户发出的红包。当用户通过红包发送给你时，如果你决定领取，请调用此工具并填入 packet_key（会在红包通知中提供）。",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"packet_key": map[string]interface{}{
+							"type":        "string",
+							"description": "红包标识，用于关联具体红包（来自红包通知）",
+							"maxLength":   180,
+						},
+						"receiver_name": map[string]interface{}{
+							"type":        "string",
+							"description": "领取者名称（可选，默认你的名称）",
+							"maxLength":   20,
+						},
+						"sender_name": map[string]interface{}{
+							"type":        "string",
+							"description": "发送者名称（可选，默认用户名称）",
+							"maxLength":   20,
+						},
+					},
+					"required": []string{"packet_key"},
 				},
 			},
 		},
