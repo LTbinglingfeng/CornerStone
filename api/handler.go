@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"cornerstone/client"
 	"cornerstone/config"
 	"cornerstone/logging"
@@ -1163,8 +1164,13 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 
 // handleNormalChat 处理非流式聊天
 func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiClient client.AIClient, req client.ChatRequest, sessionID string, saveHistory bool) {
-	resp, err := aiClient.Chat(r.Context(), req)
+	ctxAI := context.WithoutCancel(r.Context())
+	resp, err := aiClient.Chat(ctxAI, req)
 	if err != nil {
+		if r.Context().Err() != nil {
+			logging.Errorf("chat request cancelled (client disconnected): %v", err)
+			return
+		}
 		h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: err.Error()})
 		return
 	}
@@ -1180,6 +1186,10 @@ func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiCli
 			h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: errSaveHistory.Error()})
 			return
 		}
+	}
+
+	if r.Context().Err() != nil {
+		return
 	}
 
 	// 返回响应，包含session_id
@@ -1202,16 +1212,36 @@ func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiCli
 		return
 	}
 
+	ctxAI := context.WithoutCancel(r.Context())
+	clientDisconnected := false
+	isClientDisconnected := func() bool {
+		if clientDisconnected {
+			return true
+		}
+		select {
+		case <-r.Context().Done():
+			clientDisconnected = true
+			return true
+		default:
+			return false
+		}
+	}
+
 	// 发送session_id
 	sessionPayload, _ := json.Marshal(map[string]string{"session_id": sessionID})
-	fmt.Fprintf(w, "data: %s\n\n", sessionPayload)
-	flusher.Flush()
+	if !isClientDisconnected() {
+		if _, errWrite := fmt.Fprintf(w, "data: %s\n\n", sessionPayload); errWrite != nil {
+			clientDisconnected = true
+		} else {
+			flusher.Flush()
+		}
+	}
 
 	var fullContent strings.Builder
 	var fullReasoningContent strings.Builder
 	toolCallsMap := make(map[int]*client.ToolCall)
 
-	errChatStream := aiClient.ChatStream(r.Context(), req, func(chunk client.StreamChunk) error {
+	errChatStream := aiClient.ChatStream(ctxAI, req, func(chunk client.StreamChunk) error {
 		// 收集完整内容
 		if len(chunk.Choices) > 0 {
 			delta := chunk.Choices[0].Delta
@@ -1252,20 +1282,34 @@ func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiCli
 			}
 		}
 
-		data, err := json.Marshal(chunk)
-		if err != nil {
-			return err
+		if isClientDisconnected() {
+			return nil
 		}
-		fmt.Fprintf(w, "data: %s\n\n", data)
+
+		data, errMarshal := json.Marshal(chunk)
+		if errMarshal != nil {
+			logging.Errorf("marshal stream chunk error: %v", errMarshal)
+			clientDisconnected = true
+			return nil
+		}
+		if _, errWrite := fmt.Fprintf(w, "data: %s\n\n", data); errWrite != nil {
+			clientDisconnected = true
+			return nil
+		}
 		flusher.Flush()
 		return nil
 	})
 
 	if errChatStream != nil {
 		logging.Errorf("Stream error: %v", errChatStream)
-		errorPayload, _ := json.Marshal(map[string]string{"error": errChatStream.Error()})
-		fmt.Fprintf(w, "data: %s\n\n", errorPayload)
-		flusher.Flush()
+		if !isClientDisconnected() {
+			errorPayload, _ := json.Marshal(map[string]string{"error": errChatStream.Error()})
+			if _, errWrite := fmt.Fprintf(w, "data: %s\n\n", errorPayload); errWrite != nil {
+				clientDisconnected = true
+			} else {
+				flusher.Flush()
+			}
+		}
 	}
 
 	// 保存AI回复到历史记录（包含思考内容）
@@ -1277,14 +1321,24 @@ func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiCli
 			if errors.Is(errSaveHistory, storage.ErrInvalidID) {
 				errorMessage = "Invalid session ID"
 			}
-			errorPayload, _ := json.Marshal(map[string]string{"error": errorMessage})
-			fmt.Fprintf(w, "data: %s\n\n", errorPayload)
-			flusher.Flush()
+			if !isClientDisconnected() {
+				errorPayload, _ := json.Marshal(map[string]string{"error": errorMessage})
+				if _, errWrite := fmt.Fprintf(w, "data: %s\n\n", errorPayload); errWrite != nil {
+					clientDisconnected = true
+				} else {
+					flusher.Flush()
+				}
+			}
 		}
 	}
 
-	fmt.Fprintf(w, "data: [DONE]\n\n")
-	flusher.Flush()
+	if !isClientDisconnected() {
+		if _, errWrite := fmt.Fprintf(w, "data: [DONE]\n\n"); errWrite != nil {
+			clientDisconnected = true
+		} else {
+			flusher.Flush()
+		}
+	}
 }
 
 func convertChatMessages(messages []storage.ChatMessage) []client.Message {
