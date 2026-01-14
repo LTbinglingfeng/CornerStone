@@ -1330,22 +1330,24 @@ func buildUserToolCallNotice(toolCalls []client.ToolCall) string {
 
 	lines := make([]string, 0, len(toolCalls))
 	for _, toolCall := range toolCalls {
-		if toolCall.Function.Name != "send_red_packet" {
-			continue
+		switch toolCall.Function.Name {
+		case "send_red_packet":
+			var args redPacketToolArgs
+			if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); err != nil {
+				continue
+			}
+			packetKey := normalizePacketKey(toolCall.ID)
+			if packetKey == "" {
+				packetKey = "unknown"
+			}
+			message := strings.TrimSpace(args.Message)
+			if message == "" {
+				message = "恭喜发财，大吉大利"
+			}
+			lines = append(lines, fmt.Sprintf("[用户发红包]\npacket_key: %s\namount: %.2f\nmessage: %s\n你可以调用 red_packet_received 领取此红包。\n", packetKey, args.Amount, message))
+		case "send_pat":
+			lines = append(lines, "（对方拍了拍你）")
 		}
-		var args redPacketToolArgs
-		if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); err != nil {
-			continue
-		}
-		packetKey := normalizePacketKey(toolCall.ID)
-		if packetKey == "" {
-			packetKey = "unknown"
-		}
-		message := strings.TrimSpace(args.Message)
-		if message == "" {
-			message = "恭喜发财，大吉大利"
-		}
-		lines = append(lines, fmt.Sprintf("[用户发红包]\npacket_key: %s\namount: %.2f\nmessage: %s\n你可以调用 red_packet_received 领取此红包。\n", packetKey, args.Amount, message))
 	}
 	return strings.Join(lines, "\n")
 }

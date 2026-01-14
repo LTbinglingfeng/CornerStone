@@ -157,6 +157,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
   const longPressTimeoutRef = useRef<number | null>(null)
   const longPressStartRef = useRef<{ x: number; y: number } | null>(null)
   const redPacketOpenTimeoutRef = useRef<number | null>(null)
+  const lastPatAtRef = useRef(0)
 
   useEffect(() => {
     if (!showAttachmentMenu) return
@@ -793,6 +794,37 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     void sendOutgoingMessage(userMessage)
   }
 
+  const handlePatAssistant = () => {
+    if (sending || uploadingImage) return
+    const now = Date.now()
+    if (now - lastPatAtRef.current < 800) return
+    lastPatAtRef.current = now
+
+    const rawId =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`
+    const toolCallId = `pat_${rawId.replace(/[^a-zA-Z0-9]/g, '')}`
+
+    const toolCall: ToolCall = {
+      id: toolCallId,
+      type: 'function',
+      function: {
+        name: 'send_pat',
+        arguments: JSON.stringify({ name: userInfo?.username?.trim() || '我', target: '你' }),
+      },
+    }
+
+    const userMessage: ChatMessage = {
+      role: 'user',
+      content: '',
+      timestamp: new Date().toISOString(),
+      tool_calls: [toolCall],
+    }
+
+    void sendOutgoingMessage(userMessage)
+  }
+
   const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files ? Array.from(e.target.files) : []
     if (files.length === 0) return
@@ -1034,7 +1066,14 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     } else {
       const avatarSrc = getPromptAvatarSrc()
       return (
-        <div className="message-avatar">
+        <div
+          className="message-avatar"
+          onDoubleClick={(e) => {
+            e.stopPropagation()
+            handlePatAssistant()
+          }}
+          title="双击拍一拍"
+        >
           {avatarSrc ? (
             <img src={avatarSrc} alt="AI" />
           ) : (
@@ -1129,7 +1168,9 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     return `${month}月${day}日 ${hours}:${minutes}`
   }
 
-  const inferRedPacketParties = (packetKey: string) => {
+  const inferRedPacketParties = (
+    packetKey: string
+  ): null | { senderRole: 'user' | 'assistant'; senderName: string; receiverName: string } => {
     const normalizedTarget = normalizePacketKey(packetKey)
     for (const message of messages) {
       const toolCalls = message.tool_calls || []
@@ -1140,14 +1181,14 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         const { primaryKey, legacyKey } = derivePacketKeys(toolCall, rawKey)
         if (primaryKey !== normalizedTarget && legacyKey !== normalizedTarget) continue
 
-        const senderRole = message.role === 'user' ? 'user' : 'assistant'
+        const senderRole: 'user' | 'assistant' = message.role === 'user' ? 'user' : 'assistant'
         const senderName = senderRole === 'user' ? userInfo?.username?.trim() || '你' : prompt?.name?.trim() || 'AI Assistant'
         const receiverName =
           senderRole === 'user' ? prompt?.name?.trim() || 'AI Assistant' : userInfo?.username?.trim() || '你'
-        return { senderName, receiverName }
+        return { senderRole, senderName, receiverName }
       }
     }
-    return null as null | { senderName: string; receiverName: string }
+    return null
   }
 
   // 渲染红包卡片
@@ -1198,6 +1239,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     let receiverName = userInfo?.username?.trim() || '你'
     let senderName = prompt?.name?.trim() || 'AI Assistant'
     let packetKey = ''
+    let inferredSenderRole: null | 'user' | 'assistant' = null
 
     try {
       const args = JSON.parse(toolCall.function.arguments || '{}') as {
@@ -1214,14 +1256,18 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         if (inferred) {
           receiverName = inferred.receiverName
           senderName = inferred.senderName
+          inferredSenderRole = inferred.senderRole
         }
       }
 
-      if (typeof args.receiver_name === 'string' && args.receiver_name.trim() !== '') {
-        receiverName = args.receiver_name.trim()
-      }
-      if (typeof args.sender_name === 'string' && args.sender_name.trim() !== '') {
-        senderName = args.sender_name.trim()
+      const shouldTrustToolNames = inferredSenderRole !== 'user'
+      if (shouldTrustToolNames) {
+        if (typeof args.receiver_name === 'string' && args.receiver_name.trim() !== '') {
+          receiverName = args.receiver_name.trim()
+        }
+        if (typeof args.sender_name === 'string' && args.sender_name.trim() !== '') {
+          senderName = args.sender_name.trim()
+        }
       }
     } catch {
       // ignore invalid payload
@@ -1805,7 +1851,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
           const senderMessage = activeRedPacket.params.message || '恭喜发财，大吉大利'
 
           if (packetStep === 'opened' && activeRedPacket.senderRole === 'user') {
-            const receiverName = received?.receiverName || prompt?.name?.trim() || 'AI Assistant'
+            const receiverName = prompt?.name?.trim() || 'AI Assistant'
             const receiverTime = received?.timestamp ? formatRedPacketTime(received.timestamp) : ''
             const receiverAvatarSrc = getPromptAvatarSrc()
             return (
