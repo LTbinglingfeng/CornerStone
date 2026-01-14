@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { gsap } from 'gsap'
 import type { ChatMessage, ChatRecord, Prompt, UserInfo, ToolCall, RedPacketParams, PatParams } from '../types/chat'
 import { getSession, sendMessage, getPrompt, getUserInfo, getPromptAvatarUrl, getUserAvatarUrl, uploadChatImage, getChatImageUrl, getActiveProvider, appendQueryParam, updateSessionMessage, deleteSessionMessage, recallSessionMessage, openSessionRedPacket } from '../services/api'
+import { getReplyWaitWindowConfig } from '../utils/replyWaitWindow'
 import ChatSettings from './ChatSettings'
 import ContextMenu, { type MenuItem } from './ContextMenu'
 import './ChatDetail.css'
@@ -158,6 +159,10 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
   const longPressStartRef = useRef<{ x: number; y: number } | null>(null)
   const redPacketOpenTimeoutRef = useRef<number | null>(null)
   const lastPatAtRef = useRef(0)
+  const pendingOutgoingMessagesRef = useRef<ChatMessage[]>([])
+  const pendingOutgoingTimeoutRef = useRef<number | null>(null)
+  const lastSessionIdRef = useRef(sessionId)
+  const lastPromptIdRef = useRef<string | undefined>(promptId)
 
   useEffect(() => {
     if (!showAttachmentMenu) return
@@ -185,6 +190,18 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
   }, [redPacketComposerOpen])
 
   useEffect(() => {
+    const previousSessionId = lastSessionIdRef.current
+    const previousPromptId = lastPromptIdRef.current
+    if (previousSessionId !== sessionId) {
+      clearPendingOutgoingTimeout()
+      if (pendingOutgoingMessagesRef.current.length > 0) {
+        void flushPendingOutgoingMessages('background', { sessionId: previousSessionId, promptId: previousPromptId })
+      }
+      pendingOutgoingMessagesRef.current = []
+    }
+    lastSessionIdRef.current = sessionId
+    lastPromptIdRef.current = promptId
+
     activeRequestRef.current?.abort()
     activeRequestRef.current = null
     if (assistantRevealTimeoutRef.current !== null) {
@@ -230,7 +247,18 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
 	  }, [sessionId])
 
   useEffect(() => {
+    lastPromptIdRef.current = promptId
+  }, [promptId])
+
+  useEffect(() => {
     return () => {
+      clearPendingOutgoingTimeout()
+      if (pendingOutgoingMessagesRef.current.length > 0) {
+        void flushPendingOutgoingMessages('background', {
+          sessionId: lastSessionIdRef.current,
+          promptId: lastPromptIdRef.current,
+        })
+      }
       activeRequestRef.current?.abort()
       if (assistantRevealTimeoutRef.current !== null) {
         window.clearTimeout(assistantRevealTimeoutRef.current)
@@ -400,30 +428,48 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     }
   }
 
-  const handleBack = () => {
-    activeRequestRef.current?.abort()
-    activeRequestRef.current = null
-    if (containerRef.current) {
-      gsap.to(containerRef.current, {
-        x: '100%',
-        duration: 0.3,
-        ease: 'power2.in',
-        onComplete: onBack
-      })
-    } else {
-      onBack()
+  type FlushMode = 'foreground' | 'background'
+
+  const clearPendingOutgoingTimeout = () => {
+    if (pendingOutgoingTimeoutRef.current !== null) {
+      window.clearTimeout(pendingOutgoingTimeoutRef.current)
+      pendingOutgoingTimeoutRef.current = null
     }
   }
 
-  type SendOutgoingOptions = {
-    clearChatInput?: boolean
-    clearQuoteDraft?: boolean
-    clearPendingImages?: boolean
-    resetTextareaHeight?: boolean
-  }
+  const getEffectivePromptId = () => promptId || prompt?.id || session?.prompt_id
 
-  const sendOutgoingMessage = async (userMessage: ChatMessage, options: SendOutgoingOptions = {}) => {
-    if (sending || uploadingImage) return
+  const buildSendPayloadMessages = (outgoingMessages: ChatMessage[]) =>
+    outgoingMessages.map(({ role, content, image_paths, tool_calls }) => ({
+      role,
+      content,
+      ...(image_paths ? { image_paths } : {}),
+      ...(tool_calls ? { tool_calls } : {}),
+    }))
+
+  const flushPendingOutgoingMessages = async (mode: FlushMode, override?: { sessionId: string; promptId?: string }) => {
+    if (mode === 'foreground' && sending) return
+
+    const pendingMessages = pendingOutgoingMessagesRef.current
+    if (pendingMessages.length === 0) return
+
+    pendingOutgoingMessagesRef.current = []
+    clearPendingOutgoingTimeout()
+
+    const targetSessionId = override?.sessionId || sessionId
+    const targetPromptId = override?.promptId || getEffectivePromptId()
+
+    if (mode === 'background') {
+      try {
+        await sendMessage(targetSessionId, buildSendPayloadMessages(pendingMessages), {
+          promptId: targetPromptId,
+          stream: false,
+        })
+      } catch {
+        // ignore background errors
+      }
+      return
+    }
 
     if (assistantRevealTimeoutRef.current !== null) {
       window.clearTimeout(assistantRevealTimeoutRef.current)
@@ -437,23 +483,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     setRevealingAssistantTimestamp(null)
     setAssistantVisibleSegments(0)
 
-    setMessages(prev => [...prev, userMessage])
-
-    if (options.clearChatInput) {
-      setInputText('')
-    }
-    if (options.clearQuoteDraft) {
-      setQuoteDraft(null)
-    }
-    if (options.clearPendingImages) {
-      setPendingImages([])
-    }
-
     setSending(true)
-
-    if (options.resetTextareaHeight && textareaRef.current) {
-      textareaRef.current.style.height = '36px'
-    }
 
     let aborted = false
     try {
@@ -461,15 +491,8 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
       const abortController = new AbortController()
       activeRequestRef.current = abortController
 
-      const sanitizedHistory = messages.map((message) => {
-        if (message.role !== 'assistant') return message
-        const normalizedContent = normalizeAssistantContent(message.content)
-        if (normalizedContent === message.content) return message
-        return { ...message, content: normalizedContent }
-      })
-      const allMessages = [...sanitizedHistory, userMessage]
-      const response = await sendMessage(sessionId, allMessages, {
-        promptId,
+      const response = await sendMessage(targetSessionId, buildSendPayloadMessages(pendingMessages), {
+        promptId: targetPromptId,
         signal: abortController.signal,
       })
 
@@ -684,6 +707,78 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         setSending(false)
       }
     }
+  }
+
+  const schedulePendingOutgoingFlush = () => {
+    const config = getReplyWaitWindowConfig()
+    const delayMs = Math.max(0, Math.round(config.seconds * 1000))
+    if (delayMs <= 0) {
+      void flushPendingOutgoingMessages('foreground')
+      return
+    }
+
+    if (config.mode === 'fixed') {
+      if (pendingOutgoingTimeoutRef.current !== null) return
+      pendingOutgoingTimeoutRef.current = window.setTimeout(() => {
+        pendingOutgoingTimeoutRef.current = null
+        void flushPendingOutgoingMessages('foreground')
+      }, delayMs)
+      return
+    }
+
+    clearPendingOutgoingTimeout()
+    pendingOutgoingTimeoutRef.current = window.setTimeout(() => {
+      pendingOutgoingTimeoutRef.current = null
+      void flushPendingOutgoingMessages('foreground')
+    }, delayMs)
+  }
+
+  const handleBack = () => {
+    if (!sending && pendingOutgoingMessagesRef.current.length > 0) {
+      void flushPendingOutgoingMessages('background')
+    }
+
+    activeRequestRef.current?.abort()
+    activeRequestRef.current = null
+    if (containerRef.current) {
+      gsap.to(containerRef.current, {
+        x: '100%',
+        duration: 0.3,
+        ease: 'power2.in',
+        onComplete: onBack
+      })
+    } else {
+      onBack()
+    }
+  }
+
+  type SendOutgoingOptions = {
+    clearChatInput?: boolean
+    clearQuoteDraft?: boolean
+    clearPendingImages?: boolean
+    resetTextareaHeight?: boolean
+  }
+
+  const sendOutgoingMessage = async (userMessage: ChatMessage, options: SendOutgoingOptions = {}) => {
+    if (sending || uploadingImage) return
+
+    setMessages(prev => [...prev, userMessage])
+
+    if (options.clearChatInput) {
+      setInputText('')
+    }
+    if (options.clearQuoteDraft) {
+      setQuoteDraft(null)
+    }
+    if (options.clearPendingImages) {
+      setPendingImages([])
+    }
+
+    if (options.resetTextareaHeight && textareaRef.current) {
+      textareaRef.current.style.height = '36px'
+    }
+    pendingOutgoingMessagesRef.current.push(userMessage)
+    schedulePendingOutgoingFlush()
   }
 
   const handleSend = async () => {

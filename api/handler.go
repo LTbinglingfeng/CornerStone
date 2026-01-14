@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 // Handler HTTP请求处理器
@@ -981,30 +982,62 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 获取人设（prompt）
-	var persona string
-	if req.PromptID != "" {
-		if prompt, ok := h.promptManager.Get(req.PromptID); ok {
-			persona = prompt.Content
-		}
-	}
-
 	// 生成或使用会话ID
 	sessionID := req.SessionID
 	if sessionID == "" {
 		sessionID = generateID()
 	}
 
+	existingSession, hasExistingSession := h.chatManager.GetSession(sessionID)
+	existingMessageCount := 0
+	if hasExistingSession {
+		existingMessageCount = len(existingSession.Messages)
+	}
+
+	// 获取人设（prompt）
+	effectivePromptID := req.PromptID
+	if effectivePromptID == "" && hasExistingSession {
+		effectivePromptID = existingSession.PromptID
+	}
+	var persona string
+	if effectivePromptID != "" {
+		if prompt, ok := h.promptManager.Get(effectivePromptID); ok {
+			persona = prompt.Content
+		}
+	}
+
 	// 保存用户消息到历史记录
 	if req.SaveHistory && len(req.Messages) > 0 {
-		lastMsg := req.Messages[len(req.Messages)-1]
-		if errSaveHistory := h.chatManager.AddMessageWithDetails(sessionID, lastMsg.Role, lastMsg.Content, lastMsg.ReasoningContent, lastMsg.ImagePaths, lastMsg.ToolCalls); errSaveHistory != nil {
-			if errors.Is(errSaveHistory, storage.ErrInvalidID) {
-				h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid session ID"})
+		messagesToSave := req.Messages
+		if existingMessageCount > 0 && len(req.Messages) > existingMessageCount {
+			messagesToSave = req.Messages[existingMessageCount:]
+		}
+
+		now := time.Now()
+		storageMessages := make([]storage.ChatMessage, 0, len(messagesToSave))
+		for index, msg := range messagesToSave {
+			if msg.Role != "user" {
+				continue
+			}
+			storageMessages = append(storageMessages, storage.ChatMessage{
+				Role:             msg.Role,
+				Content:          msg.Content,
+				ReasoningContent: msg.ReasoningContent,
+				ToolCalls:        msg.ToolCalls,
+				ImagePaths:       msg.ImagePaths,
+				Timestamp:        now.Add(time.Millisecond * time.Duration(index)),
+			})
+		}
+
+		if len(storageMessages) > 0 {
+			if errAddMessages := h.chatManager.AddMessages(sessionID, storageMessages); errAddMessages != nil {
+				if errors.Is(errAddMessages, storage.ErrInvalidID) {
+					h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid session ID"})
+					return
+				}
+				h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: errAddMessages.Error()})
 				return
 			}
-			h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: errSaveHistory.Error()})
-			return
 		}
 	}
 
@@ -1014,6 +1047,7 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 			historyMessages = convertChatMessages(session.Messages)
 		}
 	}
+	historyMessages = mergeTrailingUserMessages(historyMessages)
 	historyMessages = limitMessagesByTurns(historyMessages, provider.ContextMessages)
 
 	// 构建消息，顺序: 系统提示词 -> 用户信息 -> 人设
@@ -1289,6 +1323,58 @@ func limitMessagesByTurns(messages []client.Message, maxTurns int) []client.Mess
 		return messages
 	}
 	return messages[startIndex:]
+}
+
+func mergeTrailingUserMessages(messages []client.Message) []client.Message {
+	if len(messages) == 0 {
+		return messages
+	}
+
+	startIndex := len(messages)
+	for startIndex > 0 && messages[startIndex-1].Role == "user" {
+		startIndex--
+	}
+	if len(messages)-startIndex <= 1 {
+		return messages
+	}
+
+	merged := client.Message{
+		Role: "user",
+	}
+	var contentBuilder strings.Builder
+	for _, msg := range messages[startIndex:] {
+		if msg.Role != "user" {
+			continue
+		}
+		content := msg.Content
+		notice := strings.TrimSpace(buildUserToolCallNotice(msg.ToolCalls))
+		if notice != "" {
+			if strings.TrimSpace(content) == "" {
+				content = notice
+			} else {
+				content = strings.TrimSpace(content) + "\n" + notice
+			}
+		}
+		content = strings.TrimSpace(content)
+		if content != "" {
+			if contentBuilder.Len() > 0 {
+				contentBuilder.WriteString("\n")
+			}
+			contentBuilder.WriteString(content)
+		}
+		if len(msg.ImagePaths) > 0 {
+			merged.ImagePaths = append(merged.ImagePaths, msg.ImagePaths...)
+		}
+	}
+	merged.Content = contentBuilder.String()
+	merged.ToolCalls = nil
+	merged.ToolCallID = ""
+	merged.ReasoningContent = ""
+
+	next := make([]client.Message, 0, startIndex+1)
+	next = append(next, messages[:startIndex]...)
+	next = append(next, merged)
+	return next
 }
 
 type redPacketToolArgs struct {
