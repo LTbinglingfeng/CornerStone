@@ -227,6 +227,7 @@ export interface SendMessageOptions {
   stream?: boolean
   saveHistory?: boolean
   signal?: AbortSignal
+  keepalive?: boolean
 }
 
 export async function sendMessage(
@@ -245,12 +246,60 @@ export async function sendMessage(
     payload.stream = options.stream
   }
 
-  return apiFetch(`${API_BASE}/chat`, {
+  const init: RequestInit & { keepalive?: boolean } = {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
     signal: options.signal,
-  })
+  }
+  if (options.keepalive !== undefined) {
+    init.keepalive = options.keepalive
+  }
+
+  return apiFetch(`${API_BASE}/chat`, init)
+}
+
+export function sendMessageBeacon(
+  sessionId: string,
+  messages: { role: string; content: string; image_paths?: string[]; tool_calls?: ToolCall[] }[],
+  options: Omit<SendMessageOptions, 'signal'> = {}
+): boolean {
+  const payload: Record<string, unknown> = {
+    session_id: sessionId,
+    prompt_id: options.promptId,
+    messages,
+    save_history: options.saveHistory ?? true,
+  }
+
+  if (options.stream !== undefined) {
+    payload.stream = options.stream
+  }
+
+  const url = withAuthToken(`${API_BASE}/chat`)
+  const body = JSON.stringify(payload)
+
+  try {
+    if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+      const blob = new Blob([body], { type: 'application/json' })
+      return navigator.sendBeacon(url, blob)
+    }
+  } catch {
+    // ignore beacon errors
+  }
+
+  try {
+    const init: RequestInit & { keepalive?: boolean } = {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+      keepalive: options.keepalive ?? true,
+    }
+    void fetch(url, init)
+  } catch {
+    // ignore fallback errors
+  }
+
+  return false
 }
 
 export async function healthCheck(): Promise<boolean> {

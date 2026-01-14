@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { gsap } from 'gsap'
 import type { ChatMessage, ChatRecord, Prompt, UserInfo, ToolCall, RedPacketParams, PatParams } from '../types/chat'
-import { getSession, sendMessage, getPrompt, getUserInfo, getPromptAvatarUrl, getUserAvatarUrl, uploadChatImage, getChatImageUrl, getActiveProvider, appendQueryParam, updateSessionMessage, deleteSessionMessage, recallSessionMessage, openSessionRedPacket } from '../services/api'
+import { getSession, sendMessage, sendMessageBeacon, getPrompt, getUserInfo, getPromptAvatarUrl, getUserAvatarUrl, uploadChatImage, getChatImageUrl, getActiveProvider, appendQueryParam, updateSessionMessage, deleteSessionMessage, recallSessionMessage, openSessionRedPacket } from '../services/api'
 import { getReplyWaitWindowConfig } from '../utils/replyWaitWindow'
 import ChatSettings from './ChatSettings'
 import ContextMenu, { type MenuItem } from './ContextMenu'
@@ -253,12 +253,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
   useEffect(() => {
     return () => {
       clearPendingOutgoingTimeout()
-      if (pendingOutgoingMessagesRef.current.length > 0) {
-        void flushPendingOutgoingMessages('background', {
-          sessionId: lastSessionIdRef.current,
-          promptId: lastPromptIdRef.current,
-        })
-      }
+      flushPendingOutgoingMessagesOnExit()
       activeRequestRef.current?.abort()
       if (assistantRevealTimeoutRef.current !== null) {
         window.clearTimeout(assistantRevealTimeoutRef.current)
@@ -272,6 +267,24 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         window.clearTimeout(redPacketOpenTimeoutRef.current)
         redPacketOpenTimeoutRef.current = null
       }
+    }
+  }, [])
+
+  useEffect(() => {
+    const handlePageHide = () => {
+      flushPendingOutgoingMessagesOnExit()
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'hidden') return
+      flushPendingOutgoingMessagesOnExit()
+    }
+
+    window.addEventListener('pagehide', handlePageHide)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      window.removeEventListener('pagehide', handlePageHide)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [])
 
@@ -446,6 +459,19 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
       ...(image_paths ? { image_paths } : {}),
       ...(tool_calls ? { tool_calls } : {}),
     }))
+
+  const flushPendingOutgoingMessagesOnExit = () => {
+    const pendingMessages = pendingOutgoingMessagesRef.current
+    if (pendingMessages.length === 0) return
+
+    pendingOutgoingMessagesRef.current = []
+    clearPendingOutgoingTimeout()
+
+    sendMessageBeacon(lastSessionIdRef.current, buildSendPayloadMessages(pendingMessages), {
+      promptId: lastPromptIdRef.current,
+      stream: false,
+    })
+  }
 
   const flushPendingOutgoingMessages = async (mode: FlushMode, override?: { sessionId: string; promptId?: string }) => {
     if (mode === 'foreground' && sending) return
