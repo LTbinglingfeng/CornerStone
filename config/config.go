@@ -13,6 +13,7 @@ var (
 	ErrProviderExists           = errors.New("provider already exists")
 	ErrProviderNotFound         = errors.New("provider not found")
 	ErrCannotDeleteLastProvider = errors.New("cannot delete the last provider")
+	ErrProviderNotChatCapable   = errors.New("provider is not chat-capable")
 )
 
 // ProviderType 供应商类型
@@ -22,8 +23,13 @@ const (
 	ProviderTypeOpenAI         ProviderType = "openai"          // OpenAI兼容API（Chat Completions）
 	ProviderTypeOpenAIResponse ProviderType = "openai_response" // OpenAI Responses API
 	ProviderTypeGemini         ProviderType = "gemini"          // Google Gemini API
+	ProviderTypeGeminiImage    ProviderType = "gemini_image"    // Google Gemini 生图（Imagen）
 	ProviderTypeAnthropic      ProviderType = "anthropic"       // Anthropic Claude API
 )
+
+func isChatProviderType(providerType ProviderType) bool {
+	return providerType != ProviderTypeGeminiImage
+}
 
 const (
 	DefaultProviderTemperature     = 0.8
@@ -33,22 +39,26 @@ const (
 
 // Provider 供应商配置
 type Provider struct {
-	ID                   string       `json:"id"`                               // 供应商唯一标识
-	Name                 string       `json:"name"`                             // 显示名称
-	Type                 ProviderType `json:"type"`                             // 供应商类型 (openai/openai_response/gemini/anthropic)
-	BaseURL              string       `json:"base_url"`                         // API基础URL
-	APIKey               string       `json:"api_key"`                          // API密钥
-	Model                string       `json:"model"`                            // 默认模型
-	Temperature          float64      `json:"temperature"`                      // 温度
-	TopP                 float64      `json:"top_p"`                            // Top P
-	ThinkingBudget       int          `json:"thinking_budget"`                  // 思考预算（Anthropic）
-	ReasoningEffort      string       `json:"reasoning_effort"`                 // 思考强度（OpenAI兼容）
-	GeminiThinkingMode   *string      `json:"gemini_thinking_mode,omitempty"`   // Gemini思考模式 (none/thinking_level/thinking_budget)
-	GeminiThinkingLevel  *string      `json:"gemini_thinking_level,omitempty"`  // Gemini思考级别 (model-dependent, e.g. low/high/minimal/medium)
-	GeminiThinkingBudget *int         `json:"gemini_thinking_budget,omitempty"` // Gemini思考预算 (model-dependent, e.g. 0-24576 or 128-32768)
-	ContextMessages      int          `json:"context_messages"`                 // 上下文消息轮数
-	Stream               bool         `json:"stream"`                           // 是否启用流式输出
-	ImageCapable         bool         `json:"image_capable"`                    // 是否支持识图
+	ID                        string       `json:"id"`                                      // 供应商唯一标识
+	Name                      string       `json:"name"`                                    // 显示名称
+	Type                      ProviderType `json:"type"`                                    // 供应商类型 (openai/openai_response/gemini/gemini_image/anthropic)
+	BaseURL                   string       `json:"base_url"`                                // API基础URL
+	APIKey                    string       `json:"api_key"`                                 // API密钥
+	Model                     string       `json:"model"`                                   // 默认模型
+	Temperature               float64      `json:"temperature"`                             // 温度
+	TopP                      float64      `json:"top_p"`                                   // Top P
+	ThinkingBudget            int          `json:"thinking_budget"`                         // 思考预算（Anthropic）
+	ReasoningEffort           string       `json:"reasoning_effort"`                        // 思考强度（OpenAI兼容）
+	GeminiThinkingMode        *string      `json:"gemini_thinking_mode,omitempty"`          // Gemini思考模式 (none/thinking_level/thinking_budget)
+	GeminiThinkingLevel       *string      `json:"gemini_thinking_level,omitempty"`         // Gemini思考级别 (model-dependent, e.g. low/high/minimal/medium)
+	GeminiThinkingBudget      *int         `json:"gemini_thinking_budget,omitempty"`        // Gemini思考预算 (model-dependent, e.g. 0-24576 or 128-32768)
+	GeminiImageAspectRatio    *string      `json:"gemini_image_aspect_ratio,omitempty"`     // Gemini生图比例 (1:1/3:4/4:3/9:16/16:9)
+	GeminiImageSize           *string      `json:"gemini_image_size,omitempty"`             // Gemini生图分辨率 (最大边: 1K/2K，留空使用默认)
+	GeminiImageNumberOfImages *int         `json:"gemini_image_number_of_images,omitempty"` // Gemini生图张数 (1-8)
+	GeminiImageOutputMIMEType *string      `json:"gemini_image_output_mime_type,omitempty"` // Gemini生图输出格式 (image/jpeg/image/png)
+	ContextMessages           int          `json:"context_messages"`                        // 上下文消息轮数
+	Stream                    bool         `json:"stream"`                                  // 是否启用流式输出
+	ImageCapable              bool         `json:"image_capable"`                           // 是否支持识图
 }
 
 // Config 存储应用配置信息
@@ -206,53 +216,116 @@ func (m *Manager) applyProviderDefaults(rawProviders []map[string]json.RawMessag
 				provider.GeminiThinkingBudget = nil
 				changed = true
 			}
-			continue
-		}
-
-		mode := "none"
-		if provider.GeminiThinkingMode != nil {
-			mode = strings.TrimSpace(*provider.GeminiThinkingMode)
-		}
-		if mode == "" {
-			mode = "none"
-		}
-		if mode != "none" && mode != "thinking_level" && mode != "thinking_budget" {
-			mode = "none"
-		}
-		if provider.GeminiThinkingMode == nil || *provider.GeminiThinkingMode != mode {
-			provider.GeminiThinkingMode = &mode
-			changed = true
-		}
-
-		level := "low"
-		if provider.GeminiThinkingLevel != nil {
-			level = strings.TrimSpace(*provider.GeminiThinkingLevel)
-		}
-		if level == "" {
-			level = "low"
-		}
-		level = normalizeGeminiThinkingLevel(provider.Model, level)
-		if provider.GeminiThinkingLevel == nil || *provider.GeminiThinkingLevel != level {
-			provider.GeminiThinkingLevel = &level
-			changed = true
-		}
-
-		minBudget, maxBudget := geminiThinkingBudgetRange(provider.Model)
-		budget := minBudget
-		if provider.GeminiThinkingBudget != nil {
-			budget = *provider.GeminiThinkingBudget
-		}
-		if budget != -1 {
-			if budget < minBudget {
-				budget = minBudget
+		} else {
+			mode := "none"
+			if provider.GeminiThinkingMode != nil {
+				mode = strings.TrimSpace(*provider.GeminiThinkingMode)
 			}
-			if budget > maxBudget {
-				budget = maxBudget
+			if mode == "" {
+				mode = "none"
+			}
+			if mode != "none" && mode != "thinking_level" && mode != "thinking_budget" {
+				mode = "none"
+			}
+			if provider.GeminiThinkingMode == nil || *provider.GeminiThinkingMode != mode {
+				provider.GeminiThinkingMode = &mode
+				changed = true
+			}
+
+			level := "low"
+			if provider.GeminiThinkingLevel != nil {
+				level = strings.TrimSpace(*provider.GeminiThinkingLevel)
+			}
+			if level == "" {
+				level = "low"
+			}
+			level = normalizeGeminiThinkingLevel(provider.Model, level)
+			if provider.GeminiThinkingLevel == nil || *provider.GeminiThinkingLevel != level {
+				provider.GeminiThinkingLevel = &level
+				changed = true
+			}
+
+			minBudget, maxBudget := geminiThinkingBudgetRange(provider.Model)
+			budget := minBudget
+			if provider.GeminiThinkingBudget != nil {
+				budget = *provider.GeminiThinkingBudget
+			}
+			if budget != -1 {
+				if budget < minBudget {
+					budget = minBudget
+				}
+				if budget > maxBudget {
+					budget = maxBudget
+				}
+			}
+			if provider.GeminiThinkingBudget == nil || *provider.GeminiThinkingBudget != budget {
+				provider.GeminiThinkingBudget = &budget
+				changed = true
 			}
 		}
-		if provider.GeminiThinkingBudget == nil || *provider.GeminiThinkingBudget != budget {
-			provider.GeminiThinkingBudget = &budget
-			changed = true
+
+		if provider.Type != ProviderTypeGeminiImage {
+			if provider.GeminiImageAspectRatio != nil {
+				provider.GeminiImageAspectRatio = nil
+				changed = true
+			}
+			if provider.GeminiImageSize != nil {
+				provider.GeminiImageSize = nil
+				changed = true
+			}
+			if provider.GeminiImageNumberOfImages != nil {
+				provider.GeminiImageNumberOfImages = nil
+				changed = true
+			}
+			if provider.GeminiImageOutputMIMEType != nil {
+				provider.GeminiImageOutputMIMEType = nil
+				changed = true
+			}
+		} else {
+			aspectRatio := "1:1"
+			if provider.GeminiImageAspectRatio != nil {
+				aspectRatio = strings.TrimSpace(*provider.GeminiImageAspectRatio)
+			}
+			aspectRatio = normalizeGeminiImageAspectRatio(aspectRatio)
+			if provider.GeminiImageAspectRatio == nil || *provider.GeminiImageAspectRatio != aspectRatio {
+				provider.GeminiImageAspectRatio = &aspectRatio
+				changed = true
+			}
+
+			size := ""
+			if provider.GeminiImageSize != nil {
+				size = strings.TrimSpace(*provider.GeminiImageSize)
+			}
+			size = normalizeGeminiImageSize(size)
+			if size == "" {
+				if provider.GeminiImageSize != nil {
+					provider.GeminiImageSize = nil
+					changed = true
+				}
+			} else if provider.GeminiImageSize == nil || *provider.GeminiImageSize != size {
+				provider.GeminiImageSize = &size
+				changed = true
+			}
+
+			numberOfImages := 1
+			if provider.GeminiImageNumberOfImages != nil {
+				numberOfImages = *provider.GeminiImageNumberOfImages
+			}
+			numberOfImages = clampGeminiImageNumberOfImages(numberOfImages)
+			if provider.GeminiImageNumberOfImages == nil || *provider.GeminiImageNumberOfImages != numberOfImages {
+				provider.GeminiImageNumberOfImages = &numberOfImages
+				changed = true
+			}
+
+			outputMIMEType := "image/jpeg"
+			if provider.GeminiImageOutputMIMEType != nil {
+				outputMIMEType = strings.TrimSpace(*provider.GeminiImageOutputMIMEType)
+			}
+			outputMIMEType = normalizeGeminiImageOutputMIMEType(outputMIMEType)
+			if provider.GeminiImageOutputMIMEType == nil || *provider.GeminiImageOutputMIMEType != outputMIMEType {
+				provider.GeminiImageOutputMIMEType = &outputMIMEType
+				changed = true
+			}
 		}
 	}
 	return changed
@@ -294,6 +367,57 @@ func geminiThinkingBudgetRange(model string) (minBudget, maxBudget int) {
 		return 0, 24576
 	default:
 		return 128, 32768
+	}
+}
+
+func normalizeGeminiImageAspectRatio(aspectRatio string) string {
+	aspectRatio = strings.TrimSpace(aspectRatio)
+	if aspectRatio == "" {
+		return "1:1"
+	}
+	switch aspectRatio {
+	case "1:1", "3:4", "4:3", "9:16", "16:9":
+		return aspectRatio
+	default:
+		return "1:1"
+	}
+}
+
+func normalizeGeminiImageSize(size string) string {
+	size = strings.TrimSpace(size)
+	if size == "" {
+		return ""
+	}
+	switch strings.ToUpper(size) {
+	case "1K":
+		return "1K"
+	case "2K":
+		return "2K"
+	default:
+		return ""
+	}
+}
+
+func clampGeminiImageNumberOfImages(numberOfImages int) int {
+	if numberOfImages < 1 {
+		return 1
+	}
+	if numberOfImages > 8 {
+		return 8
+	}
+	return numberOfImages
+}
+
+func normalizeGeminiImageOutputMIMEType(outputMIMEType string) string {
+	outputMIMEType = strings.ToLower(strings.TrimSpace(outputMIMEType))
+	if outputMIMEType == "" {
+		return "image/jpeg"
+	}
+	switch outputMIMEType {
+	case "image/jpeg", "image/png":
+		return outputMIMEType
+	default:
+		return "image/jpeg"
 	}
 }
 
@@ -425,6 +549,9 @@ func (m *Manager) UpdateProvider(provider Provider) error {
 
 	for i := range m.config.Providers {
 		if m.config.Providers[i].ID == provider.ID {
+			if m.config.ActiveProviderID == provider.ID && !isChatProviderType(provider.Type) && isChatProviderType(m.config.Providers[i].Type) {
+				return ErrProviderNotChatCapable
+			}
 			m.config.Providers[i] = provider
 			return m.saveUnsafe()
 		}
@@ -447,7 +574,17 @@ func (m *Manager) DeleteProvider(id string) error {
 			m.config.Providers = append(m.config.Providers[:i], m.config.Providers[i+1:]...)
 			// 如果删除的是当前激活供应商，切换到第一个
 			if m.config.ActiveProviderID == id && len(m.config.Providers) > 0 {
-				m.config.ActiveProviderID = m.config.Providers[0].ID
+				nextID := ""
+				for _, p := range m.config.Providers {
+					if isChatProviderType(p.Type) {
+						nextID = p.ID
+						break
+					}
+				}
+				if nextID == "" {
+					nextID = m.config.Providers[0].ID
+				}
+				m.config.ActiveProviderID = nextID
 			}
 			return m.saveUnsafe()
 		}
@@ -462,6 +599,9 @@ func (m *Manager) SetActiveProvider(id string) error {
 
 	for _, p := range m.config.Providers {
 		if p.ID == id {
+			if !isChatProviderType(p.Type) {
+				return ErrProviderNotChatCapable
+			}
 			m.config.ActiveProviderID = id
 			return m.saveUnsafe()
 		}

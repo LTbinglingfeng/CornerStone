@@ -66,22 +66,26 @@ type ConfigUpdateRequest struct {
 
 // ProviderRequest 供应商请求
 type ProviderRequest struct {
-	ID                   string   `json:"id"`
-	Name                 string   `json:"name"`
-	Type                 string   `json:"type"` // 供应商类型 (openai/openai_response/gemini/anthropic)
-	BaseURL              string   `json:"base_url"`
-	APIKey               string   `json:"api_key"`
-	Model                string   `json:"model"`
-	Temperature          *float64 `json:"temperature,omitempty"`
-	TopP                 *float64 `json:"top_p,omitempty"`
-	ThinkingBudget       *int     `json:"thinking_budget,omitempty"`
-	ReasoningEffort      *string  `json:"reasoning_effort,omitempty"`
-	GeminiThinkingMode   *string  `json:"gemini_thinking_mode,omitempty"`
-	GeminiThinkingLevel  *string  `json:"gemini_thinking_level,omitempty"`
-	GeminiThinkingBudget *int     `json:"gemini_thinking_budget,omitempty"`
-	ContextMessages      *int     `json:"context_messages,omitempty"`
-	Stream               bool     `json:"stream"`        // 是否启用流式输出
-	ImageCapable         bool     `json:"image_capable"` // 是否支持识图
+	ID                        string   `json:"id"`
+	Name                      string   `json:"name"`
+	Type                      string   `json:"type"` // 供应商类型 (openai/openai_response/gemini/gemini_image/anthropic)
+	BaseURL                   string   `json:"base_url"`
+	APIKey                    string   `json:"api_key"`
+	Model                     string   `json:"model"`
+	Temperature               *float64 `json:"temperature,omitempty"`
+	TopP                      *float64 `json:"top_p,omitempty"`
+	ThinkingBudget            *int     `json:"thinking_budget,omitempty"`
+	ReasoningEffort           *string  `json:"reasoning_effort,omitempty"`
+	GeminiThinkingMode        *string  `json:"gemini_thinking_mode,omitempty"`
+	GeminiThinkingLevel       *string  `json:"gemini_thinking_level,omitempty"`
+	GeminiThinkingBudget      *int     `json:"gemini_thinking_budget,omitempty"`
+	GeminiImageAspectRatio    *string  `json:"gemini_image_aspect_ratio,omitempty"`
+	GeminiImageSize           *string  `json:"gemini_image_size,omitempty"`
+	GeminiImageNumberOfImages *int     `json:"gemini_image_number_of_images,omitempty"`
+	GeminiImageOutputMIMEType *string  `json:"gemini_image_output_mime_type,omitempty"`
+	ContextMessages           *int     `json:"context_messages,omitempty"`
+	Stream                    bool     `json:"stream"`        // 是否启用流式输出
+	ImageCapable              bool     `json:"image_capable"` // 是否支持识图
 }
 
 // SetActiveProviderRequest 设置激活供应商请求
@@ -367,23 +371,61 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 			geminiThinkingBudget = &budget
 		}
 
+		var geminiImageAspectRatio *string
+		var geminiImageSize *string
+		var geminiImageNumberOfImages *int
+		var geminiImageOutputMIMEType *string
+		if providerType == config.ProviderTypeGeminiImage {
+			aspectRatio := normalizeGeminiImageAspectRatio("")
+			if req.GeminiImageAspectRatio != nil {
+				aspectRatio = normalizeGeminiImageAspectRatio(*req.GeminiImageAspectRatio)
+			}
+			geminiImageAspectRatio = &aspectRatio
+
+			size := ""
+			if req.GeminiImageSize != nil {
+				size = normalizeGeminiImageSize(*req.GeminiImageSize)
+			}
+			if size != "" {
+				geminiImageSize = &size
+			}
+
+			numberOfImages := 1
+			if req.GeminiImageNumberOfImages != nil {
+				numberOfImages = *req.GeminiImageNumberOfImages
+			}
+			numberOfImages = clampGeminiImageNumberOfImages(numberOfImages)
+			geminiImageNumberOfImages = &numberOfImages
+
+			outputMIMEType := "image/jpeg"
+			if req.GeminiImageOutputMIMEType != nil {
+				outputMIMEType = *req.GeminiImageOutputMIMEType
+			}
+			outputMIMEType = normalizeGeminiImageOutputMIMEType(outputMIMEType)
+			geminiImageOutputMIMEType = &outputMIMEType
+		}
+
 		provider := config.Provider{
-			ID:                   req.ID,
-			Name:                 req.Name,
-			Type:                 providerType,
-			BaseURL:              req.BaseURL,
-			APIKey:               req.APIKey,
-			Model:                req.Model,
-			Temperature:          temperature,
-			TopP:                 topP,
-			ThinkingBudget:       thinkingBudget,
-			ReasoningEffort:      reasoningEffort,
-			GeminiThinkingMode:   geminiThinkingMode,
-			GeminiThinkingLevel:  geminiThinkingLevel,
-			GeminiThinkingBudget: geminiThinkingBudget,
-			ContextMessages:      contextMessages,
-			Stream:               req.Stream,
-			ImageCapable:         req.ImageCapable,
+			ID:                        req.ID,
+			Name:                      req.Name,
+			Type:                      providerType,
+			BaseURL:                   req.BaseURL,
+			APIKey:                    req.APIKey,
+			Model:                     req.Model,
+			Temperature:               temperature,
+			TopP:                      topP,
+			ThinkingBudget:            thinkingBudget,
+			ReasoningEffort:           reasoningEffort,
+			GeminiThinkingMode:        geminiThinkingMode,
+			GeminiThinkingLevel:       geminiThinkingLevel,
+			GeminiThinkingBudget:      geminiThinkingBudget,
+			GeminiImageAspectRatio:    geminiImageAspectRatio,
+			GeminiImageSize:           geminiImageSize,
+			GeminiImageNumberOfImages: geminiImageNumberOfImages,
+			GeminiImageOutputMIMEType: geminiImageOutputMIMEType,
+			ContextMessages:           contextMessages,
+			Stream:                    req.Stream,
+			ImageCapable:              req.ImageCapable,
 		}
 
 		if err := h.configManager.AddProvider(provider); err != nil {
@@ -462,6 +504,10 @@ func (h *Handler) handleProviderByID(w http.ResponseWriter, r *http.Request) {
 		geminiMode := "none"
 		geminiLevel := "low"
 		geminiBudget := 128
+		geminiImageAspectRatioValue := "1:1"
+		geminiImageSizeValue := ""
+		geminiImageNumberOfImagesValue := 1
+		geminiImageOutputMIMETypeValue := "image/jpeg"
 		if existingProvider != nil {
 			temperature = existingProvider.Temperature
 			topP = existingProvider.TopP
@@ -476,6 +522,20 @@ func (h *Handler) handleProviderByID(w http.ResponseWriter, r *http.Request) {
 				}
 				if existingProvider.GeminiThinkingBudget != nil {
 					geminiBudget = *existingProvider.GeminiThinkingBudget
+				}
+			}
+			if existingProvider.Type == config.ProviderTypeGeminiImage {
+				if existingProvider.GeminiImageAspectRatio != nil {
+					geminiImageAspectRatioValue = *existingProvider.GeminiImageAspectRatio
+				}
+				if existingProvider.GeminiImageSize != nil {
+					geminiImageSizeValue = *existingProvider.GeminiImageSize
+				}
+				if existingProvider.GeminiImageNumberOfImages != nil {
+					geminiImageNumberOfImagesValue = *existingProvider.GeminiImageNumberOfImages
+				}
+				if existingProvider.GeminiImageOutputMIMEType != nil {
+					geminiImageOutputMIMETypeValue = *existingProvider.GeminiImageOutputMIMEType
 				}
 			}
 			contextMessages = existingProvider.ContextMessages
@@ -517,28 +577,66 @@ func (h *Handler) handleProviderByID(w http.ResponseWriter, r *http.Request) {
 			geminiThinkingBudget = &geminiBudget
 		}
 
+		var geminiImageAspectRatio *string
+		var geminiImageSize *string
+		var geminiImageNumberOfImages *int
+		var geminiImageOutputMIMEType *string
+		if providerType == config.ProviderTypeGeminiImage {
+			if req.GeminiImageAspectRatio != nil {
+				geminiImageAspectRatioValue = *req.GeminiImageAspectRatio
+			}
+			geminiImageAspectRatioValue = normalizeGeminiImageAspectRatio(geminiImageAspectRatioValue)
+			geminiImageAspectRatio = &geminiImageAspectRatioValue
+
+			if req.GeminiImageSize != nil {
+				geminiImageSizeValue = *req.GeminiImageSize
+			}
+			geminiImageSizeValue = normalizeGeminiImageSize(geminiImageSizeValue)
+			if geminiImageSizeValue != "" {
+				geminiImageSize = &geminiImageSizeValue
+			}
+
+			if req.GeminiImageNumberOfImages != nil {
+				geminiImageNumberOfImagesValue = *req.GeminiImageNumberOfImages
+			}
+			geminiImageNumberOfImagesValue = clampGeminiImageNumberOfImages(geminiImageNumberOfImagesValue)
+			geminiImageNumberOfImages = &geminiImageNumberOfImagesValue
+
+			if req.GeminiImageOutputMIMEType != nil {
+				geminiImageOutputMIMETypeValue = *req.GeminiImageOutputMIMEType
+			}
+			geminiImageOutputMIMETypeValue = normalizeGeminiImageOutputMIMEType(geminiImageOutputMIMETypeValue)
+			geminiImageOutputMIMEType = &geminiImageOutputMIMETypeValue
+		}
+
 		provider := config.Provider{
-			ID:                   id,
-			Name:                 req.Name,
-			Type:                 providerType,
-			BaseURL:              req.BaseURL,
-			APIKey:               apiKey,
-			Model:                req.Model,
-			Temperature:          temperature,
-			TopP:                 topP,
-			ThinkingBudget:       thinkingBudget,
-			ReasoningEffort:      reasoningEffort,
-			GeminiThinkingMode:   geminiThinkingMode,
-			GeminiThinkingLevel:  geminiThinkingLevel,
-			GeminiThinkingBudget: geminiThinkingBudget,
-			ContextMessages:      contextMessages,
-			Stream:               req.Stream,
-			ImageCapable:         req.ImageCapable,
+			ID:                        id,
+			Name:                      req.Name,
+			Type:                      providerType,
+			BaseURL:                   req.BaseURL,
+			APIKey:                    apiKey,
+			Model:                     req.Model,
+			Temperature:               temperature,
+			TopP:                      topP,
+			ThinkingBudget:            thinkingBudget,
+			ReasoningEffort:           reasoningEffort,
+			GeminiThinkingMode:        geminiThinkingMode,
+			GeminiThinkingLevel:       geminiThinkingLevel,
+			GeminiThinkingBudget:      geminiThinkingBudget,
+			GeminiImageAspectRatio:    geminiImageAspectRatio,
+			GeminiImageSize:           geminiImageSize,
+			GeminiImageNumberOfImages: geminiImageNumberOfImages,
+			GeminiImageOutputMIMEType: geminiImageOutputMIMEType,
+			ContextMessages:           contextMessages,
+			Stream:                    req.Stream,
+			ImageCapable:              req.ImageCapable,
 		}
 
 		if err := h.configManager.UpdateProvider(provider); err != nil {
 			if err == config.ErrProviderNotFound {
 				h.jsonResponse(w, http.StatusNotFound, Response{Success: false, Error: err.Error()})
+			} else if err == config.ErrProviderNotChatCapable {
+				h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: err.Error()})
 			} else {
 				h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: err.Error()})
 			}
@@ -593,6 +691,8 @@ func (h *Handler) handleActiveProvider(w http.ResponseWriter, r *http.Request) {
 		if err := h.configManager.SetActiveProvider(req.ProviderID); err != nil {
 			if err == config.ErrProviderNotFound {
 				h.jsonResponse(w, http.StatusNotFound, Response{Success: false, Error: err.Error()})
+			} else if err == config.ErrProviderNotChatCapable {
+				h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: err.Error()})
 			} else {
 				h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: err.Error()})
 			}
@@ -961,6 +1061,10 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 	provider := h.configManager.GetActiveProvider()
 	if provider == nil {
 		h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "No active provider configured"})
+		return
+	}
+	if provider.Type == config.ProviderTypeGeminiImage {
+		h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Active provider is not chat-capable"})
 		return
 	}
 	if provider.APIKey == "" {
@@ -1638,6 +1742,57 @@ func appendImagePathsToContent(content string, imagePaths []string) string {
 		return joined
 	}
 	return content + "\n" + joined
+}
+
+func normalizeGeminiImageAspectRatio(aspectRatio string) string {
+	aspectRatio = strings.TrimSpace(aspectRatio)
+	if aspectRatio == "" {
+		return "1:1"
+	}
+	switch aspectRatio {
+	case "1:1", "3:4", "4:3", "9:16", "16:9":
+		return aspectRatio
+	default:
+		return "1:1"
+	}
+}
+
+func normalizeGeminiImageSize(size string) string {
+	size = strings.TrimSpace(size)
+	if size == "" {
+		return ""
+	}
+	switch strings.ToUpper(size) {
+	case "1K":
+		return "1K"
+	case "2K":
+		return "2K"
+	default:
+		return ""
+	}
+}
+
+func clampGeminiImageNumberOfImages(numberOfImages int) int {
+	if numberOfImages < 1 {
+		return 1
+	}
+	if numberOfImages > 8 {
+		return 8
+	}
+	return numberOfImages
+}
+
+func normalizeGeminiImageOutputMIMEType(outputMIMEType string) string {
+	outputMIMEType = strings.ToLower(strings.TrimSpace(outputMIMEType))
+	if outputMIMEType == "" {
+		return "image/jpeg"
+	}
+	switch outputMIMEType {
+	case "image/jpeg", "image/png":
+		return outputMIMEType
+	default:
+		return "image/jpeg"
+	}
 }
 
 // handleCachePhoto 处理聊天图片上传
