@@ -23,15 +23,15 @@ type AnthropicClient struct {
 
 // AnthropicRequest Anthropic 消息请求
 type AnthropicRequest struct {
-	Model       string             `json:"model"`
-	Messages    []AnthropicMessage `json:"messages"`
-	System      string             `json:"system,omitempty"`
-	Stream      bool               `json:"stream,omitempty"`
-	MaxTokens   int                `json:"max_tokens"`
-	Temperature float64            `json:"temperature,omitempty"`
-	TopP        float64            `json:"top_p,omitempty"`
-	Thinking    *AnthropicThinking `json:"thinking,omitempty"`
-	Tools       []AnthropicTool    `json:"tools,omitempty"`
+	Model       string                  `json:"model"`
+	Messages    []AnthropicMessage      `json:"messages"`
+	System      []AnthropicContentBlock `json:"system,omitempty"`
+	Stream      bool                    `json:"stream,omitempty"`
+	MaxTokens   int                     `json:"max_tokens"`
+	Temperature float64                 `json:"temperature,omitempty"`
+	TopP        float64                 `json:"top_p,omitempty"`
+	Thinking    *AnthropicThinking      `json:"thinking,omitempty"`
+	Tools       []AnthropicTool         `json:"tools,omitempty"`
 }
 
 type AnthropicMessage struct {
@@ -40,14 +40,17 @@ type AnthropicMessage struct {
 }
 
 type AnthropicContentBlock struct {
-	Type              string                 `json:"type"`
-	Text              string                 `json:"text,omitempty"`
-	Source            *AnthropicImageSource  `json:"source,omitempty"`
-	ID                string                 `json:"id,omitempty"`
-	Name              string                 `json:"name,omitempty"`
-	Input             map[string]interface{} `json:"input,omitempty"`
-	ToolUseID         string                 `json:"tool_use_id,omitempty"`
-	ToolResultContent string                 `json:"content,omitempty"`
+	Type      string                  `json:"type"`
+	Text      string                  `json:"text,omitempty"`
+	Signature string                  `json:"signature,omitempty"`
+	Thinking  string                  `json:"thinking,omitempty"`
+	Source    *AnthropicImageSource   `json:"source,omitempty"`
+	ID        string                  `json:"id,omitempty"`
+	Name      string                  `json:"name,omitempty"`
+	Input     json.RawMessage         `json:"input,omitempty"`
+	ToolUseID string                  `json:"tool_use_id,omitempty"`
+	IsError   bool                    `json:"is_error,omitempty"`
+	Content   []AnthropicContentBlock `json:"content,omitempty"`
 }
 
 type AnthropicImageSource struct {
@@ -404,6 +407,7 @@ func buildAnthropicRequest(req ChatRequest) (AnthropicRequest, error) {
 	}
 
 	maxTokens := req.MaxTokens
+	maxTokensProvided := maxTokens > 0
 	if maxTokens <= 0 {
 		maxTokens = defaultAnthropicMaxTokens
 	}
@@ -417,9 +421,21 @@ func buildAnthropicRequest(req ChatRequest) (AnthropicRequest, error) {
 		Tools:     convertToAnthropicTools(req.Tools),
 	}
 	if req.ThinkingBudget > 0 {
+		thinkingBudget := req.ThinkingBudget
+		if thinkingBudget < 1024 {
+			thinkingBudget = 1024
+		}
+		if maxTokens <= thinkingBudget {
+			if maxTokensProvided {
+				maxTokens = thinkingBudget + 1
+			} else {
+				maxTokens = thinkingBudget + defaultAnthropicMaxTokens
+			}
+			anthropicReq.MaxTokens = maxTokens
+		}
 		anthropicReq.Thinking = &AnthropicThinking{
 			Type:         "enabled",
-			BudgetTokens: req.ThinkingBudget,
+			BudgetTokens: thinkingBudget,
 		}
 	}
 	if req.Temperature > 0 {
@@ -432,9 +448,9 @@ func buildAnthropicRequest(req ChatRequest) (AnthropicRequest, error) {
 	return anthropicReq, nil
 }
 
-func buildAnthropicMessages(messages []Message) ([]AnthropicMessage, string, error) {
+func buildAnthropicMessages(messages []Message) ([]AnthropicMessage, []AnthropicContentBlock, error) {
 	if len(messages) == 0 {
-		return nil, "", nil
+		return nil, nil, nil
 	}
 
 	anthropicMessages := make([]AnthropicMessage, 0, len(messages))
@@ -456,9 +472,14 @@ func buildAnthropicMessages(messages []Message) ([]AnthropicMessage, string, err
 				Role: "user",
 				Content: []AnthropicContentBlock{
 					{
-						Type:              "tool_result",
-						ToolUseID:         msg.ToolCallID,
-						ToolResultContent: msg.Content,
+						Type:      "tool_result",
+						ToolUseID: msg.ToolCallID,
+						Content: []AnthropicContentBlock{
+							{
+								Type: "text",
+								Text: msg.Content,
+							},
+						},
 					},
 				},
 			})
@@ -467,7 +488,7 @@ func buildAnthropicMessages(messages []Message) ([]AnthropicMessage, string, err
 
 		blocks, errBuild := buildAnthropicContentBlocks(msg)
 		if errBuild != nil {
-			return nil, "", errBuild
+			return nil, nil, errBuild
 		}
 
 		role := msg.Role
@@ -481,12 +502,20 @@ func buildAnthropicMessages(messages []Message) ([]AnthropicMessage, string, err
 		})
 	}
 
-	system := strings.TrimSpace(strings.Join(systemParts, "\n\n"))
-	return anthropicMessages, system, nil
+	systemText := strings.TrimSpace(strings.Join(systemParts, "\n\n"))
+	if systemText == "" {
+		return anthropicMessages, nil, nil
+	}
+	return anthropicMessages, []AnthropicContentBlock{
+		{
+			Type: "text",
+			Text: systemText,
+		},
+	}, nil
 }
 
 func buildAnthropicContentBlocks(msg Message) ([]AnthropicContentBlock, error) {
-	blocks := make([]AnthropicContentBlock, 0, len(msg.ImagePaths)+1)
+	blocks := make([]AnthropicContentBlock, 0, len(msg.ImagePaths)+1+len(msg.ToolCalls))
 
 	if strings.TrimSpace(msg.Content) != "" {
 		blocks = append(blocks, AnthropicContentBlock{
@@ -508,6 +537,31 @@ func buildAnthropicContentBlocks(msg Message) ([]AnthropicContentBlock, error) {
 				Data:      payload.Data,
 			},
 		})
+	}
+
+	if msg.Role == "assistant" && len(msg.ToolCalls) > 0 {
+		for i, toolCall := range msg.ToolCalls {
+			toolName := strings.TrimSpace(toolCall.Function.Name)
+			if toolName == "" {
+				continue
+			}
+			toolID := toolCall.ID
+			if toolID == "" {
+				toolID = fmt.Sprintf("call_%d", i)
+			}
+
+			inputJSON := bytes.TrimSpace([]byte(toolCall.Function.Arguments))
+			if len(inputJSON) == 0 || !json.Valid(inputJSON) {
+				inputJSON = []byte("{}")
+			}
+
+			blocks = append(blocks, AnthropicContentBlock{
+				Type:  "tool_use",
+				ID:    toolID,
+				Name:  toolName,
+				Input: inputJSON,
+			})
+		}
 	}
 
 	if len(blocks) == 0 {
@@ -554,17 +608,20 @@ func convertAnthropicResponse(resp AnthropicResponse, fallbackModel string) *Cha
 		case "text":
 			contentBuilder.WriteString(block.Text)
 		case "thinking":
-			reasoningBuilder.WriteString(block.Text)
+			if block.Thinking != "" {
+				reasoningBuilder.WriteString(block.Thinking)
+			} else {
+				reasoningBuilder.WriteString(block.Text)
+			}
 		case "tool_use":
 			toolID := block.ID
 			if toolID == "" {
 				toolID = fmt.Sprintf("call_%d", i)
 			}
 			inputJSON := []byte("{}")
-			if block.Input != nil {
-				var errMarshal error
-				inputJSON, errMarshal = json.Marshal(block.Input)
-				if errMarshal != nil {
+			if len(block.Input) > 0 {
+				inputJSON = block.Input
+				if !json.Valid(inputJSON) {
 					inputJSON = []byte("{}")
 				}
 			}
