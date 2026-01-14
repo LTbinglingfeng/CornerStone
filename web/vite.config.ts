@@ -52,8 +52,88 @@ const cornerstoneInlineLogos = (): Plugin => {
   }
 }
 
+const normalizeViteAssetPath = (url: string) => {
+  if (url.startsWith('data:') || url.startsWith('http:') || url.startsWith('https:') || url.startsWith('//')) {
+    return null
+  }
+
+  const withoutQuery = url.split(/[?#]/)[0]
+  return withoutQuery.replace(/^\/+/, '')
+}
+
+const escapeInlineTag = (content: string, tagName: 'script' | 'style') => {
+  return content.replaceAll(`</${tagName}>`, `<\\/${tagName}>`)
+}
+
+const cornerstoneSingleFileBuild = (): Plugin => {
+  return {
+    name: 'cornerstone-single-file-build',
+    apply: 'build',
+    enforce: 'post',
+    generateBundle(_outputOptions, bundle) {
+      const htmlEntry = Object.values(bundle).find(
+        (entry) => entry.type === 'asset' && entry.fileName === 'index.html'
+      )
+      if (!htmlEntry) return
+
+      const htmlAsset = htmlEntry as { source: string | Uint8Array }
+      const originalHtml = typeof htmlAsset.source === 'string'
+        ? htmlAsset.source
+        : Buffer.from(htmlAsset.source).toString('utf8')
+
+      let html = originalHtml
+
+      html = html.replaceAll(/<link\b[^>]*rel="modulepreload"[^>]*>/g, '')
+
+      html = html.replaceAll(/<link\b[^>]*rel="stylesheet"[^>]*href="([^"]+)"[^>]*>/g, (tag, href) => {
+        const fileName = normalizeViteAssetPath(href)
+        if (!fileName) return tag
+
+        const entry = bundle[fileName]
+        if (!entry) return tag
+
+        const css = entry.type === 'asset'
+          ? (typeof entry.source === 'string' ? entry.source : Buffer.from(entry.source).toString('utf8'))
+          : entry.code
+
+        return `<style>\n${escapeInlineTag(css, 'style')}\n</style>`
+      })
+
+      html = html.replaceAll(/<script\b[^>]*type="module"[^>]*src="([^"]+)"[^>]*><\/script>/g, (tag, src) => {
+        const fileName = normalizeViteAssetPath(src)
+        if (!fileName) return tag
+
+        const entry = bundle[fileName]
+        if (!entry) return tag
+
+        const js = entry.type === 'chunk'
+          ? entry.code
+          : (typeof entry.source === 'string' ? entry.source : Buffer.from(entry.source).toString('utf8'))
+
+        return `<script type="module">\n${escapeInlineTag(js, 'script')}\n</script>`
+      })
+
+      htmlAsset.source = html
+
+      for (const fileName of Object.keys(bundle)) {
+        if (fileName !== 'index.html') {
+          delete bundle[fileName]
+        }
+      }
+    },
+  }
+}
+
 export default defineConfig({
-  plugins: [cornerstoneInlineLogos(), react()],
+  plugins: [cornerstoneInlineLogos(), react(), cornerstoneSingleFileBuild()],
+  build: {
+    copyPublicDir: false,
+    rollupOptions: {
+      output: {
+        inlineDynamicImports: true,
+      },
+    },
+  },
   server: {
     host: '0.0.0.0',
     port: 3000,
