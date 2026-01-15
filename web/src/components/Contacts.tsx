@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { gsap } from 'gsap'
 import { getPrompts, createPrompt, updatePrompt, deletePrompt, uploadPromptAvatar, getPromptAvatarUrl, deletePromptAvatar, createSession, appendQueryParam } from '../services/api'
 import type { Prompt } from '../types/chat'
+import MemoryManager from './MemoryManager'
 import './Contacts.css'
 
 interface ContactsProps {
@@ -13,6 +14,7 @@ const Contacts: React.FC<ContactsProps> = ({ onStartChat }) => {
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editingPrompt, setEditingPrompt] = useState<Prompt | null>(null)
+  const [activeTab, setActiveTab] = useState<'info' | 'memory'>('info')
   const [formData, setFormData] = useState({ name: '', content: '', description: '' })
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
@@ -48,6 +50,7 @@ const Contacts: React.FC<ContactsProps> = ({ onStartChat }) => {
   }
 
   const handleOpenModal = (prompt?: Prompt) => {
+    setActiveTab('info')
     if (prompt) {
       setEditingPrompt(prompt)
       setFormData({
@@ -79,6 +82,7 @@ const Contacts: React.FC<ContactsProps> = ({ onStartChat }) => {
         onComplete: () => {
           setShowModal(false)
           setEditingPrompt(null)
+          setActiveTab('info')
           setFormData({ name: '', content: '', description: '' })
           setAvatarFile(null)
           setAvatarPreview(null)
@@ -291,79 +295,119 @@ const Contacts: React.FC<ContactsProps> = ({ onStartChat }) => {
             </div>
 
             <div className="prompt-modal-body">
-              {/* 头像上传 */}
-              <div className="avatar-upload-container">
-                <div className="avatar-upload" onClick={handleAvatarClick}>
-                  {avatarPreview ? (
-                    <img src={avatarPreview} alt="Avatar" className="avatar-preview" />
+              <div className="prompt-modal-tabs">
+                <button
+                  type="button"
+                  className={`prompt-modal-tab ${activeTab === 'info' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('info')}
+                >
+                  信息
+                </button>
+                <button
+                  type="button"
+                  className={`prompt-modal-tab ${activeTab === 'memory' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('memory')}
+                  disabled={!editingPrompt}
+                >
+                  记忆
+                </button>
+              </div>
+
+              {activeTab === 'info' ? (
+                <>
+                  {/* 头像上传 */}
+                  <div className="avatar-upload-container">
+                    <div className="avatar-upload" onClick={handleAvatarClick}>
+                      {avatarPreview ? (
+                        <img src={avatarPreview} alt="Avatar" className="avatar-preview" />
+                      ) : (
+                        <div className="avatar-placeholder-large">
+                          <svg viewBox="0 0 24 24">
+                            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                          </svg>
+                          <span>点击上传头像</span>
+                        </div>
+                      )}
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleFileChange}
+                        accept="image/*"
+                        style={{ display: 'none' }}
+                      />
+                    </div>
+                    {avatarPreview && (
+                      <button className="avatar-delete-btn" onClick={handleDeleteAvatar}>
+                        删除头像
+                      </button>
+                    )}
+                  </div>
+
+                  {/* 名称输入 */}
+                  <div className="form-group">
+                    <label>名称</label>
+                    <input
+                      type="text"
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      placeholder="输入提示词名称"
+                    />
+                  </div>
+
+                  {/* 描述输入 */}
+                  <div className="form-group">
+                    <label>描述（可选）</label>
+                    <input
+                      type="text"
+                      value={formData.description}
+                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                      placeholder="简短描述"
+                    />
+                  </div>
+
+                  {/* 内容输入 */}
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label>内容</label>
+                    <textarea
+                      value={formData.content}
+                      onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+                      placeholder="输入提示词内容..."
+                      rows={6}
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  {editingPrompt ? (
+                    <MemoryManager promptId={editingPrompt.id} />
                   ) : (
-                    <div className="avatar-placeholder-large">
-                      <svg viewBox="0 0 24 24">
-                        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
-                      </svg>
-                      <span>点击上传头像</span>
+                    <div style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '20px 0' }}>
+                      请先保存角色后再管理记忆
                     </div>
                   )}
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={handleFileChange}
-                    accept="image/*"
-                    style={{ display: 'none' }}
-                  />
-                </div>
-                {avatarPreview && (
-                  <button className="avatar-delete-btn" onClick={handleDeleteAvatar}>
-                    删除头像
-                  </button>
-                )}
-              </div>
-
-              {/* 名称输入 */}
-              <div className="form-group">
-                <label>名称</label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="输入提示词名称"
-                />
-              </div>
-
-              {/* 描述输入 */}
-              <div className="form-group">
-                <label>描述（可选）</label>
-                <input
-                  type="text"
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="简短描述"
-                />
-              </div>
-
-              {/* 内容输入 */}
-              <div className="form-group">
-                <label>内容</label>
-                <textarea
-                  value={formData.content}
-                  onChange={(e) => setFormData({ ...formData, content: e.target.value })}
-                  placeholder="输入提示词内容..."
-                  rows={6}
-                />
-              </div>
+                </>
+              )}
             </div>
 
             <div className="prompt-modal-footer">
-              <button className="prompt-modal-btn cancel" onClick={handleCloseModal}>
-                取消
-              </button>
-              <button
-                className="prompt-modal-btn save"
-                onClick={handleSave}
-                disabled={saving}
-              >
-                {saving ? '保存中...' : '保存'}
-              </button>
+              {activeTab === 'info' ? (
+                <>
+                  <button className="prompt-modal-btn cancel" onClick={handleCloseModal}>
+                    取消
+                  </button>
+                  <button
+                    className="prompt-modal-btn save"
+                    onClick={handleSave}
+                    disabled={saving}
+                  >
+                    {saving ? '保存中...' : '保存'}
+                  </button>
+                </>
+              ) : (
+                <button className="prompt-modal-btn save" onClick={handleCloseModal}>
+                  关闭
+                </button>
+              )}
             </div>
           </div>
         </div>

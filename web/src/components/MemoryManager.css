@@ -1,0 +1,250 @@
+.memory-manager {
+  width: 100%;
+}
+
+.memory-manager.loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 200px;
+  color: var(--text-secondary);
+}
+
+.memory-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.memory-hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-bottom: 16px;
+}
+
+.memory-header h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.add-btn {
+  padding: 8px 12px;
+  background: var(--accent-color);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.add-btn:hover {
+  opacity: 0.9;
+}
+
+.memory-section {
+  margin-bottom: 20px;
+}
+
+.memory-section h4 {
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin: 0 0 10px 0;
+}
+
+.memory-section h4.collapsible {
+  cursor: pointer;
+  user-select: none;
+}
+
+.memory-section h4.collapsible:hover {
+  color: var(--text-primary);
+}
+
+.empty-hint {
+  color: var(--text-secondary);
+  font-size: 13px;
+  padding: 12px;
+  text-align: center;
+  background: var(--bg-tertiary);
+  border: 1px dashed var(--border-color);
+  border-radius: 10px;
+}
+
+.memory-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  margin-bottom: 10px;
+}
+
+.memory-content {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+
+.memory-category {
+  font-size: 12px;
+  padding: 2px 8px;
+  background: rgba(0, 0, 0, 0.06);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  border-radius: 999px;
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+
+.memory-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+
+.memory-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 12px;
+  flex-shrink: 0;
+}
+
+.strength-bar {
+  width: 70px;
+  height: 6px;
+  background: rgba(0, 0, 0, 0.08);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.strength-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-color), rgba(7, 193, 96, 0.9));
+  transition: width 0.3s;
+}
+
+.strength-value {
+  font-size: 12px;
+  color: var(--text-secondary);
+  min-width: 36px;
+  text-align: right;
+}
+
+.delete-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 18px;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.delete-btn:hover {
+  color: var(--danger-color);
+}
+
+/* Modal */
+.memory-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 300;
+  padding: 20px;
+}
+
+.memory-modal {
+  background: var(--bg-secondary);
+  border-radius: 16px;
+  padding: 20px;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
+
+.memory-modal h3 {
+  margin: 0 0 16px 0;
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.memory-form-group {
+  margin-bottom: 16px;
+}
+
+.memory-form-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.memory-form-group select,
+.memory-form-group input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  font-size: 14px;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  outline: none;
+  box-sizing: border-box;
+}
+
+.memory-form-group input:focus,
+.memory-form-group select:focus {
+  border-color: var(--accent-color);
+}
+
+.memory-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.memory-form-actions button {
+  padding: 10px 16px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.memory-form-actions button[type="button"] {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.memory-form-actions button[type="submit"] {
+  background: var(--accent-color);
+  color: white;
+  border: none;
+}
+
+.memory-form-actions button[type="submit"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

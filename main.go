@@ -106,6 +106,8 @@ func main() {
 	chatManager := storage.NewChatManager(chatsDir)
 	userManager := storage.NewUserManager(userAboutDir)
 	authManager := storage.NewAuthManager(userAboutDir)
+	memoryManager := storage.NewMemoryManager(promptsDir)
+	memoryExtractor := storage.NewMemoryExtractor(memoryManager, configManager, chatManager)
 	os.MkdirAll(cachePhotoDir, 0755)
 
 	logging.Infof("日志文件: %s", logPath)
@@ -120,7 +122,7 @@ func main() {
 	mux := http.NewServeMux()
 
 	// 注册API处理器
-	handler := api.NewHandler(configManager, promptManager, chatManager, userManager, authManager, cachePhotoDir)
+	handler := api.NewHandler(configManager, promptManager, chatManager, userManager, authManager, cachePhotoDir, memoryManager, memoryExtractor)
 	handler.RegisterRoutes(mux)
 
 	// 注册前端静态文件

@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -30,18 +31,35 @@ type Handler struct {
 	authManager   *storage.AuthManager
 	tokenStore    *authTokenStore
 	cachePhotoDir string
+
+	memoryManager   *storage.MemoryManager
+	memoryExtractor *storage.MemoryExtractor
+	memorySessions  map[string]*storage.MemorySession
+	sessionsMu      sync.RWMutex
+
+	cleanupOnce sync.Once
+	cleanupDone chan struct{}
 }
 
+const (
+	memorySessionMaxIdle     = 30 * time.Minute // 会话最大空闲时间
+	memorySessionCleanupTick = 5 * time.Minute  // 清理检查间隔
+)
+
 // NewHandler 创建处理器
-func NewHandler(cm *config.Manager, pm *storage.PromptManager, chatMgr *storage.ChatManager, userMgr *storage.UserManager, authMgr *storage.AuthManager, cachePhotoDir string) *Handler {
+func NewHandler(cm *config.Manager, pm *storage.PromptManager, chatMgr *storage.ChatManager, userMgr *storage.UserManager, authMgr *storage.AuthManager, cachePhotoDir string, memoryManager *storage.MemoryManager, memoryExtractor *storage.MemoryExtractor) *Handler {
 	return &Handler{
-		configManager: cm,
-		promptManager: pm,
-		chatManager:   chatMgr,
-		userManager:   userMgr,
-		authManager:   authMgr,
-		tokenStore:    newAuthTokenStore(),
-		cachePhotoDir: cachePhotoDir,
+		configManager:   cm,
+		promptManager:   pm,
+		chatManager:     chatMgr,
+		userManager:     userMgr,
+		authManager:     authMgr,
+		tokenStore:      newAuthTokenStore(),
+		cachePhotoDir:   cachePhotoDir,
+		memoryManager:   memoryManager,
+		memoryExtractor: memoryExtractor,
+		memorySessions:  make(map[string]*storage.MemorySession),
+		cleanupDone:     make(chan struct{}),
 	}
 }
 
@@ -130,6 +148,26 @@ type UserInfoRequest struct {
 	Description string `json:"description,omitempty"`
 }
 
+type MemoryUpsertRequest struct {
+	Subject  string   `json:"subject,omitempty"`
+	Category string   `json:"category,omitempty"`
+	Content  string   `json:"content,omitempty"`
+	Strength *float64 `json:"strength,omitempty"`
+}
+
+type SetMemoryProviderRequest struct {
+	ProviderID string `json:"provider_id"`
+}
+
+type SetMemoryEnabledRequest struct {
+	Enabled bool `json:"enabled"`
+}
+
+type MemoryProviderConfigRequest struct {
+	UseCustom bool             `json:"use_custom"`
+	Provider  *ProviderRequest `json:"provider,omitempty"`
+}
+
 // Response 统一响应格式
 type Response struct {
 	Success bool        `json:"success"`
@@ -170,6 +208,11 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	// 聊天接口 (保持 /api 前缀)
 	mux.HandleFunc("/api/chat", h.corsMiddleware(h.authMiddleware(h.handleChat)))
 
+	// 记忆接口
+	mux.HandleFunc("/api/memory/", h.corsMiddleware(h.authMiddleware(h.handleMemory)))
+	mux.HandleFunc("/api/settings/memory-provider", h.corsMiddleware(h.authMiddleware(h.handleSetMemoryProvider)))
+	mux.HandleFunc("/api/settings/memory-enabled", h.corsMiddleware(h.authMiddleware(h.handleSetMemoryEnabled)))
+
 	// 配置接口 (使用 /management 前缀)
 	mux.HandleFunc("/management/config", h.corsMiddleware(h.authMiddleware(h.handleConfig)))
 
@@ -177,6 +220,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/management/providers", h.corsMiddleware(h.authMiddleware(h.handleProviders)))
 	mux.HandleFunc("/management/providers/", h.corsMiddleware(h.authMiddleware(h.handleProviderByID)))
 	mux.HandleFunc("/management/providers/active", h.corsMiddleware(h.authMiddleware(h.handleActiveProvider)))
+	mux.HandleFunc("/management/memory-provider", h.corsMiddleware(h.authMiddleware(h.handleMemoryProvider)))
 
 	// 提示词接口
 	mux.HandleFunc("/management/prompts", h.corsMiddleware(h.authMiddleware(h.handlePrompts)))
@@ -290,6 +334,7 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 	case "GET":
 		providers := h.configManager.GetProviders()
 		activeID := h.configManager.GetActiveProviderID()
+		cfg := h.configManager.Get()
 		// 隐藏API密钥
 		for i := range providers {
 			if providers[i].Type == config.ProviderTypeAnthropic {
@@ -301,10 +346,27 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 				providers[i].APIKey = "****"
 			}
 		}
+
+		var memoryProvider *config.Provider
+		if cfg.MemoryProvider != nil {
+			clone := *cfg.MemoryProvider
+			if clone.Type == config.ProviderTypeAnthropic {
+				clone.Temperature = 1
+			}
+			if len(clone.APIKey) > 8 {
+				clone.APIKey = clone.APIKey[:4] + "****" + clone.APIKey[len(clone.APIKey)-4:]
+			} else if len(clone.APIKey) > 0 {
+				clone.APIKey = "****"
+			}
+			memoryProvider = &clone
+		}
 		result := map[string]interface{}{
 			"providers":          providers,
 			"active_provider_id": activeID,
 			"system_prompt":      h.configManager.GetSystemPrompt(),
+			"memory_provider_id": cfg.MemoryProviderID,
+			"memory_provider":    memoryProvider,
+			"memory_enabled":     cfg.MemoryEnabled,
 		}
 		h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: result})
 
@@ -699,6 +761,189 @@ func (h *Handler) handleActiveProvider(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: "Active provider updated"})
+
+	default:
+		h.jsonResponse(w, http.StatusMethodNotAllowed, Response{Success: false, Error: "Method not allowed"})
+	}
+}
+
+func (h *Handler) handleMemoryProvider(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		cfg := h.configManager.Get()
+		var memoryProvider *config.Provider
+		if cfg.MemoryProvider != nil {
+			clone := *cfg.MemoryProvider
+			if clone.Type == config.ProviderTypeAnthropic {
+				clone.Temperature = 1
+			}
+			if len(clone.APIKey) > 8 {
+				clone.APIKey = clone.APIKey[:4] + "****" + clone.APIKey[len(clone.APIKey)-4:]
+			} else if len(clone.APIKey) > 0 {
+				clone.APIKey = "****"
+			}
+			memoryProvider = &clone
+		}
+		h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: map[string]interface{}{"memory_provider": memoryProvider}})
+
+	case http.MethodPut:
+		var req MemoryProviderConfigRequest
+		if !h.decodeJSON(w, r, &req) {
+			return
+		}
+
+		cfg := h.configManager.Get()
+		if !req.UseCustom {
+			cfg.MemoryProvider = nil
+			cfg.MemoryProviderID = ""
+			if errUpdate := h.configManager.Update(cfg); errUpdate != nil {
+				h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: errUpdate.Error()})
+				return
+			}
+			h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: map[string]interface{}{"memory_provider": nil}})
+			return
+		}
+
+		if req.Provider == nil {
+			h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Provider required"})
+			return
+		}
+
+		providerType := config.ProviderType(req.Provider.Type)
+		if providerType == "" {
+			providerType = config.ProviderTypeOpenAI
+		}
+		if providerType == config.ProviderTypeGeminiImage {
+			h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Provider is not chat-capable"})
+			return
+		}
+
+		existingProvider := cfg.MemoryProvider
+		apiKey := strings.TrimSpace(req.Provider.APIKey)
+		if existingProvider != nil && (apiKey == "" || strings.Contains(apiKey, "*")) {
+			apiKey = existingProvider.APIKey
+		}
+
+		defaultProvider := config.DefaultProvider()
+		temperature := defaultProvider.Temperature
+		topP := defaultProvider.TopP
+		thinkingBudget := defaultProvider.ThinkingBudget
+		reasoningEffort := defaultProvider.ReasoningEffort
+		contextMessages := defaultProvider.ContextMessages
+
+		geminiMode := "none"
+		geminiLevel := "low"
+		geminiBudget := 128
+
+		if existingProvider != nil {
+			temperature = existingProvider.Temperature
+			topP = existingProvider.TopP
+			thinkingBudget = existingProvider.ThinkingBudget
+			reasoningEffort = existingProvider.ReasoningEffort
+			contextMessages = existingProvider.ContextMessages
+
+			if existingProvider.Type == config.ProviderTypeGemini {
+				if existingProvider.GeminiThinkingMode != nil {
+					geminiMode = *existingProvider.GeminiThinkingMode
+				}
+				if existingProvider.GeminiThinkingLevel != nil {
+					geminiLevel = *existingProvider.GeminiThinkingLevel
+				}
+				if existingProvider.GeminiThinkingBudget != nil {
+					geminiBudget = *existingProvider.GeminiThinkingBudget
+				}
+			}
+		}
+
+		if req.Provider.Temperature != nil {
+			temperature = *req.Provider.Temperature
+		}
+		if req.Provider.TopP != nil {
+			topP = *req.Provider.TopP
+		}
+		if req.Provider.ThinkingBudget != nil {
+			thinkingBudget = *req.Provider.ThinkingBudget
+		}
+		if req.Provider.ReasoningEffort != nil {
+			reasoningEffort = *req.Provider.ReasoningEffort
+		}
+		if req.Provider.ContextMessages != nil {
+			contextMessages = *req.Provider.ContextMessages
+		}
+		if providerType == config.ProviderTypeAnthropic {
+			temperature = 1
+		}
+
+		var geminiThinkingMode *string
+		var geminiThinkingLevel *string
+		var geminiThinkingBudget *int
+		if providerType == config.ProviderTypeGemini {
+			if req.Provider.GeminiThinkingMode != nil {
+				geminiMode = strings.TrimSpace(*req.Provider.GeminiThinkingMode)
+			}
+			if req.Provider.GeminiThinkingLevel != nil {
+				geminiLevel = strings.TrimSpace(*req.Provider.GeminiThinkingLevel)
+			}
+			if req.Provider.GeminiThinkingBudget != nil {
+				geminiBudget = *req.Provider.GeminiThinkingBudget
+			}
+			if strings.TrimSpace(geminiMode) == "" {
+				geminiMode = "none"
+			}
+			if strings.TrimSpace(geminiLevel) == "" {
+				geminiLevel = "low"
+			}
+			geminiThinkingMode = &geminiMode
+			geminiThinkingLevel = &geminiLevel
+			geminiThinkingBudget = &geminiBudget
+		}
+
+		id := strings.TrimSpace(req.Provider.ID)
+		if id == "" {
+			id = "memory"
+		}
+		name := strings.TrimSpace(req.Provider.Name)
+		if name == "" {
+			name = "记忆提供商"
+		}
+
+		provider := config.Provider{
+			ID:                   id,
+			Name:                 name,
+			Type:                 providerType,
+			BaseURL:              strings.TrimSpace(req.Provider.BaseURL),
+			APIKey:               apiKey,
+			Model:                strings.TrimSpace(req.Provider.Model),
+			Temperature:          temperature,
+			TopP:                 topP,
+			ThinkingBudget:       thinkingBudget,
+			ReasoningEffort:      reasoningEffort,
+			GeminiThinkingMode:   geminiThinkingMode,
+			GeminiThinkingLevel:  geminiThinkingLevel,
+			GeminiThinkingBudget: geminiThinkingBudget,
+			ContextMessages:      contextMessages,
+			Stream:               req.Provider.Stream,
+			ImageCapable:         req.Provider.ImageCapable,
+		}
+
+		cfg.MemoryProvider = &provider
+		cfg.MemoryProviderID = ""
+		if errUpdate := h.configManager.Update(cfg); errUpdate != nil {
+			h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: errUpdate.Error()})
+			return
+		}
+
+		clone := provider
+		if clone.Type == config.ProviderTypeAnthropic {
+			clone.Temperature = 1
+		}
+		if len(clone.APIKey) > 8 {
+			clone.APIKey = clone.APIKey[:4] + "****" + clone.APIKey[len(clone.APIKey)-4:]
+		} else if len(clone.APIKey) > 0 {
+			clone.APIKey = "****"
+		}
+
+		h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: map[string]interface{}{"memory_provider": clone}})
 
 	default:
 		h.jsonResponse(w, http.StatusMethodNotAllowed, Response{Success: false, Error: "Method not allowed"})
@@ -1111,6 +1356,11 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	memSession := h.getOrCreateMemorySession(effectivePromptID, sessionID)
+	if memSession != nil {
+		persona = storage.BuildPromptWithMemory(persona, memSession.GetActiveMemories())
+	}
+
 	// 保存用户消息到历史记录
 	if req.SaveHistory && len(req.Messages) > 0 {
 		messagesToSave := req.Messages
@@ -1260,14 +1510,284 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if useStream {
-		h.handleStreamChat(w, r, aiClient, chatReq, sessionID, req.SaveHistory)
+		h.handleStreamChat(w, r, aiClient, chatReq, sessionID, req.SaveHistory, memSession)
 	} else {
-		h.handleNormalChat(w, r, aiClient, chatReq, sessionID, req.SaveHistory)
+		h.handleNormalChat(w, r, aiClient, chatReq, sessionID, req.SaveHistory, memSession)
 	}
 }
 
+func (h *Handler) getOrCreateMemorySession(promptID, sessionID string) *storage.MemorySession {
+	if h.memoryManager == nil || h.configManager == nil {
+		return nil
+	}
+	if sessionID == "" {
+		return nil
+	}
+
+	cfg := h.configManager.Get()
+	if !cfg.MemoryEnabled {
+		return nil
+	}
+
+	// 启动清理 goroutine（只执行一次）
+	h.cleanupOnce.Do(func() {
+		go h.cleanupMemorySessions()
+	})
+
+	h.sessionsMu.Lock()
+	defer h.sessionsMu.Unlock()
+
+	if h.memorySessions == nil {
+		h.memorySessions = make(map[string]*storage.MemorySession)
+	}
+
+	if session, ok := h.memorySessions[sessionID]; ok {
+		return session
+	}
+	if promptID == "" {
+		return nil
+	}
+
+	session := storage.NewMemorySession(promptID, sessionID, h.memoryManager, h.memoryExtractor)
+	h.memorySessions[sessionID] = session
+	return session
+}
+
+// cleanupMemorySessions 定期清理空闲的记忆会话
+func (h *Handler) cleanupMemorySessions() {
+	ticker := time.NewTicker(memorySessionCleanupTick)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-h.cleanupDone:
+			return
+		case <-ticker.C:
+			h.doCleanupMemorySessions()
+		}
+	}
+}
+
+func (h *Handler) doCleanupMemorySessions() {
+	h.sessionsMu.Lock()
+	defer h.sessionsMu.Unlock()
+
+	now := time.Now()
+	for sessionID, session := range h.memorySessions {
+		if now.Sub(session.LastAccess()) > memorySessionMaxIdle {
+			delete(h.memorySessions, sessionID)
+			logging.Infof("清理空闲记忆会话: %s", sessionID)
+		}
+	}
+}
+
+func (h *Handler) handleMemory(w http.ResponseWriter, r *http.Request) {
+	if h.memoryManager == nil {
+		h.jsonResponse(w, http.StatusNotImplemented, Response{Success: false, Error: "Memory manager not configured"})
+		return
+	}
+
+	trimmed := strings.TrimPrefix(r.URL.Path, "/api/memory/")
+	trimmed = strings.Trim(trimmed, "/")
+	if trimmed == "" {
+		h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Prompt ID required"})
+		return
+	}
+
+	parts := strings.Split(trimmed, "/")
+	switch len(parts) {
+	case 1:
+		promptID := parts[0]
+		switch r.Method {
+		case http.MethodGet:
+			h.handleGetMemories(w, r, promptID)
+		case http.MethodPost:
+			h.handleAddMemory(w, r, promptID)
+		default:
+			h.jsonResponse(w, http.StatusMethodNotAllowed, Response{Success: false, Error: "Method not allowed"})
+		}
+
+	case 2:
+		promptID := parts[0]
+		memoryID := parts[1]
+		switch r.Method {
+		case http.MethodPut:
+			h.handleUpdateMemory(w, r, promptID, memoryID)
+		case http.MethodDelete:
+			h.handleDeleteMemory(w, r, promptID, memoryID)
+		default:
+			h.jsonResponse(w, http.StatusMethodNotAllowed, Response{Success: false, Error: "Method not allowed"})
+		}
+
+	default:
+		h.jsonResponse(w, http.StatusNotFound, Response{Success: false, Error: "Not found"})
+	}
+}
+
+func (h *Handler) handleGetMemories(w http.ResponseWriter, r *http.Request, promptID string) {
+	responses := h.memoryManager.GetAllResponses(promptID)
+	h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: responses})
+}
+
+func (h *Handler) handleAddMemory(w http.ResponseWriter, r *http.Request, promptID string) {
+	var req MemoryUpsertRequest
+	if !h.decodeJSON(w, r, &req) {
+		return
+	}
+	if strings.TrimSpace(req.Subject) == "" || strings.TrimSpace(req.Category) == "" || strings.TrimSpace(req.Content) == "" {
+		h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "subject/category/content required"})
+		return
+	}
+	if req.Subject != storage.SubjectUser && req.Subject != storage.SubjectSelf {
+		h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "invalid subject"})
+		return
+	}
+
+	memory := storage.Memory{
+		Subject:   strings.TrimSpace(req.Subject),
+		Category:  strings.TrimSpace(req.Category),
+		Content:   strings.TrimSpace(req.Content),
+		SeenCount: 1,
+	}
+
+	if req.Strength == nil {
+		memory.Strength = storage.DefaultStrengthForCategory(memory.Category)
+	} else {
+		memory.Strength = *req.Strength
+	}
+
+	if errAdd := h.memoryManager.Add(promptID, memory); errAdd != nil {
+		if errors.Is(errAdd, storage.ErrInvalidID) {
+			h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid prompt ID"})
+			return
+		}
+		h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: errAdd.Error()})
+		return
+	}
+
+	h.handleGetMemories(w, r, promptID)
+}
+
+func (h *Handler) handleUpdateMemory(w http.ResponseWriter, r *http.Request, promptID, memoryID string) {
+	var req MemoryUpsertRequest
+	if !h.decodeJSON(w, r, &req) {
+		return
+	}
+
+	patch := storage.MemoryPatch{
+		ID: memoryID,
+	}
+	subject := strings.TrimSpace(req.Subject)
+	if subject != "" {
+		if subject != storage.SubjectUser && subject != storage.SubjectSelf {
+			h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "invalid subject"})
+			return
+		}
+		patch.Subject = &subject
+	}
+	category := strings.TrimSpace(req.Category)
+	if category != "" {
+		patch.Category = &category
+	}
+	content := strings.TrimSpace(req.Content)
+	if content != "" {
+		patch.Content = &content
+	}
+	if req.Strength != nil {
+		patch.Strength = req.Strength
+	}
+
+	if errUpdate := h.memoryManager.Patch(promptID, patch); errUpdate != nil {
+		if errors.Is(errUpdate, storage.ErrInvalidID) {
+			h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid prompt ID or memory ID"})
+			return
+		}
+		if errors.Is(errUpdate, os.ErrNotExist) {
+			h.jsonResponse(w, http.StatusNotFound, Response{Success: false, Error: "Memory not found"})
+			return
+		}
+		h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: errUpdate.Error()})
+		return
+	}
+
+	h.handleGetMemories(w, r, promptID)
+}
+
+func (h *Handler) handleDeleteMemory(w http.ResponseWriter, r *http.Request, promptID, memoryID string) {
+	if errDelete := h.memoryManager.Delete(promptID, memoryID); errDelete != nil {
+		if errors.Is(errDelete, storage.ErrInvalidID) {
+			h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid prompt ID or memory ID"})
+			return
+		}
+		if errors.Is(errDelete, os.ErrNotExist) {
+			h.jsonResponse(w, http.StatusNotFound, Response{Success: false, Error: "Memory not found"})
+			return
+		}
+		h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: errDelete.Error()})
+		return
+	}
+
+	h.handleGetMemories(w, r, promptID)
+}
+
+func (h *Handler) handleSetMemoryProvider(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		h.jsonResponse(w, http.StatusMethodNotAllowed, Response{Success: false, Error: "Method not allowed"})
+		return
+	}
+
+	var req SetMemoryProviderRequest
+	if !h.decodeJSON(w, r, &req) {
+		return
+	}
+
+	providerID := strings.TrimSpace(req.ProviderID)
+	if providerID != "" {
+		provider := h.configManager.GetProvider(providerID)
+		if provider == nil {
+			h.jsonResponse(w, http.StatusNotFound, Response{Success: false, Error: "Provider not found"})
+			return
+		}
+		if provider.Type == config.ProviderTypeGeminiImage {
+			h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Provider is not chat-capable"})
+			return
+		}
+	}
+
+	cfg := h.configManager.Get()
+	cfg.MemoryProviderID = providerID
+	cfg.MemoryProvider = nil
+	if errUpdate := h.configManager.Update(cfg); errUpdate != nil {
+		h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: errUpdate.Error()})
+		return
+	}
+
+	h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: map[string]interface{}{"memory_provider_id": providerID}})
+}
+
+func (h *Handler) handleSetMemoryEnabled(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		h.jsonResponse(w, http.StatusMethodNotAllowed, Response{Success: false, Error: "Method not allowed"})
+		return
+	}
+
+	var req SetMemoryEnabledRequest
+	if !h.decodeJSON(w, r, &req) {
+		return
+	}
+
+	cfg := h.configManager.Get()
+	cfg.MemoryEnabled = req.Enabled
+	if errUpdate := h.configManager.Update(cfg); errUpdate != nil {
+		h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: errUpdate.Error()})
+		return
+	}
+
+	h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: map[string]interface{}{"memory_enabled": req.Enabled}})
+}
+
 // handleNormalChat 处理非流式聊天
-func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiClient client.AIClient, req client.ChatRequest, sessionID string, saveHistory bool) {
+func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiClient client.AIClient, req client.ChatRequest, sessionID string, saveHistory bool, memSession *storage.MemorySession) {
 	ctxAI := context.WithoutCancel(r.Context())
 	resp, err := aiClient.Chat(ctxAI, req)
 	if err != nil {
@@ -1296,6 +1816,10 @@ func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiCli
 		return
 	}
 
+	if memSession != nil {
+		memSession.OnRoundComplete()
+	}
+
 	// 返回响应，包含session_id
 	result := map[string]interface{}{
 		"session_id": sessionID,
@@ -1305,7 +1829,7 @@ func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiCli
 }
 
 // handleStreamChat 处理流式聊天 (SSE)
-func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiClient client.AIClient, req client.ChatRequest, sessionID string, saveHistory bool) {
+func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiClient client.AIClient, req client.ChatRequest, sessionID string, saveHistory bool, memSession *storage.MemorySession) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -1434,6 +1958,10 @@ func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiCli
 				}
 			}
 		}
+	}
+
+	if errChatStream == nil && memSession != nil {
+		memSession.OnRoundComplete()
 	}
 
 	if !isClientDisconnected() {

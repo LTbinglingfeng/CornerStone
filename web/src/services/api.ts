@@ -60,7 +60,7 @@ async function apiFetch(url: string, init: RequestInit = {}): Promise<Response> 
   throw error
 }
 
-async function apiFetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+export async function apiFetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await apiFetch(url, init)
   return (await res.json()) as T
 }
@@ -405,6 +405,20 @@ export async function setActiveProvider(providerId: string): Promise<boolean> {
     return data.success
   } catch {
     return false
+  }
+}
+
+export async function updateMemoryProvider(useCustom: boolean, provider?: Provider): Promise<Provider | null | undefined> {
+  try {
+    const data = await apiFetchJson<ApiResponse<{ memory_provider: Provider | null }>>(`${MANAGEMENT_BASE}/memory-provider`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ use_custom: useCustom, provider }),
+    })
+    if (!data.success || !data.data) return undefined
+    return data.data.memory_provider || null
+  } catch {
+    return undefined
   }
 }
 

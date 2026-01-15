@@ -102,6 +102,9 @@ export interface ProvidersResponse {
   providers: Provider[]
   active_provider_id: string
   system_prompt: string
+  memory_provider_id?: string
+  memory_provider?: Provider | null
+  memory_enabled?: boolean
 }
 
 // 兼容旧版配置（用于简单场景）

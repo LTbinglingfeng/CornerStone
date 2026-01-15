@@ -65,6 +65,9 @@ type Provider struct {
 type Config struct {
 	Providers        []Provider `json:"providers"`          // 供应商列表
 	ActiveProviderID string     `json:"active_provider_id"` // 当前激活的供应商ID
+	MemoryProviderID string     `json:"memory_provider_id"` // 记忆提取模型（供应商ID）
+	MemoryProvider   *Provider  `json:"memory_provider"`    // 记忆提取模型（独立配置）
+	MemoryEnabled    bool       `json:"memory_enabled"`     // 记忆功能开关
 	SystemPrompt     string     `json:"system_prompt"`      // 全局系统提示词
 }
 
@@ -99,6 +102,9 @@ func DefaultConfig() Config {
 	return Config{
 		Providers:        []Provider{DefaultProvider()},
 		ActiveProviderID: "default",
+		MemoryProviderID: "",
+		MemoryProvider:   nil,
+		MemoryEnabled:    false,
 		SystemPrompt:     "You are a helpful assistant.",
 	}
 }

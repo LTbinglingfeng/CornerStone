@@ -346,6 +346,42 @@
   flex: 1;
 }
 
+/* 弹窗 tabs */
+.prompt-modal-tabs {
+  display: flex;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.prompt-modal-tab {
+  flex: 1;
+  padding: 10px 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+.prompt-modal-tab:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+.prompt-modal-tab.active {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.prompt-modal-tab:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 /* 头像上传 */
 .avatar-upload-container {
   display: flex;

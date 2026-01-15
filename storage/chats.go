@@ -351,6 +351,43 @@ func (cm *ChatManager) GetSession(sessionID string) (*ChatRecord, bool) {
 	return cloneChatRecord(record), ok
 }
 
+// GetRecentMessages 获取最近 N 条消息（按时间顺序）
+func (cm *ChatManager) GetRecentMessages(sessionID string, limit int) []ChatMessage {
+	if limit <= 0 {
+		return nil
+	}
+	if errValidateID := ValidateID(sessionID); errValidateID != nil {
+		return nil
+	}
+
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	record, ok := cm.sessions[sessionID]
+	if !ok || len(record.Messages) == 0 {
+		return nil
+	}
+
+	start := 0
+	if len(record.Messages) > limit {
+		start = len(record.Messages) - limit
+	}
+
+	selected := record.Messages[start:]
+	copied := make([]ChatMessage, len(selected))
+	for i := range selected {
+		copied[i] = selected[i]
+		if len(selected[i].ToolCalls) > 0 {
+			copied[i].ToolCalls = append([]client.ToolCall(nil), selected[i].ToolCalls...)
+		}
+		if len(selected[i].ImagePaths) > 0 {
+			copied[i].ImagePaths = append([]string(nil), selected[i].ImagePaths...)
+		}
+	}
+
+	return copied
+}
+
 // ListSessions 列出所有会话
 func (cm *ChatManager) ListSessions() []ChatSession {
 	cm.mu.RLock()

@@ -1,8 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { gsap } from 'gsap'
 import { getProviders, updateSystemPrompt } from '../services/api'
+import { memoryService } from '../services/memoryService'
+import type { Provider } from '../types/chat'
 import { getReplyWaitWindowConfig, setReplyWaitWindowConfig, formatReplyWaitWindowConfig, type ReplyWaitWindowConfig } from '../utils/replyWaitWindow'
 import ProviderSettings from './ProviderSettings'
+import MemoryProviderSettings from './MemoryProviderSettings'
 import './Settings.css'
 
 interface SettingsProps {
@@ -13,10 +16,13 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
   const [systemPrompt, setSystemPrompt] = useState('')
   const [editingPrompt, setEditingPrompt] = useState('')
   const [activeProviderName, setActiveProviderName] = useState('')
+  const [memoryProvider, setMemoryProvider] = useState<Provider | null>(null)
+  const [memoryEnabled, setMemoryEnabled] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [showProviderSettings, setShowProviderSettings] = useState(false)
+  const [showMemoryProviderSettings, setShowMemoryProviderSettings] = useState(false)
   const [showPromptModal, setShowPromptModal] = useState(false)
   const [replyWaitConfig, setReplyWaitConfigState] = useState<ReplyWaitWindowConfig>(() => getReplyWaitWindowConfig())
   const [editingReplyWaitConfig, setEditingReplyWaitConfig] = useState<ReplyWaitWindowConfig>(() => getReplyWaitWindowConfig())
@@ -55,6 +61,8 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
       setSystemPrompt(providersData.system_prompt)
       const activeProvider = providersData.providers.find(p => p.id === providersData.active_provider_id)
       setActiveProviderName(activeProvider?.name || '未设置')
+      setMemoryProvider(providersData.memory_provider || null)
+      setMemoryEnabled(!!providersData.memory_enabled)
     }
     setLoading(false)
   }
@@ -130,8 +138,28 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     setSaving(false)
   }
 
+  const handleMemoryEnabledChange = async (enabled: boolean) => {
+    if (saving) return
+    setSaving(true)
+    try {
+      await memoryService.setMemoryEnabled(enabled)
+      setMemoryEnabled(enabled)
+      showMessage(enabled ? '已开启长期记忆' : '已关闭长期记忆')
+    } catch (error) {
+      console.error('Failed to set memory enabled:', error)
+      showMessage('设置失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const handleProviderSettingsBack = () => {
     setShowProviderSettings(false)
+    loadData()
+  }
+
+  const handleMemoryProviderSettingsBack = () => {
+    setShowMemoryProviderSettings(false)
     loadData()
   }
 
@@ -139,6 +167,16 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     if (!systemPrompt) return '未设置'
     if (systemPrompt.length <= 20) return systemPrompt
     return systemPrompt.substring(0, 20) + '...'
+  }
+
+  const getMemoryProviderPreview = () => {
+    if (memoryProvider) {
+      const name = memoryProvider.name || '未命名'
+      const model = memoryProvider.model || '未设置模型'
+      return `${name} (${model})`
+    }
+    if (activeProviderName) return `跟随对话模型（${activeProviderName}）`
+    return '跟随对话模型（默认）'
   }
 
   const getReplyWaitPreview = () => {
@@ -209,6 +247,45 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
             </button>
           </div>
 
+          {/* 长期记忆设置 */}
+          <div className="settings-section">
+            <h3>长期记忆</h3>
+
+            <p className="prompt-modal-hint">提示：开启后会将最近 5 轮对话片段发送给记忆处理模型用于提取，请勿输入敏感信息。</p>
+
+            <div className="settings-group">
+              <label className="settings-label">记忆功能</label>
+              <div className="modal-toggle-wrapper">
+                <label className="toggle-switch">
+                  <input
+                    type="checkbox"
+                    checked={memoryEnabled}
+                    onChange={(e) => handleMemoryEnabledChange(e.target.checked)}
+                    disabled={saving}
+                  />
+                  <span className="toggle-slider"></span>
+                </label>
+                <span className="toggle-label">{memoryEnabled ? '开启' : '关闭'}</span>
+              </div>
+              <p className="prompt-modal-hint">关闭后将不会提取和使用记忆</p>
+            </div>
+
+            <button
+              className="settings-entry-btn"
+              onClick={() => setShowMemoryProviderSettings(true)}
+              style={{ marginTop: 12 }}
+            >
+              <div className="settings-entry-info">
+                <span className="settings-entry-label">记忆提供商</span>
+                <span className="settings-entry-value">{getMemoryProviderPreview()}</span>
+              </div>
+              <svg className="settings-entry-arrow" viewBox="0 0 24 24">
+                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+              </svg>
+            </button>
+            <p className="prompt-modal-hint">用于提取和处理长期记忆，建议选择快速便宜的模型</p>
+          </div>
+
           {message && (
             <div className={`settings-message ${message.includes('成功') || message.includes('已') ? 'success' : 'error'}`}>
               {message}
@@ -220,6 +297,11 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
       {/* 供应商管理二级界面 */}
       {showProviderSettings && (
         <ProviderSettings onBack={handleProviderSettingsBack} />
+      )}
+
+      {/* 记忆提供商二级界面 */}
+      {showMemoryProviderSettings && (
+        <MemoryProviderSettings onBack={handleMemoryProviderSettingsBack} />
       )}
 
       {/* 系统提示词编辑弹窗 */}
