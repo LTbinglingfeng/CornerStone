@@ -10,6 +10,8 @@ import {
 } from '../services/api'
 import './ProviderSettings.css'
 
+type SelectOption = { value: string; label: string }
+
 // 供应商类型选项
 const PROVIDER_TYPES: { value: ProviderType; label: string }[] = [
   { value: 'openai', label: 'OpenAI 兼容' },
@@ -80,6 +82,84 @@ const clampGeminiImageNumberOfImages = (value: number): number => {
 
 interface ProviderSettingsProps {
   onBack: () => void
+}
+
+const CustomSelect: React.FC<{
+  value: string
+  options: SelectOption[]
+  onChange: (value: string) => void
+  ariaLabel?: string
+  disabled?: boolean
+}> = ({ value, options, onChange, ariaLabel, disabled = false }) => {
+  const [open, setOpen] = useState(false)
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  const selectedOption = options.find((option) => option.value === value)
+  const displayLabel = selectedOption?.label || value || options[0]?.label || '请选择'
+
+  useEffect(() => {
+    if (!open) return
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!wrapperRef.current) return
+      if (!wrapperRef.current.contains(event.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [open])
+
+  useEffect(() => {
+    if (disabled && open) {
+      setOpen(false)
+    }
+  }, [disabled, open])
+
+  return (
+    <div className={`modal-select-ui${open ? ' open' : ''}`} ref={wrapperRef}>
+      <button
+        type="button"
+        className="modal-input modal-select-trigger"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-disabled={disabled}
+        onClick={() => {
+          if (!disabled) setOpen((prev) => !prev)
+        }}
+      >
+        <span className="modal-select-text">{displayLabel}</span>
+        <svg className="modal-select-icon" viewBox="0 0 24 24">
+          <path d="M7 10l5 5 5-5z" />
+        </svg>
+      </button>
+      {open && (
+        <div className="modal-select-menu" role="listbox" aria-label={ariaLabel}>
+          {options.map((option) => {
+            const isActive = option.value === value
+            return (
+              <button
+                type="button"
+                key={option.value}
+                className={`modal-select-option${isActive ? ' active' : ''}`}
+                role="option"
+                aria-selected={isActive}
+                onClick={() => {
+                  onChange(option.value)
+                  setOpen(false)
+                }}
+              >
+                <span>{option.label}</span>
+                {isActive && (
+                  <svg className="modal-select-check" viewBox="0 0 24 24">
+                    <path d="M9 16.17l-3.88-3.88L4 13.41 9 18.41 20 7.41 18.59 6l-9.59 10.17z" />
+                  </svg>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
 }
 
 const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
@@ -510,17 +590,12 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
 
               <div className="modal-group">
                 <label className="modal-label">供应商类型</label>
-                <select
-                  className="modal-input modal-select"
+                <CustomSelect
                   value={editingProvider.type || 'openai'}
-                  onChange={(e) => handleProviderChange('type', e.target.value)}
-                >
-                  {PROVIDER_TYPES.map((type) => (
-                    <option key={type.value} value={type.value}>
-                      {type.label}
-                    </option>
-                  ))}
-                </select>
+                  options={PROVIDER_TYPES}
+                  ariaLabel="供应商类型"
+                  onChange={(value) => handleProviderChange('type', value)}
+                />
               </div>
 
               <div className="modal-group">
@@ -655,17 +730,12 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
               {(editingProvider.type === 'openai' || editingProvider.type === 'openai_response') && (
                 <div className="modal-group">
                   <label className="modal-label">思考量 (reasoning effort)</label>
-                  <select
-                    className="modal-input modal-select"
-                    value={editingProvider.reasoning_effort}
-                    onChange={(e) => handleProviderChange('reasoning_effort', e.target.value)}
-                  >
-                    {OPENAI_REASONING_EFFORT_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                  <CustomSelect
+                    value={editingProvider.reasoning_effort ?? ''}
+                    options={OPENAI_REASONING_EFFORT_OPTIONS}
+                    ariaLabel="思考量"
+                    onChange={(value) => handleProviderChange('reasoning_effort', value)}
+                  />
                 </div>
               )}
 
@@ -673,17 +743,12 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                 <>
                   <div className="modal-group">
                     <label className="modal-label">Gemini 思考模式</label>
-                    <select
-                      className="modal-input modal-select"
-                      value={editingProvider.gemini_thinking_mode}
-                      onChange={(e) => handleProviderChange('gemini_thinking_mode', e.target.value)}
-                    >
-                      {GEMINI_THINKING_MODES.map((mode) => (
-                        <option key={mode.value} value={mode.value}>
-                          {mode.label}
-                        </option>
-                      ))}
-                    </select>
+                    <CustomSelect
+                      value={editingProvider.gemini_thinking_mode || 'none'}
+                      options={GEMINI_THINKING_MODES}
+                      ariaLabel="Gemini 思考模式"
+                      onChange={(value) => handleProviderChange('gemini_thinking_mode', value)}
+                    />
                   </div>
 
                   <div className="modal-group">

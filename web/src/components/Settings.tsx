@@ -54,8 +54,8 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     }
   }, [showReplyWaitModal])
 
-  const loadData = async () => {
-    setLoading(true)
+  const loadData = async ({ showLoading = true }: { showLoading?: boolean } = {}) => {
+    if (showLoading) setLoading(true)
     const providersData = await getProviders()
     if (providersData) {
       setSystemPrompt(providersData.system_prompt)
@@ -64,7 +64,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
       setMemoryProvider(providersData.memory_provider || null)
       setMemoryEnabled(!!providersData.memory_enabled)
     }
-    setLoading(false)
+    if (showLoading) setLoading(false)
   }
 
   const setReplyWaitConfig = (config: ReplyWaitWindowConfig) => {
@@ -155,12 +155,12 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
 
   const handleProviderSettingsBack = () => {
     setShowProviderSettings(false)
-    loadData()
+    loadData({ showLoading: false })
   }
 
   const handleMemoryProviderSettingsBack = () => {
     setShowMemoryProviderSettings(false)
-    loadData()
+    loadData({ showLoading: false })
   }
 
   const getPromptPreview = () => {
