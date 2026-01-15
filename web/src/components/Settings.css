@@ -373,6 +373,8 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 4px;
+  flex: 1;
+  min-width: 0;
 }
 
 .settings-entry-label {
@@ -384,6 +386,17 @@
   color: var(--text-primary);
   font-size: 15px;
   font-weight: 500;
+  line-height: 1.3;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.settings-entry-subvalue {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.2;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .settings-entry-arrow {
@@ -466,6 +479,14 @@
   color: var(--text-secondary);
   font-size: 13px;
   margin: 0 0 12px 0;
+}
+
+.memory-toggle-hint {
+  margin-top: 8px;
+}
+
+.memory-provider-hint {
+  margin-top: 8px;
 }
 
 .prompt-modal-textarea {

@@ -19,6 +19,8 @@
 .views-container {
   display: flex;
   height: calc(100% - 83px);
+  position: relative;
+  z-index: 2;
   will-change: transform;
   backface-visibility: hidden;
   transform-style: preserve-3d;

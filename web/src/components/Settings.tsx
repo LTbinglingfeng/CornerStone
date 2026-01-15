@@ -173,15 +173,17 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     if (memoryProvider) {
       const name = memoryProvider.name || '未命名'
       const model = memoryProvider.model || '未设置模型'
-      return `${name} (${model})`
+      return { title: name, detail: model }
     }
-    if (activeProviderName) return `跟随对话模型（${activeProviderName}）`
-    return '跟随对话模型（默认）'
+    if (activeProviderName) return { title: '跟随对话模型', detail: activeProviderName }
+    return { title: '跟随对话模型', detail: '默认' }
   }
 
   const getReplyWaitPreview = () => {
     return formatReplyWaitWindowConfig(replyWaitConfig)
   }
+
+  const memoryProviderPreview = getMemoryProviderPreview()
 
   return (
     <div className="settings">
@@ -267,7 +269,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                 </label>
                 <span className="toggle-label">{memoryEnabled ? '开启' : '关闭'}</span>
               </div>
-              <p className="prompt-modal-hint">关闭后将不会提取和使用记忆</p>
+              <p className="prompt-modal-hint memory-toggle-hint">关闭后将不会提取和使用记忆</p>
             </div>
 
             <button
@@ -277,13 +279,14 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
             >
               <div className="settings-entry-info">
                 <span className="settings-entry-label">记忆提供商</span>
-                <span className="settings-entry-value">{getMemoryProviderPreview()}</span>
+                <span className="settings-entry-value">{memoryProviderPreview.title}</span>
+                <span className="settings-entry-subvalue">{memoryProviderPreview.detail}</span>
               </div>
               <svg className="settings-entry-arrow" viewBox="0 0 24 24">
                 <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
               </svg>
             </button>
-            <p className="prompt-modal-hint">用于提取和处理长期记忆，建议选择快速便宜的模型</p>
+            <p className="prompt-modal-hint memory-provider-hint">用于提取和处理长期记忆，建议选择快速便宜的模型</p>
           </div>
 
           {message && (
