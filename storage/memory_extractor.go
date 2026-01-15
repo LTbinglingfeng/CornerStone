@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"os"
 	"strings"
 	"time"
 
@@ -17,6 +18,80 @@ const (
 	RefreshInterval = 5
 	ContextRounds   = 5
 )
+
+const (
+	MemoryExtractionPromptPlaceholderExistingMemories = "{{EXISTING_MEMORIES}}"
+	MemoryExtractionPromptPlaceholderChatContent      = "{{CHAT_CONTENT}}"
+	MemoryExtractionPromptPlaceholderUser             = "{{user}}"
+)
+
+const defaultMemoryExtractionPromptTemplate = `你是一个“长期记忆”提取助手。你的任务：从对话中提取未来仍有价值、稳定且可复用的信息，写入长期记忆。
+
+当前用户名字：{{user}}（仅作识别，不要作为记忆内容）
+
+硬性要求：
+- 只基于对话中明确出现的信息，不要推断、不要编造。
+- 不要记录敏感信息：密码/API Key/验证码/身份证号/银行卡号/电话号码/详细住址/精确定位等。
+- 能不记就不记；如无需要，返回 []；每次最多输出 6 条。
+- 每条 content 必须单行中文且不超过 100 字。
+- 输出必须是严格 JSON 数组，不要 markdown 代码块，不要任何解释文字。
+
+## 已有记忆
+{{EXISTING_MEMORIES}}
+
+## 提取两类信息
+
+字段约束：
+- subject 必须是 "user" 或 "self"
+- category 必须是下表之一
+- content 必须是单行中文且不超过 100 字，且：user 以“用户”开头；self 以“我”开头
+
+用户相关 (subject: "user")
+| category   | 说明     | 示例               |
+|------------|----------|--------------------|
+| identity   | 身份信息 | "用户叫松柏"       |
+| relation   | 关系人物 | "用户女朋友叫小雨" |
+| fact       | 客观事实 | "用户在北京工作"   |
+| preference | 偏好习惯 | "用户喜欢吃辣"     |
+| event      | 事件动态 | "用户明天要考试"   |
+| emotion    | 情绪状态 | "用户最近压力很大" |
+
+角色相关 (subject: "self")
+| category  | 说明     | 示例                 |
+|-----------|----------|----------------------|
+| promise   | 承诺     | "我答应请吃火锅"     |
+| plan      | 约定计划 | "我们约好周末看电影" |
+| statement | 自我陈述 | "我说过最喜欢蓝色"   |
+| opinion   | 观点态度 | "我觉得加班不好"     |
+
+## 重要规则
+
+### 语义去重与更新（优先更新）
+如果新信息与已有记忆语义相同/更具体/状态变化，必须使用该记忆 UUID 更新（matching_id）：
+- 相同信息不同表述 → 更新
+- 信息发生变化 → 用最新事实覆盖旧内容
+- 补充更多细节 → 更新为更完整表述
+- 状态更新 → 更新为最新状态
+不要对同一个 matching_id 输出多条。
+
+### 新增记忆（谨慎新增）
+只有完全新的、与已有记忆无关且对后续对话有用的信息才新增，不填 matching_id 字段。
+事件/情绪类要避免过于短暂；如果记录，尽量写清时间范围或上下文。
+
+### 不要提取
+- 打招呼/寒暄/无意义回应/临时动作
+- 已有记忆中已存在且无变化的信息
+- 只出现一次且对未来无帮助的细枝末节
+
+## 对话内容
+--------------------
+{{CHAT_CONTENT}}
+--------------------
+
+返回 JSON 数组（无需 markdown 代码块）：
+- 更新已有记忆：{"matching_id":"记忆UUID","subject":"user|self","category":"...","content":"100字以内..."}
+- 新增记忆：{"subject":"user|self","category":"...","content":"100字以内..."}
+- 没有需要记录的返回：[]`
 
 // sanitizeMessageContent 清理消息内容，防止 prompt injection
 // 移除可能用于注入的特殊模式
@@ -51,105 +126,138 @@ type ExtractedMemory struct {
 }
 
 type MemoryExtractor struct {
-	mm        *MemoryManager
-	configMgr *config.Manager
-	chatMgr   *ChatManager
+	mm           *MemoryManager
+	configMgr    *config.Manager
+	chatMgr      *ChatManager
+	userMgr      *UserManager
+	templatePath string
 }
 
-func NewMemoryExtractor(mm *MemoryManager, configMgr *config.Manager, chatMgr *ChatManager) *MemoryExtractor {
-	return &MemoryExtractor{
-		mm:        mm,
-		configMgr: configMgr,
-		chatMgr:   chatMgr,
+func NewMemoryExtractor(mm *MemoryManager, configMgr *config.Manager, chatMgr *ChatManager, userMgr *UserManager, templatePath string) *MemoryExtractor {
+	extractor := &MemoryExtractor{
+		mm:           mm,
+		configMgr:    configMgr,
+		chatMgr:      chatMgr,
+		userMgr:      userMgr,
+		templatePath: templatePath,
 	}
+	extractor.ensureTemplateFile()
+	return extractor
+}
+
+func (e *MemoryExtractor) ensureTemplateFile() {
+	if strings.TrimSpace(e.templatePath) == "" {
+		return
+	}
+	if _, errStat := os.Stat(e.templatePath); errStat == nil {
+		return
+	} else if !os.IsNotExist(errStat) {
+		logging.Warnf("memory extraction template stat failed: path=%s err=%v", e.templatePath, errStat)
+		return
+	}
+	if errWrite := os.WriteFile(e.templatePath, []byte(defaultMemoryExtractionPromptTemplate), 0644); errWrite != nil {
+		logging.Warnf("memory extraction template create failed: path=%s err=%v", e.templatePath, errWrite)
+	}
+}
+
+func (e *MemoryExtractor) loadTemplate() string {
+	if strings.TrimSpace(e.templatePath) == "" {
+		return defaultMemoryExtractionPromptTemplate
+	}
+	data, errRead := os.ReadFile(e.templatePath)
+	if errRead != nil {
+		if os.IsNotExist(errRead) {
+			e.ensureTemplateFile()
+		} else {
+			logging.Warnf("memory extraction template read failed: path=%s err=%v", e.templatePath, errRead)
+		}
+		return defaultMemoryExtractionPromptTemplate
+	}
+	template := strings.TrimSpace(string(data))
+	if template == "" {
+		return defaultMemoryExtractionPromptTemplate
+	}
+	if !strings.Contains(template, MemoryExtractionPromptPlaceholderExistingMemories) ||
+		!strings.Contains(template, MemoryExtractionPromptPlaceholderChatContent) {
+		logging.Warnf(
+			"memory extraction template missing placeholders, using default: path=%s",
+			e.templatePath,
+		)
+		return defaultMemoryExtractionPromptTemplate
+	}
+	return template
+}
+
+func sanitizeUserDisplayName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	name = strings.ReplaceAll(name, "\r\n", "\n")
+	name = strings.ReplaceAll(name, "\r", "\n")
+	if idx := strings.IndexByte(name, '\n'); idx >= 0 {
+		name = name[:idx]
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	name = strings.Join(strings.Fields(name), " ")
+	name = strings.TrimSpace(name)
+	return TruncateRunes(name, 64)
+}
+
+func (e *MemoryExtractor) getUserName() string {
+	if e.userMgr == nil {
+		return "用户"
+	}
+	info := e.userMgr.Get()
+	if info == nil {
+		return "用户"
+	}
+	name := sanitizeUserDisplayName(info.Username)
+	if name == "" {
+		return "用户"
+	}
+	return name
 }
 
 func (e *MemoryExtractor) buildExtractionPrompt(messages []ChatMessage, existingMemories []Memory) string {
-	var prompt strings.Builder
-	prompt.WriteString("你是一个“长期记忆”提取助手。你的任务：从对话中提取未来仍有价值、稳定且可复用的信息，写入长期记忆。\n")
-	prompt.WriteString("\n硬性要求：\n")
-	prompt.WriteString("- 只基于对话中明确出现的信息，不要推断、不要编造。\n")
-	prompt.WriteString("- 不要记录敏感信息：密码/API Key/验证码/身份证号/银行卡号/电话号码/详细住址/精确定位等。\n")
-	prompt.WriteString("- 能不记就不记；如无需要，返回 []；每次最多输出 6 条。\n")
-	prompt.WriteString("- 每条 content 必须单行中文且不超过 100 字。\n")
-	prompt.WriteString("- 输出必须是严格 JSON 数组，不要 markdown 代码块，不要任何解释文字。\n")
-	prompt.WriteString("\n## 已有记忆\n")
-
+	var existing strings.Builder
 	if len(existingMemories) > 0 {
-		for _, m := range existingMemories {
-			prompt.WriteString(fmt.Sprintf("[%s] (%s/%s) %s\n", m.ID, m.Subject, m.Category, m.Content))
+		for i, m := range existingMemories {
+			if i > 0 {
+				existing.WriteString("\n")
+			}
+			existing.WriteString(fmt.Sprintf("[%s] (%s/%s) %s", m.ID, m.Subject, m.Category, m.Content))
 		}
 	} else {
-		prompt.WriteString("（暂无）\n")
+		existing.WriteString("（暂无）")
 	}
 
-	prompt.WriteString(`
-## 提取两类信息
+	var chat strings.Builder
+	for i, msg := range messages {
+		if i > 0 {
+			chat.WriteString("\n")
+		}
 
-	字段约束：
-	- subject 必须是 "user" 或 "self"
-	- category 必须是下表之一
-	- content 必须是单行中文且不超过 100 字，且：user 以“用户”开头；self 以“我”开头
-
-	**用户相关** (subject: "user")
-| category   | 说明     | 示例               |
-|------------|----------|--------------------|
-| identity   | 身份信息 | "用户叫松柏"       |
-| relation   | 关系人物 | "用户女朋友叫小雨" |
-| fact       | 客观事实 | "用户在北京工作"   |
-| preference | 偏好习惯 | "用户喜欢吃辣"     |
-| event      | 事件动态 | "用户明天要考试"   |
-| emotion    | 情绪状态 | "用户最近压力很大" |
-
-**角色相关** (subject: "self")
-| category  | 说明     | 示例                 |
-|-----------|----------|----------------------|
-| promise   | 承诺     | "我答应请吃火锅"     |
-| plan      | 约定计划 | "我们约好周末看电影" |
-| statement | 自我陈述 | "我说过最喜欢蓝色"   |
-| opinion   | 观点态度 | "我觉得加班不好"     |
-
-## 重要规则
-
-### 语义去重与更新（优先更新）
-如果新信息与已有记忆语义相同/更具体/状态变化，必须使用该记忆 UUID 更新（matching_id）：
-- 相同信息不同表述 → 更新
-- 信息发生变化 → 用最新事实覆盖旧内容
-- 补充更多细节 → 更新为更完整表述
-- 状态更新 → 更新为最新状态
-不要对同一个 matching_id 输出多条。
-
-### 新增记忆（谨慎新增）
-只有完全新的、与已有记忆无关且对后续对话有用的信息才新增，不填 matching_id 字段。
-事件/情绪类要避免过于短暂；如果记录，尽量写清时间范围或上下文。
-
-### 不要提取
-- 打招呼/寒暄/无意义回应/临时动作
-- 已有记忆中已存在且无变化的信息
-- 只出现一次且对未来无帮助的细枝末节
-
-## 对话内容
---------------------
-`)
-
-	for _, msg := range messages {
 		role := "用户"
 		if msg.Role == "assistant" {
 			role = "AI"
 		}
+
 		// 清理消息内容，防止 prompt injection
 		sanitizedContent := sanitizeMessageContent(msg.Content)
-		prompt.WriteString(fmt.Sprintf("%s: %s\n", role, sanitizedContent))
+		chat.WriteString(fmt.Sprintf("%s: %s", role, sanitizedContent))
 	}
 
-	prompt.WriteString(`--------------------
-
-	返回 JSON 数组（无需 markdown 代码块）：
-	- 更新已有记忆：{"matching_id":"记忆UUID","subject":"user|self","category":"...","content":"100字以内..."}
-	- 新增记忆：{"subject":"user|self","category":"...","content":"100字以内..."}
-	- 没有需要记录的返回：[]`)
-
-	return prompt.String()
+	template := e.loadTemplate()
+	replacer := strings.NewReplacer(
+		MemoryExtractionPromptPlaceholderUser, e.getUserName(),
+		MemoryExtractionPromptPlaceholderExistingMemories, existing.String(),
+		MemoryExtractionPromptPlaceholderChatContent, chat.String(),
+	)
+	return replacer.Replace(template)
 }
 
 func (e *MemoryExtractor) ExtractAndSave(promptID, sessionID string) error {

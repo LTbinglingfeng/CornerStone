@@ -107,7 +107,7 @@ func main() {
 	userManager := storage.NewUserManager(userAboutDir)
 	authManager := storage.NewAuthManager(userAboutDir)
 	memoryManager := storage.NewMemoryManager(promptsDir)
-	memoryExtractor := storage.NewMemoryExtractor(memoryManager, configManager, chatManager)
+	memoryExtractor := storage.NewMemoryExtractor(memoryManager, configManager, chatManager, userManager, filepath.Join(baseDir, "memory_extraction_prompt.txt"))
 	os.MkdirAll(cachePhotoDir, 0755)
 
 	logging.Infof("日志文件: %s", logPath)
