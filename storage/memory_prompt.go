@@ -10,23 +10,34 @@ func BuildPromptWithMemory(basePrompt string, memories []Memory) string {
 		return basePrompt
 	}
 
-	userMems := make([]Memory, 0, len(memories))
-	selfMems := make([]Memory, 0, len(memories))
+	userMems := make([]string, 0, len(memories))
+	selfMems := make([]string, 0, len(memories))
 	for _, m := range memories {
-		if m.Subject == SubjectUser {
-			userMems = append(userMems, m)
-		} else {
-			selfMems = append(selfMems, m)
+		content := strings.TrimSpace(TruncateRunes(NormalizeMemoryContent(m.Content), MaxMemoryContentRunes))
+		if content == "" {
+			continue
 		}
+		switch m.Subject {
+		case SubjectUser:
+			userMems = append(userMems, content)
+		case SubjectSelf:
+			selfMems = append(selfMems, content)
+		default:
+			continue
+		}
+	}
+
+	if len(userMems) == 0 && len(selfMems) == 0 {
+		return basePrompt
 	}
 
 	var block strings.Builder
 	block.WriteString("\n\n---\n")
 
 	if len(userMems) > 0 {
-		block.WriteString("## 你对用户的了解：\n")
-		for _, m := range userMems {
-			block.WriteString(fmt.Sprintf("- %s\n", m.Content))
+		block.WriteString("## 你对用户的了解（每条不超过100字）：\n")
+		for _, content := range userMems {
+			block.WriteString(fmt.Sprintf("- %s\n", content))
 		}
 	}
 
@@ -34,9 +45,9 @@ func BuildPromptWithMemory(basePrompt string, memories []Memory) string {
 		if len(userMems) > 0 {
 			block.WriteString("\n")
 		}
-		block.WriteString("## 你说过的话/做过的承诺：\n")
-		for _, m := range selfMems {
-			block.WriteString(fmt.Sprintf("- %s\n", m.Content))
+		block.WriteString("## 你说过的话/做过的承诺（每条不超过100字）：\n")
+		for _, content := range selfMems {
+			block.WriteString(fmt.Sprintf("- %s\n", content))
 		}
 	}
 

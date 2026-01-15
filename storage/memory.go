@@ -106,6 +106,10 @@ const (
 )
 
 const (
+	MaxMemoryContentRunes = 100
+)
+
+const (
 	ThresholdActive   = 0.4
 	ThresholdArchive  = 0.15
 	MaxActiveMemories = 10

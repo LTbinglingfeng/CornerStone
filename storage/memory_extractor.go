@@ -71,6 +71,7 @@ func (e *MemoryExtractor) buildExtractionPrompt(messages []ChatMessage, existing
 	prompt.WriteString("- 只基于对话中明确出现的信息，不要推断、不要编造。\n")
 	prompt.WriteString("- 不要记录敏感信息：密码/API Key/验证码/身份证号/银行卡号/电话号码/详细住址/精确定位等。\n")
 	prompt.WriteString("- 能不记就不记；如无需要，返回 []；每次最多输出 6 条。\n")
+	prompt.WriteString("- 每条 content 必须单行中文且不超过 100 字。\n")
 	prompt.WriteString("- 输出必须是严格 JSON 数组，不要 markdown 代码块，不要任何解释文字。\n")
 	prompt.WriteString("\n## 已有记忆\n")
 
@@ -85,12 +86,12 @@ func (e *MemoryExtractor) buildExtractionPrompt(messages []ChatMessage, existing
 	prompt.WriteString(`
 ## 提取两类信息
 
-字段约束：
-- subject 必须是 "user" 或 "self"
-- category 必须是下表之一
-- content 必须是单行中文，且：user 以“用户”开头；self 以“我”开头
+	字段约束：
+	- subject 必须是 "user" 或 "self"
+	- category 必须是下表之一
+	- content 必须是单行中文且不超过 100 字，且：user 以“用户”开头；self 以“我”开头
 
-**用户相关** (subject: "user")
+	**用户相关** (subject: "user")
 | category   | 说明     | 示例               |
 |------------|----------|--------------------|
 | identity   | 身份信息 | "用户叫松柏"       |
@@ -143,10 +144,10 @@ func (e *MemoryExtractor) buildExtractionPrompt(messages []ChatMessage, existing
 
 	prompt.WriteString(`--------------------
 
-返回 JSON 数组（无需 markdown 代码块）：
-- 更新已有记忆：{"matching_id":"记忆UUID","subject":"user|self","category":"...","content":"..."}
-- 新增记忆：{"subject":"user|self","category":"...","content":"..."}
-- 没有需要记录的返回：[]`)
+	返回 JSON 数组（无需 markdown 代码块）：
+	- 更新已有记忆：{"matching_id":"记忆UUID","subject":"user|self","category":"...","content":"100字以内..."}
+	- 新增记忆：{"subject":"user|self","category":"...","content":"100字以内..."}
+	- 没有需要记录的返回：[]`)
 
 	return prompt.String()
 }
@@ -262,10 +263,8 @@ func (e *MemoryExtractor) ExtractAndSave(promptID, sessionID string) error {
 
 	now := time.Now()
 	for _, item := range extracted {
-		subject := strings.TrimSpace(item.Subject)
-		category := strings.TrimSpace(item.Category)
-		content := strings.TrimSpace(item.Content)
-		if subject == "" || category == "" || content == "" {
+		subject, category, content, ok := NormalizeExtractedMemoryFields(item.Subject, item.Category, item.Content)
+		if !ok {
 			continue
 		}
 
