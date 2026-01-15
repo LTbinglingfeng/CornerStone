@@ -173,12 +173,15 @@ func (e *MemoryExtractor) ExtractAndSave(promptID, sessionID string) error {
 		provider = e.configMgr.GetActiveProvider()
 	}
 	if provider == nil {
+		logging.Errorf("memory extraction no provider: prompt=%s session=%s", promptID, sessionID)
 		return fmt.Errorf("未找到可用的模型配置")
 	}
 	if provider.Type == config.ProviderTypeGeminiImage {
+		logging.Errorf("memory extraction invalid provider type: prompt=%s type=%s", promptID, provider.Type)
 		return fmt.Errorf("记忆提取模型不支持对话")
 	}
 	if strings.TrimSpace(provider.APIKey) == "" {
+		logging.Errorf("memory extraction no API key: prompt=%s provider=%s", promptID, provider.ID)
 		return fmt.Errorf("记忆提取模型未配置 API Key")
 	}
 
@@ -238,11 +241,21 @@ func (e *MemoryExtractor) ExtractAndSave(promptID, sessionID string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
+	logging.Infof(
+		"memory extraction request: prompt=%s session=%s provider=%s model=%s",
+		promptID,
+		sessionID,
+		provider.ID,
+		provider.Model,
+	)
+
 	resp, errChat := aiClient.Chat(ctx, chatReq)
 	if errChat != nil {
+		logging.Errorf("memory extraction AI request failed: prompt=%s session=%s err=%v", promptID, sessionID, errChat)
 		return fmt.Errorf("记忆提取失败: %w", errChat)
 	}
 	if resp == nil || len(resp.Choices) == 0 {
+		logging.Warnf("memory extraction empty response: prompt=%s session=%s", promptID, sessionID)
 		return fmt.Errorf("记忆提取失败: 空响应")
 	}
 
@@ -254,9 +267,11 @@ func (e *MemoryExtractor) ExtractAndSave(promptID, sessionID string) error {
 	var extracted []ExtractedMemory
 	errUnmarshal := json.Unmarshal([]byte(raw), &extracted)
 	if errUnmarshal != nil {
+		logging.Warnf("memory extraction JSON parse failed, trying cleanup: prompt=%s raw=%s err=%v", promptID, logging.Truncate(raw, 300), errUnmarshal)
 		cleaned := cleanJSONResponse(raw)
 		errUnmarshal = json.Unmarshal([]byte(cleaned), &extracted)
 		if errUnmarshal != nil {
+			logging.Errorf("memory extraction JSON parse failed after cleanup: prompt=%s cleaned=%s err=%v", promptID, logging.Truncate(cleaned, 300), errUnmarshal)
 			return fmt.Errorf("解析记忆提取结果失败: %w", errUnmarshal)
 		}
 	}
@@ -265,6 +280,13 @@ func (e *MemoryExtractor) ExtractAndSave(promptID, sessionID string) error {
 	for _, item := range extracted {
 		subject, category, content, ok := NormalizeExtractedMemoryFields(item.Subject, item.Category, item.Content)
 		if !ok {
+			logging.Warnf(
+				"memory extraction field invalid: prompt=%s subject=%s category=%s content=%s",
+				promptID,
+				item.Subject,
+				item.Category,
+				logging.Truncate(item.Content, 50),
+			)
 			continue
 		}
 
@@ -288,11 +310,11 @@ func (e *MemoryExtractor) ExtractAndSave(promptID, sessionID string) error {
 					SeenCount: &seenCount,
 				})
 				if errUpdate != nil {
-					logging.Errorf("更新记忆失败 %s: %v", matchingID, errUpdate)
+					logging.Errorf("memory update failed: prompt=%s id=%s err=%v", promptID, matchingID, errUpdate)
 				}
 				continue
 			}
-			logging.Infof("未找到匹配记忆 %s，转为新增", matchingID)
+			logging.Infof("memory matching id not found, adding: prompt=%s id=%s", promptID, matchingID)
 		}
 
 		errAdd := e.mm.Add(promptID, Memory{
@@ -303,7 +325,7 @@ func (e *MemoryExtractor) ExtractAndSave(promptID, sessionID string) error {
 			SeenCount: 1,
 		})
 		if errAdd != nil {
-			logging.Errorf("新增记忆失败: %v", errAdd)
+			logging.Errorf("memory add failed: prompt=%s err=%v", promptID, errAdd)
 		}
 	}
 

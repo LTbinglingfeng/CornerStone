@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"cornerstone/logging"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -183,17 +184,25 @@ func (c *OpenAIClient) Chat(ctx context.Context, req ChatRequest) (*ChatResponse
 
 	resp, err := c.HTTPClient.Do(httpReq)
 	if err != nil {
+		logging.Errorf("openai request failed: model=%s err=%v", req.Model, err)
 		return nil, fmt.Errorf("do request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
+		logging.Errorf(
+			"openai API error: model=%s status=%d body=%s",
+			req.Model,
+			resp.StatusCode,
+			logging.Truncate(string(bodyBytes), 500),
+		)
 		return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(bodyBytes))
 	}
 
 	var chatResp ChatResponse
 	if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
+		logging.Errorf("openai response decode failed: model=%s err=%v", req.Model, err)
 		return nil, fmt.Errorf("decode response: %w", err)
 	}
 
@@ -226,12 +235,19 @@ func (c *OpenAIClient) ChatStream(ctx context.Context, req ChatRequest, callback
 
 	resp, err := c.HTTPClient.Do(httpReq)
 	if err != nil {
+		logging.Errorf("openai stream request failed: model=%s err=%v", req.Model, err)
 		return fmt.Errorf("do request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
+		logging.Errorf(
+			"openai stream API error: model=%s status=%d body=%s",
+			req.Model,
+			resp.StatusCode,
+			logging.Truncate(string(bodyBytes), 500),
+		)
 		return fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(bodyBytes))
 	}
 
@@ -257,6 +273,7 @@ func (c *OpenAIClient) ChatStream(ctx context.Context, req ChatRequest, callback
 
 		var chunk StreamChunk
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			logging.Warnf("openai stream chunk unmarshal failed: model=%s data=%s err=%v", req.Model, logging.Truncate(data, 200), err)
 			continue
 		}
 

@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"cornerstone/logging"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -65,11 +66,13 @@ func (am *AuthManager) Load() error {
 			am.authInfo = nil
 			return nil
 		}
+		logging.Errorf("auth load failed: err=%v", err)
 		return err
 	}
 
 	var info AuthInfo
 	if err := json.Unmarshal(data, &info); err != nil {
+		logging.Errorf("auth parse failed: err=%v", err)
 		return err
 	}
 	am.authInfo = &info
@@ -137,6 +140,7 @@ func (am *AuthManager) Setup(username, password string) (*AuthInfo, error) {
 	}
 
 	copyInfo := *info
+	logging.Infof("auth setup completed: username=%s", info.Username)
 	return &copyInfo, nil
 }
 

@@ -39,3 +39,13 @@ func logf(level, format string, args ...interface{}) {
 	message := fmt.Sprintf("["+level+"] "+format, args...)
 	_ = logger.Output(4, message)
 }
+
+// Truncate 截断过长字符串，用于日志输出
+// 避免单条日志过长影响可读性
+func Truncate(s string, maxLen int) string {
+	runes := []rune(s)
+	if len(runes) <= maxLen {
+		return s
+	}
+	return string(runes[:maxLen]) + "..."
+}

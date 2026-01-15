@@ -111,11 +111,18 @@ func (h *Handler) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		if !h.authManager.IsSetup() {
+			logging.Warnf("auth failed: path=%s ip=%s reason=%s", r.URL.Path, r.RemoteAddr, "auth_not_set")
 			h.jsonResponse(w, http.StatusUnauthorized, Response{Success: false, Error: "Authentication not set"})
 			return
 		}
 		token := extractAuthToken(r)
+		if token == "" {
+			logging.Warnf("auth failed: path=%s ip=%s reason=%s", r.URL.Path, r.RemoteAddr, "missing_token")
+			h.jsonResponse(w, http.StatusUnauthorized, Response{Success: false, Error: "Unauthorized"})
+			return
+		}
 		if !h.tokenStore.validate(token) {
+			logging.Warnf("auth failed: path=%s ip=%s reason=%s", r.URL.Path, r.RemoteAddr, "invalid_token")
 			h.jsonResponse(w, http.StatusUnauthorized, Response{Success: false, Error: "Unauthorized"})
 			return
 		}
@@ -226,20 +233,25 @@ func (h *Handler) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 
 	username := strings.TrimSpace(req.Username)
 	if req.Password == "" {
+		logging.Warnf("login failed: username=%s ip=%s reason=%s", username, r.RemoteAddr, "missing_password")
 		h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Password required"})
 		return
 	}
 
 	info, err := h.authManager.Verify(username, req.Password)
 	if err != nil {
+		reason := "internal_error"
 		switch {
 		case errors.Is(err, storage.ErrAuthNotSetup):
+			reason = "auth_not_setup"
 			h.jsonResponse(w, http.StatusConflict, Response{Success: false, Error: "Auth not setup"})
 		case errors.Is(err, storage.ErrInvalidCredentials):
+			reason = "invalid_credentials"
 			h.jsonResponse(w, http.StatusUnauthorized, Response{Success: false, Error: "Invalid credentials"})
 		default:
 			h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: err.Error()})
 		}
+		logging.Warnf("login failed: username=%s ip=%s reason=%s", username, r.RemoteAddr, reason)
 		return
 	}
 
@@ -249,6 +261,7 @@ func (h *Handler) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	logging.Infof("login success: username=%s ip=%s", info.Username, r.RemoteAddr)
 	h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: AuthSession{
 		Token:    token,
 		Username: info.Username,

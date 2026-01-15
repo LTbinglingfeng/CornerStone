@@ -3,6 +3,7 @@ package storage
 import (
 	"bufio"
 	"bytes"
+	"cornerstone/logging"
 	"encoding/json"
 	"math"
 	"os"
@@ -186,6 +187,7 @@ func (mm *MemoryManager) loadLocked(promptID string) ([]Memory, error) {
 			mm.cache[promptID] = []Memory{}
 			return mm.cache[promptID], nil
 		}
+		logging.Errorf("memory load failed: prompt=%s path=%s err=%v", promptID, memoryPath, errOpen)
 		return nil, errOpen
 	}
 	defer file.Close()
@@ -204,12 +206,14 @@ func (mm *MemoryManager) loadLocked(promptID string) ([]Memory, error) {
 		var memory Memory
 		errUnmarshal := json.Unmarshal(line, &memory)
 		if errUnmarshal != nil {
+			logging.Warnf("memory entry parse failed: prompt=%s line=%s err=%v", promptID, logging.Truncate(string(line), 100), errUnmarshal)
 			continue
 		}
 		memories = append(memories, memory)
 	}
 	errScan := scanner.Err()
 	if errScan != nil {
+		logging.Errorf("memory scan failed: prompt=%s err=%v", promptID, errScan)
 		return nil, errScan
 	}
 
@@ -221,12 +225,14 @@ func (mm *MemoryManager) saveLocked(promptID string) error {
 	promptDir := filepath.Join(mm.baseDir, promptID)
 	errMkdirAll := os.MkdirAll(promptDir, 0755)
 	if errMkdirAll != nil {
+		logging.Errorf("memory dir create failed: path=%s err=%v", promptDir, errMkdirAll)
 		return errMkdirAll
 	}
 
 	memoryPath := mm.getMemoryPath(promptID)
 	file, errOpen := os.OpenFile(memoryPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if errOpen != nil {
+		logging.Errorf("memory file open failed: path=%s err=%v", memoryPath, errOpen)
 		return errOpen
 	}
 	defer file.Close()
@@ -235,11 +241,13 @@ func (mm *MemoryManager) saveLocked(promptID string) error {
 	for _, memory := range mm.cache[promptID] {
 		errWrite := writeJSONLine(writer, memory)
 		if errWrite != nil {
+			logging.Errorf("memory write failed: prompt=%s err=%v", promptID, errWrite)
 			return errWrite
 		}
 	}
 	errFlush := writer.Flush()
 	if errFlush != nil {
+		logging.Errorf("memory flush failed: prompt=%s err=%v", promptID, errFlush)
 		return errFlush
 	}
 	_ = os.Chmod(memoryPath, 0600)

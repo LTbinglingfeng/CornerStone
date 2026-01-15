@@ -43,6 +43,7 @@ func NewMemorySession(promptID, sessionID string, mm *MemoryManager, extractor *
 		lastAccess: time.Now(),
 	}
 	s.refresh()
+	logging.Infof("memory session created: prompt=%s session=%s", promptID, sessionID)
 	return s
 }
 

@@ -3,6 +3,7 @@ package storage
 import (
 	"bufio"
 	"cornerstone/client"
+	"cornerstone/logging"
 	"encoding/json"
 	"io"
 	"os"
@@ -111,6 +112,7 @@ func (cm *ChatManager) loadSessions() error {
 		if os.IsNotExist(err) {
 			return nil
 		}
+		logging.Errorf("sessions dir read failed: path=%s err=%v", cm.dataDir, err)
 		return err
 	}
 
@@ -126,6 +128,7 @@ func (cm *ChatManager) loadSessions() error {
 		fileName := strings.TrimSuffix(entry.Name(), ".jsonl")
 		record, err := cm.loadSessionFromFileName(fileName)
 		if err != nil {
+			logging.Warnf("session load failed: file=%s err=%v", fileName, err)
 			continue
 		}
 		// 使用元数据中的 SessionID 作为 key
@@ -154,6 +157,7 @@ func (cm *ChatManager) loadSessionFromFileName(fileName string) (*ChatRecord, er
 	scanner.Buffer(buf, 1024*1024)
 
 	lineNum := 0
+	loggedMessageParseError := false
 	for scanner.Scan() {
 		lineNum++
 		line := scanner.Bytes()
@@ -164,12 +168,17 @@ func (cm *ChatManager) loadSessionFromFileName(fileName string) (*ChatRecord, er
 		// 第一行是会话元数据
 		if lineNum == 1 {
 			if err := json.Unmarshal(line, record); err != nil {
-				continue
+				logging.Errorf("session metadata parse failed: path=%s err=%v", filePath, err)
+				return nil, err
 			}
 		} else {
 			// 后续行是消息
 			var msg ChatMessage
 			if err := json.Unmarshal(line, &msg); err != nil {
+				if !loggedMessageParseError {
+					loggedMessageParseError = true
+					logging.Warnf("session message parse failed: path=%s line=%d err=%v", filePath, lineNum, err)
+				}
 				continue
 			}
 			record.Messages = append(record.Messages, msg)
@@ -272,14 +281,17 @@ func (cm *ChatManager) persistMessagesLocked(record *ChatRecord, newMessages []C
 // saveSession 保存单个会话到其文件
 func (cm *ChatManager) saveSession(record *ChatRecord) error {
 	if err := cm.ensureSessionFileNameLocked(record); err != nil {
+		logging.Errorf("session save failed: id=%s err=%v", record.SessionID, err)
 		return err
 	}
 	filePath := cm.getSessionFilePath(record.SessionID)
 	if filePath == "" {
+		logging.Errorf("session save failed: id=%s err=%v", record.SessionID, os.ErrInvalid)
 		return os.ErrInvalid
 	}
 	file, err := os.Create(filePath)
 	if err != nil {
+		logging.Errorf("session save failed: id=%s err=%v", record.SessionID, err)
 		return err
 	}
 	defer file.Close()
@@ -298,12 +310,14 @@ func (cm *ChatManager) saveSession(record *ChatRecord) error {
 		Messages:     nil, // 元数据行不包含消息
 	}
 	if err := writeJSONLine(file, meta); err != nil {
+		logging.Errorf("session save failed: id=%s err=%v", record.SessionID, err)
 		return err
 	}
 
 	// 后续行写入每条消息
 	for _, msg := range record.Messages {
 		if err := writeJSONLine(file, msg); err != nil {
+			logging.Errorf("session save failed: id=%s err=%v", record.SessionID, err)
 			return err
 		}
 	}
@@ -339,6 +353,7 @@ func (cm *ChatManager) CreateSession(sessionID, title, promptID, promptName stri
 	if err := cm.saveSession(record); err != nil {
 		return nil, err
 	}
+	logging.Infof("session created: id=%s prompt=%s title=%s", record.SessionID, promptID, logging.Truncate(title, 30))
 	return cloneChatRecord(record), nil
 }
 
@@ -476,7 +491,11 @@ func (cm *ChatManager) AddMessageWithDetails(sessionID, role, content, reasoning
 		}
 	}
 
-	return cm.persistMessagesLocked(record, []ChatMessage{msg}, metaChanged)
+	if err := cm.persistMessagesLocked(record, []ChatMessage{msg}, metaChanged); err != nil {
+		logging.Errorf("message add failed: session=%s role=%s err=%v", sessionID, role, err)
+		return err
+	}
+	return nil
 }
 
 // AddMessages 批量添加消息
@@ -575,11 +594,15 @@ func (cm *ChatManager) DeleteSession(sessionID string) error {
 	// 删除对应的文件
 	filePath := cm.getSessionFilePath(sessionID)
 	if filePath != "" {
-		os.Remove(filePath)
+		if errRemove := os.Remove(filePath); errRemove != nil && !os.IsNotExist(errRemove) {
+			logging.Errorf("session delete failed: id=%s path=%s err=%v", sessionID, filePath, errRemove)
+			return errRemove
+		}
 	}
 
 	delete(cm.sessions, sessionID)
 	delete(cm.sessionFiles, sessionID)
+	logging.Infof("session deleted: id=%s", sessionID)
 	return nil
 }
 

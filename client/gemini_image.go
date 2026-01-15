@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"cornerstone/logging"
 	"errors"
 	"fmt"
 	"net/http"
@@ -65,12 +66,18 @@ func (c *GeminiImageClient) GenerateImages(ctx context.Context, model, prompt st
 
 	genaiClient, errInit := c.newGenAIClient(ctxTimeout)
 	if errInit != nil {
+		logging.Errorf("gemini image init failed: model=%s err=%v", model, errInit)
 		return nil, fmt.Errorf("init genai client: %w", errInit)
 	}
 
 	resp, err := genaiClient.Models.GenerateImages(ctxTimeout, model, prompt, cfg)
 	if err != nil {
-		return nil, translateGenAIGenerateImagesError(err)
+		translated := translateGenAIGenerateImagesError(err)
+		logging.Errorf("gemini image request failed: model=%s err=%v", model, translated)
+		return nil, translated
+	}
+	if resp == nil || len(resp.GeneratedImages) == 0 {
+		logging.Warnf("gemini image empty response: model=%s prompt=%s", model, logging.Truncate(prompt, 100))
 	}
 	return resp, nil
 }

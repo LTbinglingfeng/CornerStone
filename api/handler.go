@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"cornerstone/client"
 	"cornerstone/config"
@@ -248,6 +249,53 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/management/health", h.corsMiddleware(h.handleHealth))
 }
 
+const maxAPIErrorLogBytes = 2048
+
+type apiLogResponseWriter struct {
+	http.ResponseWriter
+	status      int
+	wroteHeader bool
+	body        bytes.Buffer
+}
+
+func newAPILogResponseWriter(w http.ResponseWriter) *apiLogResponseWriter {
+	return &apiLogResponseWriter{
+		ResponseWriter: w,
+		status:         http.StatusOK,
+	}
+}
+
+func (w *apiLogResponseWriter) WriteHeader(status int) {
+	if w.wroteHeader {
+		w.ResponseWriter.WriteHeader(status)
+		return
+	}
+	w.status = status
+	w.wroteHeader = true
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *apiLogResponseWriter) Write(p []byte) (int, error) {
+	if !w.wroteHeader {
+		w.WriteHeader(http.StatusOK)
+	}
+	if w.status >= 400 && w.body.Len() < maxAPIErrorLogBytes {
+		remaining := maxAPIErrorLogBytes - w.body.Len()
+		if len(p) > remaining {
+			_, _ = w.body.Write(p[:remaining])
+		} else {
+			_, _ = w.body.Write(p)
+		}
+	}
+	return w.ResponseWriter.Write(p)
+}
+
+func (w *apiLogResponseWriter) Flush() {
+	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
 // corsMiddleware 处理跨域请求
 func (h *Handler) corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -260,7 +308,35 @@ func (h *Handler) corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		next(w, r)
+		wrapped := newAPILogResponseWriter(w)
+		next(wrapped, r)
+
+		if wrapped.status < 400 || wrapped.status == http.StatusUnauthorized {
+			return
+		}
+
+		var logf func(format string, args ...interface{})
+		if wrapped.status >= 500 {
+			logf = logging.Errorf
+		} else {
+			logf = logging.Warnf
+		}
+
+		errMsg := ""
+		if wrapped.body.Len() > 0 {
+			var resp Response
+			if err := json.Unmarshal(wrapped.body.Bytes(), &resp); err == nil && strings.TrimSpace(resp.Error) != "" {
+				errMsg = resp.Error
+			} else {
+				errMsg = strings.TrimSpace(string(wrapped.body.Bytes()))
+			}
+		}
+
+		if errMsg == "" {
+			logf("API error: method=%s path=%s status=%d", r.Method, r.URL.Path, wrapped.status)
+			return
+		}
+		logf("API error: method=%s path=%s status=%d error=%s", r.Method, r.URL.Path, wrapped.status, logging.Truncate(errMsg, 500))
 	}
 }
 
@@ -1305,14 +1381,17 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 
 	provider := h.configManager.GetActiveProvider()
 	if provider == nil {
+		logging.Errorf("chat no active provider")
 		h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "No active provider configured"})
 		return
 	}
 	if provider.Type == config.ProviderTypeGeminiImage {
+		logging.Errorf("chat invalid provider type: type=%s", provider.Type)
 		h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Active provider is not chat-capable"})
 		return
 	}
 	if provider.APIKey == "" {
+		logging.Errorf("chat no API key: provider=%s", provider.ID)
 		h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "API key not configured"})
 		return
 	}

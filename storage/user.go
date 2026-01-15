@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"cornerstone/logging"
 	"encoding/json"
 	"io"
 	"os"
@@ -56,11 +57,13 @@ func (um *UserManager) Load() error {
 			}
 			return nil
 		}
+		logging.Errorf("user info load failed: err=%v", err)
 		return err
 	}
 
 	var info UserInfo
 	if err := json.Unmarshal(data, &info); err != nil {
+		logging.Errorf("user info parse failed: err=%v", err)
 		return err
 	}
 
@@ -72,9 +75,14 @@ func (um *UserManager) Load() error {
 func (um *UserManager) save() error {
 	data, err := json.MarshalIndent(um.userInfo, "", "  ")
 	if err != nil {
+		logging.Errorf("user info save failed: err=%v", err)
 		return err
 	}
-	return os.WriteFile(um.getUserInfoPath(), data, 0644)
+	if err := os.WriteFile(um.getUserInfoPath(), data, 0644); err != nil {
+		logging.Errorf("user info save failed: err=%v", err)
+		return err
+	}
+	return nil
 }
 
 // Get 获取用户信息
@@ -105,6 +113,7 @@ func (um *UserManager) Update(username, description string) (*UserInfo, error) {
 	}
 
 	info := *um.userInfo
+	logging.Infof("user info updated: username=%s", um.userInfo.Username)
 	return &info, nil
 }
 

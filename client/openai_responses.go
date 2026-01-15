@@ -193,6 +193,7 @@ func (c *OpenAIResponsesClient) Chat(ctx context.Context, req ChatRequest) (*Cha
 
 	resp, errDo := c.HTTPClient.Do(httpReq)
 	if errDo != nil {
+		logging.Errorf("openai_responses request failed: model=%s err=%v", req.Model, errDo)
 		return nil, fmt.Errorf("do request: %w", errDo)
 	}
 	defer func() {
@@ -203,14 +204,27 @@ func (c *OpenAIResponsesClient) Chat(ctx context.Context, req ChatRequest) (*Cha
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
+		logging.Errorf(
+			"openai_responses API error: model=%s status=%d body=%s",
+			req.Model,
+			resp.StatusCode,
+			logging.Truncate(string(bodyBytes), 500),
+		)
 		return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(bodyBytes))
 	}
 
 	var rawResp openAIResponsesResponse
 	if errDecode := json.NewDecoder(resp.Body).Decode(&rawResp); errDecode != nil {
+		logging.Errorf("openai_responses response decode failed: model=%s err=%v", req.Model, errDecode)
 		return nil, fmt.Errorf("decode response: %w", errDecode)
 	}
 	if rawResp.Error != nil {
+		logging.Errorf(
+			"openai_responses API error: model=%s code=%s message=%s",
+			req.Model,
+			rawResp.Error.Code,
+			logging.Truncate(rawResp.Error.Message, 500),
+		)
 		return nil, fmt.Errorf("API error (%s): %s", rawResp.Error.Code, rawResp.Error.Message)
 	}
 
@@ -242,6 +256,7 @@ func (c *OpenAIResponsesClient) ChatStream(ctx context.Context, req ChatRequest,
 
 	resp, errDo := c.HTTPClient.Do(httpReq)
 	if errDo != nil {
+		logging.Errorf("openai_responses stream request failed: model=%s err=%v", req.Model, errDo)
 		return fmt.Errorf("do request: %w", errDo)
 	}
 	defer func() {
@@ -252,6 +267,12 @@ func (c *OpenAIResponsesClient) ChatStream(ctx context.Context, req ChatRequest,
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
+		logging.Errorf(
+			"openai_responses stream API error: model=%s status=%d body=%s",
+			req.Model,
+			resp.StatusCode,
+			logging.Truncate(string(bodyBytes), 500),
+		)
 		return fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(bodyBytes))
 	}
 
@@ -280,6 +301,7 @@ func (c *OpenAIResponsesClient) ChatStream(ctx context.Context, req ChatRequest,
 
 		var baseEvent openAIResponsesStreamEvent
 		if errUnmarshal := json.Unmarshal([]byte(data), &baseEvent); errUnmarshal != nil {
+			logging.Warnf("openai_responses stream event unmarshal failed: model=%s data=%s err=%v", req.Model, logging.Truncate(data, 200), errUnmarshal)
 			continue
 		}
 
@@ -287,6 +309,7 @@ func (c *OpenAIResponsesClient) ChatStream(ctx context.Context, req ChatRequest,
 		case "response.output_text.delta":
 			var ev openAIResponsesStreamTextDeltaEvent
 			if errUnmarshal := json.Unmarshal([]byte(data), &ev); errUnmarshal != nil {
+				logging.Warnf("openai_responses stream text delta unmarshal failed: model=%s data=%s err=%v", req.Model, logging.Truncate(data, 200), errUnmarshal)
 				continue
 			}
 			chunk := StreamChunk{
@@ -307,6 +330,7 @@ func (c *OpenAIResponsesClient) ChatStream(ctx context.Context, req ChatRequest,
 		case "response.reasoning_text.delta", "response.reasoning_summary_text.delta":
 			var ev openAIResponsesStreamTextDeltaEvent
 			if errUnmarshal := json.Unmarshal([]byte(data), &ev); errUnmarshal != nil {
+				logging.Warnf("openai_responses stream reasoning delta unmarshal failed: model=%s data=%s err=%v", req.Model, logging.Truncate(data, 200), errUnmarshal)
 				continue
 			}
 			chunk := StreamChunk{
@@ -327,6 +351,7 @@ func (c *OpenAIResponsesClient) ChatStream(ctx context.Context, req ChatRequest,
 		case "response.output_item.added":
 			var ev openAIResponsesStreamOutputItemEvent
 			if errUnmarshal := json.Unmarshal([]byte(data), &ev); errUnmarshal != nil {
+				logging.Warnf("openai_responses stream output item added unmarshal failed: model=%s data=%s err=%v", req.Model, logging.Truncate(data, 200), errUnmarshal)
 				continue
 			}
 			if errHandle := handleResponsesOutputItemAdded(ev, toolCalls, req.Model, callback); errHandle != nil {
@@ -336,6 +361,7 @@ func (c *OpenAIResponsesClient) ChatStream(ctx context.Context, req ChatRequest,
 		case "response.function_call_arguments.delta":
 			var ev openAIResponsesStreamFunctionArgsDeltaEvent
 			if errUnmarshal := json.Unmarshal([]byte(data), &ev); errUnmarshal != nil {
+				logging.Warnf("openai_responses stream function args delta unmarshal failed: model=%s data=%s err=%v", req.Model, logging.Truncate(data, 200), errUnmarshal)
 				continue
 			}
 			state, ok := toolCalls[ev.OutputIndex]
@@ -384,6 +410,7 @@ func (c *OpenAIResponsesClient) ChatStream(ctx context.Context, req ChatRequest,
 		case "response.function_call_arguments.done":
 			var ev openAIResponsesStreamFunctionArgsDoneEvent
 			if errUnmarshal := json.Unmarshal([]byte(data), &ev); errUnmarshal != nil {
+				logging.Warnf("openai_responses stream function args done unmarshal failed: model=%s data=%s err=%v", req.Model, logging.Truncate(data, 200), errUnmarshal)
 				continue
 			}
 
@@ -408,6 +435,7 @@ func (c *OpenAIResponsesClient) ChatStream(ctx context.Context, req ChatRequest,
 		case "error":
 			var ev openAIResponsesStreamErrorEvent
 			if errUnmarshal := json.Unmarshal([]byte(data), &ev); errUnmarshal != nil {
+				logging.Errorf("openai_responses stream error event unmarshal failed: model=%s data=%s err=%v", req.Model, logging.Truncate(data, 200), errUnmarshal)
 				return fmt.Errorf("stream error")
 			}
 			code := ""
@@ -415,8 +443,10 @@ func (c *OpenAIResponsesClient) ChatStream(ctx context.Context, req ChatRequest,
 				code = *ev.Code
 			}
 			if code == "" {
+				logging.Errorf("openai_responses stream error: model=%s message=%s", req.Model, logging.Truncate(ev.Message, 500))
 				return fmt.Errorf("stream error: %s", ev.Message)
 			}
+			logging.Errorf("openai_responses stream error: model=%s code=%s message=%s", req.Model, code, logging.Truncate(ev.Message, 500))
 			return fmt.Errorf("stream error (%s): %s", code, ev.Message)
 		}
 	}

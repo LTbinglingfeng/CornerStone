@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"cornerstone/logging"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -78,11 +79,13 @@ func (pm *PromptManager) loadPromptFromDir(dir string) (*Prompt, error) {
 	promptFile := filepath.Join(dir, "prompt.json")
 	data, err := os.ReadFile(promptFile)
 	if err != nil {
+		logging.Errorf("prompt load failed: path=%s err=%v", promptFile, err)
 		return nil, err
 	}
 
 	var prompt Prompt
 	if err := json.Unmarshal(data, &prompt); err != nil {
+		logging.Errorf("prompt parse failed: path=%s err=%v", promptFile, err)
 		return nil, err
 	}
 
@@ -102,10 +105,15 @@ func (pm *PromptManager) savePrompt(prompt *Prompt) error {
 	promptFile := filepath.Join(dir, "prompt.json")
 	data, err := json.MarshalIndent(prompt, "", "  ")
 	if err != nil {
+		logging.Errorf("prompt save failed: id=%s err=%v", prompt.ID, err)
 		return err
 	}
 
-	return os.WriteFile(promptFile, data, 0644)
+	if err := os.WriteFile(promptFile, data, 0644); err != nil {
+		logging.Errorf("prompt save failed: id=%s path=%s err=%v", prompt.ID, promptFile, err)
+		return err
+	}
+	return nil
 }
 
 // Create 创建提示词
@@ -137,6 +145,7 @@ func (pm *PromptManager) Create(id, name, content, description, fileName string)
 	}
 
 	pm.prompts[id] = prompt
+	logging.Infof("prompt created: id=%s name=%s", prompt.ID, prompt.Name)
 	return &prompt, nil
 }
 
@@ -197,6 +206,7 @@ func (pm *PromptManager) Update(id, name, content, description, fileName string)
 	}
 
 	pm.prompts[id] = prompt
+	logging.Infof("prompt updated: id=%s name=%s", prompt.ID, prompt.Name)
 	return &prompt, nil
 }
 
@@ -216,10 +226,12 @@ func (pm *PromptManager) Delete(id string) error {
 	// 删除整个目录
 	dir := pm.getPromptDir(id)
 	if err := os.RemoveAll(dir); err != nil {
+		logging.Errorf("prompt delete failed: id=%s err=%v", id, err)
 		return err
 	}
 
 	delete(pm.prompts, id)
+	logging.Infof("prompt deleted: id=%s", id)
 	return nil
 }
 

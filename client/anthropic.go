@@ -151,6 +151,7 @@ func (c *AnthropicClient) Chat(ctx context.Context, req ChatRequest) (*ChatRespo
 
 	resp, errDo := c.HTTPClient.Do(httpReq)
 	if errDo != nil {
+		logging.Errorf("anthropic request failed: model=%s err=%v", req.Model, errDo)
 		return nil, fmt.Errorf("do request: %w", errDo)
 	}
 	defer func() {
@@ -161,11 +162,18 @@ func (c *AnthropicClient) Chat(ctx context.Context, req ChatRequest) (*ChatRespo
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
+		logging.Errorf(
+			"anthropic API error: model=%s status=%d body=%s",
+			req.Model,
+			resp.StatusCode,
+			logging.Truncate(string(bodyBytes), 500),
+		)
 		return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(bodyBytes))
 	}
 
 	var anthropicResp AnthropicResponse
 	if errDecode := json.NewDecoder(resp.Body).Decode(&anthropicResp); errDecode != nil {
+		logging.Errorf("anthropic response decode failed: model=%s err=%v", req.Model, errDecode)
 		return nil, fmt.Errorf("decode response: %w", errDecode)
 	}
 
@@ -198,6 +206,7 @@ func (c *AnthropicClient) ChatStream(ctx context.Context, req ChatRequest, callb
 
 	resp, errDo := c.HTTPClient.Do(httpReq)
 	if errDo != nil {
+		logging.Errorf("anthropic stream request failed: model=%s err=%v", req.Model, errDo)
 		return fmt.Errorf("do request: %w", errDo)
 	}
 	defer func() {
@@ -208,6 +217,12 @@ func (c *AnthropicClient) ChatStream(ctx context.Context, req ChatRequest, callb
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
+		logging.Errorf(
+			"anthropic stream API error: model=%s status=%d body=%s",
+			req.Model,
+			resp.StatusCode,
+			logging.Truncate(string(bodyBytes), 500),
+		)
 		return fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(bodyBytes))
 	}
 
@@ -234,6 +249,7 @@ func (c *AnthropicClient) ChatStream(ctx context.Context, req ChatRequest, callb
 
 		var event anthropicStreamEvent
 		if errUnmarshal := json.Unmarshal([]byte(data), &event); errUnmarshal != nil {
+			logging.Warnf("anthropic stream event unmarshal failed: model=%s data=%s err=%v", req.Model, logging.Truncate(data, 200), errUnmarshal)
 			continue
 		}
 

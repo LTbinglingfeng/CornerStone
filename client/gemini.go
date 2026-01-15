@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"cornerstone/logging"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -143,7 +144,9 @@ func (c *GeminiClient) Chat(ctx context.Context, req ChatRequest) (*ChatResponse
 	generationConfig := buildGenAIGenerateContentConfig(req, systemInstruction, c.convertToGenAITools(req.Tools))
 	resp, err := genaiClient.Models.GenerateContent(ctx, req.Model, contents, generationConfig)
 	if err != nil {
-		return nil, translateGenAIError(err)
+		translated := translateGenAIError(err)
+		logging.Errorf("gemini request failed: model=%s err=%v", req.Model, translated)
+		return nil, translated
 	}
 
 	// 转换为通用响应格式
@@ -169,7 +172,9 @@ func (c *GeminiClient) ChatStream(ctx context.Context, req ChatRequest, callback
 	generationConfig := buildGenAIGenerateContentConfig(req, systemInstruction, c.convertToGenAITools(req.Tools))
 	for resp, err := range genaiClient.Models.GenerateContentStream(ctx, req.Model, contents, generationConfig) {
 		if err != nil {
-			return translateGenAIError(err)
+			translated := translateGenAIError(err)
+			logging.Errorf("gemini stream request failed: model=%s err=%v", req.Model, translated)
+			return translated
 		}
 		chunk := c.convertToStreamChunk(resp, req.Model, &nextToolCallIndex)
 		if errCallback := callback(chunk); errCallback != nil {

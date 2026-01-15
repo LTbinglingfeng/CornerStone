@@ -1,6 +1,7 @@
 package config
 
 import (
+	"cornerstone/logging"
 	"encoding/json"
 	"errors"
 	"os"
@@ -127,13 +128,20 @@ func (m *Manager) Load() error {
 	data, err := os.ReadFile(m.configPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return m.saveUnsafe()
+			logging.Infof("config file not found, using defaults: path=%s", m.configPath)
+			if errSave := m.saveUnsafe(); errSave != nil {
+				return errSave
+			}
+			logging.Infof("config loaded: path=%s providers=%d active=%s", m.configPath, len(m.config.Providers), m.config.ActiveProviderID)
+			return nil
 		}
+		logging.Errorf("config load failed: path=%s err=%v", m.configPath, err)
 		return err
 	}
 
 	// 尝试解析新格式
 	if err := json.Unmarshal(data, &m.config); err != nil {
+		logging.Errorf("config parse failed: path=%s err=%v", m.configPath, err)
 		return err
 	}
 
@@ -171,14 +179,21 @@ func (m *Manager) Load() error {
 				SystemPrompt:     oldConfig.SystemPrompt,
 			}
 			// 保存新格式
-			return m.saveUnsafe()
+			if errSave := m.saveUnsafe(); errSave != nil {
+				return errSave
+			}
+			logging.Infof("config loaded: path=%s providers=%d active=%s", m.configPath, len(m.config.Providers), m.config.ActiveProviderID)
+			return nil
 		}
 	}
 
 	if m.applyProviderDefaults(rawProviders.Providers) {
-		return m.saveUnsafe()
+		if errSave := m.saveUnsafe(); errSave != nil {
+			return errSave
+		}
 	}
 
+	logging.Infof("config loaded: path=%s providers=%d active=%s", m.configPath, len(m.config.Providers), m.config.ActiveProviderID)
 	return nil
 }
 
@@ -437,12 +452,15 @@ func (m *Manager) Save() error {
 func (m *Manager) saveUnsafe() error {
 	data, err := json.MarshalIndent(m.config, "", "  ")
 	if err != nil {
+		logging.Errorf("config save failed: path=%s err=%v", m.configPath, err)
 		return err
 	}
 	if err := os.WriteFile(m.configPath, data, 0600); err != nil {
+		logging.Errorf("config save failed: path=%s err=%v", m.configPath, err)
 		return err
 	}
 	_ = os.Chmod(m.configPath, 0600)
+	logging.Infof("config saved: path=%s", m.configPath)
 	return nil
 }
 
@@ -545,7 +563,11 @@ func (m *Manager) AddProvider(provider Provider) error {
 	}
 
 	m.config.Providers = append(m.config.Providers, provider)
-	return m.saveUnsafe()
+	if errSave := m.saveUnsafe(); errSave != nil {
+		return errSave
+	}
+	logging.Infof("provider added: id=%s name=%s type=%s", provider.ID, provider.Name, provider.Type)
+	return nil
 }
 
 // UpdateProvider 更新供应商配置
@@ -559,7 +581,11 @@ func (m *Manager) UpdateProvider(provider Provider) error {
 				return ErrProviderNotChatCapable
 			}
 			m.config.Providers[i] = provider
-			return m.saveUnsafe()
+			if errSave := m.saveUnsafe(); errSave != nil {
+				return errSave
+			}
+			logging.Infof("provider updated: id=%s name=%s", provider.ID, provider.Name)
+			return nil
 		}
 	}
 	return ErrProviderNotFound
@@ -592,7 +618,11 @@ func (m *Manager) DeleteProvider(id string) error {
 				}
 				m.config.ActiveProviderID = nextID
 			}
-			return m.saveUnsafe()
+			if errSave := m.saveUnsafe(); errSave != nil {
+				return errSave
+			}
+			logging.Infof("provider deleted: id=%s", id)
+			return nil
 		}
 	}
 	return ErrProviderNotFound
@@ -609,7 +639,11 @@ func (m *Manager) SetActiveProvider(id string) error {
 				return ErrProviderNotChatCapable
 			}
 			m.config.ActiveProviderID = id
-			return m.saveUnsafe()
+			if errSave := m.saveUnsafe(); errSave != nil {
+				return errSave
+			}
+			logging.Infof("active provider changed: id=%s", id)
+			return nil
 		}
 	}
 	return ErrProviderNotFound
