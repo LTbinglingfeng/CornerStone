@@ -89,6 +89,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	h.registerProtectedRoute(mux, "/api/memory/", h.handleMemory)
 	h.registerProtectedRoute(mux, "/api/settings/memory-provider", h.handleSetMemoryProvider)
 	h.registerProtectedRoute(mux, "/api/settings/memory-enabled", h.handleSetMemoryEnabled)
+	h.registerProtectedRoute(mux, "/api/settings/memory-extraction", h.handleMemoryExtractionSettings)
+	h.registerProtectedRoute(mux, "/api/settings/memory-extraction-prompt", h.handleMemoryExtractionPrompt)
 
 	// 配置接口 (使用 /management 前缀)
 	h.registerProtectedRoute(mux, "/management/config", h.handleConfig)

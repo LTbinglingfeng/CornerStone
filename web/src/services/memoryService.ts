@@ -2,6 +2,19 @@ import type { ApiResponse } from '../types/chat'
 import type { Memory } from '../types/memory'
 import { apiFetchJson } from './api'
 
+export interface MemoryExtractionSettings {
+    rounds: number
+    max_rounds: number
+    provider_id?: string
+    provider_name?: string
+    provider_context_messages?: number
+}
+
+export interface MemoryExtractionPromptTemplate {
+    template: string
+    default_template: string
+}
+
 export const memoryService = {
     async getMemories(promptId: string): Promise<Memory[]> {
         const data = await apiFetchJson<ApiResponse<Memory[]>>(`/api/memory/${encodeURIComponent(promptId)}`)
@@ -69,6 +82,46 @@ export const memoryService = {
         })
         if (!data.success) {
             throw new Error(data.error || '设置记忆开关失败')
+        }
+    },
+
+    async getMemoryExtractionSettings(): Promise<MemoryExtractionSettings> {
+        const data = await apiFetchJson<ApiResponse<MemoryExtractionSettings>>('/api/settings/memory-extraction')
+        if (!data.success || !data.data) {
+            throw new Error(data.error || '获取记忆提取设置失败')
+        }
+        return data.data
+    },
+
+    async setMemoryExtractionRounds(rounds: number): Promise<MemoryExtractionSettings> {
+        const data = await apiFetchJson<ApiResponse<MemoryExtractionSettings>>('/api/settings/memory-extraction', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ rounds }),
+        })
+        if (!data.success) {
+            throw new Error(data.error || '设置记忆提取轮数失败')
+        }
+        const next = await memoryService.getMemoryExtractionSettings()
+        return next
+    },
+
+    async getMemoryExtractionPromptTemplate(): Promise<MemoryExtractionPromptTemplate> {
+        const data = await apiFetchJson<ApiResponse<MemoryExtractionPromptTemplate>>('/api/settings/memory-extraction-prompt')
+        if (!data.success || !data.data) {
+            throw new Error(data.error || '获取记忆提取提示词失败')
+        }
+        return data.data
+    },
+
+    async updateMemoryExtractionPromptTemplate(template: string): Promise<void> {
+        const data = await apiFetchJson<ApiResponse<unknown>>('/api/settings/memory-extraction-prompt', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ template }),
+        })
+        if (!data.success) {
+            throw new Error(data.error || '保存记忆提取提示词失败')
         }
     },
 }

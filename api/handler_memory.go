@@ -31,6 +31,14 @@ type SetMemoryEnabledRequest struct {
 	Enabled bool `json:"enabled"`
 }
 
+type MemoryExtractionRoundsRequest struct {
+	Rounds int `json:"rounds"`
+}
+
+type MemoryExtractionPromptRequest struct {
+	Template string `json:"template"`
+}
+
 func (h *Handler) getOrCreateMemorySession(promptID, sessionID string) *storage.MemorySession {
 	if h.memoryManager == nil || h.configManager == nil {
 		return nil
@@ -301,3 +309,135 @@ func (h *Handler) handleSetMemoryEnabled(w http.ResponseWriter, r *http.Request)
 	h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: map[string]interface{}{"memory_enabled": req.Enabled}})
 }
 
+func (h *Handler) resolveMemoryExtractionProvider(cfg config.Config) *config.Provider {
+	provider := cfg.MemoryProvider
+	if provider == nil || provider.Type == config.ProviderTypeGeminiImage {
+		provider = h.configManager.GetProvider(cfg.MemoryProviderID)
+	}
+	if provider == nil || provider.Type == config.ProviderTypeGeminiImage {
+		provider = h.configManager.GetActiveProvider()
+	}
+	return provider
+}
+
+func (h *Handler) handleMemoryExtractionSettings(w http.ResponseWriter, r *http.Request) {
+	if h.configManager == nil {
+		h.jsonResponse(w, http.StatusNotImplemented, Response{Success: false, Error: "Config manager not configured"})
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		cfg := h.configManager.Get()
+		provider := h.resolveMemoryExtractionProvider(cfg)
+		maxRounds := config.DefaultProviderContextMessages
+		if provider != nil && provider.ContextMessages > 0 {
+			maxRounds = provider.ContextMessages
+		}
+		if maxRounds <= 0 {
+			maxRounds = 1
+		}
+
+		changed := false
+		if cfg.MemoryExtractionRounds <= 0 {
+			cfg.MemoryExtractionRounds = config.DefaultMemoryExtractionRounds
+			changed = true
+		}
+		if cfg.MemoryExtractionRounds > maxRounds {
+			cfg.MemoryExtractionRounds = maxRounds
+			changed = true
+		}
+		if changed {
+			if errUpdate := h.configManager.Update(cfg); errUpdate != nil {
+				h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: errUpdate.Error()})
+				return
+			}
+		}
+
+		result := map[string]interface{}{
+			"rounds":     cfg.MemoryExtractionRounds,
+			"max_rounds": maxRounds,
+		}
+		if provider != nil {
+			result["provider_id"] = provider.ID
+			result["provider_name"] = provider.Name
+			result["provider_context_messages"] = maxRounds
+		}
+		h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: result})
+		return
+
+	case http.MethodPut:
+		var req MemoryExtractionRoundsRequest
+		if !h.decodeJSON(w, r, &req) {
+			return
+		}
+
+		cfg := h.configManager.Get()
+		provider := h.resolveMemoryExtractionProvider(cfg)
+		maxRounds := config.DefaultProviderContextMessages
+		if provider != nil && provider.ContextMessages > 0 {
+			maxRounds = provider.ContextMessages
+		}
+		if maxRounds <= 0 {
+			maxRounds = 1
+		}
+
+		if req.Rounds <= 0 {
+			h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid rounds"})
+			return
+		}
+		if req.Rounds > maxRounds {
+			h.jsonResponse(
+				w,
+				http.StatusBadRequest,
+				Response{Success: false, Error: "Rounds exceeds provider limit"},
+			)
+			return
+		}
+
+		cfg.MemoryExtractionRounds = req.Rounds
+		if errUpdate := h.configManager.Update(cfg); errUpdate != nil {
+			h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: errUpdate.Error()})
+			return
+		}
+		h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: map[string]interface{}{"rounds": req.Rounds}})
+		return
+
+	default:
+		h.jsonResponse(w, http.StatusMethodNotAllowed, Response{Success: false, Error: "Method not allowed"})
+		return
+	}
+}
+
+func (h *Handler) handleMemoryExtractionPrompt(w http.ResponseWriter, r *http.Request) {
+	if h.memoryExtractor == nil {
+		h.jsonResponse(w, http.StatusNotImplemented, Response{Success: false, Error: "Memory extractor not configured"})
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		result := map[string]interface{}{
+			"template":         h.memoryExtractor.GetTemplate(),
+			"default_template": h.memoryExtractor.GetDefaultTemplate(),
+		}
+		h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: result})
+		return
+
+	case http.MethodPut:
+		var req MemoryExtractionPromptRequest
+		if !h.decodeJSON(w, r, &req) {
+			return
+		}
+		if errUpdate := h.memoryExtractor.UpdateTemplate(req.Template); errUpdate != nil {
+			h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: errUpdate.Error()})
+			return
+		}
+		h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: "OK"})
+		return
+
+	default:
+		h.jsonResponse(w, http.StatusMethodNotAllowed, Response{Success: false, Error: "Method not allowed"})
+		return
+	}
+}

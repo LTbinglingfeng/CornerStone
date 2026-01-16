@@ -73,8 +73,7 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId }) => {
             </div>
 
             <div className="memory-hint">
-                提示：记忆会保存在本地。开启长期记忆后，系统会将最近 5
-                轮对话片段发送给记忆处理模型用于提取，请勿输入敏感信息。
+                提示：记忆会保存在本地。开启长期记忆后，系统会将最近若干轮对话片段发送给记忆处理模型用于提取，请勿输入敏感信息。
             </div>
 
             <section className="memory-section">

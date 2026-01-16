@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -23,11 +24,13 @@ const (
 	MemoryExtractionPromptPlaceholderExistingMemories = "{{EXISTING_MEMORIES}}"
 	MemoryExtractionPromptPlaceholderChatContent      = "{{CHAT_CONTENT}}"
 	MemoryExtractionPromptPlaceholderUser             = "{{user}}"
+	MemoryExtractionPromptPlaceholderAvatar           = "{{avatar}}"
 )
 
 const defaultMemoryExtractionPromptTemplate = `你是一个“长期记忆”提取助手。你的任务：从对话中提取未来仍有价值、稳定且可复用的信息，写入长期记忆。
 
 当前用户名字：{{user}}（仅作识别，不要作为记忆内容）
+当前角色名字：{{avatar}}（仅作识别，不要作为记忆内容）
 
 硬性要求：
 - 只基于对话中明确出现的信息，不要推断、不要编造。
@@ -44,7 +47,7 @@ const defaultMemoryExtractionPromptTemplate = `你是一个“长期记忆”提
 字段约束：
 - subject 必须是 "user" 或 "self"
 - category 必须是下表之一
-- content 必须是单行中文且不超过 100 字，且：user 以“用户”开头；self 以“我”开头
+- content 必须是单行中文且不超过 100 字
 
 用户相关 (subject: "user")
 | category   | 说明     | 示例               |
@@ -160,6 +163,36 @@ func (e *MemoryExtractor) ensureTemplateFile() {
 	}
 }
 
+func (e *MemoryExtractor) GetTemplate() string {
+	return e.loadTemplate()
+}
+
+func (e *MemoryExtractor) GetDefaultTemplate() string {
+	return defaultMemoryExtractionPromptTemplate
+}
+
+func (e *MemoryExtractor) UpdateTemplate(template string) error {
+	template = strings.TrimSpace(template)
+	if template == "" {
+		return fmt.Errorf("template required")
+	}
+	if strings.TrimSpace(e.templatePath) == "" {
+		return fmt.Errorf("template path not configured")
+	}
+	if !strings.Contains(template, MemoryExtractionPromptPlaceholderExistingMemories) ||
+		!strings.Contains(template, MemoryExtractionPromptPlaceholderChatContent) {
+		return fmt.Errorf("template missing required placeholders")
+	}
+
+	if errMkdir := os.MkdirAll(filepath.Dir(e.templatePath), 0755); errMkdir != nil {
+		return errMkdir
+	}
+	if errWrite := os.WriteFile(e.templatePath, []byte(template), 0644); errWrite != nil {
+		return errWrite
+	}
+	return nil
+}
+
 func (e *MemoryExtractor) loadTemplate() string {
 	if strings.TrimSpace(e.templatePath) == "" {
 		return defaultMemoryExtractionPromptTemplate
@@ -222,7 +255,31 @@ func (e *MemoryExtractor) getUserName() string {
 	return name
 }
 
-func (e *MemoryExtractor) buildExtractionPrompt(messages []ChatMessage, existingMemories []Memory) string {
+func (e *MemoryExtractor) getAvatarName(promptID string) string {
+	promptID = strings.TrimSpace(promptID)
+	if promptID == "" || e.mm == nil {
+		return ""
+	}
+	if errValidateID := ValidateID(promptID); errValidateID != nil {
+		return ""
+	}
+
+	promptPath := filepath.Join(e.mm.baseDir, promptID, "prompt.json")
+	data, errRead := os.ReadFile(promptPath)
+	if errRead != nil {
+		return ""
+	}
+
+	var prompt Prompt
+	if errUnmarshal := json.Unmarshal(data, &prompt); errUnmarshal != nil {
+		logging.Warnf("memory extraction prompt parse failed: prompt=%s err=%v", promptID, errUnmarshal)
+		return ""
+	}
+
+	return sanitizeUserDisplayName(prompt.Name)
+}
+
+func (e *MemoryExtractor) buildExtractionPrompt(promptID string, messages []ChatMessage, existingMemories []Memory) string {
 	var existing strings.Builder
 	if len(existingMemories) > 0 {
 		for i, m := range existingMemories {
@@ -254,6 +311,7 @@ func (e *MemoryExtractor) buildExtractionPrompt(messages []ChatMessage, existing
 	template := e.loadTemplate()
 	replacer := strings.NewReplacer(
 		MemoryExtractionPromptPlaceholderUser, e.getUserName(),
+		MemoryExtractionPromptPlaceholderAvatar, e.getAvatarName(promptID),
 		MemoryExtractionPromptPlaceholderExistingMemories, existing.String(),
 		MemoryExtractionPromptPlaceholderChatContent, chat.String(),
 	)
@@ -266,12 +324,7 @@ func (e *MemoryExtractor) ExtractAndSave(promptID, sessionID string) error {
 		return nil
 	}
 
-	messages := e.chatMgr.GetRecentMessages(sessionID, ContextRounds*2)
-	if len(messages) == 0 {
-		return nil
-	}
-
-	existingMemories := e.mm.GetAll(promptID)
+	contextRounds := cfg.MemoryExtractionRounds
 
 	provider := cfg.MemoryProvider
 	if provider == nil || provider.Type == config.ProviderTypeGeminiImage {
@@ -280,6 +333,23 @@ func (e *MemoryExtractor) ExtractAndSave(promptID, sessionID string) error {
 	if provider == nil || provider.Type == config.ProviderTypeGeminiImage {
 		provider = e.configMgr.GetActiveProvider()
 	}
+	if contextRounds <= 0 {
+		contextRounds = ContextRounds
+	}
+	if contextRounds <= 0 {
+		contextRounds = 1
+	}
+
+	if provider != nil && provider.ContextMessages > 0 && contextRounds > provider.ContextMessages {
+		contextRounds = provider.ContextMessages
+	}
+
+	messages := e.chatMgr.GetRecentMessages(sessionID, contextRounds*2)
+	if len(messages) == 0 {
+		return nil
+	}
+
+	existingMemories := e.mm.GetAll(promptID)
 	if provider == nil {
 		logging.Errorf("memory extraction no provider: prompt=%s session=%s", promptID, sessionID)
 		return fmt.Errorf("未找到可用的模型配置")
@@ -315,7 +385,7 @@ func (e *MemoryExtractor) ExtractAndSave(promptID, sessionID string) error {
 		Messages: []client.Message{
 			{
 				Role:    "user",
-				Content: e.buildExtractionPrompt(messages, existingMemories),
+				Content: e.buildExtractionPrompt(promptID, messages, existingMemories),
 			},
 		},
 		Stream:      false,
@@ -350,11 +420,12 @@ func (e *MemoryExtractor) ExtractAndSave(promptID, sessionID string) error {
 	defer cancel()
 
 	logging.Infof(
-		"memory extraction request: prompt=%s session=%s provider=%s model=%s",
+		"memory extraction request: prompt=%s session=%s provider=%s model=%s rounds=%d",
 		promptID,
 		sessionID,
 		provider.ID,
 		provider.Model,
+		contextRounds,
 	)
 
 	resp, errChat := aiClient.Chat(ctx, chatReq)
@@ -385,9 +456,15 @@ func (e *MemoryExtractor) ExtractAndSave(promptID, sessionID string) error {
 	}
 
 	now := time.Now()
+	addedCount := 0
+	updatedCount := 0
+	invalidCount := 0
+	addFailedCount := 0
+	updateFailedCount := 0
 	for _, item := range extracted {
 		subject, category, content, ok := NormalizeExtractedMemoryFields(item.Subject, item.Category, item.Content)
 		if !ok {
+			invalidCount++
 			logging.Warnf(
 				"memory extraction field invalid: prompt=%s subject=%s category=%s content=%s",
 				promptID,
@@ -418,7 +495,10 @@ func (e *MemoryExtractor) ExtractAndSave(promptID, sessionID string) error {
 					SeenCount: &seenCount,
 				})
 				if errUpdate != nil {
+					updateFailedCount++
 					logging.Errorf("memory update failed: prompt=%s id=%s err=%v", promptID, matchingID, errUpdate)
+				} else {
+					updatedCount++
 				}
 				continue
 			}
@@ -433,11 +513,24 @@ func (e *MemoryExtractor) ExtractAndSave(promptID, sessionID string) error {
 			SeenCount: 1,
 		})
 		if errAdd != nil {
+			addFailedCount++
 			logging.Errorf("memory add failed: prompt=%s err=%v", promptID, errAdd)
+		} else {
+			addedCount++
 		}
 	}
 
-	logging.Infof("记忆提取完成 prompt=%s session=%s items=%d", promptID, sessionID, len(extracted))
+	logging.Infof(
+		"记忆提取完成 prompt=%s session=%s items=%d added=%d updated=%d invalid=%d add_failed=%d update_failed=%d",
+		promptID,
+		sessionID,
+		len(extracted),
+		addedCount,
+		updatedCount,
+		invalidCount,
+		addFailedCount,
+		updateFailedCount,
+	)
 	return nil
 }
 

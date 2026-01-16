@@ -488,6 +488,12 @@
   margin-top: 8px;
 }
 
+.memory-extraction-template-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
 .prompt-modal-textarea {
   width: 100%;
   background-color: var(--bg-tertiary);

@@ -36,6 +36,7 @@ const (
 	DefaultProviderTemperature     = 0.8
 	DefaultProviderTopP            = 1.0
 	DefaultProviderContextMessages = 64
+	DefaultMemoryExtractionRounds  = 5
 )
 
 // Provider 供应商配置
@@ -64,12 +65,13 @@ type Provider struct {
 
 // Config 存储应用配置信息
 type Config struct {
-	Providers        []Provider `json:"providers"`          // 供应商列表
-	ActiveProviderID string     `json:"active_provider_id"` // 当前激活的供应商ID
-	MemoryProviderID string     `json:"memory_provider_id"` // 记忆提取模型（供应商ID）
-	MemoryProvider   *Provider  `json:"memory_provider"`    // 记忆提取模型（独立配置）
-	MemoryEnabled    bool       `json:"memory_enabled"`     // 记忆功能开关
-	SystemPrompt     string     `json:"system_prompt"`      // 全局系统提示词
+	Providers              []Provider `json:"providers"`                // 供应商列表
+	ActiveProviderID       string     `json:"active_provider_id"`       // 当前激活的供应商ID
+	MemoryProviderID       string     `json:"memory_provider_id"`       // 记忆提取模型（供应商ID）
+	MemoryProvider         *Provider  `json:"memory_provider"`          // 记忆提取模型（独立配置）
+	MemoryEnabled          bool       `json:"memory_enabled"`           // 记忆功能开关
+	MemoryExtractionRounds int        `json:"memory_extraction_rounds"` // 记忆提取上传的对话轮数（每轮=用户+AI）
+	SystemPrompt           string     `json:"system_prompt"`            // 全局系统提示词
 }
 
 // Manager 配置管理器
@@ -101,12 +103,13 @@ func DefaultProvider() Provider {
 // DefaultConfig 返回默认配置
 func DefaultConfig() Config {
 	return Config{
-		Providers:        []Provider{DefaultProvider()},
-		ActiveProviderID: "default",
-		MemoryProviderID: "",
-		MemoryProvider:   nil,
-		MemoryEnabled:    false,
-		SystemPrompt:     "You are a helpful assistant.",
+		Providers:              []Provider{DefaultProvider()},
+		ActiveProviderID:       "default",
+		MemoryProviderID:       "",
+		MemoryProvider:         nil,
+		MemoryEnabled:          false,
+		MemoryExtractionRounds: DefaultMemoryExtractionRounds,
+		SystemPrompt:           "You are a helpful assistant.",
 	}
 }
 
@@ -175,8 +178,12 @@ func (m *Manager) Load() error {
 						ContextMessages: DefaultProviderContextMessages,
 					},
 				},
-				ActiveProviderID: "default",
-				SystemPrompt:     oldConfig.SystemPrompt,
+				ActiveProviderID:       "default",
+				MemoryProviderID:       "",
+				MemoryProvider:         nil,
+				MemoryEnabled:          false,
+				MemoryExtractionRounds: DefaultMemoryExtractionRounds,
+				SystemPrompt:           oldConfig.SystemPrompt,
 			}
 			// 保存新格式
 			if errSave := m.saveUnsafe(); errSave != nil {
@@ -188,6 +195,16 @@ func (m *Manager) Load() error {
 	}
 
 	if m.applyProviderDefaults(rawProviders.Providers) {
+		changed := true
+		if m.applyConfigDefaults() {
+			changed = true
+		}
+		if changed {
+			if errSave := m.saveUnsafe(); errSave != nil {
+				return errSave
+			}
+		}
+	} else if m.applyConfigDefaults() {
 		if errSave := m.saveUnsafe(); errSave != nil {
 			return errSave
 		}
@@ -195,6 +212,15 @@ func (m *Manager) Load() error {
 
 	logging.Infof("config loaded: path=%s providers=%d active=%s", m.configPath, len(m.config.Providers), m.config.ActiveProviderID)
 	return nil
+}
+
+func (m *Manager) applyConfigDefaults() bool {
+	changed := false
+	if m.config.MemoryExtractionRounds <= 0 {
+		m.config.MemoryExtractionRounds = DefaultMemoryExtractionRounds
+		changed = true
+	}
+	return changed
 }
 
 func (m *Manager) applyProviderDefaults(rawProviders []map[string]json.RawMessage) bool {

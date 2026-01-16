@@ -77,15 +77,5 @@ func NormalizeExtractedMemoryFields(subject, category, content string) (string, 
 		return "", "", "", false
 	}
 
-	if subject == SubjectUser {
-		if !strings.HasPrefix(content, "用户") {
-			return "", "", "", false
-		}
-	} else if subject == SubjectSelf {
-		if !strings.HasPrefix(content, "我") {
-			return "", "", "", false
-		}
-	}
-
 	return subject, category, content, true
 }

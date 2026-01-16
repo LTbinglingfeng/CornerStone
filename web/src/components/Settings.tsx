@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { gsap } from 'gsap'
 import { getProviders, updateSystemPrompt } from '../services/api'
-import { memoryService } from '../services/memoryService'
+import { memoryService, type MemoryExtractionPromptTemplate, type MemoryExtractionSettings } from '../services/memoryService'
 import type { Provider } from '../types/chat'
 import {
     getReplyWaitWindowConfig,
@@ -25,6 +25,18 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     const [activeProviderName, setActiveProviderName] = useState('')
     const [memoryProvider, setMemoryProvider] = useState<Provider | null>(null)
     const [memoryEnabled, setMemoryEnabled] = useState(false)
+    const [memoryExtractionSettings, setMemoryExtractionSettings] = useState<MemoryExtractionSettings | null>(null)
+    const [memoryExtractionRounds, setMemoryExtractionRounds] = useState(5)
+    const [memoryExtractionMaxRounds, setMemoryExtractionMaxRounds] = useState(64)
+    const [memoryExtractionProviderName, setMemoryExtractionProviderName] = useState('')
+    const [showMemoryExtractionRoundsModal, setShowMemoryExtractionRoundsModal] = useState(false)
+    const [editingMemoryExtractionRounds, setEditingMemoryExtractionRounds] = useState(5)
+    const [savingMemoryExtractionRounds, setSavingMemoryExtractionRounds] = useState(false)
+    const [showMemoryExtractionPromptModal, setShowMemoryExtractionPromptModal] = useState(false)
+    const [loadingMemoryExtractionPrompt, setLoadingMemoryExtractionPrompt] = useState(false)
+    const [savingMemoryExtractionPrompt, setSavingMemoryExtractionPrompt] = useState(false)
+    const [editingMemoryExtractionPrompt, setEditingMemoryExtractionPrompt] = useState('')
+    const [defaultMemoryExtractionPrompt, setDefaultMemoryExtractionPrompt] = useState('')
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
     const [showProviderSettings, setShowProviderSettings] = useState(false)
@@ -37,6 +49,8 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     const [showReplyWaitModal, setShowReplyWaitModal] = useState(false)
     const promptModalRef = useRef<HTMLDivElement>(null)
     const replyWaitModalRef = useRef<HTMLDivElement>(null)
+    const memoryExtractionRoundsModalRef = useRef<HTMLDivElement>(null)
+    const memoryExtractionPromptModalRef = useRef<HTMLDivElement>(null)
 
     useEffect(() => {
         loadData()
@@ -62,6 +76,26 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         }
     }, [showReplyWaitModal])
 
+    useEffect(() => {
+        if (showMemoryExtractionRoundsModal && memoryExtractionRoundsModalRef.current) {
+            gsap.fromTo(
+                memoryExtractionRoundsModalRef.current,
+                { opacity: 0, scale: 0.9 },
+                { opacity: 1, scale: 1, duration: 0.2, ease: 'power2.out' }
+            )
+        }
+    }, [showMemoryExtractionRoundsModal])
+
+    useEffect(() => {
+        if (showMemoryExtractionPromptModal && memoryExtractionPromptModalRef.current) {
+            gsap.fromTo(
+                memoryExtractionPromptModalRef.current,
+                { opacity: 0, scale: 0.9 },
+                { opacity: 1, scale: 1, duration: 0.2, ease: 'power2.out' }
+            )
+        }
+    }, [showMemoryExtractionPromptModal])
+
     const loadData = async ({ showLoading = true }: { showLoading?: boolean } = {}) => {
         if (showLoading) setLoading(true)
         const providersData = await getProviders()
@@ -71,6 +105,15 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
             setActiveProviderName(activeProvider?.name || '未设置')
             setMemoryProvider(providersData.memory_provider || null)
             setMemoryEnabled(!!providersData.memory_enabled)
+        }
+        try {
+            const settings = await memoryService.getMemoryExtractionSettings()
+            setMemoryExtractionSettings(settings)
+            setMemoryExtractionRounds(settings.rounds)
+            setMemoryExtractionMaxRounds(settings.max_rounds)
+            setMemoryExtractionProviderName(settings.provider_name || '')
+        } catch {
+            setMemoryExtractionSettings(null)
         }
         if (showLoading) setLoading(false)
     }
@@ -119,6 +162,100 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
             })
         } else {
             setShowReplyWaitModal(false)
+        }
+    }
+
+    const handleOpenMemoryExtractionRoundsModal = () => {
+        const rounds = memoryExtractionSettings?.rounds || memoryExtractionRounds || 5
+        setEditingMemoryExtractionRounds(rounds)
+        setShowMemoryExtractionRoundsModal(true)
+    }
+
+    const handleCloseMemoryExtractionRoundsModal = () => {
+        if (memoryExtractionRoundsModalRef.current) {
+            gsap.to(memoryExtractionRoundsModalRef.current, {
+                opacity: 0,
+                scale: 0.9,
+                duration: 0.2,
+                ease: 'power2.in',
+                onComplete: () => {
+                    setShowMemoryExtractionRoundsModal(false)
+                },
+            })
+        } else {
+            setShowMemoryExtractionRoundsModal(false)
+        }
+    }
+
+    const handleSaveMemoryExtractionRounds = async () => {
+        if (savingMemoryExtractionRounds) return
+        setSavingMemoryExtractionRounds(true)
+        try {
+            const settings = await memoryService.setMemoryExtractionRounds(editingMemoryExtractionRounds)
+            setMemoryExtractionSettings(settings)
+            setMemoryExtractionRounds(settings.rounds)
+            setMemoryExtractionMaxRounds(settings.max_rounds)
+            setMemoryExtractionProviderName(settings.provider_name || '')
+            showToast('记忆提取轮数已保存', 'success')
+            handleCloseMemoryExtractionRoundsModal()
+        } catch (error) {
+            const message = error instanceof Error ? error.message : '保存失败'
+            showToast(message, 'error')
+        } finally {
+            setSavingMemoryExtractionRounds(false)
+        }
+    }
+
+    const handleOpenMemoryExtractionPromptModal = () => {
+        setShowMemoryExtractionPromptModal(true)
+        setLoadingMemoryExtractionPrompt(true)
+        setSavingMemoryExtractionPrompt(false)
+        setEditingMemoryExtractionPrompt('')
+        setDefaultMemoryExtractionPrompt('')
+
+        void (async () => {
+            try {
+                const data: MemoryExtractionPromptTemplate = await memoryService.getMemoryExtractionPromptTemplate()
+                setEditingMemoryExtractionPrompt(data.template || '')
+                setDefaultMemoryExtractionPrompt(data.default_template || '')
+            } catch (error) {
+                const message = error instanceof Error ? error.message : '加载失败'
+                showToast(message, 'error')
+                setShowMemoryExtractionPromptModal(false)
+            } finally {
+                setLoadingMemoryExtractionPrompt(false)
+            }
+        })()
+    }
+
+    const handleCloseMemoryExtractionPromptModal = () => {
+        if (memoryExtractionPromptModalRef.current) {
+            gsap.to(memoryExtractionPromptModalRef.current, {
+                opacity: 0,
+                scale: 0.9,
+                duration: 0.2,
+                ease: 'power2.in',
+                onComplete: () => {
+                    setShowMemoryExtractionPromptModal(false)
+                },
+            })
+        } else {
+            setShowMemoryExtractionPromptModal(false)
+        }
+    }
+
+    const handleSaveMemoryExtractionPrompt = async () => {
+        if (savingMemoryExtractionPrompt || loadingMemoryExtractionPrompt) return
+        setSavingMemoryExtractionPrompt(true)
+        try {
+            await memoryService.updateMemoryExtractionPromptTemplate(editingMemoryExtractionPrompt)
+            showToast('记忆提取提示词已保存', 'success')
+            handleCloseMemoryExtractionPromptModal()
+        } catch (error) {
+            const message = error instanceof Error ? error.message : '保存失败'
+            showToast(message, 'error')
+        } finally {
+            setSavingMemoryExtractionPrompt(false)
         }
     }
 
@@ -186,6 +323,17 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         return formatReplyWaitWindowConfig(replyWaitConfig)
     }
 
+    const getMemoryExtractionRoundsPreview = () => {
+        const rounds = memoryExtractionRounds || memoryExtractionSettings?.rounds || 5
+        return `${rounds}轮`
+    }
+
+    const getMemoryExtractionRoundsDetail = () => {
+        const maxRounds = memoryExtractionMaxRounds || memoryExtractionSettings?.max_rounds || 1
+        const providerLabel = memoryExtractionProviderName ? `（上限来自：${memoryExtractionProviderName}）` : ''
+        return `最多${maxRounds}轮${providerLabel}`
+    }
+
     const memoryProviderPreview = getMemoryProviderPreview()
 
     return (
@@ -251,7 +399,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                         <h3>长期记忆</h3>
 
                         <p className="prompt-modal-hint">
-                            提示：开启后会将最近 5 轮对话片段发送给记忆处理模型用于提取，请勿输入敏感信息。
+                            提示：开启后会将最近 {memoryExtractionRounds || 5} 轮对话片段发送给记忆处理模型用于提取，请勿输入敏感信息。
                         </p>
 
                         <div className="settings-group">
@@ -288,6 +436,42 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                         <p className="prompt-modal-hint memory-provider-hint">
                             用于提取和处理长期记忆，建议选择快速便宜的模型
                         </p>
+
+                        <button
+                            className="settings-entry-btn"
+                            onClick={handleOpenMemoryExtractionRoundsModal}
+                            style={{ marginTop: 12 }}
+                        >
+                            <div className="settings-entry-info">
+                                <span className="settings-entry-label">记忆提取轮数</span>
+                                <span className="settings-entry-value">{getMemoryExtractionRoundsPreview()}</span>
+                                <span className="settings-entry-subvalue">{getMemoryExtractionRoundsDetail()}</span>
+                            </div>
+                            <svg className="settings-entry-arrow" viewBox="0 0 24 24">
+                                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                            </svg>
+                        </button>
+                        <p className="prompt-modal-hint memory-provider-hint">
+                            每轮包含用户与 AI 各一条消息，数值越大提取越完整，但也更耗时
+                        </p>
+
+                        <button
+                            className="settings-entry-btn"
+                            onClick={handleOpenMemoryExtractionPromptModal}
+                            style={{ marginTop: 12 }}
+                        >
+                            <div className="settings-entry-info">
+                                <span className="settings-entry-label">记忆提取提示词</span>
+                                <span className="settings-entry-value">编辑</span>
+                                <span className="settings-entry-subvalue">
+                                    支持 &#123;&#123;user&#125;&#125;/&#123;&#123;avatar&#125;&#125;/
+                                    &#123;&#123;EXISTING_MEMORIES&#125;&#125;/&#123;&#123;CHAT_CONTENT&#125;&#125;
+                                </span>
+                            </div>
+                            <svg className="settings-entry-arrow" viewBox="0 0 24 24">
+                                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                            </svg>
+                        </button>
                     </div>
                 </div>
             )}
@@ -398,6 +582,126 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                             </button>
                             <button className="prompt-modal-btn save" onClick={handleSaveReplyWaitConfig}>
                                 保存
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* 记忆提取轮数设置弹窗 */}
+            {showMemoryExtractionRoundsModal && (
+                <div className="prompt-modal-overlay" onClick={handleCloseMemoryExtractionRoundsModal}>
+                    <div
+                        className="prompt-modal-card"
+                        ref={memoryExtractionRoundsModalRef}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="prompt-modal-header">
+                            <h3>记忆提取轮数</h3>
+                            <button className="prompt-modal-close" onClick={handleCloseMemoryExtractionRoundsModal}>
+                                <svg viewBox="0 0 24 24">
+                                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        <div className="prompt-modal-body">
+                            <p className="prompt-modal-hint">
+                                用于控制发送给记忆提取模型的最近对话轮数（每轮 = 用户 + AI）
+                            </p>
+                            <div className="settings-group">
+                                <label className="settings-label">轮数</label>
+                                <input
+                                    className="settings-input"
+                                    type="number"
+                                    min={1}
+                                    max={memoryExtractionMaxRounds || 1}
+                                    step={1}
+                                    value={editingMemoryExtractionRounds}
+                                    onChange={(e) => {
+                                        const parsed = Number.parseInt(e.target.value, 10)
+                                        const max = memoryExtractionMaxRounds || 1
+                                        if (!Number.isFinite(parsed)) {
+                                            setEditingMemoryExtractionRounds(1)
+                                            return
+                                        }
+                                        setEditingMemoryExtractionRounds(Math.max(1, Math.min(parsed, max)))
+                                    }}
+                                />
+                            </div>
+                            <p className="prompt-modal-hint">{getMemoryExtractionRoundsDetail()}</p>
+                        </div>
+
+                        <div className="prompt-modal-footer">
+                            <button className="prompt-modal-btn cancel" onClick={handleCloseMemoryExtractionRoundsModal}>
+                                取消
+                            </button>
+                            <button
+                                className="prompt-modal-btn save"
+                                onClick={handleSaveMemoryExtractionRounds}
+                                disabled={savingMemoryExtractionRounds}
+                            >
+                                {savingMemoryExtractionRounds ? '保存中...' : '保存'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* 记忆提取提示词编辑弹窗 */}
+            {showMemoryExtractionPromptModal && (
+                <div className="prompt-modal-overlay" onClick={handleCloseMemoryExtractionPromptModal}>
+                    <div
+                        className="prompt-modal-card"
+                        ref={memoryExtractionPromptModalRef}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="prompt-modal-header">
+                            <h3>记忆提取提示词</h3>
+                            <button className="prompt-modal-close" onClick={handleCloseMemoryExtractionPromptModal}>
+                                <svg viewBox="0 0 24 24">
+                                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        <div className="prompt-modal-body">
+                            <p className="prompt-modal-hint">
+                                必须保留 &#123;&#123;EXISTING_MEMORIES&#125;&#125; 与 &#123;&#123;CHAT_CONTENT&#125;&#125; 占位符。
+                                可用变量：&#123;&#123;user&#125;&#125;（用户） / &#123;&#123;avatar&#125;&#125;（角色）
+                            </p>
+
+                            <div className="memory-extraction-template-actions">
+                                <button
+                                    className="action-button edit"
+                                    onClick={() => setEditingMemoryExtractionPrompt(defaultMemoryExtractionPrompt)}
+                                    disabled={loadingMemoryExtractionPrompt || defaultMemoryExtractionPrompt === ''}
+                                    type="button"
+                                >
+                                    恢复默认
+                                </button>
+                            </div>
+
+                            <textarea
+                                className="prompt-modal-textarea"
+                                value={editingMemoryExtractionPrompt}
+                                onChange={(e) => setEditingMemoryExtractionPrompt(e.target.value)}
+                                placeholder={loadingMemoryExtractionPrompt ? '加载中...' : '输入记忆提取提示词...'}
+                                rows={12}
+                                disabled={loadingMemoryExtractionPrompt}
+                            />
+                        </div>
+
+                        <div className="prompt-modal-footer">
+                            <button className="prompt-modal-btn cancel" onClick={handleCloseMemoryExtractionPromptModal}>
+                                取消
+                            </button>
+                            <button
+                                className="prompt-modal-btn save"
+                                onClick={handleSaveMemoryExtractionPrompt}
+                                disabled={savingMemoryExtractionPrompt || loadingMemoryExtractionPrompt}
+                            >
+                                {savingMemoryExtractionPrompt ? '保存中...' : '保存'}
                             </button>
                         </div>
                     </div>
