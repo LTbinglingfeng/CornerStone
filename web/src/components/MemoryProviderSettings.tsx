@@ -2,49 +2,16 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { gsap } from 'gsap'
 import type { Provider, ProviderType } from '../types/chat'
 import { getProviders, updateMemoryProvider } from '../services/api'
+import {
+  PROVIDER_TYPES_CHAT,
+  OPENAI_REASONING_EFFORT_OPTIONS,
+  GEMINI_THINKING_MODES,
+  GEMINI_THINKING_LEVELS,
+  getGeminiThinkingBudgetRange,
+  clampGeminiThinkingBudget,
+  CustomSelect,
+} from './provider'
 import './ProviderSettings.css'
-
-const PROVIDER_TYPES: { value: ProviderType; label: string }[] = [
-  { value: 'openai', label: 'OpenAI 兼容' },
-  { value: 'openai_response', label: 'OpenAI Responses' },
-  { value: 'gemini', label: 'Google Gemini' },
-  { value: 'anthropic', label: 'Anthropic Claude' },
-]
-
-const OPENAI_REASONING_EFFORT_OPTIONS = [
-  { value: '', label: '默认' },
-  { value: 'low', label: '低 (low)' },
-  { value: 'medium', label: '中 (medium)' },
-  { value: 'high', label: '高 (high)' },
-]
-
-const GEMINI_THINKING_MODES = [
-  { value: 'none', label: '不思考' },
-  { value: 'thinking_level', label: 'thinkingLevel (Gemini 3 系列)' },
-  { value: 'thinking_budget', label: 'thinkingBudget (Gemini 2.5 系列)' },
-]
-
-const GEMINI_THINKING_LEVELS = [
-  { value: 'low', label: '低 (low)' },
-  { value: 'high', label: '高 (high)' },
-]
-
-const getGeminiThinkingBudgetRange = (model: string): { min: number; max: number } => {
-  const normalized = (model || '').trim().toLowerCase()
-
-  // Based on https://ai.google.dev/gemini-api/docs/thinking
-  if (normalized.includes('flash-lite')) return { min: 512, max: 24576 }
-  if (normalized.includes('flash')) return { min: 0, max: 24576 }
-  if (normalized.includes('pro')) return { min: 128, max: 32768 }
-  if (normalized.includes('robotics-er')) return { min: 0, max: 24576 }
-  return { min: 128, max: 32768 }
-}
-
-const clampGeminiThinkingBudget = (model: string, budget: number): number => {
-  if (budget === -1) return -1
-  const { min, max } = getGeminiThinkingBudgetRange(model)
-  return Math.min(Math.max(budget, min), max)
-}
 
 interface MemoryProviderSettingsProps {
   onBack: () => void
@@ -391,17 +358,12 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
 
               <div className="modal-group">
                 <label className="modal-label">供应商类型</label>
-                <select
-                  className="modal-input modal-select"
+                <CustomSelect
                   value={editingProvider.type || 'openai'}
-                  onChange={(e) => handleProviderChange('type', e.target.value)}
-                >
-                  {PROVIDER_TYPES.map((type) => (
-                    <option key={type.value} value={type.value}>
-                      {type.label}
-                    </option>
-                  ))}
-                </select>
+                  options={PROVIDER_TYPES_CHAT}
+                  ariaLabel="供应商类型"
+                  onChange={(value) => handleProviderChange('type', value)}
+                />
               </div>
 
               <div className="modal-group">
@@ -469,17 +431,12 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
               {(editingProvider.type === 'openai' || editingProvider.type === 'openai_response') && (
                 <div className="modal-group">
                   <label className="modal-label">思考量 (reasoning effort)</label>
-                  <select
-                    className="modal-input modal-select"
-                    value={editingProvider.reasoning_effort}
-                    onChange={(e) => handleProviderChange('reasoning_effort', e.target.value)}
-                  >
-                    {OPENAI_REASONING_EFFORT_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                  <CustomSelect
+                    value={editingProvider.reasoning_effort ?? ''}
+                    options={OPENAI_REASONING_EFFORT_OPTIONS}
+                    ariaLabel="思考量"
+                    onChange={(value) => handleProviderChange('reasoning_effort', value)}
+                  />
                 </div>
               )}
 
@@ -487,33 +444,23 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                 <>
                   <div className="modal-group">
                     <label className="modal-label">Gemini 思考模式</label>
-                    <select
-                      className="modal-input modal-select"
+                    <CustomSelect
                       value={editingProvider.gemini_thinking_mode || 'none'}
-                      onChange={(e) => handleProviderChange('gemini_thinking_mode', e.target.value)}
-                    >
-                      {GEMINI_THINKING_MODES.map((mode) => (
-                        <option key={mode.value} value={mode.value}>
-                          {mode.label}
-                        </option>
-                      ))}
-                    </select>
+                      options={GEMINI_THINKING_MODES}
+                      ariaLabel="Gemini 思考模式"
+                      onChange={(value) => handleProviderChange('gemini_thinking_mode', value)}
+                    />
                   </div>
 
                   <div className="modal-group">
                     <label className="modal-label">Gemini 思考参数</label>
                     {editingProvider.gemini_thinking_mode === 'thinking_level' && (
-                      <select
-                        className="modal-input modal-select"
+                      <CustomSelect
                         value={editingProvider.gemini_thinking_level || 'low'}
-                        onChange={(e) => handleProviderChange('gemini_thinking_level', e.target.value)}
-                      >
-                        {GEMINI_THINKING_LEVELS.map((level) => (
-                          <option key={level.value} value={level.value}>
-                            {level.label}
-                          </option>
-                        ))}
-                      </select>
+                        options={GEMINI_THINKING_LEVELS}
+                        ariaLabel="Gemini 思考参数"
+                        onChange={(value) => handleProviderChange('gemini_thinking_level', value)}
+                      />
                     )}
                     {editingProvider.gemini_thinking_mode === 'thinking_budget' && (
                       <input

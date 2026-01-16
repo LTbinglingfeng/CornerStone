@@ -8,158 +8,24 @@ import {
   deleteProvider,
   setActiveProvider,
 } from '../services/api'
+import {
+  PROVIDER_TYPES_ALL,
+  OPENAI_REASONING_EFFORT_OPTIONS,
+  GEMINI_THINKING_MODES,
+  GEMINI_THINKING_LEVELS,
+  GEMINI_IMAGE_ASPECT_RATIOS,
+  GEMINI_IMAGE_SIZES,
+  GEMINI_IMAGE_OUTPUT_MIME_TYPES,
+  getGeminiThinkingBudgetRange,
+  clampGeminiThinkingBudget,
+  clampGeminiImageNumberOfImages,
+  maskApiKey,
+  CustomSelect,
+} from './provider'
 import './ProviderSettings.css'
-
-type SelectOption = { value: string; label: string }
-
-// 供应商类型选项
-const PROVIDER_TYPES: { value: ProviderType; label: string }[] = [
-  { value: 'openai', label: 'OpenAI 兼容' },
-  { value: 'openai_response', label: 'OpenAI Responses' },
-  { value: 'gemini', label: 'Google Gemini' },
-  { value: 'gemini_image', label: 'Gemini 生图（备用）' },
-  { value: 'anthropic', label: 'Anthropic Claude' },
-]
-
-const OPENAI_REASONING_EFFORT_OPTIONS = [
-  { value: '', label: '默认' },
-  { value: 'low', label: '低 (low)' },
-  { value: 'medium', label: '中 (medium)' },
-  { value: 'high', label: '高 (high)' },
-]
-
-const GEMINI_THINKING_MODES = [
-  { value: 'none', label: '不思考' },
-  { value: 'thinking_level', label: 'thinkingLevel (Gemini 3 系列)' },
-  { value: 'thinking_budget', label: 'thinkingBudget (Gemini 2.5 系列)' },
-]
-
-const GEMINI_THINKING_LEVELS = [
-  { value: 'low', label: '低 (low)' },
-  { value: 'high', label: '高 (high)' },
-]
-
-const getGeminiThinkingBudgetRange = (model: string): { min: number; max: number } => {
-  const normalized = (model || '').trim().toLowerCase()
-
-  // Based on https://ai.google.dev/gemini-api/docs/thinking
-  if (normalized.includes('flash-lite')) return { min: 512, max: 24576 }
-  if (normalized.includes('flash')) return { min: 0, max: 24576 }
-  if (normalized.includes('pro')) return { min: 128, max: 32768 }
-  if (normalized.includes('robotics-er')) return { min: 0, max: 24576 }
-  return { min: 128, max: 32768 }
-}
-
-const clampGeminiThinkingBudget = (model: string, budget: number): number => {
-  if (budget === -1) return -1
-  const { min, max } = getGeminiThinkingBudgetRange(model)
-  return Math.min(Math.max(budget, min), max)
-}
-
-const GEMINI_IMAGE_ASPECT_RATIOS = [
-  { value: '1:1', label: '1:1' },
-  { value: '3:4', label: '3:4' },
-  { value: '4:3', label: '4:3' },
-  { value: '9:16', label: '9:16' },
-  { value: '16:9', label: '16:9' },
-]
-
-const GEMINI_IMAGE_SIZES = [
-  { value: '', label: '默认' },
-  { value: '1K', label: '1K' },
-  { value: '2K', label: '2K' },
-]
-
-const GEMINI_IMAGE_OUTPUT_MIME_TYPES = [
-  { value: 'image/jpeg', label: 'image/jpeg' },
-  { value: 'image/png', label: 'image/png' },
-]
-
-const clampGeminiImageNumberOfImages = (value: number): number => {
-  if (!Number.isFinite(value)) return 1
-  return Math.min(Math.max(Math.trunc(value), 1), 8)
-}
 
 interface ProviderSettingsProps {
   onBack: () => void
-}
-
-const CustomSelect: React.FC<{
-  value: string
-  options: SelectOption[]
-  onChange: (value: string) => void
-  ariaLabel?: string
-  disabled?: boolean
-}> = ({ value, options, onChange, ariaLabel, disabled = false }) => {
-  const [open, setOpen] = useState(false)
-  const wrapperRef = useRef<HTMLDivElement>(null)
-  const selectedOption = options.find((option) => option.value === value)
-  const displayLabel = selectedOption?.label || value || options[0]?.label || '请选择'
-
-  useEffect(() => {
-    if (!open) return
-    const handleClickOutside = (event: MouseEvent) => {
-      if (!wrapperRef.current) return
-      if (!wrapperRef.current.contains(event.target as Node)) {
-        setOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [open])
-
-  useEffect(() => {
-    if (disabled && open) {
-      setOpen(false)
-    }
-  }, [disabled, open])
-
-  return (
-    <div className={`modal-select-ui${open ? ' open' : ''}`} ref={wrapperRef}>
-      <button
-        type="button"
-        className="modal-input modal-select-trigger"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-disabled={disabled}
-        onClick={() => {
-          if (!disabled) setOpen((prev) => !prev)
-        }}
-      >
-        <span className="modal-select-text">{displayLabel}</span>
-        <svg className="modal-select-icon" viewBox="0 0 24 24">
-          <path d="M7 10l5 5 5-5z" />
-        </svg>
-      </button>
-      {open && (
-        <div className="modal-select-menu" role="listbox" aria-label={ariaLabel}>
-          {options.map((option) => {
-            const isActive = option.value === value
-            return (
-              <button
-                type="button"
-                key={option.value}
-                className={`modal-select-option${isActive ? ' active' : ''}`}
-                role="option"
-                aria-selected={isActive}
-                onClick={() => {
-                  onChange(option.value)
-                  setOpen(false)
-                }}
-              >
-                <span>{option.label}</span>
-                {isActive && (
-                  <svg className="modal-select-check" viewBox="0 0 24 24">
-                    <path d="M9 16.17l-3.88-3.88L4 13.41 9 18.41 20 7.41 18.59 6l-9.59 10.17z" />
-                  </svg>
-                )}
-              </button>
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
 }
 
 const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
@@ -424,11 +290,6 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
     setEditingProvider({ ...editingProvider, [field]: value })
   }
 
-  const maskApiKey = (key: string): string => {
-    if (!key || key.length <= 8) return '••••••••'
-    return key.substring(0, 4) + '••••••••' + key.substring(key.length - 4)
-  }
-
   return (
     <div className="provider-settings" ref={containerRef}>
       <div className="provider-settings-header">
@@ -474,7 +335,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                     <div className="provider-card-row">
                       <span className="provider-card-label">类型</span>
                       <span className="provider-card-value type">
-                        {PROVIDER_TYPES.find(t => t.value === provider.type)?.label || provider.type || 'OpenAI 兼容'}
+                        {PROVIDER_TYPES_ALL.find(t => t.value === provider.type)?.label || provider.type || 'OpenAI 兼容'}
                       </span>
                     </div>
                     <div className="provider-card-row">
@@ -592,7 +453,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                 <label className="modal-label">供应商类型</label>
                 <CustomSelect
                   value={editingProvider.type || 'openai'}
-                  options={PROVIDER_TYPES}
+                  options={PROVIDER_TYPES_ALL}
                   ariaLabel="供应商类型"
                   onChange={(value) => handleProviderChange('type', value)}
                 />
