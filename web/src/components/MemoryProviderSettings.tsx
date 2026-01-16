@@ -11,6 +11,7 @@ import {
     clampGeminiThinkingBudget,
     CustomSelect,
 } from './provider'
+import { NumericInput } from './NumericInput'
 import './ProviderSettings.css'
 
 interface MemoryProviderSettingsProps {
@@ -422,14 +423,14 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
 
                             <div className="modal-group">
                                 <label className="modal-label">温度 (0-2)</label>
-                                <input
-                                    type="number"
+                                <NumericInput
                                     className="modal-input"
                                     min={0}
                                     max={2}
                                     step={0.1}
                                     value={editingProvider.temperature}
-                                    onChange={(e) => handleProviderChange('temperature', Number(e.target.value) || 0)}
+                                    parseAs="float"
+                                    onValueChange={(value) => handleProviderChange('temperature', value)}
                                     placeholder="0.8"
                                     disabled={editingProvider.type === 'anthropic'}
                                 />
@@ -437,14 +438,14 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
 
                             <div className="modal-group">
                                 <label className="modal-label">Top P (0-1)</label>
-                                <input
-                                    type="number"
+                                <NumericInput
                                     className="modal-input"
                                     min={0}
                                     max={1}
                                     step={0.1}
                                     value={editingProvider.top_p}
-                                    onChange={(e) => handleProviderChange('top_p', Number(e.target.value) || 0)}
+                                    parseAs="float"
+                                    onValueChange={(value) => handleProviderChange('top_p', value)}
                                     placeholder="1"
                                 />
                             </div>
@@ -486,18 +487,15 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                                             />
                                         )}
                                         {editingProvider.gemini_thinking_mode === 'thinking_budget' && (
-                                            <input
-                                                type="number"
+                                            <NumericInput
                                                 className="modal-input"
                                                 min={getGeminiThinkingBudgetRange(editingProvider.model).min}
                                                 max={getGeminiThinkingBudgetRange(editingProvider.model).max}
                                                 step={1}
                                                 value={editingProvider.gemini_thinking_budget}
-                                                onChange={(e) =>
-                                                    handleProviderChange(
-                                                        'gemini_thinking_budget',
-                                                        Number(e.target.value) || 0
-                                                    )
+                                                parseAs="int"
+                                                onValueChange={(value) =>
+                                                    handleProviderChange('gemini_thinking_budget', value)
                                                 }
                                                 placeholder={`${getGeminiThinkingBudgetRange(editingProvider.model).min}-${getGeminiThinkingBudgetRange(editingProvider.model).max}`}
                                             />
@@ -512,15 +510,13 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                             {editingProvider.type === 'anthropic' && (
                                 <div className="modal-group">
                                     <label className="modal-label">思考预算 (tokens)</label>
-                                    <input
-                                        type="number"
+                                    <NumericInput
                                         className="modal-input"
                                         min={0}
                                         step={1}
                                         value={editingProvider.thinking_budget}
-                                        onChange={(e) =>
-                                            handleProviderChange('thinking_budget', Number(e.target.value) || 0)
-                                        }
+                                        parseAs="int"
+                                        onValueChange={(value) => handleProviderChange('thinking_budget', value)}
                                         placeholder="0"
                                     />
                                 </div>

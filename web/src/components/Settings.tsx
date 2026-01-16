@@ -9,6 +9,7 @@ import {
     formatReplyWaitWindowConfig,
     type ReplyWaitWindowConfig,
 } from '../utils/replyWaitWindow'
+import { NumericInput } from './NumericInput'
 import ProviderSettings from './ProviderSettings'
 import MemoryProviderSettings from './MemoryProviderSettings'
 import { useToast } from '../contexts/ToastContext'
@@ -557,17 +558,17 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
 
                             <div className="settings-group">
                                 <label className="settings-label">等待秒数</label>
-                                <input
+                                <NumericInput
                                     className="settings-input"
-                                    type="number"
                                     min={0}
                                     max={120}
                                     step={1}
                                     value={editingReplyWaitConfig.seconds}
-                                    onChange={(e) =>
+                                    parseAs="int"
+                                    onValueChange={(seconds) =>
                                         setEditingReplyWaitConfig((prev) => ({
                                             ...prev,
-                                            seconds: Number.parseInt(e.target.value || '0', 10),
+                                            seconds,
                                         }))
                                     }
                                 />
@@ -611,21 +612,16 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                             </p>
                             <div className="settings-group">
                                 <label className="settings-label">轮数</label>
-                                <input
+                                <NumericInput
                                     className="settings-input"
-                                    type="number"
                                     min={1}
                                     max={memoryExtractionMaxRounds || 1}
                                     step={1}
                                     value={editingMemoryExtractionRounds}
-                                    onChange={(e) => {
-                                        const parsed = Number.parseInt(e.target.value, 10)
+                                    parseAs="int"
+                                    onValueChange={(nextRounds) => {
                                         const max = memoryExtractionMaxRounds || 1
-                                        if (!Number.isFinite(parsed)) {
-                                            setEditingMemoryExtractionRounds(1)
-                                            return
-                                        }
-                                        setEditingMemoryExtractionRounds(Math.max(1, Math.min(parsed, max)))
+                                        setEditingMemoryExtractionRounds(Math.max(1, Math.min(nextRounds, max)))
                                     }}
                                 />
                             </div>
