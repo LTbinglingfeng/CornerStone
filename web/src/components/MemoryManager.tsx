@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import type { Memory } from '../types/memory'
 import { categoryLabels, selfCategories, userCategories } from '../types/memory'
 import { memoryService } from '../services/memoryService'
+import { useToast } from '../contexts/ToastContext'
+import { useConfirm } from '../contexts/ConfirmContext'
 import './MemoryManager.css'
 
 interface MemoryManagerProps {
@@ -9,6 +11,8 @@ interface MemoryManagerProps {
 }
 
 const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId }) => {
+  const { showToast } = useToast()
+  const { confirm } = useConfirm()
   const [memories, setMemories] = useState<Memory[]>([])
   const [showAddModal, setShowAddModal] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -31,13 +35,19 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId }) => {
   }, [loadMemories])
 
   const handleDelete = async (memoryId: string) => {
-    if (!confirm('确定删除这条记忆吗？')) return
+    const ok = await confirm({
+      title: '删除记忆',
+      message: '确定删除这条记忆吗？',
+      confirmText: '删除',
+      danger: true
+    })
+    if (!ok) return
     try {
       await memoryService.deleteMemory(promptId, memoryId)
       await loadMemories()
     } catch (error) {
       console.error('Failed to delete memory:', error)
-      alert('删除失败，请重试')
+      showToast('删除失败，请重试', 'error')
     }
   }
 
@@ -161,6 +171,7 @@ function AddMemoryModal({
   onClose: () => void
   onSuccess: () => void
 }) {
+  const { showToast } = useToast()
   const [subject, setSubject] = useState<'user' | 'self'>('user')
   const [category, setCategory] = useState('identity')
   const [content, setContent] = useState('')
@@ -183,7 +194,7 @@ function AddMemoryModal({
       onClose()
     } catch (error) {
       console.error('Failed to add memory:', error)
-      alert('添加失败，请重试')
+      showToast('添加失败，请重试', 'error')
     } finally {
       setSubmitting(false)
     }

@@ -6,6 +6,7 @@ import type { Provider } from '../types/chat'
 import { getReplyWaitWindowConfig, setReplyWaitWindowConfig, formatReplyWaitWindowConfig, type ReplyWaitWindowConfig } from '../utils/replyWaitWindow'
 import ProviderSettings from './ProviderSettings'
 import MemoryProviderSettings from './MemoryProviderSettings'
+import { useToast } from '../contexts/ToastContext'
 import './Settings.css'
 
 interface SettingsProps {
@@ -13,6 +14,7 @@ interface SettingsProps {
 }
 
 const Settings: React.FC<SettingsProps> = ({ onBack }) => {
+  const { showToast } = useToast()
   const [systemPrompt, setSystemPrompt] = useState('')
   const [editingPrompt, setEditingPrompt] = useState('')
   const [activeProviderName, setActiveProviderName] = useState('')
@@ -20,7 +22,6 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
   const [memoryEnabled, setMemoryEnabled] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [message, setMessage] = useState('')
   const [showProviderSettings, setShowProviderSettings] = useState(false)
   const [showMemoryProviderSettings, setShowMemoryProviderSettings] = useState(false)
   const [showPromptModal, setShowPromptModal] = useState(false)
@@ -72,11 +73,6 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     setReplyWaitConfigState(getReplyWaitWindowConfig())
   }
 
-  const showMessage = (msg: string) => {
-    setMessage(msg)
-    setTimeout(() => setMessage(''), 2000)
-  }
-
   const handleOpenPromptModal = () => {
     setEditingPrompt(systemPrompt)
     setShowPromptModal(true)
@@ -121,7 +117,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
 
   const handleSaveReplyWaitConfig = () => {
     setReplyWaitConfig(editingReplyWaitConfig)
-    showMessage('回复等候窗口已保存')
+    showToast('回复等候窗口已保存', 'success')
     handleCloseReplyWaitModal()
   }
 
@@ -130,10 +126,10 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     const success = await updateSystemPrompt(editingPrompt)
     if (success) {
       setSystemPrompt(editingPrompt)
-      showMessage('系统提示词已保存')
+      showToast('系统提示词已保存', 'success')
       handleClosePromptModal()
     } else {
-      showMessage('保存失败')
+      showToast('保存失败', 'error')
     }
     setSaving(false)
   }
@@ -144,10 +140,10 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     try {
       await memoryService.setMemoryEnabled(enabled)
       setMemoryEnabled(enabled)
-      showMessage(enabled ? '已开启长期记忆' : '已关闭长期记忆')
+      showToast(enabled ? '已开启长期记忆' : '已关闭长期记忆', 'success')
     } catch (error) {
       console.error('Failed to set memory enabled:', error)
-      showMessage('设置失败')
+      showToast('设置失败', 'error')
     } finally {
       setSaving(false)
     }
@@ -288,12 +284,6 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
             </button>
             <p className="prompt-modal-hint memory-provider-hint">用于提取和处理长期记忆，建议选择快速便宜的模型</p>
           </div>
-
-          {message && (
-            <div className={`settings-message ${message.includes('成功') || message.includes('已') ? 'success' : 'error'}`}>
-              {message}
-            </div>
-          )}
         </div>
       )}
 

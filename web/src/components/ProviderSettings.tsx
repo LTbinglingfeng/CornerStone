@@ -22,6 +22,8 @@ import {
   maskApiKey,
   CustomSelect,
 } from './provider'
+import { useToast } from '../contexts/ToastContext'
+import { useConfirm } from '../contexts/ConfirmContext'
 import './ProviderSettings.css'
 
 interface ProviderSettingsProps {
@@ -29,11 +31,12 @@ interface ProviderSettingsProps {
 }
 
 const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
+  const { showToast } = useToast()
+  const { confirm } = useConfirm()
   const [providers, setProviders] = useState<Provider[]>([])
   const [activeProviderId, setActiveProviderId] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [message, setMessage] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [editingProvider, setEditingProvider] = useState<Provider | null>(null)
   const [isAddingNew, setIsAddingNew] = useState(false)
@@ -107,18 +110,13 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
     }
   }
 
-  const showMessage = (msg: string) => {
-    setMessage(msg)
-    setTimeout(() => setMessage(''), 2000)
-  }
-
   const handleSetActive = async (providerId: string) => {
     const success = await setActiveProvider(providerId)
     if (success) {
       setActiveProviderId(providerId)
-      showMessage('已切换供应商')
+      showToast('已切换供应商', 'success')
     } else {
-      showMessage('切换失败')
+      showToast('切换失败', 'error')
     }
   }
 
@@ -171,7 +169,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
     if (!editingProvider) return
 
     if (!editingProvider.id || !editingProvider.name) {
-      showMessage('ID 和名称为必填项')
+      showToast('ID 和名称为必填项', 'error')
       return
     }
 
@@ -181,19 +179,19 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
       const result = await addProvider(editingProvider)
       if (result) {
         await loadProviders()
-        showMessage('供应商添加成功')
+        showToast('供应商添加成功', 'success')
         handleCloseModal()
       } else {
-        showMessage('添加失败，ID 可能已存在')
+        showToast('添加失败，ID 可能已存在', 'error')
       }
     } else {
       const success = await updateProvider(editingProvider)
       if (success) {
         await loadProviders()
-        showMessage('供应商更新成功')
+        showToast('供应商更新成功', 'success')
         handleCloseModal()
       } else {
-        showMessage('更新失败')
+        showToast('更新失败', 'error')
       }
     }
 
@@ -202,18 +200,24 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
 
   const handleDeleteProvider = async (id: string) => {
     if (providers.length <= 1) {
-      showMessage('至少保留一个供应商')
+      showToast('至少保留一个供应商', 'error')
       return
     }
 
-    if (!confirm('确定要删除此供应商吗？')) return
+    const ok = await confirm({
+      title: '删除供应商',
+      message: '确定要删除此供应商吗？',
+      confirmText: '删除',
+      danger: true
+    })
+    if (!ok) return
 
     const success = await deleteProvider(id)
     if (success) {
       await loadProviders()
-      showMessage('供应商已删除')
+      showToast('供应商已删除', 'success')
     } else {
-      showMessage('删除失败')
+      showToast('删除失败', 'error')
     }
   }
 
@@ -321,7 +325,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                   onClick={() => {
                     if (isActive) return
                     if (!isChatSelectable) {
-                      showMessage('该供应商仅用于生图，无法用于对话')
+                      showToast('该供应商仅用于生图，无法用于对话', 'info')
                       return
                     }
                     handleSetActive(provider.id)
@@ -727,12 +731,6 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
               </button>
             </div>
           </div>
-        </div>
-      )}
-
-      {message && (
-        <div className={`provider-message ${message.includes('成功') || message.includes('已') ? 'success' : 'error'}`}>
-          {message}
         </div>
       )}
     </div>

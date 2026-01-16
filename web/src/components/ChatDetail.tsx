@@ -6,6 +6,8 @@ import { getSession, sendMessage, sendMessageBeacon, getPrompt, getUserInfo, get
 import { getReplyWaitWindowConfig } from '../utils/replyWaitWindow'
 import ChatSettings from './ChatSettings'
 import ContextMenu, { type MenuItem } from './ContextMenu'
+import { useToast } from '../contexts/ToastContext'
+import { useConfirm } from '../contexts/ConfirmContext'
 import './ChatDetail.css'
 
 interface ChatDetailProps {
@@ -108,6 +110,8 @@ const splitAssistantMessageContent = (content: string): string[] => {
 }
 
 const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, onSwitchSession }) => {
+  const { showToast } = useToast()
+  const { confirm } = useConfirm()
   const [session, setSession] = useState<ChatRecord | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [inputText, setInputText] = useState('')
@@ -812,7 +816,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     const hasImages = pendingImages.length > 0
     if ((!trimmedText && !hasImages) || sending || uploadingImage) return
     if (hasImages && !imageCapable) {
-      alert('当前模型不支持图片输入')
+      showToast('当前模型不支持图片输入', 'error')
       return
     }
 
@@ -966,7 +970,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     if (uploadedPaths.length > 0) {
       setPendingImages(prev => [...prev, ...uploadedPaths])
     } else {
-      alert('图片上传失败')
+      showToast('图片上传失败', 'error')
     }
 
     setUploadingImage(false)
@@ -1066,7 +1070,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     const content = editState.quoteLine ? buildQuotedOutgoingContent(editState.quoteLine, editState.text) : editState.text
     const updated = await updateSessionMessage(sessionId, editState.messageIndex, content)
     if (!updated) {
-      alert('编辑失败，请重试')
+      showToast('编辑失败，请重试', 'error')
       return
     }
     setSession(updated)
@@ -1075,12 +1079,17 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
   }
 
   const handleDeleteMessage = async (messageIndex: number) => {
-    const ok = window.confirm('确定删除这条消息吗？')
+    const ok = await confirm({
+      title: '删除消息',
+      message: '确定删除这条消息吗？',
+      confirmText: '删除',
+      danger: true
+    })
     if (!ok) return
 
     const updated = await deleteSessionMessage(sessionId, messageIndex)
     if (!updated) {
-      alert('删除失败，请重试')
+      showToast('删除失败，请重试', 'error')
       return
     }
     setSession(updated)
@@ -1134,7 +1143,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     }
 
     if (!copied) {
-      alert('复制失败，请手动选择文本复制')
+      showToast('复制失败，请手动选择文本复制', 'error')
       return
     }
 
@@ -1145,7 +1154,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
   const handleRecallMessage = async (messageIndex: number) => {
     const updated = await recallSessionMessage(sessionId, messageIndex)
     if (!updated) {
-      alert('撤回失败，请重试')
+      showToast('撤回失败，请重试', 'error')
       return
     }
     setSession(updated)

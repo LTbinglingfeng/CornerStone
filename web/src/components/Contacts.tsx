@@ -3,6 +3,8 @@ import { gsap } from 'gsap'
 import { getPrompts, createPrompt, updatePrompt, deletePrompt, uploadPromptAvatar, getPromptAvatarUrl, deletePromptAvatar, createSession, appendQueryParam } from '../services/api'
 import type { Prompt } from '../types/chat'
 import MemoryManager from './MemoryManager'
+import { useToast } from '../contexts/ToastContext'
+import { useConfirm } from '../contexts/ConfirmContext'
 import './Contacts.css'
 
 interface ContactsProps {
@@ -10,6 +12,8 @@ interface ContactsProps {
 }
 
 const Contacts: React.FC<ContactsProps> = ({ onStartChat }) => {
+  const { showToast } = useToast()
+  const { confirm } = useConfirm()
   const [prompts, setPrompts] = useState<Prompt[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -19,7 +23,6 @@ const Contacts: React.FC<ContactsProps> = ({ onStartChat }) => {
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-  const [message, setMessage] = useState('')
   const modalRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -42,11 +45,6 @@ const Contacts: React.FC<ContactsProps> = ({ onStartChat }) => {
     const data = await getPrompts()
     setPrompts(data)
     setLoading(false)
-  }
-
-  const showMessage = (msg: string) => {
-    setMessage(msg)
-    setTimeout(() => setMessage(''), 2000)
   }
 
   const handleOpenModal = (prompt?: Prompt) => {
@@ -115,10 +113,10 @@ const Contacts: React.FC<ContactsProps> = ({ onStartChat }) => {
       if (success) {
         setAvatarPreview(null)
         setAvatarFile(null)
-        showMessage('头像已删除')
+        showToast('头像已删除', 'success')
         loadPrompts()
       } else {
-        showMessage('删除头像失败')
+        showToast('删除头像失败', 'error')
       }
     } else {
       setAvatarPreview(null)
@@ -128,7 +126,7 @@ const Contacts: React.FC<ContactsProps> = ({ onStartChat }) => {
 
   const handleSave = async () => {
     if (!formData.name || !formData.content) {
-      showMessage('名称和内容不能为空')
+      showToast('名称和内容不能为空', 'error')
       return
     }
 
@@ -142,11 +140,11 @@ const Contacts: React.FC<ContactsProps> = ({ onStartChat }) => {
           if (avatarFile) {
             await uploadPromptAvatar(editingPrompt.id, avatarFile)
           }
-          showMessage('更新成功')
+          showToast('更新成功', 'success')
           handleCloseModal()
           loadPrompts()
         } else {
-          showMessage('更新失败')
+          showToast('更新失败', 'error')
         }
       } else {
         // 创建
@@ -156,11 +154,11 @@ const Contacts: React.FC<ContactsProps> = ({ onStartChat }) => {
           if (avatarFile) {
             await uploadPromptAvatar(newPrompt.id, avatarFile)
           }
-          showMessage('创建成功')
+          showToast('创建成功', 'success')
           handleCloseModal()
           loadPrompts()
         } else {
-          showMessage('创建失败')
+          showToast('创建失败', 'error')
         }
       }
     } finally {
@@ -169,13 +167,19 @@ const Contacts: React.FC<ContactsProps> = ({ onStartChat }) => {
   }
 
   const handleDelete = async (prompt: Prompt) => {
-    if (confirm(`确定要删除 "${prompt.name}" 吗？`)) {
+    const ok = await confirm({
+      title: '删除提示词',
+      message: `确定要删除 "${prompt.name}" 吗？`,
+      confirmText: '删除',
+      danger: true
+    })
+    if (ok) {
       const success = await deletePrompt(prompt.id)
       if (success) {
-        showMessage('删除成功')
+        showToast('删除成功', 'success')
         loadPrompts()
       } else {
-        showMessage('删除失败')
+        showToast('删除失败', 'error')
       }
     }
   }
@@ -270,12 +274,6 @@ const Contacts: React.FC<ContactsProps> = ({ onStartChat }) => {
           </div>
         )}
       </div>
-
-      {message && (
-        <div className={`contacts-message ${message.includes('成功') || message.includes('已') ? 'success' : 'error'}`}>
-          {message}
-        </div>
-      )}
 
       {/* 编辑/创建弹窗 */}
       {showModal && (
