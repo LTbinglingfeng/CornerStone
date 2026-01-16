@@ -360,11 +360,17 @@ export function useMessageStream(options: UseMessageStreamOptions): UseMessageSt
         ]
     )
 
+    const flushPendingMessagesRef = useRef(flushPendingMessages)
+
+    useEffect(() => {
+        flushPendingMessagesRef.current = flushPendingMessages
+    }, [flushPendingMessages])
+
     const schedulePendingOutgoingFlush = useCallback(() => {
         const config = getReplyWaitWindowConfig()
         const delayMs = Math.max(0, Math.round(config.seconds * 1000))
         if (delayMs <= 0) {
-            void flushPendingMessages('foreground')
+            void flushPendingMessagesRef.current('foreground')
             return
         }
 
@@ -372,7 +378,7 @@ export function useMessageStream(options: UseMessageStreamOptions): UseMessageSt
             if (pendingOutgoingTimeoutRef.current !== null) return
             pendingOutgoingTimeoutRef.current = window.setTimeout(() => {
                 pendingOutgoingTimeoutRef.current = null
-                void flushPendingMessages('foreground')
+                void flushPendingMessagesRef.current('foreground')
             }, delayMs)
             return
         }
@@ -380,9 +386,9 @@ export function useMessageStream(options: UseMessageStreamOptions): UseMessageSt
         clearPendingOutgoingTimeout()
         pendingOutgoingTimeoutRef.current = window.setTimeout(() => {
             pendingOutgoingTimeoutRef.current = null
-            void flushPendingMessages('foreground')
+            void flushPendingMessagesRef.current('foreground')
         }, delayMs)
-    }, [clearPendingOutgoingTimeout, flushPendingMessages])
+    }, [clearPendingOutgoingTimeout])
 
     const sendMessage = useCallback(
         async (userMessage: ChatMessage) => {
@@ -400,16 +406,15 @@ export function useMessageStream(options: UseMessageStreamOptions): UseMessageSt
     }, [])
 
     useEffect(() => {
-        lastPromptIdRef.current = promptId
-    }, [promptId])
-
-    useEffect(() => {
         const previousSessionId = lastSessionIdRef.current
         const previousPromptId = lastPromptIdRef.current
         if (previousSessionId !== sessionId) {
             clearPendingOutgoingTimeout()
             if (pendingOutgoingMessagesRef.current.length > 0) {
-                void flushPendingMessages('background', { sessionId: previousSessionId, promptId: previousPromptId })
+                void flushPendingMessagesRef.current('background', {
+                    sessionId: previousSessionId,
+                    promptId: previousPromptId,
+                })
             }
             pendingOutgoingMessagesRef.current = []
         }
@@ -426,7 +431,6 @@ export function useMessageStream(options: UseMessageStreamOptions): UseMessageSt
         setSending(false)
     }, [
         clearPendingOutgoingTimeout,
-        flushPendingMessages,
         promptId,
         resetReveal,
         sessionId,
