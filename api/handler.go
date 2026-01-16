@@ -78,51 +78,59 @@ func (h *Handler) decodeJSON(w http.ResponseWriter, r *http.Request, dst interfa
 // RegisterRoutes 注册所有路由
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	// 鉴权接口
-	mux.HandleFunc("/management/auth/status", h.corsMiddleware(h.handleAuthStatus))
-	mux.HandleFunc("/management/auth/setup", h.corsMiddleware(h.handleAuthSetup))
-	mux.HandleFunc("/management/auth/login", h.corsMiddleware(h.handleAuthLogin))
+	h.registerPublicRoute(mux, "/management/auth/status", h.handleAuthStatus)
+	h.registerPublicRoute(mux, "/management/auth/setup", h.handleAuthSetup)
+	h.registerPublicRoute(mux, "/management/auth/login", h.handleAuthLogin)
 
 	// 聊天接口 (保持 /api 前缀)
-	mux.HandleFunc("/api/chat", h.corsMiddleware(h.authMiddleware(h.handleChat)))
+	h.registerProtectedRoute(mux, "/api/chat", h.handleChat)
 
 	// 记忆接口
-	mux.HandleFunc("/api/memory/", h.corsMiddleware(h.authMiddleware(h.handleMemory)))
-	mux.HandleFunc("/api/settings/memory-provider", h.corsMiddleware(h.authMiddleware(h.handleSetMemoryProvider)))
-	mux.HandleFunc("/api/settings/memory-enabled", h.corsMiddleware(h.authMiddleware(h.handleSetMemoryEnabled)))
+	h.registerProtectedRoute(mux, "/api/memory/", h.handleMemory)
+	h.registerProtectedRoute(mux, "/api/settings/memory-provider", h.handleSetMemoryProvider)
+	h.registerProtectedRoute(mux, "/api/settings/memory-enabled", h.handleSetMemoryEnabled)
 
 	// 配置接口 (使用 /management 前缀)
-	mux.HandleFunc("/management/config", h.corsMiddleware(h.authMiddleware(h.handleConfig)))
+	h.registerProtectedRoute(mux, "/management/config", h.handleConfig)
 
 	// 供应商管理接口
-	mux.HandleFunc("/management/providers", h.corsMiddleware(h.authMiddleware(h.handleProviders)))
-	mux.HandleFunc("/management/providers/", h.corsMiddleware(h.authMiddleware(h.handleProviderByID)))
-	mux.HandleFunc("/management/providers/active", h.corsMiddleware(h.authMiddleware(h.handleActiveProvider)))
-	mux.HandleFunc("/management/memory-provider", h.corsMiddleware(h.authMiddleware(h.handleMemoryProvider)))
+	h.registerProtectedRoute(mux, "/management/providers", h.handleProviders)
+	h.registerProtectedRoute(mux, "/management/providers/", h.handleProviderByID)
+	h.registerProtectedRoute(mux, "/management/providers/active", h.handleActiveProvider)
+	h.registerProtectedRoute(mux, "/management/memory-provider", h.handleMemoryProvider)
 
 	// 提示词接口
-	mux.HandleFunc("/management/prompts", h.corsMiddleware(h.authMiddleware(h.handlePrompts)))
-	mux.HandleFunc("/management/prompts/", h.corsMiddleware(h.authMiddleware(h.handlePromptByID)))
+	h.registerProtectedRoute(mux, "/management/prompts", h.handlePrompts)
+	h.registerProtectedRoute(mux, "/management/prompts/", h.handlePromptByID)
 
 	// 提示词头像接口
-	mux.HandleFunc("/management/prompts-avatar/", h.corsMiddleware(h.authMiddleware(h.handlePromptAvatar)))
+	h.registerProtectedRoute(mux, "/management/prompts-avatar/", h.handlePromptAvatar)
 
 	// 提示词相关聊天记录接口
-	mux.HandleFunc("/management/prompts-sessions/", h.corsMiddleware(h.authMiddleware(h.handlePromptSessions)))
+	h.registerProtectedRoute(mux, "/management/prompts-sessions/", h.handlePromptSessions)
 
 	// 聊天记录接口
-	mux.HandleFunc("/management/sessions", h.corsMiddleware(h.authMiddleware(h.handleSessions)))
-	mux.HandleFunc("/management/sessions/", h.corsMiddleware(h.authMiddleware(h.handleSessionByID)))
+	h.registerProtectedRoute(mux, "/management/sessions", h.handleSessions)
+	h.registerProtectedRoute(mux, "/management/sessions/", h.handleSessionByID)
 
 	// 用户信息接口
-	mux.HandleFunc("/management/user", h.corsMiddleware(h.authMiddleware(h.handleUser)))
-	mux.HandleFunc("/management/user/avatar", h.corsMiddleware(h.authMiddleware(h.handleUserAvatar)))
+	h.registerProtectedRoute(mux, "/management/user", h.handleUser)
+	h.registerProtectedRoute(mux, "/management/user/avatar", h.handleUserAvatar)
 
 	// 聊天图片缓存接口
-	mux.HandleFunc("/management/cache-photo", h.corsMiddleware(h.authMiddleware(h.handleCachePhoto)))
-	mux.HandleFunc("/management/cache-photo/", h.corsMiddleware(h.authMiddleware(h.handleCachePhotoByName)))
+	h.registerProtectedRoute(mux, "/management/cache-photo", h.handleCachePhoto)
+	h.registerProtectedRoute(mux, "/management/cache-photo/", h.handleCachePhotoByName)
 
 	// 健康检查
-	mux.HandleFunc("/management/health", h.corsMiddleware(h.handleHealth))
+	h.registerPublicRoute(mux, "/management/health", h.handleHealth)
+}
+
+func (h *Handler) registerPublicRoute(mux *http.ServeMux, path string, handler http.HandlerFunc) {
+	mux.HandleFunc(path, h.corsMiddleware(handler))
+}
+
+func (h *Handler) registerProtectedRoute(mux *http.ServeMux, path string, handler http.HandlerFunc) {
+	mux.HandleFunc(path, h.corsMiddleware(h.authMiddleware(handler)))
 }
 
 const maxAPIErrorLogBytes = 2048
@@ -226,4 +234,3 @@ func (h *Handler) jsonResponse(w http.ResponseWriter, status int, data interface
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(data)
 }
-
