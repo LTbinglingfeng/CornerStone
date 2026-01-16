@@ -151,6 +151,9 @@ type OpenAIClient struct {
 
 // NewClient 创建新客户端
 func NewClient(baseURL, apiKey string) *OpenAIClient {
+	if baseURL == "" {
+		baseURL = "https://api.openai.com/v1"
+	}
 	return &OpenAIClient{
 		BaseURL:    strings.TrimSuffix(baseURL, "/"),
 		APIKey:     apiKey,
@@ -187,7 +190,11 @@ func (c *OpenAIClient) Chat(ctx context.Context, req ChatRequest) (*ChatResponse
 		logging.Errorf("openai request failed: model=%s err=%v", req.Model, err)
 		return nil, fmt.Errorf("do request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if errClose := resp.Body.Close(); errClose != nil {
+			logging.Warnf("close openai body error: %v", errClose)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
@@ -238,7 +245,11 @@ func (c *OpenAIClient) ChatStream(ctx context.Context, req ChatRequest, callback
 		logging.Errorf("openai stream request failed: model=%s err=%v", req.Model, err)
 		return fmt.Errorf("do request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if errClose := resp.Body.Close(); errClose != nil {
+			logging.Warnf("close openai stream body error: %v", errClose)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))

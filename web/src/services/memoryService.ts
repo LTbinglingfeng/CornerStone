@@ -24,11 +24,14 @@ export const memoryService = {
     },
 
     async updateMemory(promptId: string, memoryId: string, memory: Partial<Memory>): Promise<Memory[]> {
-        const data = await apiFetchJson<ApiResponse<Memory[]>>(`/api/memory/${encodeURIComponent(promptId)}/${encodeURIComponent(memoryId)}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(memory),
-        })
+        const data = await apiFetchJson<ApiResponse<Memory[]>>(
+            `/api/memory/${encodeURIComponent(promptId)}/${encodeURIComponent(memoryId)}`,
+            {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(memory),
+            }
+        )
         if (!data.success) {
             throw new Error(data.error || '更新记忆失败')
         }
@@ -36,9 +39,12 @@ export const memoryService = {
     },
 
     async deleteMemory(promptId: string, memoryId: string): Promise<void> {
-        const data = await apiFetchJson<ApiResponse<unknown>>(`/api/memory/${encodeURIComponent(promptId)}/${encodeURIComponent(memoryId)}`, {
-            method: 'DELETE',
-        })
+        const data = await apiFetchJson<ApiResponse<unknown>>(
+            `/api/memory/${encodeURIComponent(promptId)}/${encodeURIComponent(memoryId)}`,
+            {
+                method: 'DELETE',
+            }
+        )
         if (!data.success) {
             throw new Error(data.error || '删除记忆失败')
         }
@@ -66,4 +72,3 @@ export const memoryService = {
         }
     },
 }
-

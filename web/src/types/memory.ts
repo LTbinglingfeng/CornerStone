@@ -31,4 +31,3 @@ export const categoryLabels: Record<string, string> = {
 export const userCategories = ['identity', 'relation', 'fact', 'preference', 'event', 'emotion']
 
 export const selfCategories = ['promise', 'plan', 'statement', 'opinion']
-

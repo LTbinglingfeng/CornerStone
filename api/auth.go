@@ -46,6 +46,8 @@ type authTokenStore struct {
 	tokens map[string]authToken
 }
 
+const authTokenCookieName = "cornerstone_auth_token"
+
 func newAuthTokenStore() *authTokenStore {
 	return &authTokenStore{
 		tokens: make(map[string]authToken),
@@ -87,21 +89,39 @@ func generateAuthToken() (string, error) {
 
 func extractAuthToken(r *http.Request) string {
 	header := strings.TrimSpace(r.Header.Get("Authorization"))
-	if header == "" {
-		queryToken := strings.TrimSpace(r.URL.Query().Get("token"))
-		if queryToken != "" {
-			return queryToken
+	if header != "" {
+		parts := strings.Fields(header)
+		if len(parts) == 1 {
+			return parts[0]
 		}
-		return ""
+		if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+			return parts[1]
+		}
 	}
-	parts := strings.Fields(header)
-	if len(parts) == 1 {
-		return parts[0]
+
+	cookie, errCookie := r.Cookie(authTokenCookieName)
+	if errCookie == nil {
+		token := strings.TrimSpace(cookie.Value)
+		if token != "" {
+			return token
+		}
 	}
-	if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
-		return parts[1]
-	}
+
 	return ""
+}
+
+func setAuthTokenCookie(w http.ResponseWriter, r *http.Request, token string) {
+	if strings.TrimSpace(token) == "" {
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     authTokenCookieName,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+		Secure:   r.TLS != nil,
+	})
 }
 
 func (h *Handler) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
@@ -151,6 +171,9 @@ func (h *Handler) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	authenticated := false
 	if h.tokenStore != nil {
 		authenticated = h.tokenStore.validate(token)
+		if authenticated {
+			setAuthTokenCookie(w, r, token)
+		}
 	}
 
 	h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: AuthStatus{
@@ -208,6 +231,7 @@ func (h *Handler) handleAuthSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	setAuthTokenCookie(w, r, token)
 	h.jsonResponse(w, http.StatusCreated, Response{Success: true, Data: AuthSession{
 		Token:    token,
 		Username: info.Username,
@@ -262,6 +286,7 @@ func (h *Handler) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logging.Infof("login success: username=%s ip=%s", info.Username, r.RemoteAddr)
+	setAuthTokenCookie(w, r, token)
 	h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: AuthSession{
 		Token:    token,
 		Username: info.Username,

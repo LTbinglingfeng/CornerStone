@@ -9,13 +9,7 @@ interface CustomSelectProps {
     disabled?: boolean
 }
 
-const CustomSelect: React.FC<CustomSelectProps> = ({
-    value,
-    options,
-    onChange,
-    ariaLabel,
-    disabled = false
-}) => {
+const CustomSelect: React.FC<CustomSelectProps> = ({ value, options, onChange, ariaLabel, disabled = false }) => {
     const [open, setOpen] = useState(false)
     const wrapperRef = useRef<HTMLDivElement>(null)
     const selectedOption = options.find((option) => option.value === value)

@@ -2,6 +2,7 @@ package storage
 
 import (
 	"bufio"
+	"bytes"
 	"cornerstone/client"
 	"cornerstone/logging"
 	"encoding/json"
@@ -146,42 +147,52 @@ func (cm *ChatManager) loadSessionFromFileName(fileName string) (*ChatRecord, er
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() {
+		if errClose := file.Close(); errClose != nil {
+			logging.Warnf("session file close failed: path=%s err=%v", filePath, errClose)
+		}
+	}()
 
 	record := &ChatRecord{
 		Messages: []ChatMessage{},
 	}
 
-	scanner := bufio.NewScanner(file)
-	buf := make([]byte, 0, 64*1024)
-	scanner.Buffer(buf, 1024*1024)
-
 	lineNum := 0
 	loggedMessageParseError := false
-	for scanner.Scan() {
-		lineNum++
-		line := scanner.Bytes()
-		if len(line) == 0 {
-			continue
+	reader := bufio.NewReader(file)
+	for {
+		rawLine, errRead := reader.ReadBytes('\n')
+		if errRead != nil && errRead != io.EOF {
+			return nil, errRead
+		}
+		if len(rawLine) > 0 {
+			line := bytes.TrimSpace(rawLine)
+			if len(line) > 0 {
+				lineNum++
+
+				// 第一行是会话元数据
+				if lineNum == 1 {
+					if errUnmarshal := json.Unmarshal(line, record); errUnmarshal != nil {
+						logging.Errorf("session metadata parse failed: path=%s err=%v", filePath, errUnmarshal)
+						return nil, errUnmarshal
+					}
+				} else {
+					// 后续行是消息
+					var msg ChatMessage
+					if errUnmarshal := json.Unmarshal(line, &msg); errUnmarshal != nil {
+						if !loggedMessageParseError {
+							loggedMessageParseError = true
+							logging.Warnf("session message parse failed: path=%s line=%d err=%v", filePath, lineNum, errUnmarshal)
+						}
+					} else {
+						record.Messages = append(record.Messages, msg)
+					}
+				}
+			}
 		}
 
-		// 第一行是会话元数据
-		if lineNum == 1 {
-			if err := json.Unmarshal(line, record); err != nil {
-				logging.Errorf("session metadata parse failed: path=%s err=%v", filePath, err)
-				return nil, err
-			}
-		} else {
-			// 后续行是消息
-			var msg ChatMessage
-			if err := json.Unmarshal(line, &msg); err != nil {
-				if !loggedMessageParseError {
-					loggedMessageParseError = true
-					logging.Warnf("session message parse failed: path=%s line=%d err=%v", filePath, lineNum, err)
-				}
-				continue
-			}
-			record.Messages = append(record.Messages, msg)
+		if errRead == io.EOF {
+			break
 		}
 	}
 
@@ -203,7 +214,7 @@ func (cm *ChatManager) loadSessionFromFileName(fileName string) (*ChatRecord, er
 		record.UpdatedAt = record.CreatedAt
 	}
 
-	return record, scanner.Err()
+	return record, nil
 }
 
 func (cm *ChatManager) ensureSessionFileNameLocked(record *ChatRecord) error {

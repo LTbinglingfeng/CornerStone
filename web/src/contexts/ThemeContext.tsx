@@ -4,44 +4,40 @@ import { logoBlackDataUrl, logoWhiteDataUrl } from 'virtual:cornerstone-logos'
 type Theme = 'dark' | 'light'
 
 interface ThemeContextType {
-  theme: Theme
-  toggleTheme: () => void
+    theme: Theme
+    toggleTheme: () => void
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined)
 
 export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [theme, setTheme] = useState<Theme>(() => {
-    const saved = localStorage.getItem('theme')
-    return (saved as Theme) || 'dark'
-  })
+    const [theme, setTheme] = useState<Theme>(() => {
+        const saved = localStorage.getItem('theme')
+        return (saved as Theme) || 'dark'
+    })
 
-  useEffect(() => {
-    localStorage.setItem('theme', theme)
-    document.documentElement.setAttribute('data-theme', theme)
+    useEffect(() => {
+        localStorage.setItem('theme', theme)
+        document.documentElement.setAttribute('data-theme', theme)
 
-    const favicon = document.getElementById('cornerstone-favicon') as HTMLLinkElement | null
-    if (favicon) {
-      favicon.type = 'image/jpeg'
-      favicon.href = theme === 'dark' ? logoBlackDataUrl : logoWhiteDataUrl
+        const favicon = document.getElementById('cornerstone-favicon') as HTMLLinkElement | null
+        if (favicon) {
+            favicon.type = 'image/jpeg'
+            favicon.href = theme === 'dark' ? logoBlackDataUrl : logoWhiteDataUrl
+        }
+    }, [theme])
+
+    const toggleTheme = () => {
+        setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))
     }
-  }, [theme])
 
-  const toggleTheme = () => {
-    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))
-  }
-
-  return (
-    <ThemeContext.Provider value={{ theme, toggleTheme }}>
-      {children}
-    </ThemeContext.Provider>
-  )
+    return <ThemeContext.Provider value={{ theme, toggleTheme }}>{children}</ThemeContext.Provider>
 }
 
 export const useTheme = () => {
-  const context = useContext(ThemeContext)
-  if (!context) {
-    throw new Error('useTheme must be used within a ThemeProvider')
-  }
-  return context
+    const context = useContext(ThemeContext)
+    if (!context) {
+        throw new Error('useTheme must be used within a ThemeProvider')
+    }
+    return context
 }

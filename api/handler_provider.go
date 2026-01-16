@@ -6,6 +6,27 @@ import (
 	"strings"
 )
 
+func defaultProviderBaseURL(providerType config.ProviderType) string {
+	switch providerType {
+	case config.ProviderTypeGemini, config.ProviderTypeGeminiImage:
+		return "https://generativelanguage.googleapis.com/v1beta"
+	case config.ProviderTypeAnthropic:
+		return "https://api.anthropic.com/v1"
+	case config.ProviderTypeOpenAI, config.ProviderTypeOpenAIResponse:
+		fallthrough
+	default:
+		return "https://api.openai.com/v1"
+	}
+}
+
+func normalizeProviderBaseURL(providerType config.ProviderType, baseURL string) string {
+	baseURL = strings.TrimSpace(baseURL)
+	if baseURL != "" {
+		return baseURL
+	}
+	return defaultProviderBaseURL(providerType)
+}
+
 // ConfigUpdateRequest 配置更新请求
 type ConfigUpdateRequest struct {
 	BaseURL      *string `json:"base_url,omitempty"`
@@ -154,6 +175,12 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		req.ID = strings.TrimSpace(req.ID)
+		req.Name = strings.TrimSpace(req.Name)
+		req.BaseURL = strings.TrimSpace(req.BaseURL)
+		req.APIKey = strings.TrimSpace(req.APIKey)
+		req.Model = strings.TrimSpace(req.Model)
+
 		if req.ID == "" || req.Name == "" {
 			h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "ID and name are required"})
 			return
@@ -188,6 +215,12 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 		}
 		if providerType == config.ProviderTypeAnthropic {
 			temperature = 1
+		}
+
+		baseURL := normalizeProviderBaseURL(providerType, req.BaseURL)
+		if req.APIKey == "" || req.Model == "" {
+			h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "API key and model are required"})
+			return
 		}
 
 		var geminiThinkingMode *string
@@ -249,7 +282,7 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 			ID:                        req.ID,
 			Name:                      req.Name,
 			Type:                      providerType,
-			BaseURL:                   req.BaseURL,
+			BaseURL:                   baseURL,
 			APIKey:                    req.APIKey,
 			Model:                     req.Model,
 			Temperature:               temperature,
@@ -322,6 +355,16 @@ func (h *Handler) handleProviderByID(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		req.Name = strings.TrimSpace(req.Name)
+		req.BaseURL = strings.TrimSpace(req.BaseURL)
+		req.APIKey = strings.TrimSpace(req.APIKey)
+		req.Model = strings.TrimSpace(req.Model)
+
+		if req.Name == "" {
+			h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Name is required"})
+			return
+		}
+
 		// 设置默认类型为 openai
 		providerType := config.ProviderType(req.Type)
 		if providerType == "" {
@@ -333,6 +376,27 @@ func (h *Handler) handleProviderByID(w http.ResponseWriter, r *http.Request) {
 		apiKey := req.APIKey
 		if existingProvider != nil && (apiKey == "" || strings.Contains(apiKey, "*")) {
 			apiKey = existingProvider.APIKey
+		}
+		apiKey = strings.TrimSpace(apiKey)
+		if apiKey == "" {
+			h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "API key is required"})
+			return
+		}
+
+		baseURL := req.BaseURL
+		if baseURL == "" && existingProvider != nil {
+			baseURL = strings.TrimSpace(existingProvider.BaseURL)
+		}
+		baseURL = normalizeProviderBaseURL(providerType, baseURL)
+
+		model := req.Model
+		if model == "" && existingProvider != nil {
+			model = strings.TrimSpace(existingProvider.Model)
+		}
+		model = strings.TrimSpace(model)
+		if model == "" {
+			h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Model is required"})
+			return
 		}
 
 		temperature := defaultProvider.Temperature
@@ -453,9 +517,9 @@ func (h *Handler) handleProviderByID(w http.ResponseWriter, r *http.Request) {
 			ID:                        id,
 			Name:                      req.Name,
 			Type:                      providerType,
-			BaseURL:                   req.BaseURL,
+			BaseURL:                   baseURL,
 			APIKey:                    apiKey,
-			Model:                     req.Model,
+			Model:                     model,
 			Temperature:               temperature,
 			TopP:                      topP,
 			ThinkingBudget:            thinkingBudget,
@@ -601,6 +665,26 @@ func (h *Handler) handleMemoryProvider(w http.ResponseWriter, r *http.Request) {
 		if existingProvider != nil && (apiKey == "" || strings.Contains(apiKey, "*")) {
 			apiKey = existingProvider.APIKey
 		}
+		apiKey = strings.TrimSpace(apiKey)
+		if apiKey == "" {
+			h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "API key is required"})
+			return
+		}
+
+		baseURL := strings.TrimSpace(req.Provider.BaseURL)
+		if baseURL == "" && existingProvider != nil {
+			baseURL = strings.TrimSpace(existingProvider.BaseURL)
+		}
+		baseURL = normalizeProviderBaseURL(providerType, baseURL)
+
+		model := strings.TrimSpace(req.Provider.Model)
+		if model == "" && existingProvider != nil {
+			model = strings.TrimSpace(existingProvider.Model)
+		}
+		if model == "" {
+			h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Model is required"})
+			return
+		}
 
 		defaultProvider := config.DefaultProvider()
 		temperature := defaultProvider.Temperature
@@ -689,9 +773,9 @@ func (h *Handler) handleMemoryProvider(w http.ResponseWriter, r *http.Request) {
 			ID:                   id,
 			Name:                 name,
 			Type:                 providerType,
-			BaseURL:              strings.TrimSpace(req.Provider.BaseURL),
+			BaseURL:              baseURL,
 			APIKey:               apiKey,
-			Model:                strings.TrimSpace(req.Provider.Model),
+			Model:                model,
 			Temperature:          temperature,
 			TopP:                 topP,
 			ThinkingBudget:       thinkingBudget,
@@ -778,4 +862,3 @@ func normalizeGeminiImageOutputMIMEType(outputMIMEType string) string {
 		return "image/jpeg"
 	}
 }
-
