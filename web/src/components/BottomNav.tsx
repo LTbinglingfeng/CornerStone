@@ -1,8 +1,8 @@
 import './BottomNav.css'
 
 interface BottomNavProps {
-    activeTab: 'chat' | 'contacts' | 'settings'
-    onTabChange: (tab: 'chat' | 'contacts' | 'settings') => void
+    activeTab: 'chat' | 'contacts' | 'moments' | 'settings'
+    onTabChange: (tab: 'chat' | 'contacts' | 'moments' | 'settings') => void
 }
 
 const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange }) => {
@@ -26,6 +26,17 @@ const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange }) => {
                     </svg>
                 </div>
                 <span className="nav-label">通讯录</span>
+            </div>
+            <div
+                className={`nav-item ${activeTab === 'moments' ? 'active' : ''}`}
+                onClick={() => onTabChange('moments')}
+            >
+                <div className="nav-icon">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z" />
+                    </svg>
+                </div>
+                <span className="nav-label">朋友圈</span>
             </div>
             <div
                 className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`}

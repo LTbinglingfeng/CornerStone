@@ -5,6 +5,7 @@ import SearchBar from './components/SearchBar'
 import ChatList from './components/ChatList'
 import ChatDetail from './components/ChatDetail'
 import Contacts from './components/Contacts'
+import MomentsPage from './components/Moments/MomentsPage'
 import ProfilePage from './components/ProfilePage'
 import BottomNav from './components/BottomNav'
 import PromptSelector from './components/PromptSelector'
@@ -32,7 +33,7 @@ function App() {
     const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
     const [selectedPromptId, setSelectedPromptId] = useState<string | undefined>(undefined)
     const [searchQuery, setSearchQuery] = useState('')
-    const [activeTab, setActiveTab] = useState<'chat' | 'contacts' | 'settings'>('chat')
+    const [activeTab, setActiveTab] = useState<'chat' | 'contacts' | 'moments' | 'settings'>('chat')
     const [showPromptSelector, setShowPromptSelector] = useState(false)
     const viewsContainerRef = useRef<HTMLDivElement>(null)
     const selectedSessionIdRef = useRef<string | null>(null)
@@ -69,14 +70,16 @@ function App() {
     }, [])
 
     // 获取tab对应的索引
-    const getTabIndex = (tab: 'chat' | 'contacts' | 'settings') => {
+    const getTabIndex = (tab: 'chat' | 'contacts' | 'moments' | 'settings') => {
         switch (tab) {
             case 'chat':
                 return 0
             case 'contacts':
                 return 1
-            case 'settings':
+            case 'moments':
                 return 2
+            case 'settings':
+                return 3
         }
     }
 
@@ -97,7 +100,7 @@ function App() {
     }, [])
 
     const handleTabChange = useCallback(
-        (tab: 'chat' | 'contacts' | 'settings') => {
+        (tab: 'chat' | 'contacts' | 'moments' | 'settings') => {
             if (tab === activeTab) return
             const newIndex = getTabIndex(tab)
             animateToTab(newIndex)
@@ -331,6 +334,11 @@ function App() {
                 {/* 通讯录页面 */}
                 <div className="view-page">
                     <Contacts onStartChat={handleStartChatWithPrompt} />
+                </div>
+
+                {/* 朋友圈页面 */}
+                <div className="view-page">
+                    <MomentsPage />
                 </div>
 
                 {/* 我的页面 */}

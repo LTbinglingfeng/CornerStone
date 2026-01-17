@@ -13,6 +13,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // ChatMessageRequest 前端发送的聊天请求
@@ -87,9 +89,13 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 		effectivePromptID = existingSession.PromptID
 	}
 	var persona string
+	promptName := ""
 	if effectivePromptID != "" {
 		if prompt, ok := h.promptManager.Get(effectivePromptID); ok {
 			persona = prompt.Content
+			promptName = prompt.Name
+		} else if hasExistingSession {
+			promptName = existingSession.PromptName
 		}
 	}
 
@@ -247,13 +253,13 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if useStream {
-		h.handleStreamChat(w, r, aiClient, chatReq, sessionID, req.SaveHistory, memSession)
+		h.handleStreamChat(w, r, aiClient, chatReq, sessionID, req.SaveHistory, memSession, effectivePromptID, promptName)
 	} else {
-		h.handleNormalChat(w, r, aiClient, chatReq, sessionID, req.SaveHistory, memSession)
+		h.handleNormalChat(w, r, aiClient, chatReq, sessionID, req.SaveHistory, memSession, effectivePromptID, promptName)
 	}
 }
 
-func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiClient client.AIClient, req client.ChatRequest, sessionID string, saveHistory bool, memSession *storage.MemorySession) {
+func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiClient client.AIClient, req client.ChatRequest, sessionID string, saveHistory bool, memSession *storage.MemorySession, promptID, promptName string) {
 	ctxAI := context.WithoutCancel(r.Context())
 	resp, err := aiClient.Chat(ctxAI, req)
 	if err != nil {
@@ -266,16 +272,19 @@ func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiCli
 	}
 
 	// 保存AI回复到历史记录（包含思考内容）
-	if saveHistory && len(resp.Choices) > 0 {
+	if len(resp.Choices) > 0 {
 		message := resp.Choices[0].Message
-		if errSaveHistory := h.chatManager.AddMessageWithDetails(sessionID, "assistant", message.Content, message.ReasoningContent, nil, message.ToolCalls); errSaveHistory != nil {
-			if errors.Is(errSaveHistory, storage.ErrInvalidID) {
-				h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid session ID"})
+		if saveHistory {
+			if errSaveHistory := h.chatManager.AddMessageWithDetails(sessionID, "assistant", message.Content, message.ReasoningContent, nil, message.ToolCalls); errSaveHistory != nil {
+				if errors.Is(errSaveHistory, storage.ErrInvalidID) {
+					h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid session ID"})
+					return
+				}
+				h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: errSaveHistory.Error()})
 				return
 			}
-			h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: errSaveHistory.Error()})
-			return
 		}
+		h.handleMomentToolCalls(promptID, promptName, message.ToolCalls)
 	}
 
 	if r.Context().Err() != nil {
@@ -295,7 +304,7 @@ func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiCli
 }
 
 // handleStreamChat 处理流式聊天 (SSE)
-func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiClient client.AIClient, req client.ChatRequest, sessionID string, saveHistory bool, memSession *storage.MemorySession) {
+func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiClient client.AIClient, req client.ChatRequest, sessionID string, saveHistory bool, memSession *storage.MemorySession, promptID, promptName string) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -408,6 +417,7 @@ func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiCli
 
 	// 保存AI回复到历史记录（包含思考内容）
 	toolCalls := collectToolCalls(toolCallsMap)
+	h.handleMomentToolCalls(promptID, promptName, toolCalls)
 	if saveHistory && (fullContent.Len() > 0 || fullReasoningContent.Len() > 0 || len(toolCalls) > 0) {
 		if errSaveHistory := h.chatManager.AddMessageWithDetails(sessionID, "assistant", fullContent.String(), fullReasoningContent.String(), nil, toolCalls); errSaveHistory != nil {
 			logging.Errorf("save stream history error: %v", errSaveHistory)
@@ -436,6 +446,72 @@ func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiCli
 		} else {
 			flusher.Flush()
 		}
+	}
+}
+
+type generateMomentToolArgs struct {
+	Content       string `json:"content"`
+	ImagePrompt   string `json:"image_prompt"`
+	Prompt        string `json:"prompt"`
+	ImagePromptV2 string `json:"imagePrompt"`
+}
+
+func (h *Handler) handleMomentToolCalls(promptID, promptName string, toolCalls []client.ToolCall) {
+	if h.momentManager == nil || h.momentGenerator == nil {
+		return
+	}
+	promptID = strings.TrimSpace(promptID)
+	promptName = strings.TrimSpace(promptName)
+	if promptID == "" || promptName == "" || len(toolCalls) == 0 {
+		return
+	}
+
+	for _, tc := range toolCalls {
+		if tc.Function.Name != "generate_moment" {
+			continue
+		}
+
+		var args generateMomentToolArgs
+		if errUnmarshal := json.Unmarshal([]byte(tc.Function.Arguments), &args); errUnmarshal != nil {
+			logging.Warnf("invalid generate_moment args: %v", errUnmarshal)
+			continue
+		}
+
+		args.Content = strings.TrimSpace(args.Content)
+		imagePrompt := strings.TrimSpace(args.ImagePrompt)
+		if imagePrompt == "" {
+			imagePrompt = strings.TrimSpace(args.Prompt)
+		}
+		if imagePrompt == "" {
+			imagePrompt = strings.TrimSpace(args.ImagePromptV2)
+		}
+		if args.Content == "" || imagePrompt == "" {
+			logging.Warnf("generate_moment missing fields: prompt_id=%s args=%s", promptID, logging.Truncate(tc.Function.Arguments, 200))
+			continue
+		}
+
+		now := time.Now()
+		moment := storage.Moment{
+			ID:          uuid.NewString(),
+			PromptID:    promptID,
+			PromptName:  promptName,
+			Content:     args.Content,
+			ImagePrompt: imagePrompt,
+			Status:      storage.MomentStatusPending,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+			Likes:       []storage.Like{},
+			Comments:    []storage.Comment{},
+		}
+
+		created, errCreate := h.momentManager.Create(moment)
+		if errCreate != nil {
+			logging.Errorf("failed to create moment: %v", errCreate)
+			continue
+		}
+
+		h.momentGenerator.StartGeneration(created.ID)
+		logging.Infof("moment created via tool call: id=%s prompt_id=%s", created.ID, promptID)
 	}
 }
 
@@ -784,6 +860,33 @@ func getChatTools() []client.Tool {
 				},
 			},
 		},
+		{
+			Type: "function",
+			Function: client.ToolFunction{
+				Name:        "generate_moment",
+				Description: "发布一条朋友圈动态。当你想分享生活、心情或有趣的事情时使用此工具。需要提供朋友圈文案和用于生成配图的提示词。",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"content": map[string]interface{}{
+							"type":        "string",
+							"description": "朋友圈文案内容，表达你想分享的内容",
+							"maxLength":   500,
+						},
+						"prompt": map[string]interface{}{
+							"type":        "string",
+							"description": "生成配图的英文提示词（也可以使用 image_prompt 字段）",
+							"maxLength":   1000,
+						},
+						"image_prompt": map[string]interface{}{
+							"type":        "string",
+							"description": "生成配图的英文提示词，描述你想要的图片内容和风格",
+							"maxLength":   1000,
+						},
+					},
+					"required": []string{"content", "prompt"},
+				},
+			},
+		},
 	}
 }
-

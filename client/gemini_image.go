@@ -14,6 +14,12 @@ import (
 
 const imageGenerationTimeout = 5 * time.Minute
 
+type GeneratedImageResult struct {
+	MIMEType string
+	Data     []byte
+	Text     string
+}
+
 // GeminiImageClient Google Gemini 生图（Imagen）客户端
 type GeminiImageClient struct {
 	BaseURL    string
@@ -80,6 +86,66 @@ func (c *GeminiImageClient) GenerateImages(ctx context.Context, model, prompt st
 		logging.Warnf("gemini image empty response: model=%s prompt=%s", model, logging.Truncate(prompt, 100))
 	}
 	return resp, nil
+}
+
+func (c *GeminiImageClient) GenerateContentImage(ctx context.Context, model, prompt string, cfg *genai.GenerateContentConfig) (*GeneratedImageResult, error) {
+	if strings.TrimSpace(model) == "" {
+		return nil, fmt.Errorf("model is required")
+	}
+	if strings.TrimSpace(prompt) == "" {
+		return nil, fmt.Errorf("prompt is required")
+	}
+
+	ctxTimeout, cancel := context.WithTimeout(ctx, imageGenerationTimeout)
+	defer cancel()
+
+	genaiClient, errInit := c.newGenAIClient(ctxTimeout)
+	if errInit != nil {
+		logging.Errorf("gemini image init failed: model=%s err=%v", model, errInit)
+		return nil, fmt.Errorf("init genai client: %w", errInit)
+	}
+
+	requestCfg := cfg
+	if requestCfg == nil {
+		requestCfg = &genai.GenerateContentConfig{}
+	}
+	if len(requestCfg.ResponseModalities) == 0 {
+		requestCfg.ResponseModalities = []string{"TEXT", "IMAGE"}
+	}
+
+	contents := []*genai.Content{genai.NewContentFromText(prompt, genai.RoleUser)}
+	resp, errGenerate := genaiClient.Models.GenerateContent(ctxTimeout, model, contents, requestCfg)
+	if errGenerate != nil {
+		translated := translateGenAIError(errGenerate)
+		logging.Errorf("gemini image generate content failed: model=%s err=%v", model, translated)
+		return nil, translated
+	}
+
+	if resp == nil || len(resp.Candidates) == 0 {
+		return nil, fmt.Errorf("empty response")
+	}
+
+	for _, candidate := range resp.Candidates {
+		if candidate == nil || candidate.Content == nil || len(candidate.Content.Parts) == 0 {
+			continue
+		}
+		for _, part := range candidate.Content.Parts {
+			if part == nil || part.InlineData == nil || len(part.InlineData.Data) == 0 {
+				continue
+			}
+			mimeType := strings.ToLower(strings.TrimSpace(part.InlineData.MIMEType))
+			if !strings.HasPrefix(mimeType, "image/") {
+				continue
+			}
+			return &GeneratedImageResult{
+				MIMEType: mimeType,
+				Data:     part.InlineData.Data,
+				Text:     resp.Text(),
+			}, nil
+		}
+	}
+
+	return nil, fmt.Errorf("empty image response")
 }
 
 func translateGenAIGenerateImagesError(err error) error {

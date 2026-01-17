@@ -553,6 +553,20 @@ func (m *Manager) GetActiveProvider() *Provider {
 	return nil
 }
 
+// GetImageProvider 获取生图供应商配置（优先返回第一个 gemini_image 类型）
+func (m *Manager) GetImageProvider() *Provider {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	for i := range m.config.Providers {
+		if m.config.Providers[i].Type == ProviderTypeGeminiImage {
+			provider := m.config.Providers[i]
+			return &provider
+		}
+	}
+	return nil
+}
+
 // GetProviders 获取所有供应商列表
 func (m *Manager) GetProviders() []Provider {
 	m.mu.RLock()

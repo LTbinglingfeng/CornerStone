@@ -99,6 +99,7 @@ func main() {
 	chatsDir := filepath.Join(baseDir, "chats")
 	userAboutDir := filepath.Join(baseDir, "user_about")
 	cachePhotoDir := filepath.Join(baseDir, "cache_photo")
+	momentsDir := filepath.Join(baseDir, "moments")
 
 	// 初始化管理器
 	configManager := config.NewManager(configPath)
@@ -106,6 +107,8 @@ func main() {
 	chatManager := storage.NewChatManager(chatsDir)
 	userManager := storage.NewUserManager(userAboutDir)
 	authManager := storage.NewAuthManager(userAboutDir)
+	momentManager := storage.NewMomentManager(momentsDir)
+	momentGenerator := api.NewMomentGenerator(momentManager, configManager)
 	memoryManager := storage.NewMemoryManager(promptsDir)
 	memoryExtractor := storage.NewMemoryExtractor(memoryManager, configManager, chatManager, userManager, filepath.Join(baseDir, "memory_extraction_prompt.txt"))
 	os.MkdirAll(cachePhotoDir, 0755)
@@ -117,13 +120,18 @@ func main() {
 	logging.Infof("  聊天记录目录: %s", chatsDir)
 	logging.Infof("  用户信息目录: %s", userAboutDir)
 	logging.Infof("  图片缓存目录: %s", cachePhotoDir)
+	logging.Infof("  朋友圈目录: %s", momentsDir)
 
 	// 创建路由
 	mux := http.NewServeMux()
 
 	// 注册API处理器
-	handler := api.NewHandler(configManager, promptManager, chatManager, userManager, authManager, cachePhotoDir, memoryManager, memoryExtractor)
+	handler := api.NewHandler(configManager, promptManager, chatManager, userManager, authManager, cachePhotoDir, memoryManager, memoryExtractor, momentManager, momentGenerator)
 	handler.RegisterRoutes(mux)
+
+	// 朋友圈静态文件（图片、背景图）
+	mux.Handle("/moments/images/", http.StripPrefix("/moments/images/", http.FileServer(http.Dir(filepath.Join(momentsDir, "images")))))
+	mux.Handle("/moments/backgrounds/", http.StripPrefix("/moments/backgrounds/", http.FileServer(http.Dir(filepath.Join(momentsDir, "backgrounds")))))
 
 	// 注册前端静态文件
 	distDir := *webDir
