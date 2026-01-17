@@ -13,6 +13,12 @@ import { NumericInput } from './NumericInput'
 import ProviderSettings from './ProviderSettings'
 import MemoryProviderSettings from './MemoryProviderSettings'
 import { useToast } from '../contexts/ToastContext'
+import {
+    getNotificationsEnabled,
+    isNotificationSupported,
+    requestNotificationPermission,
+    setNotificationsEnabled,
+} from '../utils/notifications'
 import './Settings.css'
 
 interface SettingsProps {
@@ -52,9 +58,21 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     const replyWaitModalRef = useRef<HTMLDivElement>(null)
     const memoryExtractionRoundsModalRef = useRef<HTMLDivElement>(null)
     const memoryExtractionPromptModalRef = useRef<HTMLDivElement>(null)
+    const [notificationsEnabled, setNotificationsEnabledState] = useState(() => getNotificationsEnabled())
+    const [notificationsSupported, setNotificationsSupported] = useState(() => isNotificationSupported())
+    const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | 'unsupported'>(() =>
+        isNotificationSupported() ? Notification.permission : 'unsupported'
+    )
 
     useEffect(() => {
         loadData()
+    }, [])
+
+    useEffect(() => {
+        const supported = isNotificationSupported()
+        setNotificationsSupported(supported)
+        setNotificationPermission(supported ? Notification.permission : 'unsupported')
+        setNotificationsEnabledState(getNotificationsEnabled())
     }, [])
 
     useEffect(() => {
@@ -279,6 +297,42 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         setSaving(false)
     }
 
+    const handleNotificationsToggle = async (enabled: boolean) => {
+        if (!enabled) {
+            setNotificationsEnabled(false)
+            setNotificationsEnabledState(false)
+            showToast('已关闭系统通知', 'success')
+            return
+        }
+
+        if (!isNotificationSupported()) {
+            setNotificationsSupported(false)
+            setNotificationPermission('unsupported')
+            setNotificationsEnabled(false)
+            setNotificationsEnabledState(false)
+            showToast('当前浏览器不支持系统通知', 'error')
+            return
+        }
+
+        if (typeof window !== 'undefined' && window.isSecureContext === false && location.hostname !== 'localhost') {
+            showToast('系统通知需要 HTTPS 环境', 'error')
+            return
+        }
+
+        const permission = await requestNotificationPermission()
+        setNotificationPermission(permission)
+        if (permission !== 'granted') {
+            setNotificationsEnabled(false)
+            setNotificationsEnabledState(false)
+            showToast(permission === 'denied' ? '已拒绝通知权限，请在浏览器设置中开启' : '请允许通知权限', 'error')
+            return
+        }
+
+        setNotificationsEnabled(true)
+        setNotificationsEnabledState(true)
+        showToast('已开启系统通知', 'success')
+    }
+
     const handleMemoryEnabledChange = async (enabled: boolean) => {
         if (saving) return
         setSaving(true)
@@ -393,6 +447,31 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                                 <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
                             </svg>
                         </button>
+
+                        <div className="settings-group" style={{ marginTop: 12 }}>
+                            <label className="settings-label">系统通知</label>
+                            <div className="modal-toggle-wrapper">
+                                <label className="toggle-switch">
+                                    <input
+                                        type="checkbox"
+                                        checked={notificationsEnabled}
+                                        onChange={(e) => void handleNotificationsToggle(e.target.checked)}
+                                        disabled={saving || !notificationsSupported}
+                                    />
+                                    <span className="toggle-slider"></span>
+                                </label>
+                                <span className="toggle-label">
+                                    {notificationsSupported
+                                        ? notificationsEnabled
+                                            ? '开启'
+                                            : notificationPermission === 'denied'
+                                              ? '已拒绝'
+                                              : '关闭'
+                                        : '不支持'}
+                                </span>
+                            </div>
+                            <p className="prompt-modal-hint memory-toggle-hint">仅在不在聊天详情界面时提醒</p>
+                        </div>
                     </div>
 
                     {/* 长期记忆设置 */}
