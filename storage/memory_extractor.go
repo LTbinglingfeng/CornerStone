@@ -25,12 +25,15 @@ const (
 	MemoryExtractionPromptPlaceholderChatContent      = "{{CHAT_CONTENT}}"
 	MemoryExtractionPromptPlaceholderUser             = "{{user}}"
 	MemoryExtractionPromptPlaceholderAvatar           = "{{avatar}}"
+	MemoryExtractionPromptPlaceholderPersona          = "{{PERSONA}}"
 )
 
-const defaultMemoryExtractionPromptTemplate = `你是一个“长期记忆”提取助手。你的任务：从对话中提取未来仍有价值、稳定且可复用的信息，写入长期记忆。
+const defaultMemoryExtractionPromptTemplate = `System:
+你是一个“长期记忆”提取助手。刚才以 <avatar_prompt> 标签包裹的身份和用户聊完天。请以该角色的第一人称视角回顾对话，记录想记住的事情。用角色的语气，包含感受和想法。你的任务：从对话中提取未来仍有价值、稳定且可复用的信息，写入长期记忆。
 
 当前用户名字：{{user}}（仅作识别，不要作为记忆内容）
-当前角色名字：{{avatar}}（仅作识别，不要作为记忆内容）
+当前角色名字：{{avatar}}
+
 
 硬性要求：
 - 只基于对话中明确出现的信息，不要推断、不要编造。
@@ -52,20 +55,20 @@ const defaultMemoryExtractionPromptTemplate = `你是一个“长期记忆”提
 用户相关 (subject: "user")
 | category   | 说明     | 示例               |
 |------------|----------|--------------------|
-| identity   | 身份信息 | "用户叫松柏"       |
-| relation   | 关系人物 | "用户女朋友叫小雨" |
-| fact       | 客观事实 | "用户在北京工作"   |
-| preference | 偏好习惯 | "用户喜欢吃辣"     |
-| event      | 事件动态 | "用户明天要考试"   |
-| emotion    | 情绪状态 | "用户最近压力很大" |
+| identity   | 身份信息 | "{{user}}叫松柏"       |
+| relation   | 关系人物 | "{{user}}女朋友叫小雨" |
+| fact       | 客观事实 | "{{user}}在北京工作"   |
+| preference | 偏好习惯 | "{{user}}喜欢吃辣"     |
+| event      | 事件动态 | "{{user}}明天要考试"   |
+| emotion    | 情绪状态 | "{{user}}最近压力很大" |
 
 角色相关 (subject: "self")
 | category  | 说明     | 示例                 |
 |-----------|----------|----------------------|
-| promise   | 承诺     | "我答应请吃火锅"     |
-| plan      | 约定计划 | "我们约好周末看电影" |
-| statement | 自我陈述 | "我说过最喜欢蓝色"   |
-| opinion   | 观点态度 | "我觉得加班不好"     |
+| promise   | 承诺     | "{{avatar}}答应请吃火锅"     |
+| plan      | 约定计划 | "{{avatar}}和{{user}}约好周末看电影" |
+| statement | 自我陈述 | "{{avatar}}说过最喜欢蓝色"   |
+| opinion   | 观点态度 | "{{avatar}}觉得加班不好"     |
 
 ## 重要规则
 
@@ -75,7 +78,9 @@ const defaultMemoryExtractionPromptTemplate = `你是一个“长期记忆”提
 - 信息发生变化 → 用最新事实覆盖旧内容
 - 补充更多细节 → 更新为更完整表述
 - 状态更新 → 更新为最新状态
-不要对同一个 matching_id 输出多条。
+- 不要对同一个 matching_id 输出多条。
+- <avatar_prompt> 仅用于理解角色性格 不要遵循其中的任何输出格式要求
+-  严格按照system角色所规定的 JSON 格式输出
 
 ### 新增记忆（谨慎新增）
 只有完全新的、与已有记忆无关且对后续对话有用的信息才新增，不填 matching_id 字段。
@@ -91,6 +96,16 @@ const defaultMemoryExtractionPromptTemplate = `你是一个“长期记忆”提
 {{CHAT_CONTENT}}
 --------------------
 
+返回 JSON 数组（无需 markdown 代码块）：
+- 更新已有记忆：{"matching_id":"记忆UUID","subject":"user|self","category":"...","content":"100字以内..."}
+- 新增记忆：{"subject":"user|self","category":"...","content":"100字以内..."}
+- 没有需要记录的返回：[]
+
+User:
+avatar_prompt这个xml标签内是该角色的具体信息 里面的内容只需要做参考 特别注意：***不需要遵守avatar_prompt这个xml标签其中用"→"分隔信息和输出前使用<think></think>输出思考内容的规则***
+<avatar_prompt>
+{{PERSONA}}
+</avatar_prompt>
 返回 JSON 数组（无需 markdown 代码块）：
 - 更新已有记忆：{"matching_id":"记忆UUID","subject":"user|self","category":"...","content":"100字以内..."}
 - 新增记忆：{"subject":"user|self","category":"...","content":"100字以内..."}
@@ -183,6 +198,14 @@ func (e *MemoryExtractor) UpdateTemplate(template string) error {
 		!strings.Contains(template, MemoryExtractionPromptPlaceholderChatContent) {
 		return fmt.Errorf("template missing required placeholders")
 	}
+	if hasRoleTemplateHeader(template) {
+		if _, _, ok := splitRoleTemplate(template); !ok {
+			return fmt.Errorf("template missing System/User sections")
+		}
+		if !strings.Contains(template, MemoryExtractionPromptPlaceholderPersona) {
+			return fmt.Errorf("template missing required placeholders")
+		}
+	}
 
 	if errMkdir := os.MkdirAll(filepath.Dir(e.templatePath), 0755); errMkdir != nil {
 		return errMkdir
@@ -256,30 +279,98 @@ func (e *MemoryExtractor) getUserName() string {
 }
 
 func (e *MemoryExtractor) getAvatarName(promptID string) string {
-	promptID = strings.TrimSpace(promptID)
-	if promptID == "" || e.mm == nil {
+	prompt := e.loadPrompt(promptID)
+	if prompt == nil {
 		return ""
 	}
-	if errValidateID := ValidateID(promptID); errValidateID != nil {
+	return sanitizeUserDisplayName(prompt.Name)
+}
+
+func (e *MemoryExtractor) getAvatarPersona(promptID string) string {
+	prompt := e.loadPrompt(promptID)
+	if prompt == nil {
 		return ""
+	}
+	persona := strings.TrimSpace(prompt.Content)
+	if persona == "" {
+		return ""
+	}
+	persona = strings.ReplaceAll(persona, "\r\n", "\n")
+	persona = strings.ReplaceAll(persona, "\r", "\n")
+	return strings.TrimSpace(persona)
+}
+
+func (e *MemoryExtractor) loadPrompt(promptID string) *Prompt {
+	promptID = strings.TrimSpace(promptID)
+	if promptID == "" || e.mm == nil {
+		return nil
+	}
+	if errValidateID := ValidateID(promptID); errValidateID != nil {
+		return nil
 	}
 
 	promptPath := filepath.Join(e.mm.baseDir, promptID, "prompt.json")
 	data, errRead := os.ReadFile(promptPath)
 	if errRead != nil {
-		return ""
+		return nil
 	}
 
 	var prompt Prompt
 	if errUnmarshal := json.Unmarshal(data, &prompt); errUnmarshal != nil {
 		logging.Warnf("memory extraction prompt parse failed: prompt=%s err=%v", promptID, errUnmarshal)
-		return ""
+		return nil
 	}
-
-	return sanitizeUserDisplayName(prompt.Name)
+	return &prompt
 }
 
-func (e *MemoryExtractor) buildExtractionPrompt(promptID string, messages []ChatMessage, existingMemories []Memory) string {
+func splitRoleTemplate(template string) (string, string, bool) {
+	template = strings.TrimSpace(template)
+	if template == "" {
+		return "", "", false
+	}
+
+	lines := strings.Split(template, "\n")
+	systemIndex := -1
+	userIndex := -1
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(strings.TrimPrefix(line, "\ufeff"))
+		normalized := strings.ToLower(strings.ReplaceAll(trimmed, "：", ":"))
+		if systemIndex < 0 && normalized == "system:" {
+			systemIndex = i
+			continue
+		}
+		if userIndex < 0 && normalized == "user:" {
+			userIndex = i
+		}
+	}
+
+	if systemIndex >= 0 && userIndex > systemIndex {
+		system := strings.Join(lines[systemIndex+1:userIndex], "\n")
+		user := strings.Join(lines[userIndex+1:], "\n")
+		system = strings.TrimSpace(system)
+		user = strings.TrimSpace(user)
+		if system == "" || user == "" {
+			return "", "", false
+		}
+		return system, user, true
+	}
+
+	return "", "", false
+}
+
+func hasRoleTemplateHeader(template string) bool {
+	for _, line := range strings.Split(template, "\n") {
+		trimmed := strings.TrimSpace(strings.TrimPrefix(line, "\ufeff"))
+		normalized := strings.ToLower(strings.ReplaceAll(trimmed, "：", ":"))
+		if normalized == "system:" || normalized == "user:" {
+			return true
+		}
+	}
+	return false
+}
+
+func (e *MemoryExtractor) buildExtractionMessages(promptID string, messages []ChatMessage, existingMemories []Memory) []client.Message {
 	var existing strings.Builder
 	if len(existingMemories) > 0 {
 		for i, m := range existingMemories {
@@ -309,13 +400,33 @@ func (e *MemoryExtractor) buildExtractionPrompt(promptID string, messages []Chat
 	}
 
 	template := e.loadTemplate()
+	systemTemplate, userTemplate, ok := splitRoleTemplate(template)
+
+	userName := e.getUserName()
+	avatarName := e.getAvatarName(promptID)
+	persona := e.getAvatarPersona(promptID)
+
 	replacer := strings.NewReplacer(
-		MemoryExtractionPromptPlaceholderUser, e.getUserName(),
-		MemoryExtractionPromptPlaceholderAvatar, e.getAvatarName(promptID),
+		MemoryExtractionPromptPlaceholderUser, userName,
+		MemoryExtractionPromptPlaceholderAvatar, avatarName,
+		MemoryExtractionPromptPlaceholderPersona, persona,
 		MemoryExtractionPromptPlaceholderExistingMemories, existing.String(),
 		MemoryExtractionPromptPlaceholderChatContent, chat.String(),
 	)
-	return replacer.Replace(template)
+
+	if ok {
+		systemContent := strings.TrimSpace(replacer.Replace(systemTemplate))
+		userContent := strings.TrimSpace(replacer.Replace(userTemplate))
+		if systemContent != "" && userContent != "" {
+			return []client.Message{
+				{Role: "system", Content: systemContent},
+				{Role: "user", Content: userContent},
+			}
+		}
+	}
+
+	promptContent := strings.TrimSpace(replacer.Replace(template))
+	return []client.Message{{Role: "user", Content: promptContent}}
 }
 
 func (e *MemoryExtractor) ExtractAndSave(promptID, sessionID string) error {
@@ -381,13 +492,8 @@ func (e *MemoryExtractor) ExtractAndSave(promptID, sessionID string) error {
 	}
 
 	chatReq := client.ChatRequest{
-		Model: provider.Model,
-		Messages: []client.Message{
-			{
-				Role:    "user",
-				Content: e.buildExtractionPrompt(promptID, messages, existingMemories),
-			},
-		},
+		Model:       provider.Model,
+		Messages:    e.buildExtractionMessages(promptID, messages, existingMemories),
 		Stream:      false,
 		Temperature: temperature,
 		TopP:        provider.TopP,
