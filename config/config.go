@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"cornerstone/logging"
 	"encoding/json"
 	"errors"
@@ -143,6 +144,9 @@ func (m *Manager) Load() error {
 		logging.Errorf("config load failed: path=%s err=%v", m.configPath, err)
 		return err
 	}
+
+	// 兼容 Windows 编辑器写入的 UTF-8 BOM（EF BB BF）
+	data = bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF})
 
 	// 尝试解析新格式
 	if err := json.Unmarshal(data, &m.config); err != nil {
