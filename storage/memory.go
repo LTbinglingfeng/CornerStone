@@ -113,7 +113,7 @@ const (
 const (
 	ThresholdActive   = 0.4
 	ThresholdArchive  = 0.15
-	MaxActiveMemories = 25
+	MaxActiveMemories = 30
 )
 
 const (

@@ -72,6 +72,8 @@ type Config struct {
 	MemoryEnabled          bool       `json:"memory_enabled"`           // 记忆功能开关
 	MemoryExtractionRounds int        `json:"memory_extraction_rounds"` // 记忆提取上传的对话轮数（每轮=用户+AI）
 	SystemPrompt           string     `json:"system_prompt"`            // 全局系统提示词
+	TLSCertPath            string     `json:"tls_cert_path,omitempty"`  // TLS证书路径(PEM)，留空禁用HTTPS
+	TLSKeyPath             string     `json:"tls_key_path,omitempty"`   // TLS私钥路径(PEM)，留空禁用HTTPS
 }
 
 // Manager 配置管理器

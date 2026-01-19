@@ -5,6 +5,7 @@ import (
 	"cornerstone/config"
 	"cornerstone/logging"
 	"cornerstone/storage"
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"net/http"
@@ -65,7 +66,9 @@ func main() {
 	// 命令行参数
 	port := flag.Int("port", 1205, "服务端口")
 	dataDir := flag.String("data", "", "数据存储目录")
-	webDir := flag.String("web", "", "前端构建目录(默认为 web/dist，需通过HTTP访问)")
+	webDir := flag.String("web", "", "前端构建目录(默认为 web/dist，通过HTTP/HTTPS访问)")
+	tlsCertFlag := flag.String("tls-cert", "", "TLS证书路径(PEM)，设置后启用HTTPS（或在 config.json 配置 tls_cert_path/tls_key_path）")
+	tlsKeyFlag := flag.String("tls-key", "", "TLS私钥路径(PEM)，设置后启用HTTPS（或在 config.json 配置 tls_cert_path/tls_key_path）")
 	flag.Parse()
 
 	// 获取可执行文件所在目录
@@ -103,6 +106,52 @@ func main() {
 
 	// 初始化管理器
 	configManager := config.NewManager(configPath)
+	tlsCertPath := strings.TrimSpace(*tlsCertFlag)
+	tlsKeyPath := strings.TrimSpace(*tlsKeyFlag)
+	tlsSource := ""
+	if tlsCertPath != "" || tlsKeyPath != "" {
+		tlsSource = "命令行参数"
+	} else {
+		cfg := configManager.Get()
+		tlsCertPath = strings.TrimSpace(cfg.TLSCertPath)
+		tlsKeyPath = strings.TrimSpace(cfg.TLSKeyPath)
+		if tlsCertPath != "" || tlsKeyPath != "" {
+			tlsSource = "config.json"
+		}
+	}
+	resolveTLSPath := func(value string) string {
+		if value == "" {
+			return ""
+		}
+		if filepath.IsAbs(value) {
+			return value
+		}
+		if fileExists(value) {
+			return value
+		}
+		return filepath.Join(baseDir, value)
+	}
+
+	tlsEnabled := false
+	if tlsCertPath != "" || tlsKeyPath != "" {
+		if tlsCertPath == "" || tlsKeyPath == "" {
+			logging.Fatalf("启用TLS需同时指定证书与私钥（来源：%s）", tlsSource)
+		}
+		tlsCertPath = resolveTLSPath(tlsCertPath)
+		tlsKeyPath = resolveTLSPath(tlsKeyPath)
+		if !fileExists(tlsCertPath) {
+			logging.Fatalf("TLS证书文件不存在: %s（来源：%s）", tlsCertPath, tlsSource)
+		}
+		if !fileExists(tlsKeyPath) {
+			logging.Fatalf("TLS私钥文件不存在: %s（来源：%s）", tlsKeyPath, tlsSource)
+		}
+		tlsEnabled = true
+	}
+	scheme := "http"
+	if tlsEnabled {
+		scheme = "https"
+	}
+
 	promptManager := storage.NewPromptManager(promptsDir)
 	chatManager := storage.NewChatManager(chatsDir)
 	userManager := storage.NewUserManager(userAboutDir)
@@ -121,6 +170,12 @@ func main() {
 	logging.Infof("  用户信息目录: %s", userAboutDir)
 	logging.Infof("  图片缓存目录: %s", cachePhotoDir)
 	logging.Infof("  朋友圈目录: %s", momentsDir)
+	if tlsEnabled {
+		logging.Infof("TLS已启用:")
+		logging.Infof("  证书: %s", tlsCertPath)
+		logging.Infof("  私钥: %s", tlsKeyPath)
+		logging.Infof("  来源: %s", tlsSource)
+	}
 
 	// 创建路由
 	mux := http.NewServeMux()
@@ -150,14 +205,14 @@ func main() {
 	if distDir != "" && fileExists(filepath.Join(distDir, "index.html")) {
 		registerFrontend(mux, distDir)
 		logging.Infof("前端静态目录: %s", distDir)
-		logging.Infof("前端页面: http://localhost:%d/", *port)
+		logging.Infof("前端页面: %s://localhost:%d/", scheme, *port)
 	} else {
 		logging.Infof("未找到前端构建产物，请先执行: cd web && npm run build")
 	}
 
 	// 启动服务
 	addr := fmt.Sprintf(":%d", *port)
-	logging.Infof("AI客户端后端启动在 http://localhost%s", addr)
+	logging.Infof("AI客户端后端启动在 %s://localhost%s", scheme, addr)
 	logging.Infof("API端点:")
 	for _, endpoint := range []struct {
 		method      string
@@ -211,7 +266,16 @@ func main() {
 		IdleTimeout:       2 * time.Minute,
 		MaxHeaderBytes:    1 << 20, // 1MB
 	}
-	if errServe := server.ListenAndServe(); errServe != nil {
+	var errServe error
+	if tlsEnabled {
+		server.TLSConfig = &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		}
+		errServe = server.ListenAndServeTLS(tlsCertPath, tlsKeyPath)
+	} else {
+		errServe = server.ListenAndServe()
+	}
+	if errServe != nil {
 		logging.Fatalf("服务启动失败: %v", errServe)
 	}
 }
