@@ -11,7 +11,18 @@ import BottomNav from './components/BottomNav'
 import PromptSelector from './components/PromptSelector'
 import AuthSetupPage from './components/AuthSetupPage'
 import AuthLoginPage from './components/AuthLoginPage'
-import { createSession, getAuthStatus, setupAuth, loginAuth, setAuthToken, getSessions, getSession } from './services/api'
+import {
+    appendQueryParam,
+    createSession,
+    getAuthStatus,
+    getPromptAvatarUrl,
+    getSession,
+    getSessions,
+    loginAuth,
+    setAuthToken,
+    setupAuth,
+} from './services/api'
+import { splitAssistantMessageContent } from './components/ChatDetail/utils'
 import { formatNotificationBody, getNotificationsEnabled, isNotificationSupported } from './utils/notifications'
 import './App.css'
 
@@ -173,16 +184,21 @@ function App() {
             return true
         }
 
-        const showChatMessageNotification = (sessionId: string, title: string, body: string, promptId?: string) => {
+        const showChatMessageNotification = (
+            sessionId: string,
+            title: string,
+            body: string,
+            options?: { promptId?: string; icon?: string; tag?: string }
+        ) => {
             const notification = new Notification(title, {
                 body,
-                icon: '/logo_black.jpg',
-                tag: sessionId,
+                ...(options?.icon ? { icon: options.icon } : {}),
+                tag: options?.tag || sessionId,
             })
             notification.onclick = () => {
                 notification.close()
                 window.focus()
-                selectSessionHandlerRef.current(sessionId, promptId)
+                selectSessionHandlerRef.current(sessionId, options?.promptId)
             }
             window.setTimeout(() => notification.close(), 8000)
         }
@@ -229,8 +245,25 @@ function App() {
                     }
 
                     const title = record?.title || record?.prompt_name || '新消息'
-                    const body = formatNotificationBody(lastMessage.content || '') || '收到一条新消息'
-                    showChatMessageNotification(session.id, title, body, record?.prompt_id)
+                    const icon = record?.prompt_id
+                        ? appendQueryParam(getPromptAvatarUrl(record.prompt_id), 't', Date.now())
+                        : '/logo_black.jpg'
+
+                    const messageParts = splitAssistantMessageContent(lastMessage.content || '')
+                    const bodies =
+                        messageParts.length > 0
+                            ? messageParts
+                                  .map((part) => formatNotificationBody(part) || '收到一条新消息')
+                                  .filter((part) => part !== '')
+                            : [formatNotificationBody(lastMessage.content || '') || '收到一条新消息']
+
+                    bodies.forEach((body, index) => {
+                        showChatMessageNotification(session.id, title, body, {
+                            promptId: record?.prompt_id,
+                            icon,
+                            tag: `${session.id}:${lastMessage.timestamp}:${index}`,
+                        })
+                    })
                 }
 
                 for (const id of sessionUpdatedAtRef.current.keys()) {
