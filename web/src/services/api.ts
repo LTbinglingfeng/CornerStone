@@ -135,6 +135,28 @@ export async function getSession(id: string): Promise<ChatRecord | null> {
     }
 }
 
+export interface GetSessionMessagesPageOptions {
+    limit?: number
+    before?: number
+}
+
+export async function getSessionMessagesPage(id: string, options: GetSessionMessagesPageOptions = {}): Promise<ChatRecord | null> {
+    try {
+        const params = new URLSearchParams()
+        if (options.limit !== undefined) {
+            params.set('limit', String(options.limit))
+        }
+        if (options.before !== undefined) {
+            params.set('before', String(options.before))
+        }
+        const suffix = params.toString() ? `?${params.toString()}` : ''
+        const data = await apiFetchJson<ApiResponse<ChatRecord>>(`${MANAGEMENT_BASE}/sessions/${id}/messages${suffix}`)
+        return data.success && data.data ? data.data : null
+    } catch {
+        return null
+    }
+}
+
 export async function deleteSession(id: string): Promise<boolean> {
     try {
         const data = await apiFetchJson<ApiResponse<string>>(`${MANAGEMENT_BASE}/sessions/${id}`, { method: 'DELETE' })

@@ -49,6 +49,8 @@ export interface ChatRecord {
     system_prompt?: string
     created_at: string
     updated_at: string
+    messages_offset?: number
+    messages_total?: number
 }
 
 export interface ApiResponse<T> {

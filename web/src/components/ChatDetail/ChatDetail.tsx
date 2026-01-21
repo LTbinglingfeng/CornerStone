@@ -36,10 +36,11 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     const { showToast } = useToast()
     const { confirm } = useConfirm()
 
-    const { session, setSession, messages, setMessages, prompt, userInfo, loading, imageCapable } = useChatSession({
-        sessionId,
-        promptId,
-    })
+    const { session, setSession, messages, setMessages, messagesOffset, loadingOlder, loadOlder, prompt, userInfo, loading, imageCapable } =
+        useChatSession({
+            sessionId,
+            promptId,
+        })
 
     const effectivePromptId = promptId || prompt?.id || session?.prompt_id
     const {
@@ -222,13 +223,19 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         const content = editState.quoteLine
             ? buildQuotedOutgoingContent(editState.quoteLine, editState.text)
             : editState.text
-        const updated = await updateSessionMessage(sessionId, editState.messageIndex, content)
+        const absoluteIndex = messagesOffset + editState.messageIndex
+        const updated = await updateSessionMessage(sessionId, absoluteIndex, content)
         if (!updated) {
             showToast('编辑失败，请重试', 'error')
             return
         }
-        setSession(updated)
-        setMessages(updated.messages || [])
+        setMessages((prev) => {
+            const next = [...prev]
+            if (editState.messageIndex >= 0 && editState.messageIndex < next.length) {
+                next[editState.messageIndex] = { ...next[editState.messageIndex], content }
+            }
+            return next
+        })
         setEditState(null)
     }
 
@@ -241,13 +248,13 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         })
         if (!ok) return
 
-        const updated = await deleteSessionMessage(sessionId, messageIndex)
+        const absoluteIndex = messagesOffset + messageIndex
+        const updated = await deleteSessionMessage(sessionId, absoluteIndex)
         if (!updated) {
             showToast('删除失败，请重试', 'error')
             return
         }
-        setSession(updated)
-        setMessages(updated.messages || [])
+        setMessages((prev) => prev.filter((_, index) => index !== messageIndex))
         setMessageMenu(null)
     }
 
@@ -263,13 +270,25 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     }
 
     const handleRecallMessage = async (messageIndex: number) => {
-        const updated = await recallSessionMessage(sessionId, messageIndex)
+        const absoluteIndex = messagesOffset + messageIndex
+        const updated = await recallSessionMessage(sessionId, absoluteIndex)
         if (!updated) {
             showToast('撤回失败，请重试', 'error')
             return
         }
-        setSession(updated)
-        setMessages(updated.messages || [])
+        setMessages((prev) => {
+            const next = [...prev]
+            if (messageIndex < 0 || messageIndex >= next.length) return prev
+            const msg = next[messageIndex]
+            if (msg.role !== 'user') return prev
+            const suffix = '(已撤回)'
+            const trimmed = msg.content.replace(/[ \t\r\n]+$/g, '')
+            next[messageIndex] = {
+                ...msg,
+                content: trimmed.endsWith(suffix) ? trimmed : `${trimmed}${suffix}`,
+            }
+            return next
+        })
         setMessageMenu(null)
     }
 
@@ -436,7 +455,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         if (redPacketOpenTimeoutRef.current !== null) {
             window.clearTimeout(redPacketOpenTimeoutRef.current)
         }
-        redPacketOpenTimeoutRef.current = window.setTimeout(() => {
+            redPacketOpenTimeoutRef.current = window.setTimeout(() => {
             redPacketOpenTimeoutRef.current = null
             setPacketStep('opened')
             void (async () => {
@@ -447,10 +466,63 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
                     senderName
                 )
                 if (!updated) return
-                setSession(updated)
-                setMessages(updated.messages || [])
+                setMessages((prev) => {
+                    const exists = prev.some((message) => {
+                        const toolCalls = message.tool_calls || []
+                        return toolCalls.some((toolCall) => {
+                            if (toolCall.function.name !== 'red_packet_received') return false
+                            try {
+                                const args = JSON.parse(toolCall.function.arguments || '{}') as { packet_key?: unknown }
+                                return typeof args.packet_key === 'string' && args.packet_key.trim() === activeRedPacket.packetKey
+                            } catch {
+                                return false
+                            }
+                        })
+                    })
+                    if (exists) return prev
+                    return [
+                        ...prev,
+                        {
+                            role: 'assistant',
+                            content: '',
+                            timestamp: new Date().toISOString(),
+                            tool_calls: [
+                                {
+                                    id: `red_packet_received_${activeRedPacket.packetKey.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
+                                    type: 'function',
+                                    function: {
+                                        name: 'red_packet_received',
+                                        arguments: JSON.stringify({
+                                            packet_key: activeRedPacket.packetKey,
+                                            receiver_name: receiverName,
+                                            sender_name: senderName,
+                                        }),
+                                    },
+                                },
+                            ],
+                        },
+                    ]
+                })
             })()
         }, 1000)
+    }
+
+    const handleLoadOlder = async () => {
+        if (!messageListRef.current) {
+            await loadOlder()
+            return
+        }
+        const list = messageListRef.current
+        const prevScrollHeight = list.scrollHeight
+        const prevScrollTop = list.scrollTop
+
+        const loaded = await loadOlder()
+        if (!loaded) return
+
+        requestAnimationFrame(() => {
+            const nextScrollHeight = list.scrollHeight
+            list.scrollTop = prevScrollTop + (nextScrollHeight - prevScrollHeight)
+        })
     }
 
     const canSend = (inputText.trim() !== '' || pendingImages.length > 0) && !sending && !uploadingImage
@@ -475,6 +547,9 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
             <MessageList
                 sessionId={sessionId}
                 loading={loading}
+                hasMoreBefore={messagesOffset > 0}
+                loadingOlder={loadingOlder}
+                onLoadOlder={handleLoadOlder}
                 messages={messages}
                 userInfo={userInfo}
                 prompt={prompt}

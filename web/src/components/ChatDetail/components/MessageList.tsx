@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import { gsap } from 'gsap'
 import type { ChatMessage, Prompt, UserInfo } from '../../../types/chat'
 import type { ActiveRedPacketState, DisplayItem } from '../types'
@@ -10,6 +10,9 @@ import { MessageBubble } from './MessageBubble'
 interface MessageListProps {
     sessionId: string
     loading: boolean
+    hasMoreBefore: boolean
+    loadingOlder: boolean
+    onLoadOlder: () => Promise<void>
     messages: ChatMessage[]
     userInfo: UserInfo | null
     prompt: Prompt | null
@@ -36,6 +39,9 @@ interface MessageListProps {
 export const MessageList: React.FC<MessageListProps> = ({
     sessionId,
     loading,
+    hasMoreBefore,
+    loadingOlder,
+    onLoadOlder,
     messages,
     userInfo,
     prompt,
@@ -60,16 +66,22 @@ export const MessageList: React.FC<MessageListProps> = ({
 }) => {
     const animatedBubbleKeysRef = useRef<Set<string>>(new Set())
     const bubbleKeysSeededRef = useRef(false)
+    const shouldScrollToBottomRef = useRef(true)
+    const isAtBottomRef = useRef(true)
 
     useEffect(() => {
         animatedBubbleKeysRef.current.clear()
         bubbleKeysSeededRef.current = false
+        shouldScrollToBottomRef.current = true
+        isAtBottomRef.current = true
     }, [sessionId])
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         if (loading) return
         if (!listRef.current) return
+        if (!shouldScrollToBottomRef.current && !isAtBottomRef.current) return
         listRef.current.scrollTop = listRef.current.scrollHeight
+        shouldScrollToBottomRef.current = false
     }, [displayItems, listRef, loading])
 
     useEffect(() => {
@@ -107,14 +119,30 @@ export const MessageList: React.FC<MessageListProps> = ({
         })
     }, [displayItems, listRef, loading])
 
+    const handleScroll = () => {
+        const list = listRef.current
+        if (!list) return
+
+        const distanceToBottom = list.scrollHeight - list.scrollTop - list.clientHeight
+        isAtBottomRef.current = distanceToBottom <= 80
+
+        if (!hasMoreBefore || loadingOlder) return
+        if (list.scrollTop > 120) return
+        void onLoadOlder()
+    }
+
     return (
-        <div className="message-list" ref={listRef}>
+        <div className="message-list" ref={listRef} onScroll={handleScroll}>
             {loading ? (
                 <div className="empty-messages">加载中...</div>
             ) : displayItems.length === 0 ? (
                 <div className="empty-messages">开始新的对话</div>
             ) : (
-                displayItems.map((item) => {
+                <>
+                    {hasMoreBefore && (
+                        <div className="message-load-more">{loadingOlder ? '加载中...' : '继续上滑加载更多'}</div>
+                    )}
+                    {displayItems.map((item) => {
                     const isRedPacket = item.type === 'red-packet'
                     const isRedPacketReceivedBanner = item.type === 'red-packet-received-banner'
                     const isPatBanner = item.type === 'pat-banner'
@@ -223,7 +251,8 @@ export const MessageList: React.FC<MessageListProps> = ({
                             {rightAvatar}
                         </div>
                     )
-                })
+                })}
+                </>
             )}
         </div>
     )

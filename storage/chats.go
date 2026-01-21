@@ -414,6 +414,64 @@ func (cm *ChatManager) GetRecentMessages(sessionID string, limit int) []ChatMess
 	return copied
 }
 
+// GetSessionMessagesPage returns a slice of messages for a session.
+// If before is nil, it returns the last "limit" messages.
+// If before is provided, it returns up to "limit" messages strictly before that index (0-based, exclusive).
+// It also returns the starting offset (0-based) and the total message count.
+func (cm *ChatManager) GetSessionMessagesPage(sessionID string, limit int, before *int) (*ChatRecord, int, int, error) {
+	if err := ValidateID(sessionID); err != nil {
+		return nil, 0, 0, err
+	}
+	if limit <= 0 {
+		return nil, 0, 0, os.ErrInvalid
+	}
+
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	record, ok := cm.sessions[sessionID]
+	if !ok {
+		return nil, 0, 0, os.ErrNotExist
+	}
+
+	total := len(record.Messages)
+	end := total
+	if before != nil {
+		if *before < 0 {
+			return nil, 0, total, os.ErrInvalid
+		}
+		if *before < end {
+			end = *before
+		}
+	}
+
+	if end > total {
+		end = total
+	}
+
+	start := end - limit
+	if start < 0 {
+		start = 0
+	}
+
+	selected := record.Messages[start:end]
+	copied := make([]ChatMessage, len(selected))
+	for i := range selected {
+		copied[i] = selected[i]
+		if len(selected[i].ToolCalls) > 0 {
+			copied[i].ToolCalls = append([]client.ToolCall(nil), selected[i].ToolCalls...)
+		}
+		if len(selected[i].ImagePaths) > 0 {
+			copied[i].ImagePaths = append([]string(nil), selected[i].ImagePaths...)
+		}
+	}
+
+	page := *record
+	page.Messages = copied
+
+	return &page, start, total, nil
+}
+
 // ListSessions 列出所有会话
 func (cm *ChatManager) ListSessions() []ChatSession {
 	cm.mu.RLock()

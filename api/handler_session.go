@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -30,6 +31,12 @@ type SessionRedPacketOpenRequest struct {
 	PacketKey    string `json:"packet_key"`
 	ReceiverName string `json:"receiver_name,omitempty"`
 	SenderName   string `json:"sender_name,omitempty"`
+}
+
+type SessionMessagesPage struct {
+	*storage.ChatRecord
+	MessagesOffset int `json:"messages_offset"`
+	MessagesTotal  int `json:"messages_total"`
 }
 
 func (h *Handler) handleSessions(w http.ResponseWriter, r *http.Request) {
@@ -132,7 +139,61 @@ func (h *Handler) handleSessionByID(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleSessionMessages(w http.ResponseWriter, r *http.Request, sessionID string, parts []string) {
 	if len(parts) == 0 {
-		h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Message action required"})
+		if r.Method != http.MethodGet {
+			h.jsonResponse(w, http.StatusMethodNotAllowed, Response{Success: false, Error: "Method not allowed"})
+			return
+		}
+
+		query := r.URL.Query()
+		limit := 60
+		if rawLimit := strings.TrimSpace(query.Get("limit")); rawLimit != "" {
+			parsed, err := strconv.Atoi(rawLimit)
+			if err != nil || parsed <= 0 {
+				h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid limit"})
+				return
+			}
+			limit = parsed
+		}
+		if limit > 200 {
+			limit = 200
+		}
+
+		var before *int
+		if rawBefore := strings.TrimSpace(query.Get("before")); rawBefore != "" {
+			parsed, err := strconv.Atoi(rawBefore)
+			if err != nil {
+				h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid before"})
+				return
+			}
+			before = &parsed
+		}
+
+		record, offset, total, err := h.chatManager.GetSessionMessagesPage(sessionID, limit, before)
+		if err != nil {
+			if errors.Is(err, storage.ErrInvalidID) {
+				h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid session ID"})
+				return
+			}
+			if errors.Is(err, os.ErrInvalid) {
+				h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid paging parameters"})
+				return
+			}
+			if errors.Is(err, os.ErrNotExist) {
+				h.jsonResponse(w, http.StatusNotFound, Response{Success: false, Error: "Session not found"})
+				return
+			}
+			h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: err.Error()})
+			return
+		}
+
+		h.jsonResponse(w, http.StatusOK, Response{
+			Success: true,
+			Data: SessionMessagesPage{
+				ChatRecord:     record,
+				MessagesOffset: offset,
+				MessagesTotal:  total,
+			},
+		})
 		return
 	}
 
@@ -276,4 +337,3 @@ func generateID() string {
 	rand.Read(b)
 	return hex.EncodeToString(b)
 }
-
