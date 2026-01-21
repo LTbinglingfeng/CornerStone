@@ -127,7 +127,7 @@ const cornerstoneSingleFileBuild = (): Plugin => {
 export default defineConfig({
   plugins: [cornerstoneInlineLogos(), react(), cornerstoneSingleFileBuild()],
   build: {
-    copyPublicDir: false,
+    copyPublicDir: true,
     rollupOptions: {
       output: {
         inlineDynamicImports: true,

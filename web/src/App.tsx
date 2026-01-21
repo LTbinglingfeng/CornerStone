@@ -110,6 +110,16 @@ function App() {
         })
     }, [])
 
+    const handleOpenSessionFromNotification = useCallback(
+        (sessionId: string, promptId?: string) => {
+            animateToTab(0)
+            setActiveTab('chat')
+            setSelectedSessionId(sessionId)
+            setSelectedPromptId(promptId)
+        },
+        [animateToTab]
+    )
+
     const handleTabChange = useCallback(
         (tab: 'chat' | 'contacts' | 'moments' | 'settings') => {
             if (tab === activeTab) return
@@ -139,6 +149,56 @@ function App() {
     useLayoutEffect(() => {
         setTabPosition(getTabIndex(activeTab))
     }, [setTabPosition])
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return
+
+        const params = new URLSearchParams(window.location.search)
+        const sessionId = params.get('sessionId')
+        if (!sessionId) return
+        const promptId = params.get('promptId') || undefined
+
+        handleOpenSessionFromNotification(sessionId, promptId)
+
+        params.delete('sessionId')
+        params.delete('promptId')
+        const search = params.toString()
+        const nextUrl = `${window.location.pathname}${search ? `?${search}` : ''}${window.location.hash}`
+        window.history.replaceState(null, '', nextUrl)
+    }, [handleOpenSessionFromNotification])
+
+    useEffect(() => {
+        if (!('serviceWorker' in navigator)) return
+
+        void navigator.serviceWorker.register('/sw.js').catch(() => {
+            // ignore service worker registration errors
+        })
+    }, [])
+
+    useEffect(() => {
+        if (!('serviceWorker' in navigator)) return
+
+        const handleMessage = (event: MessageEvent) => {
+            const payload = event.data as unknown
+            if (!payload || typeof payload !== 'object') return
+
+            const type = (payload as { type?: unknown }).type
+            if (type !== 'OPEN_SESSION') return
+
+            const sessionId = (payload as { sessionId?: unknown }).sessionId
+            if (typeof sessionId !== 'string' || sessionId === '') return
+
+            const promptIdValue = (payload as { promptId?: unknown }).promptId
+            const promptId = typeof promptIdValue === 'string' && promptIdValue ? promptIdValue : undefined
+
+            handleOpenSessionFromNotification(sessionId, promptId)
+        }
+
+        navigator.serviceWorker.addEventListener('message', handleMessage)
+        return () => {
+            navigator.serviceWorker.removeEventListener('message', handleMessage)
+        }
+    }, [handleOpenSessionFromNotification])
 
     useEffect(() => {
         const checkAuth = async () => {
@@ -190,17 +250,48 @@ function App() {
             body: string,
             options?: { promptId?: string; icon?: string; tag?: string }
         ) => {
-            const notification = new Notification(title, {
-                body,
-                ...(options?.icon ? { icon: options.icon } : {}),
-                tag: options?.tag || sessionId,
-            })
-            notification.onclick = () => {
-                notification.close()
-                window.focus()
-                selectSessionHandlerRef.current(sessionId, options?.promptId)
+            const tag = options?.tag || sessionId
+
+            const showViaServiceWorker = async (): Promise<boolean> => {
+                if (!('serviceWorker' in navigator)) return false
+                try {
+                    const registration =
+                        (await navigator.serviceWorker.getRegistration()) || (await navigator.serviceWorker.register('/sw.js'))
+
+                    if (typeof registration?.showNotification !== 'function') return false
+
+                    await registration.showNotification(title, {
+                        body,
+                        ...(options?.icon ? { icon: options.icon } : {}),
+                        tag,
+                        data: { sessionId, promptId: options?.promptId || '' },
+                    })
+                    return true
+                } catch {
+                    return false
+                }
             }
-            window.setTimeout(() => notification.close(), 8000)
+
+            void (async () => {
+                const usedServiceWorker = await showViaServiceWorker()
+                if (usedServiceWorker) return
+
+                try {
+                    const notification = new Notification(title, {
+                        body,
+                        ...(options?.icon ? { icon: options.icon } : {}),
+                        tag,
+                    })
+                    notification.onclick = () => {
+                        notification.close()
+                        window.focus()
+                        selectSessionHandlerRef.current(sessionId, options?.promptId)
+                    }
+                    window.setTimeout(() => notification.close(), 8000)
+                } catch {
+                    // ignore notification errors
+                }
+            })()
         }
 
         const tick = async () => {
