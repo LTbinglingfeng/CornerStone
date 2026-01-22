@@ -32,7 +32,8 @@ type SetMemoryEnabledRequest struct {
 }
 
 type MemoryExtractionRoundsRequest struct {
-	Rounds int `json:"rounds"`
+	Rounds          *int `json:"rounds,omitempty"`
+	RefreshInterval *int `json:"refresh_interval,omitempty"`
 }
 
 type MemoryExtractionPromptRequest struct {
@@ -347,6 +348,14 @@ func (h *Handler) handleMemoryExtractionSettings(w http.ResponseWriter, r *http.
 			cfg.MemoryExtractionRounds = maxRounds
 			changed = true
 		}
+		if cfg.MemoryRefreshInterval <= 0 {
+			cfg.MemoryRefreshInterval = config.DefaultMemoryRefreshInterval
+			changed = true
+		}
+		if cfg.MemoryRefreshInterval > config.MaxMemoryRefreshInterval {
+			cfg.MemoryRefreshInterval = config.MaxMemoryRefreshInterval
+			changed = true
+		}
 		if changed {
 			if errUpdate := h.configManager.Update(cfg); errUpdate != nil {
 				h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: errUpdate.Error()})
@@ -355,8 +364,11 @@ func (h *Handler) handleMemoryExtractionSettings(w http.ResponseWriter, r *http.
 		}
 
 		result := map[string]interface{}{
-			"rounds":     cfg.MemoryExtractionRounds,
-			"max_rounds": maxRounds,
+			"rounds":                   cfg.MemoryExtractionRounds,
+			"max_rounds":               maxRounds,
+			"refresh_interval":         cfg.MemoryRefreshInterval,
+			"max_refresh_interval":     config.MaxMemoryRefreshInterval,
+			"default_refresh_interval": config.DefaultMemoryRefreshInterval,
 		}
 		if provider != nil {
 			result["provider_id"] = provider.ID
@@ -382,25 +394,48 @@ func (h *Handler) handleMemoryExtractionSettings(w http.ResponseWriter, r *http.
 			maxRounds = 1
 		}
 
-		if req.Rounds <= 0 {
-			h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid rounds"})
-			return
-		}
-		if req.Rounds > maxRounds {
-			h.jsonResponse(
-				w,
-				http.StatusBadRequest,
-				Response{Success: false, Error: "Rounds exceeds provider limit"},
-			)
-			return
+		// 处理 rounds
+		if req.Rounds != nil {
+			if *req.Rounds <= 0 {
+				h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid rounds"})
+				return
+			}
+			if *req.Rounds > maxRounds {
+				h.jsonResponse(
+					w,
+					http.StatusBadRequest,
+					Response{Success: false, Error: "Rounds exceeds provider limit"},
+				)
+				return
+			}
+			cfg.MemoryExtractionRounds = *req.Rounds
 		}
 
-		cfg.MemoryExtractionRounds = req.Rounds
+		// 处理 refresh_interval
+		if req.RefreshInterval != nil {
+			if *req.RefreshInterval <= 0 {
+				h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid refresh_interval"})
+				return
+			}
+			if *req.RefreshInterval > config.MaxMemoryRefreshInterval {
+				h.jsonResponse(
+					w,
+					http.StatusBadRequest,
+					Response{Success: false, Error: "Refresh interval exceeds limit"},
+				)
+				return
+			}
+			cfg.MemoryRefreshInterval = *req.RefreshInterval
+		}
+
 		if errUpdate := h.configManager.Update(cfg); errUpdate != nil {
 			h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: errUpdate.Error()})
 			return
 		}
-		h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: map[string]interface{}{"rounds": req.Rounds}})
+		h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: map[string]interface{}{
+			"rounds":           cfg.MemoryExtractionRounds,
+			"refresh_interval": cfg.MemoryRefreshInterval,
+		}})
 		return
 
 	default:

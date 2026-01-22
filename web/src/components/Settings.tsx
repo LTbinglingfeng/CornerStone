@@ -39,6 +39,11 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     const [showMemoryExtractionRoundsModal, setShowMemoryExtractionRoundsModal] = useState(false)
     const [editingMemoryExtractionRounds, setEditingMemoryExtractionRounds] = useState(5)
     const [savingMemoryExtractionRounds, setSavingMemoryExtractionRounds] = useState(false)
+    const [memoryRefreshInterval, setMemoryRefreshInterval] = useState(5)
+    const [memoryRefreshMaxInterval, setMemoryRefreshMaxInterval] = useState(99)
+    const [showMemoryRefreshIntervalModal, setShowMemoryRefreshIntervalModal] = useState(false)
+    const [editingMemoryRefreshInterval, setEditingMemoryRefreshInterval] = useState(5)
+    const [savingMemoryRefreshInterval, setSavingMemoryRefreshInterval] = useState(false)
     const [showMemoryExtractionPromptModal, setShowMemoryExtractionPromptModal] = useState(false)
     const [loadingMemoryExtractionPrompt, setLoadingMemoryExtractionPrompt] = useState(false)
     const [savingMemoryExtractionPrompt, setSavingMemoryExtractionPrompt] = useState(false)
@@ -57,6 +62,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     const promptModalRef = useRef<HTMLDivElement>(null)
     const replyWaitModalRef = useRef<HTMLDivElement>(null)
     const memoryExtractionRoundsModalRef = useRef<HTMLDivElement>(null)
+    const memoryRefreshIntervalModalRef = useRef<HTMLDivElement>(null)
     const memoryExtractionPromptModalRef = useRef<HTMLDivElement>(null)
     const [notificationsEnabled, setNotificationsEnabledState] = useState(() => getNotificationsEnabled())
     const [notificationsSupported, setNotificationsSupported] = useState(() => isNotificationSupported())
@@ -106,6 +112,16 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     }, [showMemoryExtractionRoundsModal])
 
     useEffect(() => {
+        if (showMemoryRefreshIntervalModal && memoryRefreshIntervalModalRef.current) {
+            gsap.fromTo(
+                memoryRefreshIntervalModalRef.current,
+                { opacity: 0, scale: 0.9 },
+                { opacity: 1, scale: 1, duration: 0.2, ease: 'power2.out' }
+            )
+        }
+    }, [showMemoryRefreshIntervalModal])
+
+    useEffect(() => {
         if (showMemoryExtractionPromptModal && memoryExtractionPromptModalRef.current) {
             gsap.fromTo(
                 memoryExtractionPromptModalRef.current,
@@ -131,6 +147,8 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
             setMemoryExtractionRounds(settings.rounds)
             setMemoryExtractionMaxRounds(settings.max_rounds)
             setMemoryExtractionProviderName(settings.provider_name || '')
+            setMemoryRefreshInterval(settings.refresh_interval)
+            setMemoryRefreshMaxInterval(settings.max_refresh_interval)
         } catch {
             setMemoryExtractionSettings(null)
         }
@@ -222,6 +240,46 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
             showToast(message, 'error')
         } finally {
             setSavingMemoryExtractionRounds(false)
+        }
+    }
+
+    const handleOpenMemoryRefreshIntervalModal = () => {
+        const interval = memoryExtractionSettings?.refresh_interval || memoryRefreshInterval || 5
+        setEditingMemoryRefreshInterval(interval)
+        setShowMemoryRefreshIntervalModal(true)
+    }
+
+    const handleCloseMemoryRefreshIntervalModal = () => {
+        if (memoryRefreshIntervalModalRef.current) {
+            gsap.to(memoryRefreshIntervalModalRef.current, {
+                opacity: 0,
+                scale: 0.9,
+                duration: 0.2,
+                ease: 'power2.in',
+                onComplete: () => {
+                    setShowMemoryRefreshIntervalModal(false)
+                },
+            })
+        } else {
+            setShowMemoryRefreshIntervalModal(false)
+        }
+    }
+
+    const handleSaveMemoryRefreshInterval = async () => {
+        if (savingMemoryRefreshInterval) return
+        setSavingMemoryRefreshInterval(true)
+        try {
+            const settings = await memoryService.setMemoryRefreshInterval(editingMemoryRefreshInterval)
+            setMemoryExtractionSettings(settings)
+            setMemoryRefreshInterval(settings.refresh_interval)
+            setMemoryRefreshMaxInterval(settings.max_refresh_interval)
+            showToast('记忆刷新间隔已保存', 'success')
+            handleCloseMemoryRefreshIntervalModal()
+        } catch (error) {
+            const message = error instanceof Error ? error.message : '保存失败'
+            showToast(message, 'error')
+        } finally {
+            setSavingMemoryRefreshInterval(false)
         }
     }
 
@@ -389,6 +447,16 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         return `最多${maxRounds}轮${providerLabel}`
     }
 
+    const getMemoryRefreshIntervalPreview = () => {
+        const interval = memoryRefreshInterval || memoryExtractionSettings?.refresh_interval || 5
+        return `${interval}轮`
+    }
+
+    const getMemoryRefreshIntervalDetail = () => {
+        const maxInterval = memoryRefreshMaxInterval || memoryExtractionSettings?.max_refresh_interval || 99
+        return `最多${maxInterval}轮`
+    }
+
     const memoryProviderPreview = getMemoryProviderPreview()
 
     return (
@@ -533,6 +601,24 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                         </button>
                         <p className="prompt-modal-hint memory-provider-hint">
                             每轮包含用户与 AI 各一条消息，数值越大提取越完整，但也更耗时
+                        </p>
+
+                        <button
+                            className="settings-entry-btn"
+                            onClick={handleOpenMemoryRefreshIntervalModal}
+                            style={{ marginTop: 12 }}
+                        >
+                            <div className="settings-entry-info">
+                                <span className="settings-entry-label">记忆刷新间隔</span>
+                                <span className="settings-entry-value">{getMemoryRefreshIntervalPreview()}</span>
+                                <span className="settings-entry-subvalue">{getMemoryRefreshIntervalDetail()}</span>
+                            </div>
+                            <svg className="settings-entry-arrow" viewBox="0 0 24 24">
+                                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                            </svg>
+                        </button>
+                        <p className="prompt-modal-hint memory-provider-hint">
+                            每隔多少轮对话触发一次记忆提取
                         </p>
 
                         <button
@@ -717,6 +803,61 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                                 disabled={savingMemoryExtractionRounds}
                             >
                                 {savingMemoryExtractionRounds ? '保存中...' : '保存'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* 记忆刷新间隔设置弹窗 */}
+            {showMemoryRefreshIntervalModal && (
+                <div className="prompt-modal-overlay" onClick={handleCloseMemoryRefreshIntervalModal}>
+                    <div
+                        className="prompt-modal-card"
+                        ref={memoryRefreshIntervalModalRef}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="prompt-modal-header">
+                            <h3>记忆刷新间隔</h3>
+                            <button className="prompt-modal-close" onClick={handleCloseMemoryRefreshIntervalModal}>
+                                <svg viewBox="0 0 24 24">
+                                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        <div className="prompt-modal-body">
+                            <p className="prompt-modal-hint">
+                                每隔多少轮对话触发一次记忆提取（每轮 = 用户 + AI）
+                            </p>
+                            <div className="settings-group">
+                                <label className="settings-label">间隔轮数</label>
+                                <NumericInput
+                                    className="settings-input"
+                                    min={1}
+                                    max={memoryRefreshMaxInterval || 99}
+                                    step={1}
+                                    value={editingMemoryRefreshInterval}
+                                    parseAs="int"
+                                    onValueChange={(nextInterval) => {
+                                        const max = memoryRefreshMaxInterval || 99
+                                        setEditingMemoryRefreshInterval(Math.max(1, Math.min(nextInterval, max)))
+                                    }}
+                                />
+                            </div>
+                            <p className="prompt-modal-hint">{getMemoryRefreshIntervalDetail()}</p>
+                        </div>
+
+                        <div className="prompt-modal-footer">
+                            <button className="prompt-modal-btn cancel" onClick={handleCloseMemoryRefreshIntervalModal}>
+                                取消
+                            </button>
+                            <button
+                                className="prompt-modal-btn save"
+                                onClick={handleSaveMemoryRefreshInterval}
+                                disabled={savingMemoryRefreshInterval}
+                            >
+                                {savingMemoryRefreshInterval ? '保存中...' : '保存'}
                             </button>
                         </div>
                     </div>

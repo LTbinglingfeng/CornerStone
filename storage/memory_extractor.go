@@ -186,6 +186,17 @@ func (e *MemoryExtractor) GetDefaultTemplate() string {
 	return defaultMemoryExtractionPromptTemplate
 }
 
+func (e *MemoryExtractor) GetRefreshInterval() int {
+	if e.configMgr == nil {
+		return RefreshInterval
+	}
+	cfg := e.configMgr.Get()
+	if cfg.MemoryRefreshInterval <= 0 {
+		return RefreshInterval
+	}
+	return cfg.MemoryRefreshInterval
+}
+
 func (e *MemoryExtractor) UpdateTemplate(template string) error {
 	template = strings.TrimSpace(template)
 	if template == "" {

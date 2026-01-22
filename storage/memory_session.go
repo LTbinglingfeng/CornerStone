@@ -57,7 +57,11 @@ func (s *MemorySession) GetActiveMemories() []Memory {
 func (s *MemorySession) OnRoundComplete() {
 	s.mu.Lock()
 	s.roundCount++
-	shouldRefresh := s.roundCount >= RefreshInterval
+	refreshInterval := RefreshInterval
+	if s.extractor != nil {
+		refreshInterval = s.extractor.GetRefreshInterval()
+	}
+	shouldRefresh := s.roundCount >= refreshInterval
 	if shouldRefresh {
 		s.roundCount = 0
 	}

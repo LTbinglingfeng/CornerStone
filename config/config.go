@@ -34,10 +34,12 @@ func isChatProviderType(providerType ProviderType) bool {
 }
 
 const (
-	DefaultProviderTemperature     = 0.8
-	DefaultProviderTopP            = 1.0
-	DefaultProviderContextMessages = 64
-	DefaultMemoryExtractionRounds  = 5
+	DefaultProviderTemperature      = 0.8
+	DefaultProviderTopP             = 1.0
+	DefaultProviderContextMessages  = 64
+	DefaultMemoryExtractionRounds   = 5
+	DefaultMemoryRefreshInterval    = 5
+	MaxMemoryRefreshInterval        = 99
 )
 
 // Provider 供应商配置
@@ -66,15 +68,16 @@ type Provider struct {
 
 // Config 存储应用配置信息
 type Config struct {
-	Providers              []Provider `json:"providers"`                // 供应商列表
-	ActiveProviderID       string     `json:"active_provider_id"`       // 当前激活的供应商ID
-	MemoryProviderID       string     `json:"memory_provider_id"`       // 记忆提取模型（供应商ID）
-	MemoryProvider         *Provider  `json:"memory_provider"`          // 记忆提取模型（独立配置）
-	MemoryEnabled          bool       `json:"memory_enabled"`           // 记忆功能开关
-	MemoryExtractionRounds int        `json:"memory_extraction_rounds"` // 记忆提取上传的对话轮数（每轮=用户+AI）
-	SystemPrompt           string     `json:"system_prompt"`            // 全局系统提示词
-	TLSCertPath            string     `json:"tls_cert_path,omitempty"`  // TLS证书路径(PEM)，留空禁用HTTPS
-	TLSKeyPath             string     `json:"tls_key_path,omitempty"`   // TLS私钥路径(PEM)，留空禁用HTTPS
+	Providers               []Provider `json:"providers"`                 // 供应商列表
+	ActiveProviderID        string     `json:"active_provider_id"`        // 当前激活的供应商ID
+	MemoryProviderID        string     `json:"memory_provider_id"`        // 记忆提取模型（供应商ID）
+	MemoryProvider          *Provider  `json:"memory_provider"`           // 记忆提取模型（独立配置）
+	MemoryEnabled           bool       `json:"memory_enabled"`            // 记忆功能开关
+	MemoryExtractionRounds  int        `json:"memory_extraction_rounds"`  // 记忆提取上传的对话轮数（每轮=用户+AI）
+	MemoryRefreshInterval   int        `json:"memory_refresh_interval"`   // 记忆刷新间隔（对话轮数）
+	SystemPrompt            string     `json:"system_prompt"`             // 全局系统提示词
+	TLSCertPath             string     `json:"tls_cert_path,omitempty"`   // TLS证书路径(PEM)，留空禁用HTTPS
+	TLSKeyPath              string     `json:"tls_key_path,omitempty"`    // TLS私钥路径(PEM)，留空禁用HTTPS
 }
 
 // Manager 配置管理器
@@ -112,6 +115,7 @@ func DefaultConfig() Config {
 		MemoryProvider:         nil,
 		MemoryEnabled:          false,
 		MemoryExtractionRounds: DefaultMemoryExtractionRounds,
+		MemoryRefreshInterval:  DefaultMemoryRefreshInterval,
 		SystemPrompt:           "You are a helpful assistant.",
 	}
 }
@@ -189,6 +193,7 @@ func (m *Manager) Load() error {
 				MemoryProvider:         nil,
 				MemoryEnabled:          false,
 				MemoryExtractionRounds: DefaultMemoryExtractionRounds,
+				MemoryRefreshInterval:  DefaultMemoryRefreshInterval,
 				SystemPrompt:           oldConfig.SystemPrompt,
 			}
 			// 保存新格式
@@ -224,6 +229,10 @@ func (m *Manager) applyConfigDefaults() bool {
 	changed := false
 	if m.config.MemoryExtractionRounds <= 0 {
 		m.config.MemoryExtractionRounds = DefaultMemoryExtractionRounds
+		changed = true
+	}
+	if m.config.MemoryRefreshInterval <= 0 {
+		m.config.MemoryRefreshInterval = DefaultMemoryRefreshInterval
 		changed = true
 	}
 	return changed

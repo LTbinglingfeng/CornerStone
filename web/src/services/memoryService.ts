@@ -5,6 +5,9 @@ import { apiFetchJson } from './api'
 export interface MemoryExtractionSettings {
     rounds: number
     max_rounds: number
+    refresh_interval: number
+    max_refresh_interval: number
+    default_refresh_interval: number
     provider_id?: string
     provider_name?: string
     provider_context_messages?: number
@@ -101,6 +104,19 @@ export const memoryService = {
         })
         if (!data.success) {
             throw new Error(data.error || '设置记忆提取轮数失败')
+        }
+        const next = await memoryService.getMemoryExtractionSettings()
+        return next
+    },
+
+    async setMemoryRefreshInterval(refresh_interval: number): Promise<MemoryExtractionSettings> {
+        const data = await apiFetchJson<ApiResponse<MemoryExtractionSettings>>('/api/settings/memory-extraction', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refresh_interval }),
+        })
+        if (!data.success) {
+            throw new Error(data.error || '设置记忆刷新间隔失败')
         }
         const next = await memoryService.getMemoryExtractionSettings()
         return next
