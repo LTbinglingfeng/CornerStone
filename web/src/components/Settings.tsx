@@ -12,6 +12,7 @@ import {
 import { NumericInput } from './NumericInput'
 import ProviderSettings from './ProviderSettings'
 import MemoryProviderSettings from './MemoryProviderSettings'
+import ImageProviderSettings from './ImageProviderSettings'
 import { useToast } from '../contexts/ToastContext'
 import {
     getNotificationsEnabled,
@@ -30,6 +31,10 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     const [systemPrompt, setSystemPrompt] = useState('')
     const [editingPrompt, setEditingPrompt] = useState('')
     const [activeProviderName, setActiveProviderName] = useState('')
+    const [imageProviderPreview, setImageProviderPreview] = useState<{ title: string; detail: string }>({
+        title: '未配置',
+        detail: '',
+    })
     const [memoryProvider, setMemoryProvider] = useState<Provider | null>(null)
     const [memoryEnabled, setMemoryEnabled] = useState(false)
     const [memoryExtractionSettings, setMemoryExtractionSettings] = useState<MemoryExtractionSettings | null>(null)
@@ -52,6 +57,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
     const [showProviderSettings, setShowProviderSettings] = useState(false)
+    const [showImageProviderSettings, setShowImageProviderSettings] = useState(false)
     const [showMemoryProviderSettings, setShowMemoryProviderSettings] = useState(false)
     const [showPromptModal, setShowPromptModal] = useState(false)
     const [replyWaitConfig, setReplyWaitConfigState] = useState<ReplyWaitWindowConfig>(() => getReplyWaitWindowConfig())
@@ -138,6 +144,25 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
             setSystemPrompt(providersData.system_prompt)
             const activeProvider = providersData.providers.find((p) => p.id === providersData.active_provider_id)
             setActiveProviderName(activeProvider?.name || '未设置')
+            const configuredImageProviderId = providersData.image_provider_id || ''
+            const imageProviders = providersData.providers.filter((p) => p.type === 'gemini_image')
+            if (configuredImageProviderId) {
+                const selected = imageProviders.find((p) => p.id === configuredImageProviderId)
+                setImageProviderPreview({
+                    title: selected?.name || '未配置',
+                    detail: selected?.model || '',
+                })
+            } else {
+                const auto = imageProviders[0]
+                if (auto) {
+                    setImageProviderPreview({
+                        title: '自动选择',
+                        detail: `${auto.name || auto.id}${auto.model ? ` · ${auto.model}` : ''}`,
+                    })
+                } else {
+                    setImageProviderPreview({ title: '未配置', detail: '暂无生图供应商' })
+                }
+            }
             setMemoryProvider(providersData.memory_provider || null)
             setMemoryEnabled(!!providersData.memory_enabled)
         }
@@ -411,6 +436,11 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         loadData({ showLoading: false })
     }
 
+    const handleImageProviderSettingsBack = () => {
+        setShowImageProviderSettings(false)
+        loadData({ showLoading: false })
+    }
+
     const handleMemoryProviderSettingsBack = () => {
         setShowMemoryProviderSettings(false)
         loadData({ showLoading: false })
@@ -482,6 +512,19 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                             <div className="settings-entry-info">
                                 <span className="settings-entry-label">当前供应商</span>
                                 <span className="settings-entry-value">{activeProviderName}</span>
+                            </div>
+                            <svg className="settings-entry-arrow" viewBox="0 0 24 24">
+                                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                            </svg>
+                        </button>
+
+                        <button className="settings-entry-btn" onClick={() => setShowImageProviderSettings(true)} style={{ marginTop: 12 }}>
+                            <div className="settings-entry-info">
+                                <span className="settings-entry-label">生图供应商</span>
+                                <span className="settings-entry-value">{imageProviderPreview.title}</span>
+                                {imageProviderPreview.detail && (
+                                    <span className="settings-entry-subvalue">{imageProviderPreview.detail}</span>
+                                )}
                             </div>
                             <svg className="settings-entry-arrow" viewBox="0 0 24 24">
                                 <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
@@ -644,6 +687,9 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
 
             {/* 供应商管理二级界面 */}
             {showProviderSettings && <ProviderSettings onBack={handleProviderSettingsBack} />}
+
+            {/* 生图供应商二级界面 */}
+            {showImageProviderSettings && <ImageProviderSettings onBack={handleImageProviderSettingsBack} />}
 
             {/* 记忆提供商二级界面 */}
             {showMemoryProviderSettings && <MemoryProviderSettings onBack={handleMemoryProviderSettingsBack} />}

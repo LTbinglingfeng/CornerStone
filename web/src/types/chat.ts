@@ -104,6 +104,7 @@ export interface ProvidersResponse {
     providers: Provider[]
     active_provider_id: string
     system_prompt: string
+    image_provider_id?: string
     memory_provider_id?: string
     memory_provider?: Provider | null
     memory_enabled?: boolean

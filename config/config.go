@@ -12,10 +12,11 @@ import (
 
 // 错误定义
 var (
-	ErrProviderExists           = errors.New("provider already exists")
-	ErrProviderNotFound         = errors.New("provider not found")
-	ErrCannotDeleteLastProvider = errors.New("cannot delete the last provider")
-	ErrProviderNotChatCapable   = errors.New("provider is not chat-capable")
+	ErrProviderExists             = errors.New("provider already exists")
+	ErrProviderNotFound           = errors.New("provider not found")
+	ErrCannotDeleteLastProvider   = errors.New("cannot delete the last provider")
+	ErrProviderNotChatCapable     = errors.New("provider is not chat-capable")
+	ErrProviderNotImageGenCapable = errors.New("provider is not image-generation capable")
 )
 
 // ProviderType 供应商类型
@@ -33,13 +34,17 @@ func isChatProviderType(providerType ProviderType) bool {
 	return providerType != ProviderTypeGeminiImage
 }
 
+func isImageGenProviderType(providerType ProviderType) bool {
+	return providerType == ProviderTypeGeminiImage
+}
+
 const (
-	DefaultProviderTemperature      = 0.8
-	DefaultProviderTopP             = 1.0
-	DefaultProviderContextMessages  = 64
-	DefaultMemoryExtractionRounds   = 5
-	DefaultMemoryRefreshInterval    = 5
-	MaxMemoryRefreshInterval        = 99
+	DefaultProviderTemperature     = 0.8
+	DefaultProviderTopP            = 1.0
+	DefaultProviderContextMessages = 64
+	DefaultMemoryExtractionRounds  = 5
+	DefaultMemoryRefreshInterval   = 5
+	MaxMemoryRefreshInterval       = 99
 )
 
 // Provider 供应商配置
@@ -68,16 +73,17 @@ type Provider struct {
 
 // Config 存储应用配置信息
 type Config struct {
-	Providers               []Provider `json:"providers"`                 // 供应商列表
-	ActiveProviderID        string     `json:"active_provider_id"`        // 当前激活的供应商ID
-	MemoryProviderID        string     `json:"memory_provider_id"`        // 记忆提取模型（供应商ID）
-	MemoryProvider          *Provider  `json:"memory_provider"`           // 记忆提取模型（独立配置）
-	MemoryEnabled           bool       `json:"memory_enabled"`            // 记忆功能开关
-	MemoryExtractionRounds  int        `json:"memory_extraction_rounds"`  // 记忆提取上传的对话轮数（每轮=用户+AI）
-	MemoryRefreshInterval   int        `json:"memory_refresh_interval"`   // 记忆刷新间隔（对话轮数）
-	SystemPrompt            string     `json:"system_prompt"`             // 全局系统提示词
-	TLSCertPath             string     `json:"tls_cert_path,omitempty"`   // TLS证书路径(PEM)，留空禁用HTTPS
-	TLSKeyPath              string     `json:"tls_key_path,omitempty"`    // TLS私钥路径(PEM)，留空禁用HTTPS
+	Providers              []Provider `json:"providers"`                // 供应商列表
+	ActiveProviderID       string     `json:"active_provider_id"`       // 当前激活的供应商ID
+	ImageProviderID        string     `json:"image_provider_id"`        // 生图供应商ID（gemini_image）
+	MemoryProviderID       string     `json:"memory_provider_id"`       // 记忆提取模型（供应商ID）
+	MemoryProvider         *Provider  `json:"memory_provider"`          // 记忆提取模型（独立配置）
+	MemoryEnabled          bool       `json:"memory_enabled"`           // 记忆功能开关
+	MemoryExtractionRounds int        `json:"memory_extraction_rounds"` // 记忆提取上传的对话轮数（每轮=用户+AI）
+	MemoryRefreshInterval  int        `json:"memory_refresh_interval"`  // 记忆刷新间隔（对话轮数）
+	SystemPrompt           string     `json:"system_prompt"`            // 全局系统提示词
+	TLSCertPath            string     `json:"tls_cert_path,omitempty"`  // TLS证书路径(PEM)，留空禁用HTTPS
+	TLSKeyPath             string     `json:"tls_key_path,omitempty"`   // TLS私钥路径(PEM)，留空禁用HTTPS
 }
 
 // Manager 配置管理器
@@ -111,6 +117,7 @@ func DefaultConfig() Config {
 	return Config{
 		Providers:              []Provider{DefaultProvider()},
 		ActiveProviderID:       "default",
+		ImageProviderID:        "",
 		MemoryProviderID:       "",
 		MemoryProvider:         nil,
 		MemoryEnabled:          false,
@@ -234,6 +241,24 @@ func (m *Manager) applyConfigDefaults() bool {
 	if m.config.MemoryRefreshInterval <= 0 {
 		m.config.MemoryRefreshInterval = DefaultMemoryRefreshInterval
 		changed = true
+	}
+	imageProviderID := strings.TrimSpace(m.config.ImageProviderID)
+	if imageProviderID != m.config.ImageProviderID {
+		m.config.ImageProviderID = imageProviderID
+		changed = true
+	}
+	if imageProviderID != "" {
+		valid := false
+		for i := range m.config.Providers {
+			if m.config.Providers[i].ID == imageProviderID && isImageGenProviderType(m.config.Providers[i].Type) {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			m.config.ImageProviderID = ""
+			changed = true
+		}
 	}
 	return changed
 }
@@ -573,6 +598,15 @@ func (m *Manager) GetImageProvider() *Provider {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
+	id := strings.TrimSpace(m.config.ImageProviderID)
+	if id != "" {
+		for i := range m.config.Providers {
+			if m.config.Providers[i].ID == id && isImageGenProviderType(m.config.Providers[i].Type) {
+				provider := m.config.Providers[i]
+				return &provider
+			}
+		}
+	}
 	for i := range m.config.Providers {
 		if m.config.Providers[i].Type == ProviderTypeGeminiImage {
 			provider := m.config.Providers[i]
@@ -636,6 +670,9 @@ func (m *Manager) UpdateProvider(provider Provider) error {
 				return ErrProviderNotChatCapable
 			}
 			m.config.Providers[i] = provider
+			if m.config.ImageProviderID == provider.ID && !isImageGenProviderType(provider.Type) {
+				m.config.ImageProviderID = ""
+			}
 			if errSave := m.saveUnsafe(); errSave != nil {
 				return errSave
 			}
@@ -673,6 +710,9 @@ func (m *Manager) DeleteProvider(id string) error {
 				}
 				m.config.ActiveProviderID = nextID
 			}
+			if m.config.ImageProviderID == id {
+				m.config.ImageProviderID = ""
+			}
 			if errSave := m.saveUnsafe(); errSave != nil {
 				return errSave
 			}
@@ -698,6 +738,33 @@ func (m *Manager) SetActiveProvider(id string) error {
 				return errSave
 			}
 			logging.Infof("active provider changed: id=%s", id)
+			return nil
+		}
+	}
+	return ErrProviderNotFound
+}
+
+// SetImageProvider 设置生图供应商（清空表示自动选择第一个 gemini_image）
+func (m *Manager) SetImageProvider(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	id = strings.TrimSpace(id)
+	if id == "" {
+		m.config.ImageProviderID = ""
+		return m.saveUnsafe()
+	}
+
+	for _, p := range m.config.Providers {
+		if p.ID == id {
+			if !isImageGenProviderType(p.Type) {
+				return ErrProviderNotImageGenCapable
+			}
+			m.config.ImageProviderID = id
+			if errSave := m.saveUnsafe(); errSave != nil {
+				return errSave
+			}
+			logging.Infof("image provider changed: id=%s", id)
 			return nil
 		}
 	}

@@ -6,7 +6,7 @@ export const PROVIDER_TYPES_ALL: { value: ProviderType; label: string }[] = [
     { value: 'openai', label: 'OpenAI 兼容' },
     { value: 'openai_response', label: 'OpenAI Responses' },
     { value: 'gemini', label: 'Google Gemini' },
-    { value: 'gemini_image', label: 'Gemini 生图（备用）' },
+    { value: 'gemini_image', label: 'Gemini 生图' },
     { value: 'anthropic', label: 'Anthropic Claude' },
 ]
 

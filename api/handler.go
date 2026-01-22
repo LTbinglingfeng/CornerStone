@@ -110,6 +110,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	h.registerProtectedRoute(mux, "/management/providers", h.handleProviders)
 	h.registerProtectedRoute(mux, "/management/providers/", h.handleProviderByID)
 	h.registerProtectedRoute(mux, "/management/providers/active", h.handleActiveProvider)
+	h.registerProtectedRoute(mux, "/management/image-provider", h.handleImageProvider)
 	h.registerProtectedRoute(mux, "/management/memory-provider", h.handleMemoryProvider)
 
 	// 提示词接口

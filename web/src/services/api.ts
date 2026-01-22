@@ -441,6 +441,19 @@ export async function setActiveProvider(providerId: string): Promise<boolean> {
     }
 }
 
+export async function setImageProvider(providerId: string): Promise<boolean> {
+    try {
+        const data = await apiFetchJson<ApiResponse<{ image_provider_id: string }>>(`${MANAGEMENT_BASE}/image-provider`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ provider_id: providerId }),
+        })
+        return data.success
+    } catch {
+        return false
+    }
+}
+
 export async function updateMemoryProvider(
     useCustom: boolean,
     provider?: Provider

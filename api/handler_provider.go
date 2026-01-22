@@ -163,6 +163,7 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 			"providers":          providers,
 			"active_provider_id": activeID,
 			"system_prompt":      h.configManager.GetSystemPrompt(),
+			"image_provider_id":  cfg.ImageProviderID,
 			"memory_provider_id": cfg.MemoryProviderID,
 			"memory_provider":    memoryProvider,
 			"memory_enabled":     cfg.MemoryEnabled,
