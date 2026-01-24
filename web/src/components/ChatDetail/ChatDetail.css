@@ -219,7 +219,6 @@
   position: relative;
   padding: 10px 14px;
   border-radius: var(--chat-bubble-radius);
-  will-change: transform, opacity;
   font-size: 15px;
   line-height: 1.4;
   word-wrap: break-word;
@@ -809,7 +808,6 @@
   background-color: var(--red-packet-card-bg, #fa9d3b);
   border: 1px solid var(--red-packet-card-border, transparent);
   border-radius: 12px;
-  will-change: transform, opacity;
   overflow: hidden;
   cursor: pointer;
   display: flex;

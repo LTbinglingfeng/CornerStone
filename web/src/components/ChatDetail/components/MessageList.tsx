@@ -113,8 +113,8 @@ export const MessageList: React.FC<MessageListProps> = ({
             gsap.killTweensOf(target)
             gsap.fromTo(
                 target,
-                { opacity: 0, y: 12, scale: 0.97 },
-                { opacity: 1, y: 0, scale: 1, duration: 0.32, ease: 'power2.out', clearProps: 'transform,opacity' }
+                { opacity: 0, y: 12 },
+                { opacity: 1, y: 0, duration: 0.25, ease: 'power2.out', force3D: true }
             )
         })
     }, [displayItems, listRef, loading])
