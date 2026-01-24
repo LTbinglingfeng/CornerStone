@@ -61,6 +61,9 @@ export function useDisplayItems(options: UseDisplayItemsOptions): DisplayItem[] 
                                 ...message,
                                 content: segment,
                                 ...(segmentIndex === 0 ? {} : { image_paths: undefined }),
+                                ...(message.tts_audio_paths
+                                    ? { tts_audio_path: message.tts_audio_paths[segmentIndex] }
+                                    : {}),
                             }
                             items.push({
                                 key: `${message.timestamp}-text-${segmentIndex}`,

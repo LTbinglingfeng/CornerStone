@@ -534,6 +534,30 @@
     gap: 8px;
 }
 
+.message-tts-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.message-tts-button svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+.message-tts-button:hover {
+  opacity: 0.9;
+}
+
 .message-quote {
     padding: 6px 10px;
     border-radius: 8px;

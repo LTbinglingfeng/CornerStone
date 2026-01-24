@@ -274,8 +274,12 @@ func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiCli
 	// 保存AI回复到历史记录（包含思考内容）
 	if len(resp.Choices) > 0 {
 		message := resp.Choices[0].Message
+		ttsAudioPaths := h.maybeGenerateTTSAudio(ctxAI, message.Content)
+		if len(ttsAudioPaths) > 0 {
+			resp.Choices[0].Message.TTSAudioPaths = ttsAudioPaths
+		}
 		if saveHistory {
-			if errSaveHistory := h.chatManager.AddMessageWithDetails(sessionID, "assistant", message.Content, message.ReasoningContent, nil, message.ToolCalls); errSaveHistory != nil {
+			if errSaveHistory := h.chatManager.AddMessageWithDetails(sessionID, "assistant", message.Content, message.ReasoningContent, nil, message.ToolCalls, ttsAudioPaths); errSaveHistory != nil {
 				if errors.Is(errSaveHistory, storage.ErrInvalidID) {
 					h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid session ID"})
 					return
@@ -418,8 +422,12 @@ func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiCli
 	// 保存AI回复到历史记录（包含思考内容）
 	toolCalls := collectToolCalls(toolCallsMap)
 	h.handleMomentToolCalls(promptID, promptName, toolCalls)
+	ttsAudioPaths := []string(nil)
+	if errChatStream == nil && fullContent.Len() > 0 {
+		ttsAudioPaths = h.maybeGenerateTTSAudio(ctxAI, fullContent.String())
+	}
 	if saveHistory && (fullContent.Len() > 0 || fullReasoningContent.Len() > 0 || len(toolCalls) > 0) {
-		if errSaveHistory := h.chatManager.AddMessageWithDetails(sessionID, "assistant", fullContent.String(), fullReasoningContent.String(), nil, toolCalls); errSaveHistory != nil {
+		if errSaveHistory := h.chatManager.AddMessageWithDetails(sessionID, "assistant", fullContent.String(), fullReasoningContent.String(), nil, toolCalls, ttsAudioPaths); errSaveHistory != nil {
 			logging.Errorf("save stream history error: %v", errSaveHistory)
 			errorMessage := errSaveHistory.Error()
 			if errors.Is(errSaveHistory, storage.ErrInvalidID) {
@@ -433,6 +441,17 @@ func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiCli
 					flusher.Flush()
 				}
 			}
+		}
+	}
+
+	if errChatStream == nil && len(ttsAudioPaths) > 0 && !isClientDisconnected() {
+		ttsPayload, _ := json.Marshal(map[string]interface{}{
+			"tts_audio_paths": ttsAudioPaths,
+		})
+		if _, errWrite := fmt.Fprintf(w, "data: %s\n\n", ttsPayload); errWrite != nil {
+			clientDisconnected = true
+		} else {
+			flusher.Flush()
 		}
 	}
 

@@ -21,6 +21,7 @@ type Handler struct {
 	authManager   *storage.AuthManager
 	tokenStore    *authTokenStore
 	cachePhotoDir string
+	ttsAudioDir   string
 
 	memoryManager   *storage.MemoryManager
 	memoryExtractor *storage.MemoryExtractor
@@ -35,7 +36,7 @@ type Handler struct {
 }
 
 // NewHandler 创建处理器
-func NewHandler(cm *config.Manager, pm *storage.PromptManager, chatMgr *storage.ChatManager, userMgr *storage.UserManager, authMgr *storage.AuthManager, cachePhotoDir string, memoryManager *storage.MemoryManager, memoryExtractor *storage.MemoryExtractor, momentManager *storage.MomentManager, momentGenerator *MomentGenerator) *Handler {
+func NewHandler(cm *config.Manager, pm *storage.PromptManager, chatMgr *storage.ChatManager, userMgr *storage.UserManager, authMgr *storage.AuthManager, cachePhotoDir string, ttsAudioDir string, memoryManager *storage.MemoryManager, memoryExtractor *storage.MemoryExtractor, momentManager *storage.MomentManager, momentGenerator *MomentGenerator) *Handler {
 	return &Handler{
 		configManager:   cm,
 		promptManager:   pm,
@@ -44,6 +45,7 @@ func NewHandler(cm *config.Manager, pm *storage.PromptManager, chatMgr *storage.
 		authManager:     authMgr,
 		tokenStore:      newAuthTokenStore(),
 		cachePhotoDir:   cachePhotoDir,
+		ttsAudioDir:     ttsAudioDir,
 		memoryManager:   memoryManager,
 		memoryExtractor: memoryExtractor,
 		memorySessions:  make(map[string]*storage.MemorySession),
@@ -96,6 +98,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	h.registerProtectedRoute(mux, "/api/settings/memory-enabled", h.handleSetMemoryEnabled)
 	h.registerProtectedRoute(mux, "/api/settings/memory-extraction", h.handleMemoryExtractionSettings)
 	h.registerProtectedRoute(mux, "/api/settings/memory-extraction-prompt", h.handleMemoryExtractionPrompt)
+	h.registerProtectedRoute(mux, "/api/settings/tts", h.handleTTSSettings)
 
 	// 配置接口 (使用 /management 前缀)
 	h.registerProtectedRoute(mux, "/management/config", h.handleConfig)
@@ -134,6 +137,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	// 聊天图片缓存接口
 	h.registerProtectedRoute(mux, "/management/cache-photo", h.handleCachePhoto)
 	h.registerProtectedRoute(mux, "/management/cache-photo/", h.handleCachePhotoByName)
+	h.registerProtectedRoute(mux, "/management/tts-audio/", h.handleTTSAudioByName)
 
 	// 健康检查
 	h.registerPublicRoute(mux, "/management/health", h.handleHealth)

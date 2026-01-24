@@ -652,3 +652,11 @@ export function getChatImageUrl(imagePath: string): string {
     const encoded = encodeURIComponent(cleaned)
     return `${MANAGEMENT_BASE}/cache-photo/${encoded}`
 }
+
+// 获取 TTS 音频 URL
+export function getTTSAudioUrl(audioPath: string): string {
+    const normalized = audioPath.replace(/\\/g, '/')
+    const cleaned = normalized.startsWith('tts_audio/') ? normalized.slice('tts_audio/'.length) : normalized
+    const encoded = encodeURIComponent(cleaned)
+    return `${MANAGEMENT_BASE}/tts-audio/${encoded}`
+}

@@ -30,6 +30,26 @@ const (
 	ProviderTypeAnthropic      ProviderType = "anthropic"       // Anthropic Claude API
 )
 
+type TTSProviderType string
+
+const (
+	TTSProviderTypeMinimax TTSProviderType = "minimax"
+)
+
+type TTSVoiceSetting struct {
+	VoiceID string  `json:"voice_id"`
+	Speed   float64 `json:"speed"`
+}
+
+type TTSProvider struct {
+	Type          TTSProviderType `json:"type"`
+	BaseURL       string          `json:"base_url"`
+	APIKey        string          `json:"api_key"`
+	Model         string          `json:"model"`
+	VoiceSetting  TTSVoiceSetting `json:"voice_setting"`
+	LanguageBoost string          `json:"language_boost,omitempty"`
+}
+
 func isChatProviderType(providerType ProviderType) bool {
 	return providerType != ProviderTypeGeminiImage
 }
@@ -73,17 +93,19 @@ type Provider struct {
 
 // Config 存储应用配置信息
 type Config struct {
-	Providers              []Provider `json:"providers"`                // 供应商列表
-	ActiveProviderID       string     `json:"active_provider_id"`       // 当前激活的供应商ID
-	ImageProviderID        string     `json:"image_provider_id"`        // 生图供应商ID（gemini_image）
-	MemoryProviderID       string     `json:"memory_provider_id"`       // 记忆提取模型（供应商ID）
-	MemoryProvider         *Provider  `json:"memory_provider"`          // 记忆提取模型（独立配置）
-	MemoryEnabled          bool       `json:"memory_enabled"`           // 记忆功能开关
-	MemoryExtractionRounds int        `json:"memory_extraction_rounds"` // 记忆提取上传的对话轮数（每轮=用户+AI）
-	MemoryRefreshInterval  int        `json:"memory_refresh_interval"`  // 记忆刷新间隔（对话轮数）
-	SystemPrompt           string     `json:"system_prompt"`            // 全局系统提示词
-	TLSCertPath            string     `json:"tls_cert_path,omitempty"`  // TLS证书路径(PEM)，留空禁用HTTPS
-	TLSKeyPath             string     `json:"tls_key_path,omitempty"`   // TLS私钥路径(PEM)，留空禁用HTTPS
+	Providers              []Provider   `json:"providers"`                // 供应商列表
+	ActiveProviderID       string       `json:"active_provider_id"`       // 当前激活的供应商ID
+	ImageProviderID        string       `json:"image_provider_id"`        // 生图供应商ID（gemini_image）
+	MemoryProviderID       string       `json:"memory_provider_id"`       // 记忆提取模型（供应商ID）
+	MemoryProvider         *Provider    `json:"memory_provider"`          // 记忆提取模型（独立配置）
+	MemoryEnabled          bool         `json:"memory_enabled"`           // 记忆功能开关
+	MemoryExtractionRounds int          `json:"memory_extraction_rounds"` // 记忆提取上传的对话轮数（每轮=用户+AI）
+	MemoryRefreshInterval  int          `json:"memory_refresh_interval"`  // 记忆刷新间隔（对话轮数）
+	TTSEnabled             bool         `json:"tts_enabled"`              // TTS开关
+	TTSProvider            *TTSProvider `json:"tts_provider,omitempty"`   // TTS提供商（仅支持 MiniMax）
+	SystemPrompt           string       `json:"system_prompt"`            // 全局系统提示词
+	TLSCertPath            string       `json:"tls_cert_path,omitempty"`  // TLS证书路径(PEM)，留空禁用HTTPS
+	TLSKeyPath             string       `json:"tls_key_path,omitempty"`   // TLS私钥路径(PEM)，留空禁用HTTPS
 }
 
 // Manager 配置管理器
@@ -123,6 +145,8 @@ func DefaultConfig() Config {
 		MemoryEnabled:          false,
 		MemoryExtractionRounds: DefaultMemoryExtractionRounds,
 		MemoryRefreshInterval:  DefaultMemoryRefreshInterval,
+		TTSEnabled:             false,
+		TTSProvider:            nil,
 		SystemPrompt:           "You are a helpful assistant.",
 	}
 }

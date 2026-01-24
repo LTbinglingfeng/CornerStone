@@ -5,6 +5,8 @@ export interface ChatMessage {
     timestamp: string
     tool_calls?: ToolCall[]
     image_paths?: string[]
+    tts_audio_paths?: string[]
+    tts_audio_path?: string
 }
 
 // 工具调用

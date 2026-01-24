@@ -121,4 +121,3 @@ func (h *Handler) handleUserAvatar(w http.ResponseWriter, r *http.Request) {
 		h.jsonResponse(w, http.StatusMethodNotAllowed, Response{Success: false, Error: "Method not allowed"})
 	}
 }
-

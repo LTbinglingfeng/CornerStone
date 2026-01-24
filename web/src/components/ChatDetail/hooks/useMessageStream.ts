@@ -215,6 +215,7 @@ export function useMessageStream(options: UseMessageStreamOptions): UseMessageSt
                             const parsed = JSON.parse(data) as {
                                 session_id?: string
                                 error?: string
+                                tts_audio_paths?: string[]
                                 choices?: Array<{
                                     delta?: {
                                         content?: string
@@ -229,8 +230,24 @@ export function useMessageStream(options: UseMessageStreamOptions): UseMessageSt
                                 }>
                             }
 
-                            if (parsed.session_id && !parsed.choices) continue
+                            if (parsed.session_id && !parsed.choices && !parsed.tts_audio_paths) continue
                             if (parsed.error) throw new Error(parsed.error)
+
+                            if (parsed.tts_audio_paths) {
+                                const ttsPaths = parsed.tts_audio_paths
+                                setMessages((prev) => {
+                                    const next = [...prev]
+                                    for (let i = next.length - 1; i >= 0; i--) {
+                                        const msg = next[i]
+                                        if (msg.role === 'assistant' && msg.timestamp === assistantTimestamp) {
+                                            next[i] = { ...msg, tts_audio_paths: ttsPaths }
+                                            break
+                                        }
+                                    }
+                                    return next
+                                })
+                                continue
+                            }
 
                             const delta = parsed.choices?.[0]?.delta
                             if (!delta) continue
@@ -283,6 +300,7 @@ export function useMessageStream(options: UseMessageStreamOptions): UseMessageSt
                             content: msg.content || '',
                             reasoning_content: msg.reasoning_content,
                             tool_calls: msg.tool_calls,
+                            tts_audio_paths: msg.tts_audio_paths,
                             timestamp: assistantTimestamp,
                         }
                         setMessages((prev) => [...prev, assistantMessage])

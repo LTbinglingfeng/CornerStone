@@ -102,6 +102,7 @@ func main() {
 	chatsDir := filepath.Join(baseDir, "chats")
 	userAboutDir := filepath.Join(baseDir, "user_about")
 	cachePhotoDir := filepath.Join(baseDir, "cache_photo")
+	ttsAudioDir := filepath.Join(baseDir, "tts_audio")
 	momentsDir := filepath.Join(baseDir, "moments")
 
 	// 初始化管理器
@@ -161,6 +162,7 @@ func main() {
 	memoryManager := storage.NewMemoryManager(promptsDir)
 	memoryExtractor := storage.NewMemoryExtractor(memoryManager, configManager, chatManager, userManager, filepath.Join(baseDir, "memory_extraction_prompt.txt"))
 	os.MkdirAll(cachePhotoDir, 0755)
+	os.MkdirAll(ttsAudioDir, 0755)
 
 	logging.Infof("日志文件: %s", logPath)
 	logging.Infof("数据存储目录: %s", baseDir)
@@ -169,6 +171,7 @@ func main() {
 	logging.Infof("  聊天记录目录: %s", chatsDir)
 	logging.Infof("  用户信息目录: %s", userAboutDir)
 	logging.Infof("  图片缓存目录: %s", cachePhotoDir)
+	logging.Infof("  语音缓存目录: %s", ttsAudioDir)
 	logging.Infof("  朋友圈目录: %s", momentsDir)
 	if tlsEnabled {
 		logging.Infof("TLS已启用:")
@@ -181,7 +184,7 @@ func main() {
 	mux := http.NewServeMux()
 
 	// 注册API处理器
-	handler := api.NewHandler(configManager, promptManager, chatManager, userManager, authManager, cachePhotoDir, memoryManager, memoryExtractor, momentManager, momentGenerator)
+	handler := api.NewHandler(configManager, promptManager, chatManager, userManager, authManager, cachePhotoDir, ttsAudioDir, memoryManager, memoryExtractor, momentManager, momentGenerator)
 	handler.RegisterRoutes(mux)
 
 	// 朋友圈静态文件（图片、背景图）

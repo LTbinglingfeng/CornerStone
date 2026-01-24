@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { gsap } from 'gsap'
 import { getProviders, updateSystemPrompt } from '../services/api'
 import { memoryService, type MemoryExtractionPromptTemplate, type MemoryExtractionSettings } from '../services/memoryService'
+import { ttsService, type TTSProviderConfig } from '../services/ttsService'
 import type { Provider } from '../types/chat'
 import {
     getReplyWaitWindowConfig,
@@ -37,6 +38,17 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     })
     const [memoryProvider, setMemoryProvider] = useState<Provider | null>(null)
     const [memoryEnabled, setMemoryEnabled] = useState(false)
+    const [ttsEnabled, setTTSEnabledState] = useState(false)
+    const [ttsProvider, setTTSProvider] = useState<TTSProviderConfig | null>(null)
+    const [showTTSProviderModal, setShowTTSProviderModal] = useState(false)
+    const [editingTTSProvider, setEditingTTSProvider] = useState<TTSProviderConfig>(() => ({
+        type: 'minimax',
+        base_url: 'https://api.minimaxi.com',
+        api_key: '',
+        model: 'speech-2.6-hd',
+        voice_setting: { voice_id: 'male-qn-qingse', speed: 1 },
+        language_boost: '',
+    }))
     const [memoryExtractionSettings, setMemoryExtractionSettings] = useState<MemoryExtractionSettings | null>(null)
     const [memoryExtractionRounds, setMemoryExtractionRounds] = useState(5)
     const [memoryExtractionMaxRounds, setMemoryExtractionMaxRounds] = useState(64)
@@ -67,6 +79,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     const [showReplyWaitModal, setShowReplyWaitModal] = useState(false)
     const promptModalRef = useRef<HTMLDivElement>(null)
     const replyWaitModalRef = useRef<HTMLDivElement>(null)
+    const ttsProviderModalRef = useRef<HTMLDivElement>(null)
     const memoryExtractionRoundsModalRef = useRef<HTMLDivElement>(null)
     const memoryRefreshIntervalModalRef = useRef<HTMLDivElement>(null)
     const memoryExtractionPromptModalRef = useRef<HTMLDivElement>(null)
@@ -106,6 +119,16 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
             )
         }
     }, [showReplyWaitModal])
+
+    useEffect(() => {
+        if (showTTSProviderModal && ttsProviderModalRef.current) {
+            gsap.fromTo(
+                ttsProviderModalRef.current,
+                { opacity: 0, scale: 0.9 },
+                { opacity: 1, scale: 1, duration: 0.2, ease: 'power2.out' }
+            )
+        }
+    }, [showTTSProviderModal])
 
     useEffect(() => {
         if (showMemoryExtractionRoundsModal && memoryExtractionRoundsModalRef.current) {
@@ -165,6 +188,14 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
             }
             setMemoryProvider(providersData.memory_provider || null)
             setMemoryEnabled(!!providersData.memory_enabled)
+        }
+        try {
+            const settings = await ttsService.getTTSSettings()
+            setTTSEnabledState(settings.enabled)
+            setTTSProvider(settings.provider)
+        } catch {
+            setTTSEnabledState(false)
+            setTTSProvider(null)
         }
         try {
             const settings = await memoryService.getMemoryExtractionSettings()
@@ -416,6 +447,94 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         showToast('已开启系统通知', 'success')
     }
 
+    const handleTTSEnabledChange = async (enabled: boolean) => {
+        if (saving) return
+        setSaving(true)
+        try {
+            const settings = await ttsService.updateTTSSettings({ enabled })
+            setTTSEnabledState(settings.enabled)
+            setTTSProvider(settings.provider)
+            showToast(enabled ? '已开启 TTS' : '已关闭 TTS', 'success')
+        } catch (error) {
+            console.error('Failed to set tts enabled:', error)
+            showToast('设置失败', 'error')
+        } finally {
+            setSaving(false)
+        }
+    }
+
+    const handleOpenTTSProviderModal = () => {
+        const current = ttsProvider
+        if (current) {
+            setEditingTTSProvider({
+                type: current.type || 'minimax',
+                base_url: current.base_url || 'https://api.minimaxi.com',
+                api_key: current.api_key || '',
+                model: current.model || 'speech-2.6-hd',
+                voice_setting: {
+                    voice_id: current.voice_setting?.voice_id || 'male-qn-qingse',
+                    speed: current.voice_setting?.speed ?? 1,
+                },
+                language_boost: current.language_boost || '',
+            })
+        } else {
+            setEditingTTSProvider({
+                type: 'minimax',
+                base_url: 'https://api.minimaxi.com',
+                api_key: '',
+                model: 'speech-2.6-hd',
+                voice_setting: { voice_id: 'male-qn-qingse', speed: 1 },
+                language_boost: '',
+            })
+        }
+        setShowTTSProviderModal(true)
+    }
+
+    const handleCloseTTSProviderModal = () => {
+        if (ttsProviderModalRef.current) {
+            gsap.to(ttsProviderModalRef.current, {
+                opacity: 0,
+                scale: 0.9,
+                duration: 0.2,
+                ease: 'power2.in',
+                onComplete: () => {
+                    setShowTTSProviderModal(false)
+                },
+            })
+        } else {
+            setShowTTSProviderModal(false)
+        }
+    }
+
+    const handleSaveTTSProvider = async () => {
+        if (saving) return
+        setSaving(true)
+        try {
+            const languageBoost = (editingTTSProvider.language_boost || '').trim()
+            const provider: TTSProviderConfig = {
+                ...editingTTSProvider,
+                base_url: editingTTSProvider.base_url.trim(),
+                api_key: editingTTSProvider.api_key.trim(),
+                model: editingTTSProvider.model.trim(),
+                voice_setting: {
+                    voice_id: editingTTSProvider.voice_setting.voice_id.trim(),
+                    speed: editingTTSProvider.voice_setting.speed,
+                },
+                ...(languageBoost ? { language_boost: languageBoost } : {}),
+            }
+            const settings = await ttsService.updateTTSSettings({ provider })
+            setTTSEnabledState(settings.enabled)
+            setTTSProvider(settings.provider)
+            showToast('已保存 TTS 提供商', 'success')
+            handleCloseTTSProviderModal()
+        } catch (error) {
+            console.error('Failed to save tts provider:', error)
+            showToast('保存失败', 'error')
+        } finally {
+            setSaving(false)
+        }
+    }
+
     const handleMemoryEnabledChange = async (enabled: boolean) => {
         if (saving) return
         setSaving(true)
@@ -462,6 +581,14 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         return { title: '跟随对话模型', detail: '默认' }
     }
 
+    const getTTSProviderPreview = () => {
+        if (!ttsProvider) return { title: '未配置', detail: '' }
+        const model = ttsProvider.model || ''
+        const voiceId = ttsProvider.voice_setting?.voice_id || ''
+        const detail = [model, voiceId].filter(Boolean).join(' · ')
+        return { title: 'MiniMax', detail }
+    }
+
     const getReplyWaitPreview = () => {
         return formatReplyWaitWindowConfig(replyWaitConfig)
     }
@@ -488,6 +615,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     }
 
     const memoryProviderPreview = getMemoryProviderPreview()
+    const ttsProviderPreview = getTTSProviderPreview()
 
     return (
         <div className="settings">
@@ -583,6 +711,41 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                             </div>
                             <p className="prompt-modal-hint memory-toggle-hint">仅在不在聊天详情界面时提醒</p>
                         </div>
+                    </div>
+
+                    {/* 语音设置 */}
+                    <div className="settings-section">
+                        <h3>语音</h3>
+
+                        <div className="settings-group">
+                            <label className="settings-label">TTS</label>
+                            <div className="modal-toggle-wrapper">
+                                <label className="toggle-switch">
+                                    <input
+                                        type="checkbox"
+                                        checked={ttsEnabled}
+                                        onChange={(e) => handleTTSEnabledChange(e.target.checked)}
+                                        disabled={saving}
+                                    />
+                                    <span className="toggle-slider"></span>
+                                </label>
+                                <span className="toggle-label">{ttsEnabled ? '开启' : '关闭'}</span>
+                            </div>
+                            <p className="prompt-modal-hint memory-toggle-hint">开启后会为 AI 回复生成语音按钮</p>
+                        </div>
+
+                        <button className="settings-entry-btn" onClick={handleOpenTTSProviderModal} style={{ marginTop: 12 }}>
+                            <div className="settings-entry-info">
+                                <span className="settings-entry-label">TTS 提供商</span>
+                                <span className="settings-entry-value">{ttsProviderPreview.title}</span>
+                                {ttsProviderPreview.detail && (
+                                    <span className="settings-entry-subvalue">{ttsProviderPreview.detail}</span>
+                                )}
+                            </div>
+                            <svg className="settings-entry-arrow" viewBox="0 0 24 24">
+                                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                            </svg>
+                        </button>
                     </div>
 
                     {/* 长期记忆设置 */}
@@ -794,6 +957,117 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                             </button>
                             <button className="prompt-modal-btn save" onClick={handleSaveReplyWaitConfig}>
                                 保存
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* TTS 提供商设置弹窗 */}
+            {showTTSProviderModal && (
+                <div className="prompt-modal-overlay" onClick={handleCloseTTSProviderModal}>
+                    <div
+                        className="prompt-modal-card"
+                        ref={ttsProviderModalRef}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="prompt-modal-header">
+                            <h3>TTS 提供商</h3>
+                            <button className="prompt-modal-close" onClick={handleCloseTTSProviderModal}>
+                                <svg viewBox="0 0 24 24">
+                                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        <div className="prompt-modal-body">
+                            <p className="prompt-modal-hint">仅支持 MiniMax，同步生成 mp3 音频</p>
+
+                            <div className="settings-group">
+                                <label className="settings-label">Base URL</label>
+                                <input
+                                    className="settings-input"
+                                    value={editingTTSProvider.base_url}
+                                    onChange={(e) => setEditingTTSProvider((prev) => ({ ...prev, base_url: e.target.value }))}
+                                    placeholder="https://api.minimaxi.com"
+                                />
+                            </div>
+
+                            <div className="settings-group">
+                                <label className="settings-label">API Key</label>
+                                <input
+                                    className="settings-input"
+                                    type="password"
+                                    value={editingTTSProvider.api_key}
+                                    onChange={(e) => setEditingTTSProvider((prev) => ({ ...prev, api_key: e.target.value }))}
+                                    placeholder="MiniMax API Key"
+                                    autoComplete="off"
+                                />
+                                <p className="prompt-modal-hint">已配置过可保留为 ****，不修改则保持不变</p>
+                            </div>
+
+                            <div className="settings-group">
+                                <label className="settings-label">Model</label>
+                                <input
+                                    className="settings-input"
+                                    value={editingTTSProvider.model}
+                                    onChange={(e) => setEditingTTSProvider((prev) => ({ ...prev, model: e.target.value }))}
+                                    placeholder="speech-2.6-hd"
+                                />
+                            </div>
+
+                            <div className="settings-group">
+                                <label className="settings-label">Voice ID</label>
+                                <input
+                                    className="settings-input"
+                                    value={editingTTSProvider.voice_setting.voice_id}
+                                    onChange={(e) =>
+                                        setEditingTTSProvider((prev) => ({
+                                            ...prev,
+                                            voice_setting: { ...prev.voice_setting, voice_id: e.target.value },
+                                        }))
+                                    }
+                                    placeholder="male-qn-qingse"
+                                />
+                            </div>
+
+                            <div className="settings-group">
+                                <label className="settings-label">Speed</label>
+                                <NumericInput
+                                    className="settings-input"
+                                    min={0.5}
+                                    max={2}
+                                    step={0.1}
+                                    value={editingTTSProvider.voice_setting.speed}
+                                    parseAs="float"
+                                    onValueChange={(speed) =>
+                                        setEditingTTSProvider((prev) => ({
+                                            ...prev,
+                                            voice_setting: { ...prev.voice_setting, speed },
+                                        }))
+                                    }
+                                />
+                            </div>
+
+                            <div className="settings-group">
+                                <label className="settings-label">Language Boost</label>
+                                <input
+                                    className="settings-input"
+                                    value={editingTTSProvider.language_boost || ''}
+                                    onChange={(e) =>
+                                        setEditingTTSProvider((prev) => ({ ...prev, language_boost: e.target.value }))
+                                    }
+                                    placeholder="auto / Chinese / English ..."
+                                />
+                            </div>
+                        </div>
+
+                        <div className="prompt-modal-footer">
+                            <button className="prompt-modal-btn cancel" onClick={handleCloseTTSProviderModal} disabled={saving}>
+                                取消
+                            </button>
+                            <button className="prompt-modal-btn save" onClick={handleSaveTTSProvider} disabled={saving}>
+                                {saving ? '保存中...' : '保存'}
                             </button>
                         </div>
                     </div>

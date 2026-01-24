@@ -237,4 +237,3 @@ func generatePromptID() string {
 
 	return result
 }
-

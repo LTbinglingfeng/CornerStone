@@ -22,6 +22,7 @@ type ChatMessage struct {
 	ReasoningContent string            `json:"reasoning_content,omitempty"` // 思考模型的推理内容
 	ToolCalls        []client.ToolCall `json:"tool_calls,omitempty"`        // 工具调用
 	ImagePaths       []string          `json:"image_paths,omitempty"`       // 图片路径
+	TTSAudioPaths    []string          `json:"tts_audio_paths,omitempty"`   // TTS音频路径
 	Timestamp        time.Time         `json:"timestamp"`
 }
 
@@ -409,6 +410,9 @@ func (cm *ChatManager) GetRecentMessages(sessionID string, limit int) []ChatMess
 		if len(selected[i].ImagePaths) > 0 {
 			copied[i].ImagePaths = append([]string(nil), selected[i].ImagePaths...)
 		}
+		if len(selected[i].TTSAudioPaths) > 0 {
+			copied[i].TTSAudioPaths = append([]string(nil), selected[i].TTSAudioPaths...)
+		}
 	}
 
 	return copied
@@ -464,6 +468,9 @@ func (cm *ChatManager) GetSessionMessagesPage(sessionID string, limit int, befor
 		if len(selected[i].ImagePaths) > 0 {
 			copied[i].ImagePaths = append([]string(nil), selected[i].ImagePaths...)
 		}
+		if len(selected[i].TTSAudioPaths) > 0 {
+			copied[i].TTSAudioPaths = append([]string(nil), selected[i].TTSAudioPaths...)
+		}
 	}
 
 	page := *record
@@ -498,11 +505,11 @@ func (cm *ChatManager) AddMessage(sessionID, role, content string) error {
 
 // AddMessageWithReasoning 添加带思考内容的消息到会话
 func (cm *ChatManager) AddMessageWithReasoning(sessionID, role, content, reasoningContent string) error {
-	return cm.AddMessageWithDetails(sessionID, role, content, reasoningContent, nil, nil)
+	return cm.AddMessageWithDetails(sessionID, role, content, reasoningContent, nil, nil, nil)
 }
 
 // AddMessageWithDetails 添加带思考内容和工具调用的消息到会话
-func (cm *ChatManager) AddMessageWithDetails(sessionID, role, content, reasoningContent string, imagePaths []string, toolCalls []client.ToolCall) error {
+func (cm *ChatManager) AddMessageWithDetails(sessionID, role, content, reasoningContent string, imagePaths []string, toolCalls []client.ToolCall, ttsAudioPaths []string) error {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
@@ -540,6 +547,9 @@ func (cm *ChatManager) AddMessageWithDetails(sessionID, role, content, reasoning
 	}
 	if len(imagePaths) > 0 {
 		msg.ImagePaths = append([]string(nil), imagePaths...)
+	}
+	if len(ttsAudioPaths) > 0 {
+		msg.TTSAudioPaths = append([]string(nil), ttsAudioPaths...)
 	}
 	record.Messages = append(record.Messages, msg)
 	record.UpdatedAt = now
