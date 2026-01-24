@@ -57,13 +57,12 @@ export function useDisplayItems(options: UseDisplayItemsOptions): DisplayItem[] 
                 if (isAssistant) {
                     if (assistantSegments.length > 0) {
                         assistantSegments.forEach((segment, segmentIndex) => {
+                            const ttsPath = message.tts_audio_paths?.[segmentIndex]
                             const segmentMessage: ChatMessage = {
                                 ...message,
                                 content: segment,
                                 ...(segmentIndex === 0 ? {} : { image_paths: undefined }),
-                                ...(message.tts_audio_paths
-                                    ? { tts_audio_path: message.tts_audio_paths[segmentIndex] }
-                                    : {}),
+                                ...(ttsPath ? { tts_audio_path: ttsPath } : {}),
                             }
                             items.push({
                                 key: `${message.timestamp}-text-${segmentIndex}`,
