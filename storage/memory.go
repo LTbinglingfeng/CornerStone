@@ -503,7 +503,7 @@ func (mm *MemoryManager) GetActiveMemories(promptID string) []Memory {
 	}
 
 	sort.Slice(active, func(i, j int) bool {
-		return active[i].CurrentStrength() > active[j].CurrentStrength()
+		return active[i].LastSeen.After(active[j].LastSeen)
 	})
 
 	if len(active) > MaxActiveMemories {
