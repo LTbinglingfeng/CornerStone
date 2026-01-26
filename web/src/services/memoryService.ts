@@ -18,6 +18,31 @@ export interface MemoryExtractionPromptTemplate {
     default_template: string
 }
 
+export interface MemoryExportItem {
+    subject: 'user' | 'self'
+    category: string
+    content: string
+    strength: number
+    seen_count: number
+}
+
+export interface MemoryStats {
+    total: number
+    active: number
+    weak: number
+    archived: number
+    by_subject: Record<string, number>
+    by_category: Record<string, number>
+    avg_strength: number
+    total_seen_count: number
+}
+
+export interface MemoryImportResult {
+    added: number
+    invalid: number
+    mode: string
+}
+
 export const memoryService = {
     async getMemories(promptId: string): Promise<Memory[]> {
         const data = await apiFetchJson<ApiResponse<Memory[]>>(`/api/memory/${encodeURIComponent(promptId)}`)
@@ -139,5 +164,44 @@ export const memoryService = {
         if (!data.success) {
             throw new Error(data.error || '保存记忆提取提示词失败')
         }
+    },
+
+    async getMemoryStats(promptId: string): Promise<MemoryStats> {
+        const data = await apiFetchJson<ApiResponse<MemoryStats>>(
+            `/api/memory/${encodeURIComponent(promptId)}/stats`
+        )
+        if (!data.success || !data.data) {
+            throw new Error(data.error || '获取记忆统计失败')
+        }
+        return data.data
+    },
+
+    async exportMemories(promptId: string): Promise<MemoryExportItem[]> {
+        const data = await apiFetchJson<ApiResponse<MemoryExportItem[]>>(
+            `/api/memory/${encodeURIComponent(promptId)}/export`
+        )
+        if (!data.success) {
+            throw new Error(data.error || '导出记忆失败')
+        }
+        return data.data || []
+    },
+
+    async importMemories(
+        promptId: string,
+        memories: MemoryExportItem[],
+        mode: 'merge' | 'replace' = 'merge'
+    ): Promise<MemoryImportResult> {
+        const data = await apiFetchJson<ApiResponse<MemoryImportResult>>(
+            `/api/memory/${encodeURIComponent(promptId)}/import`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ memories, mode }),
+            }
+        )
+        if (!data.success || !data.data) {
+            throw new Error(data.error || '导入记忆失败')
+        }
+        return data.data
     },
 }

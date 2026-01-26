@@ -23,6 +23,30 @@ type MemoryUpsertRequest struct {
 	Strength *float64 `json:"strength,omitempty"`
 }
 
+type MemoryExportItem struct {
+	Subject   string  `json:"subject"`
+	Category  string  `json:"category"`
+	Content   string  `json:"content"`
+	Strength  float64 `json:"strength"`
+	SeenCount int     `json:"seen_count"`
+}
+
+type MemoryImportRequest struct {
+	Memories []MemoryExportItem `json:"memories"`
+	Mode     string             `json:"mode"` // "merge" or "replace"
+}
+
+type MemoryStats struct {
+	Total          int            `json:"total"`
+	Active         int            `json:"active"`
+	Weak           int            `json:"weak"`
+	Archived       int            `json:"archived"`
+	BySubject      map[string]int `json:"by_subject"`
+	ByCategory     map[string]int `json:"by_category"`
+	AvgStrength    float64        `json:"avg_strength"`
+	TotalSeenCount int            `json:"total_seen_count"`
+}
+
 type SetMemoryProviderRequest struct {
 	ProviderID string `json:"provider_id"`
 }
@@ -133,14 +157,37 @@ func (h *Handler) handleMemory(w http.ResponseWriter, r *http.Request) {
 
 	case 2:
 		promptID := parts[0]
-		memoryID := parts[1]
-		switch r.Method {
-		case http.MethodPut:
-			h.handleUpdateMemory(w, r, promptID, memoryID)
-		case http.MethodDelete:
-			h.handleDeleteMemory(w, r, promptID, memoryID)
+		action := parts[1]
+		switch action {
+		case "stats":
+			if r.Method == http.MethodGet {
+				h.handleMemoryStats(w, r, promptID)
+			} else {
+				h.jsonResponse(w, http.StatusMethodNotAllowed, Response{Success: false, Error: "Method not allowed"})
+			}
+		case "export":
+			if r.Method == http.MethodGet {
+				h.handleMemoryExport(w, r, promptID)
+			} else {
+				h.jsonResponse(w, http.StatusMethodNotAllowed, Response{Success: false, Error: "Method not allowed"})
+			}
+		case "import":
+			if r.Method == http.MethodPost {
+				h.handleMemoryImport(w, r, promptID)
+			} else {
+				h.jsonResponse(w, http.StatusMethodNotAllowed, Response{Success: false, Error: "Method not allowed"})
+			}
 		default:
-			h.jsonResponse(w, http.StatusMethodNotAllowed, Response{Success: false, Error: "Method not allowed"})
+			// memoryID
+			memoryID := action
+			switch r.Method {
+			case http.MethodPut:
+				h.handleUpdateMemory(w, r, promptID, memoryID)
+			case http.MethodDelete:
+				h.handleDeleteMemory(w, r, promptID, memoryID)
+			default:
+				h.jsonResponse(w, http.StatusMethodNotAllowed, Response{Success: false, Error: "Method not allowed"})
+			}
 		}
 
 	default:
@@ -475,4 +522,120 @@ func (h *Handler) handleMemoryExtractionPrompt(w http.ResponseWriter, r *http.Re
 		h.jsonResponse(w, http.StatusMethodNotAllowed, Response{Success: false, Error: "Method not allowed"})
 		return
 	}
+}
+
+func (h *Handler) handleMemoryStats(w http.ResponseWriter, r *http.Request, promptID string) {
+	memories := h.memoryManager.GetAllResponses(promptID)
+
+	stats := MemoryStats{
+		Total:      len(memories),
+		BySubject:  make(map[string]int),
+		ByCategory: make(map[string]int),
+	}
+
+	var totalStrength float64
+	for _, m := range memories {
+		strength := m.CurrentStrength
+		totalStrength += strength
+		stats.TotalSeenCount += m.SeenCount
+
+		if strength >= 0.4 {
+			stats.Active++
+		} else if strength >= 0.15 {
+			stats.Weak++
+		} else {
+			stats.Archived++
+		}
+
+		stats.BySubject[m.Subject]++
+		stats.ByCategory[m.Category]++
+	}
+
+	if stats.Total > 0 {
+		stats.AvgStrength = totalStrength / float64(stats.Total)
+	}
+
+	h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: stats})
+}
+
+func (h *Handler) handleMemoryExport(w http.ResponseWriter, r *http.Request, promptID string) {
+	memories := h.memoryManager.GetAllResponses(promptID)
+
+	exportItems := make([]MemoryExportItem, len(memories))
+	for i, m := range memories {
+		exportItems[i] = MemoryExportItem{
+			Subject:   m.Subject,
+			Category:  m.Category,
+			Content:   m.Content,
+			Strength:  m.Strength,
+			SeenCount: m.SeenCount,
+		}
+	}
+
+	h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: exportItems})
+}
+
+func (h *Handler) handleMemoryImport(w http.ResponseWriter, r *http.Request, promptID string) {
+	var req MemoryImportRequest
+	if !h.decodeJSON(w, r, &req) {
+		return
+	}
+
+	if req.Mode == "" {
+		req.Mode = "merge"
+	}
+	if req.Mode != "merge" && req.Mode != "replace" {
+		h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid mode, must be 'merge' or 'replace'"})
+		return
+	}
+
+	if req.Mode == "replace" {
+		existing := h.memoryManager.GetAll(promptID)
+		for _, m := range existing {
+			_ = h.memoryManager.Delete(promptID, m.ID)
+		}
+	}
+
+	addedCount := 0
+	invalidCount := 0
+	for _, item := range req.Memories {
+		subject, category, content, ok := storage.NormalizeExtractedMemoryFields(item.Subject, item.Category, item.Content)
+		if !ok {
+			invalidCount++
+			continue
+		}
+
+		strength := item.Strength
+		if strength <= 0 {
+			strength = storage.DefaultStrengthForCategory(category)
+		}
+
+		seenCount := item.SeenCount
+		if seenCount < 1 {
+			seenCount = 1
+		}
+
+		memory := storage.Memory{
+			Subject:   subject,
+			Category:  category,
+			Content:   content,
+			Strength:  strength,
+			SeenCount: seenCount,
+		}
+
+		if errAdd := h.memoryManager.Add(promptID, memory); errAdd != nil {
+			logging.Warnf("memory import add failed: prompt=%s err=%v", promptID, errAdd)
+			continue
+		}
+		addedCount++
+	}
+
+	h.jsonResponse(w, http.StatusOK, Response{
+		Success: true,
+		Data: map[string]interface{}{
+			"added":   addedCount,
+			"invalid": invalidCount,
+			"mode":    req.Mode,
+		},
+	})
 }

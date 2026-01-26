@@ -316,86 +316,84 @@ const Contacts: React.FC<ContactsProps> = ({ onStartChat }) => {
                                 </button>
                             </div>
 
-                            {activeTab === 'info' ? (
-                                <>
-                                    {/* 头像上传 */}
-                                    <div className="avatar-upload-container">
-                                        <div className="avatar-upload" onClick={handleAvatarClick}>
-                                            {avatarPreview ? (
-                                                <img src={avatarPreview} alt="Avatar" className="avatar-preview" />
-                                            ) : (
-                                                <div className="avatar-placeholder-large">
-                                                    <svg viewBox="0 0 24 24">
-                                                        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
-                                                    </svg>
-                                                    <span>点击上传头像</span>
-                                                </div>
-                                            )}
-                                            <input
-                                                type="file"
-                                                ref={fileInputRef}
-                                                onChange={handleFileChange}
-                                                accept="image/*"
-                                                style={{ display: 'none' }}
-                                            />
-                                        </div>
-                                        {avatarPreview && (
-                                            <button className="avatar-delete-btn" onClick={handleDeleteAvatar}>
-                                                删除头像
-                                            </button>
+                            <div className={`prompt-tab-content ${activeTab === 'info' ? 'active' : ''}`}>
+                                {/* 头像上传 */}
+                                <div className="avatar-upload-container">
+                                    <div className="avatar-upload" onClick={handleAvatarClick}>
+                                        {avatarPreview ? (
+                                            <img src={avatarPreview} alt="Avatar" className="avatar-preview" />
+                                        ) : (
+                                            <div className="avatar-placeholder-large">
+                                                <svg viewBox="0 0 24 24">
+                                                    <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                                                </svg>
+                                                <span>点击上传头像</span>
+                                            </div>
                                         )}
-                                    </div>
-
-                                    {/* 名称输入 */}
-                                    <div className="form-group">
-                                        <label>名称</label>
                                         <input
-                                            type="text"
-                                            value={formData.name}
-                                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                            placeholder="输入提示词名称"
+                                            type="file"
+                                            ref={fileInputRef}
+                                            onChange={handleFileChange}
+                                            accept="image/*"
+                                            style={{ display: 'none' }}
                                         />
                                     </div>
-
-                                    {/* 描述输入 */}
-                                    <div className="form-group">
-                                        <label>描述（可选）</label>
-                                        <input
-                                            type="text"
-                                            value={formData.description}
-                                            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                                            placeholder="简短描述"
-                                        />
-                                    </div>
-
-                                    {/* 内容输入 */}
-                                    <div className="form-group" style={{ marginBottom: 0 }}>
-                                        <label>内容</label>
-                                        <textarea
-                                            value={formData.content}
-                                            onChange={(e) => setFormData({ ...formData, content: e.target.value })}
-                                            placeholder="输入提示词内容..."
-                                            rows={6}
-                                        />
-                                    </div>
-                                </>
-                            ) : (
-                                <>
-                                    {editingPrompt ? (
-                                        <MemoryManager promptId={editingPrompt.id} />
-                                    ) : (
-                                        <div
-                                            style={{
-                                                color: 'var(--text-secondary)',
-                                                textAlign: 'center',
-                                                padding: '20px 0',
-                                            }}
-                                        >
-                                            请先保存角色后再管理记忆
-                                        </div>
+                                    {avatarPreview && (
+                                        <button className="avatar-delete-btn" onClick={handleDeleteAvatar}>
+                                            删除头像
+                                        </button>
                                     )}
-                                </>
-                            )}
+                                </div>
+
+                                {/* 名称输入 */}
+                                <div className="form-group">
+                                    <label>名称</label>
+                                    <input
+                                        type="text"
+                                        value={formData.name}
+                                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                        placeholder="输入提示词名称"
+                                    />
+                                </div>
+
+                                {/* 描述输入 */}
+                                <div className="form-group">
+                                    <label>描述（可选）</label>
+                                    <input
+                                        type="text"
+                                        value={formData.description}
+                                        onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                                        placeholder="简短描述"
+                                    />
+                                </div>
+
+                                {/* 内容输入 */}
+                                <div className="form-group" style={{ marginBottom: 0 }}>
+                                    <label>内容</label>
+                                    <textarea
+                                        value={formData.content}
+                                        onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+                                        placeholder="输入提示词内容..."
+                                        rows={6}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className={`prompt-tab-content ${activeTab === 'memory' ? 'active' : ''}`}>
+                                {editingPrompt ? (
+                                    <MemoryManager promptId={editingPrompt.id} />
+                                ) : (
+                                    <div
+                                        style={{
+                                            color: 'var(--text-secondary)',
+                                            textAlign: 'center',
+                                            padding: '20px 0',
+                                        }}
+                                    >
+                                        请先保存角色后再管理记忆
+                                    </div>
+                                )}
+                            </div>
                         </div>
 
                         <div className="prompt-modal-footer">

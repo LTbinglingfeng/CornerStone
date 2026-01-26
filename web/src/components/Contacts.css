@@ -381,6 +381,15 @@
   opacity: 0.5;
 }
 
+/* Tab content - 使用 display 切换避免重新挂载 */
+.prompt-tab-content {
+  display: none;
+}
+
+.prompt-tab-content.active {
+  display: block;
+}
+
 /* 头像上传 */
 .avatar-upload-container {
   display: flex;
