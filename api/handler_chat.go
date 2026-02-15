@@ -26,6 +26,7 @@ type ChatMessageRequest struct {
 	Temperature *float64         `json:"temperature,omitempty"`
 	MaxTokens   int              `json:"max_tokens,omitempty"`
 	SaveHistory bool             `json:"save_history,omitempty"`
+	Regenerate  bool             `json:"regenerate,omitempty"` // 重新生成尾部 assistant 批次
 }
 
 func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
@@ -104,8 +105,17 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 		persona = storage.BuildPromptWithMemory(persona, memSession.GetActiveMemories())
 	}
 
-	// 保存用户消息到历史记录
-	if req.SaveHistory && len(req.Messages) > 0 {
+	// 重新生成：删除尾部连续 assistant 消息批次
+	if req.Regenerate && req.SaveHistory {
+		if deleted, errDelete := h.chatManager.DeleteTrailingAssistantBatch(sessionID); errDelete != nil {
+			logging.Errorf("regenerate delete trailing assistant batch failed: session=%s err=%v", sessionID, errDelete)
+		} else if deleted > 0 {
+			logging.Infof("regenerate deleted %d trailing assistant messages: session=%s", deleted, sessionID)
+		}
+	}
+
+	// 保存用户消息到历史记录（重新生成时跳过）
+	if req.SaveHistory && !req.Regenerate && len(req.Messages) > 0 {
 		messagesToSave := req.Messages
 		if existingMessageCount > 0 && len(req.Messages) > existingMessageCount {
 			messagesToSave = req.Messages[existingMessageCount:]

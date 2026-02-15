@@ -36,11 +36,22 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     const { showToast } = useToast()
     const { confirm } = useConfirm()
 
-    const { session, setSession, messages, setMessages, messagesOffset, loadingOlder, loadOlder, prompt, userInfo, loading, imageCapable } =
-        useChatSession({
-            sessionId,
-            promptId,
-        })
+    const {
+        session,
+        setSession,
+        messages,
+        setMessages,
+        messagesOffset,
+        loadingOlder,
+        loadOlder,
+        prompt,
+        userInfo,
+        loading,
+        imageCapable,
+    } = useChatSession({
+        sessionId,
+        promptId,
+    })
 
     const effectivePromptId = promptId || prompt?.id || session?.prompt_id
     const {
@@ -50,6 +61,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         assistantVisibleSegments,
         sendMessage,
         flushPendingMessages,
+        regenerateLastMessage,
         abortRequest,
     } = useMessageStream({
         sessionId,
@@ -292,6 +304,11 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         setMessageMenu(null)
     }
 
+    const handleRegenerate = async () => {
+        setMessageMenu(null)
+        await regenerateLastMessage()
+    }
+
     const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files ? Array.from(e.target.files) : []
         if (files.length === 0) return
@@ -455,7 +472,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         if (redPacketOpenTimeoutRef.current !== null) {
             window.clearTimeout(redPacketOpenTimeoutRef.current)
         }
-            redPacketOpenTimeoutRef.current = window.setTimeout(() => {
+        redPacketOpenTimeoutRef.current = window.setTimeout(() => {
             redPacketOpenTimeoutRef.current = null
             setPacketStep('opened')
             void (async () => {
@@ -473,7 +490,10 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
                             if (toolCall.function.name !== 'red_packet_received') return false
                             try {
                                 const args = JSON.parse(toolCall.function.arguments || '{}') as { packet_key?: unknown }
-                                return typeof args.packet_key === 'string' && args.packet_key.trim() === activeRedPacket.packetKey
+                                return (
+                                    typeof args.packet_key === 'string' &&
+                                    args.packet_key.trim() === activeRedPacket.packetKey
+                                )
                             } catch {
                                 return false
                             }
@@ -609,12 +629,14 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
                 <MessageContextMenu
                     state={messageMenu}
                     sending={sending}
+                    messages={messages}
                     onClose={() => setMessageMenu(null)}
                     onSelectText={(text) => setSelectTextState(text)}
                     onRecall={handleRecallMessage}
                     onEdit={handleStartEditMessage}
                     onDelete={handleDeleteMessage}
                     onQuote={handleQuoteMessage}
+                    onRegenerate={handleRegenerate}
                 />
             )}
 

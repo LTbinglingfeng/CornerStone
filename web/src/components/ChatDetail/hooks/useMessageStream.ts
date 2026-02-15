@@ -21,6 +21,7 @@ interface UseMessageStreamReturn {
     assistantVisibleSegments: number
     sendMessage: (userMessage: ChatMessage) => Promise<void>
     flushPendingMessages: (mode: FlushMode, override?: { sessionId: string; promptId?: string }) => Promise<void>
+    regenerateLastMessage: () => Promise<void>
     abortRequest: () => void
 }
 
@@ -90,12 +91,14 @@ export function useMessageStream(options: UseMessageStreamOptions): UseMessageSt
     }, [buildSendPayloadMessages, clearPendingOutgoingTimeout])
 
     const flushPendingMessages = useCallback(
-        async (mode: FlushMode, override?: { sessionId: string; promptId?: string }) => {
+        async (mode: FlushMode, override?: { sessionId: string; promptId?: string; regenerate?: boolean }) => {
+            const isRegenerate = override?.regenerate === true
             if (mode === 'foreground' && sending) return
 
             const pendingMessages = pendingOutgoingMessagesRef.current
-            if (pendingMessages.length === 0) return
+            if (!isRegenerate && pendingMessages.length === 0) return
 
+            // regenerate 和普通发送都需清空 pending 队列与定时器
             pendingOutgoingMessagesRef.current = []
             clearPendingOutgoingTimeout()
 
@@ -127,10 +130,15 @@ export function useMessageStream(options: UseMessageStreamOptions): UseMessageSt
                 const abortController = new AbortController()
                 activeRequestRef.current = abortController
 
-                const response = await sendMessageApi(targetSessionId, buildSendPayloadMessages(pendingMessages), {
-                    promptId: targetPromptId,
-                    signal: abortController.signal,
-                })
+                const response = await sendMessageApi(
+                    targetSessionId,
+                    isRegenerate ? [] : buildSendPayloadMessages(pendingMessages),
+                    {
+                        promptId: targetPromptId,
+                        signal: abortController.signal,
+                        regenerate: isRegenerate || undefined,
+                    }
+                )
 
                 const contentType = response.headers.get('Content-Type') || ''
                 const isStreaming = contentType.includes('text/event-stream')
@@ -423,6 +431,34 @@ export function useMessageStream(options: UseMessageStreamOptions): UseMessageSt
         activeRequestRef.current?.abort()
     }, [])
 
+    const regenerateLastMessage = useCallback(async () => {
+        if (sending) return
+
+        // Hook 层防御：仅当会话尾部是 assistant 时才允许重生
+        const tailMessage = messages[messages.length - 1]
+        if (!tailMessage || tailMessage.role !== 'assistant') return
+
+        // 有待发送的用户消息时禁止重生（尾部实际已不是 assistant）
+        if (pendingOutgoingMessagesRef.current.length > 0) return
+
+        // 清除待发送定时器，防止 regenerate 期间 timeout 触发后 pending 卡住
+        clearPendingOutgoingTimeout()
+
+        // 从本地状态移除尾部连续 assistant 批次
+        setMessages((prev) => {
+            const n = prev.length
+            if (n === 0 || prev[n - 1].role !== 'assistant') return prev
+
+            let cutIndex = n - 1
+            while (cutIndex > 0 && prev[cutIndex - 1].role === 'assistant') {
+                cutIndex--
+            }
+            return prev.slice(0, cutIndex)
+        })
+
+        await flushPendingMessages('foreground', { sessionId, promptId: promptId, regenerate: true })
+    }, [clearPendingOutgoingTimeout, flushPendingMessages, messages, promptId, sending, sessionId, setMessages])
+
     useEffect(() => {
         const previousSessionId = lastSessionIdRef.current
         const previousPromptId = lastPromptIdRef.current
@@ -447,13 +483,7 @@ export function useMessageStream(options: UseMessageStreamOptions): UseMessageSt
         setRevealingTimestamp(null)
         setAssistantVisibleSegments(0)
         setSending(false)
-    }, [
-        clearPendingOutgoingTimeout,
-        promptId,
-        resetReveal,
-        sessionId,
-        setStreamingTimestampState,
-    ])
+    }, [clearPendingOutgoingTimeout, promptId, resetReveal, sessionId, setStreamingTimestampState])
 
     useEffect(() => {
         return () => {
@@ -489,6 +519,7 @@ export function useMessageStream(options: UseMessageStreamOptions): UseMessageSt
         assistantVisibleSegments,
         sendMessage,
         flushPendingMessages,
+        regenerateLastMessage,
         abortRequest,
     }
 }

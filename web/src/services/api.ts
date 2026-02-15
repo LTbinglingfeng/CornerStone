@@ -140,7 +140,10 @@ export interface GetSessionMessagesPageOptions {
     before?: number
 }
 
-export async function getSessionMessagesPage(id: string, options: GetSessionMessagesPageOptions = {}): Promise<ChatRecord | null> {
+export async function getSessionMessagesPage(
+    id: string,
+    options: GetSessionMessagesPageOptions = {}
+): Promise<ChatRecord | null> {
     try {
         const params = new URLSearchParams()
         if (options.limit !== undefined) {
@@ -254,6 +257,7 @@ export interface SendMessageOptions {
     promptId?: string
     stream?: boolean
     saveHistory?: boolean
+    regenerate?: boolean
     signal?: AbortSignal
     keepalive?: boolean
 }
@@ -272,6 +276,10 @@ export async function sendMessage(
 
     if (options.stream !== undefined) {
         payload.stream = options.stream
+    }
+
+    if (options.regenerate) {
+        payload.regenerate = true
     }
 
     const init: RequestInit & { keepalive?: boolean } = {
@@ -443,11 +451,14 @@ export async function setActiveProvider(providerId: string): Promise<boolean> {
 
 export async function setImageProvider(providerId: string): Promise<boolean> {
     try {
-        const data = await apiFetchJson<ApiResponse<{ image_provider_id: string }>>(`${MANAGEMENT_BASE}/image-provider`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ provider_id: providerId }),
-        })
+        const data = await apiFetchJson<ApiResponse<{ image_provider_id: string }>>(
+            `${MANAGEMENT_BASE}/image-provider`,
+            {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider_id: providerId }),
+            }
+        )
         return data.success
     } catch {
         return false
