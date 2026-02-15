@@ -21,6 +21,7 @@ type Memory struct {
 	Category  string    `json:"category"`   // 分类
 	Content   string    `json:"content"`    // 记忆内容
 	Strength  float64   `json:"strength"`   // 基础强度 0~1（持久化存储）
+	Stability float64   `json:"stability"`  // 衰减稳定性系数（越大衰减越慢，持久化存储）
 	LastSeen  time.Time `json:"last_seen"`  // 上次使用时间
 	SeenCount int       `json:"seen_count"` // 累计使用次数
 	CreatedAt time.Time `json:"created_at"` // 创建时间
@@ -32,6 +33,7 @@ type MemoryPatch struct {
 	Category  *string
 	Content   *string
 	Strength  *float64
+	Stability *float64
 	LastSeen  *time.Time
 	SeenCount *int
 	CreatedAt *time.Time
@@ -43,6 +45,7 @@ type MemoryResponse struct {
 	Category        string    `json:"category"`
 	Content         string    `json:"content"`
 	Strength        float64   `json:"strength"`         // 基础强度
+	Stability       float64   `json:"stability"`        // 衰减稳定性系数
 	CurrentStrength float64   `json:"current_strength"` // 当前强度（实时计算）
 	LastSeen        time.Time `json:"last_seen"`
 	SeenCount       int       `json:"seen_count"`
@@ -56,6 +59,7 @@ func (m *Memory) ToResponse() MemoryResponse {
 		Category:        m.Category,
 		Content:         m.Content,
 		Strength:        m.Strength,
+		Stability:       m.Stability,
 		CurrentStrength: m.CurrentStrength(),
 		LastSeen:        m.LastSeen,
 		SeenCount:       m.SeenCount,
@@ -82,16 +86,20 @@ func (m *Memory) CurrentStrength() float64 {
 		hours = 0
 	}
 
-	seenCount := m.SeenCount
-	if seenCount < 0 {
-		seenCount = 0
+	stability := m.Stability
+	if stability <= 0 {
+		// 兼容旧数据：从 seenCount 推算稳定性
+		seenCount := m.SeenCount
+		if seenCount < 0 {
+			seenCount = 0
+		}
+		stability = 1 + 1.0*math.Log(float64(seenCount+1))
 	}
-
-	stability := 1 + 0.5*math.Log(float64(seenCount+1))
-	if stability <= 0 || math.IsNaN(stability) || math.IsInf(stability, 0) {
+	if math.IsNaN(stability) || math.IsInf(stability, 0) {
 		stability = 1
 	}
-	decay := math.Exp(-hours / (stability * 24))
+
+	decay := math.Exp(-hours / (stability * 72))
 	return clamp01(clamp01(m.Strength) * decay)
 }
 
@@ -99,6 +107,11 @@ func (m *Memory) Reinforce() {
 	m.SeenCount++
 	m.LastSeen = time.Now()
 	m.Strength = math.Min(1.0, m.Strength*1.2+0.15)
+	// 每次强化增加稳定性，衰减速度逐渐变慢
+	if m.Stability <= 0 {
+		m.Stability = DefaultStabilityForCategory(m.Category)
+	}
+	m.Stability = math.Min(10.0, m.Stability+0.3)
 }
 
 const (
@@ -111,7 +124,7 @@ const (
 )
 
 const (
-	ThresholdActive   = 0.4
+	ThresholdActive   = 0.3
 	ThresholdArchive  = 0.15
 	MaxActiveMemories = 100
 )
@@ -145,12 +158,33 @@ var CategoryStrength = map[string]float64{
 	CategoryOpinion:    0.60,
 }
 
+var CategoryStability = map[string]float64{
+	CategoryIdentity:   2.5, // 身份信息衰减最慢
+	CategoryRelation:   2.0,
+	CategoryFact:       1.8,
+	CategoryPreference: 1.5,
+	CategoryEvent:      1.0,
+	CategoryEmotion:    0.8,
+	CategoryPromise:    2.0,
+	CategoryPlan:       1.5,
+	CategoryStatement:  1.2,
+	CategoryOpinion:    1.0,
+}
+
 func DefaultStrengthForCategory(category string) float64 {
 	defaultStrength, ok := CategoryStrength[category]
 	if ok {
 		return defaultStrength
 	}
 	return 0.5
+}
+
+func DefaultStabilityForCategory(category string) float64 {
+	defaultStability, ok := CategoryStability[category]
+	if ok {
+		return defaultStability
+	}
+	return 1.0
 }
 
 type MemoryManager struct {
@@ -315,6 +349,9 @@ func (mm *MemoryManager) Add(promptID string, memory Memory) error {
 		memory.SeenCount = 0
 	}
 	memory.Strength = clamp01(memory.Strength)
+	if memory.Stability <= 0 {
+		memory.Stability = DefaultStabilityForCategory(memory.Category)
+	}
 
 	mm.cache[promptID] = append(mm.cache[promptID], memory)
 	return mm.saveLocked(promptID)
@@ -433,6 +470,9 @@ func (mm *MemoryManager) Patch(promptID string, patch MemoryPatch) error {
 		}
 		if patch.Strength != nil {
 			memories[i].Strength = clamp01(*patch.Strength)
+		}
+		if patch.Stability != nil {
+			memories[i].Stability = *patch.Stability
 		}
 		if patch.LastSeen != nil {
 			memories[i].LastSeen = *patch.LastSeen

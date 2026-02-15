@@ -602,12 +602,18 @@ func (e *MemoryExtractor) ExtractAndSave(promptID, sessionID string) error {
 				}
 				strength := clamp01(old.Strength)
 				strength = math.Min(1.0, strength*1.2+0.15)
+				stability := old.Stability
+				if stability <= 0 {
+					stability = DefaultStabilityForCategory(category)
+				}
+				stability = math.Min(10.0, stability+0.3)
 				errUpdate := e.mm.Patch(promptID, MemoryPatch{
 					ID:        matchingID,
 					Subject:   &subject,
 					Category:  &category,
 					Content:   &content,
 					Strength:  &strength,
+					Stability: &stability,
 					LastSeen:  &now,
 					SeenCount: &seenCount,
 				})

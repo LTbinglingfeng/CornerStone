@@ -10,6 +10,9 @@ interface MemoryManagerProps {
     promptId: string
 }
 
+const THRESHOLD_ACTIVE = 0.3
+const THRESHOLD_ARCHIVE = 0.15
+
 const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId }) => {
     const { showToast } = useToast()
     const { confirm } = useConfirm()
@@ -99,9 +102,11 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId }) => {
         })
     }, [memories, searchQuery, filterSubject, filterCategory])
 
-    const activeMemories = filteredMemories.filter((m) => m.current_strength >= 0.4)
-    const weakMemories = filteredMemories.filter((m) => m.current_strength >= 0.15 && m.current_strength < 0.4)
-    const archivedMemories = filteredMemories.filter((m) => m.current_strength < 0.15)
+    const activeMemories = filteredMemories.filter((m) => m.current_strength >= THRESHOLD_ACTIVE)
+    const weakMemories = filteredMemories.filter(
+        (m) => m.current_strength >= THRESHOLD_ARCHIVE && m.current_strength < THRESHOLD_ACTIVE
+    )
+    const archivedMemories = filteredMemories.filter((m) => m.current_strength < THRESHOLD_ARCHIVE)
 
     // 获取可用的 category 列表
     const availableCategories = useMemo(() => {

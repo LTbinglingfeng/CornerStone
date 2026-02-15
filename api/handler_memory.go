@@ -17,10 +17,11 @@ const (
 )
 
 type MemoryUpsertRequest struct {
-	Subject  string   `json:"subject,omitempty"`
-	Category string   `json:"category,omitempty"`
-	Content  string   `json:"content,omitempty"`
-	Strength *float64 `json:"strength,omitempty"`
+	Subject   string   `json:"subject,omitempty"`
+	Category  string   `json:"category,omitempty"`
+	Content   string   `json:"content,omitempty"`
+	Strength  *float64 `json:"strength,omitempty"`
+	Stability *float64 `json:"stability,omitempty"`
 }
 
 type MemoryExportItem struct {
@@ -28,6 +29,7 @@ type MemoryExportItem struct {
 	Category  string  `json:"category"`
 	Content   string  `json:"content"`
 	Strength  float64 `json:"strength"`
+	Stability float64 `json:"stability"`
 	SeenCount int     `json:"seen_count"`
 }
 
@@ -227,6 +229,10 @@ func (h *Handler) handleAddMemory(w http.ResponseWriter, r *http.Request, prompt
 		memory.Strength = *req.Strength
 	}
 
+	if req.Stability != nil {
+		memory.Stability = *req.Stability
+	}
+
 	if errAdd := h.memoryManager.Add(promptID, memory); errAdd != nil {
 		if errors.Is(errAdd, storage.ErrInvalidID) {
 			h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid prompt ID"})
@@ -266,6 +272,9 @@ func (h *Handler) handleUpdateMemory(w http.ResponseWriter, r *http.Request, pro
 	}
 	if req.Strength != nil {
 		patch.Strength = req.Strength
+	}
+	if req.Stability != nil {
+		patch.Stability = req.Stability
 	}
 
 	if errUpdate := h.memoryManager.Patch(promptID, patch); errUpdate != nil {
@@ -539,9 +548,9 @@ func (h *Handler) handleMemoryStats(w http.ResponseWriter, r *http.Request, prom
 		totalStrength += strength
 		stats.TotalSeenCount += m.SeenCount
 
-		if strength >= 0.4 {
+		if strength >= storage.ThresholdActive {
 			stats.Active++
-		} else if strength >= 0.15 {
+		} else if strength >= storage.ThresholdArchive {
 			stats.Weak++
 		} else {
 			stats.Archived++
@@ -568,6 +577,7 @@ func (h *Handler) handleMemoryExport(w http.ResponseWriter, r *http.Request, pro
 			Category:  m.Category,
 			Content:   m.Content,
 			Strength:  m.Strength,
+			Stability: m.Stability,
 			SeenCount: m.SeenCount,
 		}
 	}
@@ -610,6 +620,11 @@ func (h *Handler) handleMemoryImport(w http.ResponseWriter, r *http.Request, pro
 			strength = storage.DefaultStrengthForCategory(category)
 		}
 
+		stability := item.Stability
+		if stability <= 0 {
+			stability = storage.DefaultStabilityForCategory(category)
+		}
+
 		seenCount := item.SeenCount
 		if seenCount < 1 {
 			seenCount = 1
@@ -620,6 +635,7 @@ func (h *Handler) handleMemoryImport(w http.ResponseWriter, r *http.Request, pro
 			Category:  category,
 			Content:   content,
 			Strength:  strength,
+			Stability: stability,
 			SeenCount: seenCount,
 		}
 
