@@ -3,7 +3,7 @@ node_modules/
 web/node_modules/
 web/dist/
 /src/
-cornerstone.exe
+cornerstone*
 test-output
 *.md
 sw.js
