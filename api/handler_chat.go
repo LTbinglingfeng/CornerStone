@@ -814,7 +814,25 @@ func appendImagePathsToContent(content string, imagePaths []string) string {
 	return content + "\n" + joined
 }
 
-func getChatTools() []client.Tool {
+type chatToolChannel string
+
+const (
+	chatToolChannelDefault chatToolChannel = "default"
+	chatToolChannelClawBot chatToolChannel = "clawbot"
+)
+
+type chatToolOptions struct {
+	Channel chatToolChannel
+}
+
+func getChatTools(options ...chatToolOptions) []client.Tool {
+	channel := chatToolChannelDefault
+	if len(options) > 0 && options[0].Channel != "" {
+		channel = options[0].Channel
+	}
+	if channel == chatToolChannelClawBot {
+		return nil
+	}
 	return []client.Tool{
 		{
 			Type: "function",

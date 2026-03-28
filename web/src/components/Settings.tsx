@@ -7,6 +7,7 @@ import {
     type MemoryExtractionSettings,
 } from '../services/memoryService'
 import { ttsService, type TTSProviderConfig } from '../services/ttsService'
+import { clawBotService, type ClawBotSettings } from '../services/clawbotService'
 import type { Provider } from '../types/chat'
 import {
     getReplyWaitWindowConfig,
@@ -18,6 +19,7 @@ import { NumericInput } from './NumericInput'
 import ProviderSettings from './ProviderSettings'
 import MemoryProviderSettings from './MemoryProviderSettings'
 import ImageProviderSettings from './ImageProviderSettings'
+import ClawBotSettingsPanel from './ClawBotSettings'
 import { useToast } from '../contexts/ToastContext'
 import {
     getNotificationsEnabled,
@@ -42,6 +44,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         detail: '',
     })
     const [memoryProvider, setMemoryProvider] = useState<Provider | null>(null)
+    const [clawBotSettings, setClawBotSettings] = useState<ClawBotSettings | null>(null)
     const [memoryEnabled, setMemoryEnabled] = useState(false)
     const [ttsEnabled, setTTSEnabledState] = useState(false)
     const [ttsProvider, setTTSProvider] = useState<TTSProviderConfig | null>(null)
@@ -76,6 +79,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     const [showProviderSettings, setShowProviderSettings] = useState(false)
     const [showImageProviderSettings, setShowImageProviderSettings] = useState(false)
     const [showMemoryProviderSettings, setShowMemoryProviderSettings] = useState(false)
+    const [showClawBotSettings, setShowClawBotSettings] = useState(false)
     const [showPromptModal, setShowPromptModal] = useState(false)
     const [replyWaitConfig, setReplyWaitConfigState] = useState<ReplyWaitWindowConfig>(() => getReplyWaitWindowConfig())
     const [editingReplyWaitConfig, setEditingReplyWaitConfig] = useState<ReplyWaitWindowConfig>(() =>
@@ -146,6 +150,12 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
             setMemoryRefreshMaxInterval(settings.max_refresh_interval)
         } catch {
             setMemoryExtractionSettings(null)
+        }
+        try {
+            const settings = await clawBotService.getSettings()
+            setClawBotSettings(settings)
+        } catch {
+            setClawBotSettings(null)
         }
         if (showLoading) setLoading(false)
     }
@@ -429,6 +439,10 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         setShowMemoryProviderSettings(false)
     }
 
+    const handleClawBotSettingsBack = () => {
+        setShowClawBotSettings(false)
+    }
+
     const getPromptPreview = () => {
         if (!systemPrompt) return '未设置'
         if (systemPrompt.length <= 20) return systemPrompt
@@ -478,8 +492,29 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         return `最多${maxInterval}轮`
     }
 
+    const getClawBotPreview = () => {
+        if (!clawBotSettings) return { title: '未配置', detail: '' }
+        const statusMap: Record<string, string> = {
+            disabled: '未启用',
+            missing_token: '缺少 Bot Token',
+            running: '运行中',
+            error: '异常',
+            stopped: '已停止',
+        }
+        const title = statusMap[clawBotSettings.status] || clawBotSettings.status || '未配置'
+        const detail = clawBotSettings.prompt_name
+            ? `人设：${clawBotSettings.prompt_name}`
+            : clawBotSettings.ilink_user_id
+              ? `账号：${clawBotSettings.ilink_user_id}`
+              : clawBotSettings.has_bot_token
+                ? '已保存 Bot Token'
+                : '未保存 Bot Token'
+        return { title, detail }
+    }
+
     const memoryProviderPreview = getMemoryProviderPreview()
     const ttsProviderPreview = getTTSProviderPreview()
+    const clawBotPreview = getClawBotPreview()
 
     return (
         <div className="settings">
@@ -520,6 +555,22 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                                 <span className="settings-entry-value">{imageProviderPreview.title}</span>
                                 {imageProviderPreview.detail && (
                                     <span className="settings-entry-subvalue">{imageProviderPreview.detail}</span>
+                                )}
+                            </div>
+                            <svg className="settings-entry-arrow" viewBox="0 0 24 24">
+                                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                            </svg>
+                        </button>
+                    </div>
+
+                    <div className="settings-section">
+                        <h3>接入渠道</h3>
+                        <button className="settings-entry-btn" onClick={() => setShowClawBotSettings(true)}>
+                            <div className="settings-entry-info">
+                                <span className="settings-entry-label">微信 ClawBot</span>
+                                <span className="settings-entry-value">{clawBotPreview.title}</span>
+                                {clawBotPreview.detail && (
+                                    <span className="settings-entry-subvalue">{clawBotPreview.detail}</span>
                                 )}
                             </div>
                             <svg className="settings-entry-arrow" viewBox="0 0 24 24">
@@ -729,6 +780,10 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
 
             <AnimatePresence onExitComplete={() => void loadData({ showLoading: false })}>
                 {showMemoryProviderSettings && <MemoryProviderSettings onBack={handleMemoryProviderSettingsBack} />}
+            </AnimatePresence>
+
+            <AnimatePresence onExitComplete={() => void loadData({ showLoading: false })}>
+                {showClawBotSettings && <ClawBotSettingsPanel onBack={handleClawBotSettingsBack} />}
             </AnimatePresence>
 
             <AnimatePresence>

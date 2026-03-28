@@ -30,6 +30,7 @@ type Handler struct {
 
 	momentManager   *storage.MomentManager
 	momentGenerator *MomentGenerator
+	clawBotService  *ClawBotService
 
 	cleanupOnce sync.Once
 	cleanupDone chan struct{}
@@ -99,6 +100,9 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	h.registerProtectedRoute(mux, "/api/settings/memory-extraction", h.handleMemoryExtractionSettings)
 	h.registerProtectedRoute(mux, "/api/settings/memory-extraction-prompt", h.handleMemoryExtractionPrompt)
 	h.registerProtectedRoute(mux, "/api/settings/tts", h.handleTTSSettings)
+	h.registerProtectedRoute(mux, "/api/settings/clawbot", h.handleClawBotSettings)
+	h.registerProtectedRoute(mux, "/api/settings/clawbot/qr-start", h.handleClawBotQRCodeStart)
+	h.registerProtectedRoute(mux, "/api/settings/clawbot/qr-poll", h.handleClawBotQRCodePoll)
 
 	// 配置接口 (使用 /management 前缀)
 	h.registerProtectedRoute(mux, "/management/config", h.handleConfig)
@@ -251,4 +255,8 @@ func (h *Handler) jsonResponse(w http.ResponseWriter, status int, data interface
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(data)
+}
+
+func (h *Handler) SetClawBotService(service *ClawBotService) {
+	h.clawBotService = service
 }

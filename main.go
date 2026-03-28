@@ -185,6 +185,9 @@ func main() {
 
 	// 注册API处理器
 	handler := api.NewHandler(configManager, promptManager, chatManager, userManager, authManager, cachePhotoDir, ttsAudioDir, memoryManager, memoryExtractor, momentManager, momentGenerator)
+	clawBotService := api.NewClawBotService(handler)
+	handler.SetClawBotService(clawBotService)
+	defer clawBotService.Close()
 	handler.RegisterRoutes(mux)
 
 	// 朋友圈静态文件（图片、背景图）

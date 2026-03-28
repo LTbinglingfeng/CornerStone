@@ -1,0 +1,155 @@
+.clawbot-settings .provider-settings-content {
+    padding-bottom: 28px;
+}
+
+.clawbot-status-card {
+    padding: 14px;
+    margin-bottom: 16px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, rgba(7, 193, 96, 0.12), rgba(7, 193, 96, 0.03));
+    border: 1px solid rgba(7, 193, 96, 0.16);
+}
+
+.clawbot-status-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.clawbot-status-title {
+    color: var(--text-primary);
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.clawbot-status-pill {
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #fff;
+    background: rgba(148, 163, 184, 0.9);
+}
+
+.clawbot-status-pill.running {
+    background: rgba(7, 193, 96, 0.92);
+}
+
+.clawbot-status-pill.error,
+.clawbot-status-pill.missing_token {
+    background: rgba(239, 68, 68, 0.92);
+}
+
+.clawbot-status-pill.disabled,
+.clawbot-status-pill.stopped {
+    background: rgba(100, 116, 139, 0.92);
+}
+
+.clawbot-status-detail {
+    margin-top: 10px;
+    color: var(--text-primary);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.clawbot-status-subdetail {
+    margin-top: 6px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    word-break: break-all;
+}
+
+.clawbot-status-error {
+    margin-top: 10px;
+    color: #b91c1c;
+    font-size: 12px;
+    line-height: 1.5;
+    word-break: break-word;
+}
+
+.clawbot-inline-btn {
+    margin-top: 10px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--accent-color);
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.clawbot-inline-btn.danger {
+    color: #b91c1c;
+}
+
+.clawbot-token-hint {
+    margin-top: 8px;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.clawbot-actions {
+    display: grid;
+    gap: 12px;
+    margin-top: 20px;
+}
+
+.clawbot-qrcode-card {
+    margin-top: 20px;
+    padding: 16px;
+    border-radius: 14px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+}
+
+.clawbot-qrcode-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.clawbot-qrcode-title {
+    color: var(--text-primary);
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.clawbot-qrcode-status {
+    color: var(--text-secondary);
+    font-size: 12px;
+    text-transform: lowercase;
+}
+
+.clawbot-qrcode-image {
+    display: block;
+    width: min(100%, 320px);
+    margin: 0 auto;
+    border-radius: 12px;
+    background: #fff;
+}
+
+.clawbot-qrcode-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: min(100%, 320px);
+    aspect-ratio: 1;
+    margin: 0 auto;
+    border-radius: 12px;
+    background: #fff;
+    color: #111827;
+    font-size: 13px;
+}
+
+.clawbot-qrcode-text {
+    min-height: 160px;
+}
+
+.clawbot-qrcode-hint {
+    margin-top: 12px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1.5;
+}

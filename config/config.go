@@ -50,6 +50,15 @@ type TTSProvider struct {
 	LanguageBoost string          `json:"language_boost,omitempty"`
 }
 
+type ClawBotConfig struct {
+	Enabled       bool   `json:"enabled"`
+	BaseURL       string `json:"base_url"`
+	BotToken      string `json:"bot_token,omitempty"`
+	ILinkUserID   string `json:"ilink_user_id,omitempty"`
+	PromptID      string `json:"prompt_id,omitempty"`
+	GetUpdatesBuf string `json:"get_updates_buf,omitempty"`
+}
+
 func isChatProviderType(providerType ProviderType) bool {
 	return providerType != ProviderTypeGeminiImage
 }
@@ -65,6 +74,7 @@ const (
 	DefaultMemoryExtractionRounds  = 5
 	DefaultMemoryRefreshInterval   = 5
 	MaxMemoryRefreshInterval       = 99
+	DefaultClawBotBaseURL          = "https://ilinkai.weixin.qq.com"
 )
 
 // Provider 供应商配置
@@ -93,19 +103,20 @@ type Provider struct {
 
 // Config 存储应用配置信息
 type Config struct {
-	Providers              []Provider   `json:"providers"`                // 供应商列表
-	ActiveProviderID       string       `json:"active_provider_id"`       // 当前激活的供应商ID
-	ImageProviderID        string       `json:"image_provider_id"`        // 生图供应商ID（gemini_image）
-	MemoryProviderID       string       `json:"memory_provider_id"`       // 记忆提取模型（供应商ID）
-	MemoryProvider         *Provider    `json:"memory_provider"`          // 记忆提取模型（独立配置）
-	MemoryEnabled          bool         `json:"memory_enabled"`           // 记忆功能开关
-	MemoryExtractionRounds int          `json:"memory_extraction_rounds"` // 记忆提取上传的对话轮数（每轮=用户+AI）
-	MemoryRefreshInterval  int          `json:"memory_refresh_interval"`  // 记忆刷新间隔（对话轮数）
-	TTSEnabled             bool         `json:"tts_enabled"`              // TTS开关
-	TTSProvider            *TTSProvider `json:"tts_provider,omitempty"`   // TTS提供商（仅支持 MiniMax）
-	SystemPrompt           string       `json:"system_prompt"`            // 全局系统提示词
-	TLSCertPath            string       `json:"tls_cert_path,omitempty"`  // TLS证书路径(PEM)，留空禁用HTTPS
-	TLSKeyPath             string       `json:"tls_key_path,omitempty"`   // TLS私钥路径(PEM)，留空禁用HTTPS
+	Providers              []Provider    `json:"providers"`                // 供应商列表
+	ActiveProviderID       string        `json:"active_provider_id"`       // 当前激活的供应商ID
+	ImageProviderID        string        `json:"image_provider_id"`        // 生图供应商ID（gemini_image）
+	MemoryProviderID       string        `json:"memory_provider_id"`       // 记忆提取模型（供应商ID）
+	MemoryProvider         *Provider     `json:"memory_provider"`          // 记忆提取模型（独立配置）
+	MemoryEnabled          bool          `json:"memory_enabled"`           // 记忆功能开关
+	MemoryExtractionRounds int           `json:"memory_extraction_rounds"` // 记忆提取上传的对话轮数（每轮=用户+AI）
+	MemoryRefreshInterval  int           `json:"memory_refresh_interval"`  // 记忆刷新间隔（对话轮数）
+	TTSEnabled             bool          `json:"tts_enabled"`              // TTS开关
+	TTSProvider            *TTSProvider  `json:"tts_provider,omitempty"`   // TTS提供商（仅支持 MiniMax）
+	SystemPrompt           string        `json:"system_prompt"`            // 全局系统提示词
+	TLSCertPath            string        `json:"tls_cert_path,omitempty"`  // TLS证书路径(PEM)，留空禁用HTTPS
+	TLSKeyPath             string        `json:"tls_key_path,omitempty"`   // TLS私钥路径(PEM)，留空禁用HTTPS
+	ClawBot                ClawBotConfig `json:"clawbot"`                  // 微信 iLink ClawBot 配置
 }
 
 // Manager 配置管理器
@@ -148,6 +159,9 @@ func DefaultConfig() Config {
 		TTSEnabled:             false,
 		TTSProvider:            nil,
 		SystemPrompt:           "You are a helpful assistant.",
+		ClawBot: ClawBotConfig{
+			BaseURL: DefaultClawBotBaseURL,
+		},
 	}
 }
 
@@ -283,6 +297,34 @@ func (m *Manager) applyConfigDefaults() bool {
 			m.config.ImageProviderID = ""
 			changed = true
 		}
+	}
+	clawBotBaseURL := strings.TrimSpace(m.config.ClawBot.BaseURL)
+	if clawBotBaseURL == "" {
+		clawBotBaseURL = DefaultClawBotBaseURL
+	}
+	if clawBotBaseURL != m.config.ClawBot.BaseURL {
+		m.config.ClawBot.BaseURL = clawBotBaseURL
+		changed = true
+	}
+	promptID := strings.TrimSpace(m.config.ClawBot.PromptID)
+	if promptID != m.config.ClawBot.PromptID {
+		m.config.ClawBot.PromptID = promptID
+		changed = true
+	}
+	ilinkUserID := strings.TrimSpace(m.config.ClawBot.ILinkUserID)
+	if ilinkUserID != m.config.ClawBot.ILinkUserID {
+		m.config.ClawBot.ILinkUserID = ilinkUserID
+		changed = true
+	}
+	botToken := strings.TrimSpace(m.config.ClawBot.BotToken)
+	if botToken != m.config.ClawBot.BotToken {
+		m.config.ClawBot.BotToken = botToken
+		changed = true
+	}
+	getUpdatesBuf := strings.TrimSpace(m.config.ClawBot.GetUpdatesBuf)
+	if getUpdatesBuf != m.config.ClawBot.GetUpdatesBuf {
+		m.config.ClawBot.GetUpdatesBuf = getUpdatesBuf
+		changed = true
 	}
 	return changed
 }
@@ -815,4 +857,22 @@ func (m *Manager) GetActiveProviderID() string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.config.ActiveProviderID
+}
+
+// GetClawBotConfig 获取微信 ClawBot 配置
+func (m *Manager) GetClawBotConfig() ClawBotConfig {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.config.ClawBot
+}
+
+// UpdateClawBotConfig 更新微信 ClawBot 配置
+func (m *Manager) UpdateClawBotConfig(cfg ClawBotConfig) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.config.ClawBot = cfg
+	if m.applyConfigDefaults() {
+		return m.saveUnsafe()
+	}
+	return m.saveUnsafe()
 }
