@@ -66,8 +66,13 @@ type clawBotActiveSession struct {
 	LastActive time.Time
 }
 
+type clawBotPendingMessage struct {
+	Text       string
+	ImagePaths []string
+}
+
 type clawBotPendingReply struct {
-	Messages        []string
+	Messages        []clawBotPendingMessage
 	WindowStartedAt time.Time
 	LastActive      time.Time
 	Timer           *time.Timer
@@ -340,50 +345,89 @@ func (s *ClawBotService) pollLoop(ctx context.Context, cfg config.ClawBotConfig)
 			if msg.MessageType != 1 {
 				continue
 			}
-			text := client.ExtractTextFromClawBotMessage(msg)
-			if text == "" {
+			if strings.TrimSpace(client.ExtractTextFromClawBotMessage(msg)) == "" && len(client.ExtractImageItemsFromClawBotMessage(msg)) == 0 {
 				continue
 			}
-			s.handleIncomingMessage(ctx, cfg, msg.FromUserID, msg.ContextToken, text)
+			s.handleIncomingMessage(ctx, cfg, msg)
 		}
 	}
 }
 
-func (s *ClawBotService) handleIncomingMessage(ctx context.Context, cfg config.ClawBotConfig, userID, contextToken, text string) {
-	userID = strings.TrimSpace(userID)
+func (s *ClawBotService) handleIncomingMessage(ctx context.Context, cfg config.ClawBotConfig, msg client.ClawBotIncomingMessage) {
+	userID := strings.TrimSpace(msg.FromUserID)
 	if userID == "" {
 		return
 	}
-	text = strings.TrimSpace(text)
-	if text == "" {
+
+	text := strings.TrimSpace(client.ExtractTextFromClawBotMessage(msg))
+	imageItems := client.ExtractImageItemsFromClawBotMessage(msg)
+	if text == "" && len(imageItems) == 0 {
 		return
 	}
 
-	s.setContextToken(userID, contextToken)
-	if command, ok := parseClawBotCommand(text); ok {
-		switch command.Name {
-		case clawBotCommandNew:
-			if command.Args == "" {
+	s.setContextToken(userID, msg.ContextToken)
+	if len(imageItems) == 0 {
+		if command, ok := parseClawBotCommand(text); ok {
+			switch command.Name {
+			case clawBotCommandNew:
+				if command.Args == "" {
+					s.clearPendingReply(userID)
+					s.handleNewCommand(ctx, cfg, userID)
+					return
+				}
+			case clawBotCommandList:
 				s.clearPendingReply(userID)
-				s.handleNewCommand(ctx, cfg, userID)
+				s.handleListCommand(ctx, cfg, userID, command.Args)
+				return
+			case clawBotCommandCheckout:
+				s.clearPendingReply(userID)
+				s.handleCheckoutCommand(ctx, cfg, userID, command.Args)
 				return
 			}
-		case clawBotCommandList:
-			s.clearPendingReply(userID)
-			s.handleListCommand(ctx, cfg, userID, command.Args)
-			return
-		case clawBotCommandCheckout:
-			s.clearPendingReply(userID)
-			s.handleCheckoutCommand(ctx, cfg, userID, command.Args)
-			return
 		}
 	}
 
-	batch := s.enqueuePendingMessage(userID, text)
+	imagePaths := s.downloadIncomingImagePaths(ctx, userID, imageItems)
+	if text == "" && len(imagePaths) == 0 && len(imageItems) > 0 {
+		text = "[用户发送了图片]"
+	}
+	if text == "" && len(imagePaths) == 0 {
+		return
+	}
+
+	batch := s.enqueuePendingMessage(userID, clawBotPendingMessage{
+		Text:       text,
+		ImagePaths: imagePaths,
+	})
 	if len(batch) == 0 {
 		return
 	}
 	s.processPendingBatchAsync(userID, batch)
+}
+
+func (s *ClawBotService) downloadIncomingImagePaths(ctx context.Context, userID string, imageItems []*client.ClawBotImageItem) []string {
+	if len(imageItems) == 0 {
+		return nil
+	}
+
+	imagePaths := make([]string, 0, len(imageItems))
+	for index, imageItem := range imageItems {
+		data, err := s.client.DownloadImageItem(ctx, imageItem)
+		if err != nil {
+			s.setLastError(err)
+			logging.Errorf("clawbot download image failed: user=%s index=%d err=%v", userID, index, err)
+			continue
+		}
+
+		relPath, err := s.handler.saveCachePhotoBytes(data)
+		if err != nil {
+			s.setLastError(err)
+			logging.Errorf("clawbot save image failed: user=%s index=%d err=%v", userID, index, err)
+			continue
+		}
+		imagePaths = append(imagePaths, relPath)
+	}
+	return imagePaths
 }
 
 func (s *ClawBotService) handleNewCommand(ctx context.Context, cfg config.ClawBotConfig, userID string) {
@@ -456,8 +500,8 @@ func (s *ClawBotService) handleCheckoutCommand(ctx context.Context, cfg config.C
 	s.sendCommandReply(ctx, cfg, userID, reply, "checkout reply")
 }
 
-func (s *ClawBotService) processIncomingBatch(ctx context.Context, cfg config.ClawBotConfig, userID string, texts []string) {
-	if len(texts) == 0 {
+func (s *ClawBotService) processIncomingBatch(ctx context.Context, cfg config.ClawBotConfig, userID string, messages []clawBotPendingMessage) {
+	if len(messages) == 0 {
 		return
 	}
 
@@ -470,16 +514,17 @@ func (s *ClawBotService) processIncomingBatch(ctx context.Context, cfg config.Cl
 	}
 
 	now := time.Now()
-	storageMessages := make([]storage.ChatMessage, 0, len(texts))
-	for index, text := range texts {
-		trimmed := strings.TrimSpace(text)
-		if trimmed == "" {
+	storageMessages := make([]storage.ChatMessage, 0, len(messages))
+	for index, pendingMessage := range messages {
+		trimmed := strings.TrimSpace(pendingMessage.Text)
+		if trimmed == "" && len(pendingMessage.ImagePaths) == 0 {
 			continue
 		}
 		storageMessages = append(storageMessages, storage.ChatMessage{
-			Role:      "user",
-			Content:   trimmed,
-			Timestamp: now.Add(time.Millisecond * time.Duration(index)),
+			Role:       "user",
+			Content:    trimmed,
+			ImagePaths: append([]string(nil), pendingMessage.ImagePaths...),
+			Timestamp:  now.Add(time.Millisecond * time.Duration(index)),
 		})
 	}
 	if len(storageMessages) == 0 {
@@ -630,7 +675,7 @@ func (s *ClawBotService) generateReply(ctx context.Context, sessionID, configure
 	return strings.TrimSpace(resp.Choices[0].Message.Content), memSession, nil
 }
 
-func (s *ClawBotService) processPendingBatchAsync(userID string, batch []string) {
+func (s *ClawBotService) processPendingBatchAsync(userID string, batch []clawBotPendingMessage) {
 	if len(batch) == 0 {
 		s.finishPendingReplyProcessing(userID)
 		return
@@ -651,7 +696,7 @@ func (s *ClawBotService) processPendingBatchAsync(userID string, batch []string)
 	}()
 }
 
-func (s *ClawBotService) enqueuePendingMessage(userID, text string) []string {
+func (s *ClawBotService) enqueuePendingMessage(userID string, message clawBotPendingMessage) []clawBotPendingMessage {
 	mode, delay := s.getReplyWaitWindow()
 	now := time.Now()
 
@@ -666,7 +711,7 @@ func (s *ClawBotService) enqueuePendingMessage(userID, text string) []string {
 	if len(state.Messages) == 0 {
 		state.WindowStartedAt = now
 	}
-	state.Messages = append(state.Messages, text)
+	state.Messages = append(state.Messages, message)
 	state.LastActive = now
 
 	if delay <= 0 {
@@ -714,11 +759,11 @@ func (s *ClawBotService) schedulePendingReplyLocked(userID string, state *clawBo
 	})
 }
 
-func (s *ClawBotService) beginPendingProcessingLocked(state *clawBotPendingReply) []string {
+func (s *ClawBotService) beginPendingProcessingLocked(state *clawBotPendingReply) []clawBotPendingMessage {
 	if state == nil || state.Processing || len(state.Messages) == 0 {
 		return nil
 	}
-	batch := append([]string(nil), state.Messages...)
+	batch := append([]clawBotPendingMessage(nil), state.Messages...)
 	state.Messages = nil
 	state.WindowStartedAt = time.Time{}
 	state.Ready = false

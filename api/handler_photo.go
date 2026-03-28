@@ -106,6 +106,30 @@ func (h *Handler) handleCachePhoto(w http.ResponseWriter, r *http.Request) {
 	h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: relPath})
 }
 
+func (h *Handler) saveCachePhotoBytes(data []byte) (string, error) {
+	if len(data) == 0 {
+		return "", fmt.Errorf("empty image data")
+	}
+
+	contentType := http.DetectContentType(data)
+	if !strings.HasPrefix(contentType, "image/") {
+		return "", fmt.Errorf("unsupported image content type: %s", contentType)
+	}
+
+	ext := imageFileExtByContentType(contentType)
+	filename := generateID() + ext
+	if errValidateFileName := storage.ValidateFileName(filename); errValidateFileName != nil {
+		return "", errValidateFileName
+	}
+
+	savedPath := filepath.Join(h.cachePhotoDir, filename)
+	if errWrite := os.WriteFile(savedPath, data, 0644); errWrite != nil {
+		return "", errWrite
+	}
+
+	return path.Join(cachePhotoDirName, filename), nil
+}
+
 // handleCachePhotoByName 读取聊天图片
 func (h *Handler) handleCachePhotoByName(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
@@ -145,4 +169,21 @@ func (h *Handler) handleCachePhotoByName(w http.ResponseWriter, r *http.Request)
 
 	w.Header().Set("Content-Type", contentType)
 	http.ServeFile(w, r, imagePath)
+}
+
+func imageFileExtByContentType(contentType string) string {
+	switch strings.ToLower(strings.TrimSpace(contentType)) {
+	case "image/jpeg":
+		return ".jpg"
+	case "image/png":
+		return ".png"
+	case "image/gif":
+		return ".gif"
+	case "image/webp":
+		return ".webp"
+	case "image/bmp":
+		return ".bmp"
+	default:
+		return ".png"
+	}
 }

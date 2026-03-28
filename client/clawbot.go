@@ -3,9 +3,11 @@ package client
 import (
 	"bytes"
 	"context"
+	"crypto/aes"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -43,10 +45,27 @@ type ClawBotItemText struct {
 	Text string `json:"text"`
 }
 
+type ClawBotCDNMedia struct {
+	EncryptQueryParam string `json:"encrypt_query_param,omitempty"`
+	AESKey            string `json:"aes_key,omitempty"`
+	EncryptType       int    `json:"encrypt_type,omitempty"`
+	FullURL           string `json:"full_url,omitempty"`
+}
+
+type ClawBotImageItem struct {
+	Media      *ClawBotCDNMedia `json:"media,omitempty"`
+	ThumbMedia *ClawBotCDNMedia `json:"thumb_media,omitempty"`
+	AESKey     string           `json:"aeskey,omitempty"`
+	MidSize    int              `json:"mid_size,omitempty"`
+	ThumbSize  int              `json:"thumb_size,omitempty"`
+	HDSize     int              `json:"hd_size,omitempty"`
+}
+
 type ClawBotIncomingMessageItem struct {
-	Type      int              `json:"type"`
-	TextItem  *ClawBotItemText `json:"text_item,omitempty"`
-	VoiceItem *ClawBotItemText `json:"voice_item,omitempty"`
+	Type      int               `json:"type"`
+	TextItem  *ClawBotItemText  `json:"text_item,omitempty"`
+	ImageItem *ClawBotImageItem `json:"image_item,omitempty"`
+	VoiceItem *ClawBotItemText  `json:"voice_item,omitempty"`
 }
 
 type ClawBotIncomingMessage struct {
@@ -83,6 +102,11 @@ type ClawBotSendMessageRequest struct {
 type ClawBotSendMessageResponse struct {
 	Ret int `json:"ret"`
 }
+
+const (
+	defaultClawBotCDNBaseURL = "https://novac2c.cdn.weixin.qq.com/c2c"
+	clawBotMediaMaxBytes     = 100 << 20
+)
 
 func NewClawBotClient() *ClawBotClient {
 	return &ClawBotClient{
@@ -224,9 +248,74 @@ func ExtractTextFromClawBotMessage(msg ClawBotIncomingMessage) string {
 	return ""
 }
 
+func ExtractImageItemsFromClawBotMessage(msg ClawBotIncomingMessage) []*ClawBotImageItem {
+	items := make([]*ClawBotImageItem, 0, len(msg.ItemList))
+	for _, item := range msg.ItemList {
+		if item.Type != 2 || item.ImageItem == nil {
+			continue
+		}
+		items = append(items, item.ImageItem)
+	}
+	return items
+}
+
+func (c *ClawBotClient) DownloadImageItem(ctx context.Context, imageItem *ClawBotImageItem) ([]byte, error) {
+	if imageItem == nil || imageItem.Media == nil {
+		return nil, fmt.Errorf("clawbot image item is empty")
+	}
+
+	media := imageItem.Media
+	imageURL := strings.TrimSpace(media.FullURL)
+	if imageURL == "" {
+		encryptQueryParam := strings.TrimSpace(media.EncryptQueryParam)
+		if encryptQueryParam == "" {
+			return nil, fmt.Errorf("clawbot image media has no download url")
+		}
+		imageURL = buildClawBotCDNDownloadURL(defaultClawBotCDNBaseURL, encryptQueryParam)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, imageURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
+		message := strings.TrimSpace(string(body))
+		if message == "" {
+			message = resp.Status
+		}
+		return nil, fmt.Errorf("clawbot image download http %d: %s", resp.StatusCode, message)
+	}
+
+	data, err := io.ReadAll(io.LimitReader(resp.Body, clawBotMediaMaxBytes))
+	if err != nil {
+		return nil, err
+	}
+
+	key, err := parseClawBotImageAESKey(imageItem)
+	if err != nil {
+		return nil, err
+	}
+	if len(key) == 0 {
+		return data, nil
+	}
+	return decryptClawBotAESECB(data, key)
+}
+
 func buildClawBotURL(baseURL, endpoint string) string {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	return baseURL + endpoint
+}
+
+func buildClawBotCDNDownloadURL(baseURL, encryptedQueryParam string) string {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	return baseURL + "/download?encrypted_query_param=" + url.QueryEscape(strings.TrimSpace(encryptedQueryParam))
 }
 
 func (c *ClawBotClient) doJSON(req *http.Request, dst interface{}) error {
@@ -249,4 +338,108 @@ func (c *ClawBotClient) doJSON(req *http.Request, dst interface{}) error {
 		return nil
 	}
 	return json.NewDecoder(resp.Body).Decode(dst)
+}
+
+func parseClawBotImageAESKey(imageItem *ClawBotImageItem) ([]byte, error) {
+	if imageItem == nil {
+		return nil, fmt.Errorf("clawbot image item is nil")
+	}
+
+	if rawHex := strings.TrimSpace(imageItem.AESKey); rawHex != "" {
+		key, err := hex.DecodeString(rawHex)
+		if err != nil {
+			return nil, fmt.Errorf("decode clawbot image aeskey hex: %w", err)
+		}
+		if len(key) != 16 {
+			return nil, fmt.Errorf("clawbot image aeskey hex must be 16 bytes, got %d", len(key))
+		}
+		return key, nil
+	}
+
+	if imageItem.Media == nil {
+		return nil, nil
+	}
+	return parseClawBotMediaAESKey(imageItem.Media.AESKey)
+}
+
+func parseClawBotMediaAESKey(aesKeyBase64 string) ([]byte, error) {
+	aesKeyBase64 = strings.TrimSpace(aesKeyBase64)
+	if aesKeyBase64 == "" {
+		return nil, nil
+	}
+
+	decoded, err := base64.StdEncoding.DecodeString(aesKeyBase64)
+	if err != nil {
+		return nil, fmt.Errorf("decode clawbot media aes key: %w", err)
+	}
+
+	switch {
+	case len(decoded) == 16:
+		return decoded, nil
+	case len(decoded) == 32 && isASCIIHex(decoded):
+		key, err := hex.DecodeString(string(decoded))
+		if err != nil {
+			return nil, fmt.Errorf("decode clawbot media aes key hex payload: %w", err)
+		}
+		if len(key) != 16 {
+			return nil, fmt.Errorf("clawbot media aes key hex payload must be 16 bytes, got %d", len(key))
+		}
+		return key, nil
+	default:
+		return nil, fmt.Errorf("clawbot media aes key must decode to 16 bytes or 32-char hex, got %d bytes", len(decoded))
+	}
+}
+
+func decryptClawBotAESECB(ciphertext, key []byte) ([]byte, error) {
+	if len(ciphertext) == 0 {
+		return nil, nil
+	}
+	if len(ciphertext)%aes.BlockSize != 0 {
+		return nil, fmt.Errorf("clawbot media ciphertext is not a multiple of block size")
+	}
+	if len(key) != 16 {
+		return nil, fmt.Errorf("clawbot media aes key must be 16 bytes, got %d", len(key))
+	}
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	plaintext := make([]byte, len(ciphertext))
+	for offset := 0; offset < len(ciphertext); offset += aes.BlockSize {
+		block.Decrypt(plaintext[offset:offset+aes.BlockSize], ciphertext[offset:offset+aes.BlockSize])
+	}
+	return stripPKCS7Padding(plaintext, aes.BlockSize)
+}
+
+func stripPKCS7Padding(data []byte, blockSize int) ([]byte, error) {
+	if len(data) == 0 || len(data)%blockSize != 0 {
+		return nil, fmt.Errorf("invalid pkcs7 padded data length")
+	}
+
+	padding := int(data[len(data)-1])
+	if padding <= 0 || padding > blockSize || padding > len(data) {
+		return nil, fmt.Errorf("invalid pkcs7 padding size")
+	}
+
+	for _, b := range data[len(data)-padding:] {
+		if int(b) != padding {
+			return nil, fmt.Errorf("invalid pkcs7 padding bytes")
+		}
+	}
+	return data[:len(data)-padding], nil
+}
+
+func isASCIIHex(data []byte) bool {
+	for _, b := range data {
+		switch {
+		case b >= '0' && b <= '9':
+		case b >= 'a' && b <= 'f':
+		case b >= 'A' && b <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
 }
