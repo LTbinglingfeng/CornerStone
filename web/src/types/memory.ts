@@ -8,6 +8,7 @@ export interface Memory {
     last_seen: string
     seen_count: number
     created_at: string
+    pinned: boolean
 }
 
 export interface MemorySettings {

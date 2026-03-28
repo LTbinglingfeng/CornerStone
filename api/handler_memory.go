@@ -22,6 +22,7 @@ type MemoryUpsertRequest struct {
 	Content   string   `json:"content,omitempty"`
 	Strength  *float64 `json:"strength,omitempty"`
 	Stability *float64 `json:"stability,omitempty"`
+	Pinned    *bool    `json:"pinned,omitempty"`
 }
 
 type MemoryExportItem struct {
@@ -31,6 +32,7 @@ type MemoryExportItem struct {
 	Strength  float64 `json:"strength"`
 	Stability float64 `json:"stability"`
 	SeenCount int     `json:"seen_count"`
+	Pinned    bool    `json:"pinned"`
 }
 
 type MemoryImportRequest struct {
@@ -43,10 +45,15 @@ type MemoryStats struct {
 	Active         int            `json:"active"`
 	Weak           int            `json:"weak"`
 	Archived       int            `json:"archived"`
+	Pinned         int            `json:"pinned"`
 	BySubject      map[string]int `json:"by_subject"`
 	ByCategory     map[string]int `json:"by_category"`
 	AvgStrength    float64        `json:"avg_strength"`
 	TotalSeenCount int            `json:"total_seen_count"`
+}
+
+type MemoryBatchDeleteRequest struct {
+	IDs []string `json:"ids"`
 }
 
 type SetMemoryProviderRequest struct {
@@ -179,6 +186,18 @@ func (h *Handler) handleMemory(w http.ResponseWriter, r *http.Request) {
 			} else {
 				h.jsonResponse(w, http.StatusMethodNotAllowed, Response{Success: false, Error: "Method not allowed"})
 			}
+		case "batch":
+			if r.Method == http.MethodDelete {
+				h.handleBatchDeleteMemories(w, r, promptID)
+			} else {
+				h.jsonResponse(w, http.StatusMethodNotAllowed, Response{Success: false, Error: "Method not allowed"})
+			}
+		case "archived":
+			if r.Method == http.MethodDelete {
+				h.handleDeleteArchivedMemories(w, r, promptID)
+			} else {
+				h.jsonResponse(w, http.StatusMethodNotAllowed, Response{Success: false, Error: "Method not allowed"})
+			}
 		default:
 			// memoryID
 			memoryID := action
@@ -233,6 +252,10 @@ func (h *Handler) handleAddMemory(w http.ResponseWriter, r *http.Request, prompt
 		memory.Stability = *req.Stability
 	}
 
+	if req.Pinned != nil {
+		memory.Pinned = *req.Pinned
+	}
+
 	if errAdd := h.memoryManager.Add(promptID, memory); errAdd != nil {
 		if errors.Is(errAdd, storage.ErrInvalidID) {
 			h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid prompt ID"})
@@ -272,9 +295,15 @@ func (h *Handler) handleUpdateMemory(w http.ResponseWriter, r *http.Request, pro
 	}
 	if req.Strength != nil {
 		patch.Strength = req.Strength
+		// 手动修改强度时自动刷新 LastSeen，使强度立即生效后正常衰减
+		now := time.Now()
+		patch.LastSeen = &now
 	}
 	if req.Stability != nil {
 		patch.Stability = req.Stability
+	}
+	if req.Pinned != nil {
+		patch.Pinned = req.Pinned
 	}
 
 	if errUpdate := h.memoryManager.Patch(promptID, patch); errUpdate != nil {
@@ -548,7 +577,10 @@ func (h *Handler) handleMemoryStats(w http.ResponseWriter, r *http.Request, prom
 		totalStrength += strength
 		stats.TotalSeenCount += m.SeenCount
 
-		if strength >= storage.ThresholdActive {
+		if m.Pinned {
+			stats.Pinned++
+			stats.Active++ // 固定记忆计入活跃
+		} else if strength >= storage.ThresholdActive {
 			stats.Active++
 		} else if strength >= storage.ThresholdArchive {
 			stats.Weak++
@@ -579,6 +611,7 @@ func (h *Handler) handleMemoryExport(w http.ResponseWriter, r *http.Request, pro
 			Strength:  m.Strength,
 			Stability: m.Stability,
 			SeenCount: m.SeenCount,
+			Pinned:    m.Pinned,
 		}
 	}
 
@@ -637,6 +670,7 @@ func (h *Handler) handleMemoryImport(w http.ResponseWriter, r *http.Request, pro
 			Strength:  strength,
 			Stability: stability,
 			SeenCount: seenCount,
+			Pinned:    item.Pinned,
 		}
 
 		if errAdd := h.memoryManager.Add(promptID, memory); errAdd != nil {
@@ -653,5 +687,49 @@ func (h *Handler) handleMemoryImport(w http.ResponseWriter, r *http.Request, pro
 			"invalid": invalidCount,
 			"mode":    req.Mode,
 		},
+	})
+}
+
+func (h *Handler) handleBatchDeleteMemories(w http.ResponseWriter, r *http.Request, promptID string) {
+	var req MemoryBatchDeleteRequest
+	if !h.decodeJSON(w, r, &req) {
+		return
+	}
+
+	if len(req.IDs) == 0 {
+		h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "IDs required"})
+		return
+	}
+
+	deletedCount, errDelete := h.memoryManager.DeleteBatch(promptID, req.IDs)
+	if errDelete != nil {
+		if errors.Is(errDelete, storage.ErrInvalidID) {
+			h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid ID"})
+			return
+		}
+		h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: errDelete.Error()})
+		return
+	}
+
+	h.jsonResponse(w, http.StatusOK, Response{
+		Success: true,
+		Data:    map[string]interface{}{"deleted": deletedCount},
+	})
+}
+
+func (h *Handler) handleDeleteArchivedMemories(w http.ResponseWriter, r *http.Request, promptID string) {
+	deletedCount, errDelete := h.memoryManager.DeleteArchived(promptID)
+	if errDelete != nil {
+		if errors.Is(errDelete, storage.ErrInvalidID) {
+			h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid prompt ID"})
+			return
+		}
+		h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: errDelete.Error()})
+		return
+	}
+
+	h.jsonResponse(w, http.StatusOK, Response{
+		Success: true,
+		Data:    map[string]interface{}{"deleted": deletedCount},
 	})
 }

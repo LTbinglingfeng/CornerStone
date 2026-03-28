@@ -25,6 +25,7 @@ type Memory struct {
 	LastSeen  time.Time `json:"last_seen"`  // 上次使用时间
 	SeenCount int       `json:"seen_count"` // 累计使用次数
 	CreatedAt time.Time `json:"created_at"` // 创建时间
+	Pinned    bool      `json:"pinned"`     // 固定记忆（永久记忆，不衰减）
 }
 
 type MemoryPatch struct {
@@ -37,6 +38,7 @@ type MemoryPatch struct {
 	LastSeen  *time.Time
 	SeenCount *int
 	CreatedAt *time.Time
+	Pinned    *bool
 }
 
 type MemoryResponse struct {
@@ -50,6 +52,7 @@ type MemoryResponse struct {
 	LastSeen        time.Time `json:"last_seen"`
 	SeenCount       int       `json:"seen_count"`
 	CreatedAt       time.Time `json:"created_at"`
+	Pinned          bool      `json:"pinned"`
 }
 
 func (m *Memory) ToResponse() MemoryResponse {
@@ -64,6 +67,7 @@ func (m *Memory) ToResponse() MemoryResponse {
 		LastSeen:        m.LastSeen,
 		SeenCount:       m.SeenCount,
 		CreatedAt:       m.CreatedAt,
+		Pinned:          m.Pinned,
 	}
 }
 
@@ -81,6 +85,11 @@ func clamp01(v float64) float64 {
 }
 
 func (m *Memory) CurrentStrength() float64 {
+	// 固定记忆不衰减，直接返回基础强度
+	if m.Pinned {
+		return clamp01(m.Strength)
+	}
+
 	hours := time.Since(m.LastSeen).Hours()
 	if hours < 0 {
 		hours = 0
@@ -487,6 +496,9 @@ func (mm *MemoryManager) Patch(promptID string, patch MemoryPatch) error {
 		if patch.CreatedAt != nil {
 			memories[i].CreatedAt = *patch.CreatedAt
 		}
+		if patch.Pinned != nil {
+			memories[i].Pinned = *patch.Pinned
+		}
 
 		mm.cache[promptID] = memories
 		return mm.saveLocked(promptID)
@@ -537,12 +549,17 @@ func (mm *MemoryManager) GetActiveMemories(promptID string) []Memory {
 
 	active := make([]Memory, 0, len(all))
 	for _, memory := range all {
-		if memory.CurrentStrength() >= ThresholdActive {
+		// 固定记忆始终纳入活跃列表
+		if memory.Pinned || memory.CurrentStrength() >= ThresholdActive {
 			active = append(active, memory)
 		}
 	}
 
+	// 排序：固定记忆优先，其次按最近使用时间
 	sort.Slice(active, func(i, j int) bool {
+		if active[i].Pinned != active[j].Pinned {
+			return active[i].Pinned
+		}
 		return active[i].LastSeen.After(active[j].LastSeen)
 	})
 
@@ -551,4 +568,100 @@ func (mm *MemoryManager) GetActiveMemories(promptID string) []Memory {
 	}
 
 	return active
+}
+
+// DeleteBatch 批量删除记忆
+func (mm *MemoryManager) DeleteBatch(promptID string, memoryIDs []string) (int, error) {
+	errValidateID := ValidateID(promptID)
+	if errValidateID != nil {
+		return 0, errValidateID
+	}
+
+	if len(memoryIDs) == 0 {
+		return 0, nil
+	}
+
+	// 验证所有 ID
+	for _, id := range memoryIDs {
+		errValidate := ValidateID(id)
+		if errValidate != nil {
+			return 0, errValidate
+		}
+	}
+
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+
+	errEnsureLoaded := mm.ensureLoadedLocked(promptID)
+	if errEnsureLoaded != nil {
+		return 0, errEnsureLoaded
+	}
+
+	// 构建 ID set
+	idSet := make(map[string]bool, len(memoryIDs))
+	for _, id := range memoryIDs {
+		idSet[id] = true
+	}
+
+	memories := mm.cache[promptID]
+	filtered := make([]Memory, 0, len(memories))
+	deletedCount := 0
+
+	for _, memory := range memories {
+		if idSet[memory.ID] {
+			deletedCount++
+		} else {
+			filtered = append(filtered, memory)
+		}
+	}
+
+	if deletedCount == 0 {
+		return 0, nil
+	}
+
+	mm.cache[promptID] = filtered
+	errSave := mm.saveLocked(promptID)
+	if errSave != nil {
+		return 0, errSave
+	}
+	return deletedCount, nil
+}
+
+// DeleteArchived 清空归档记忆（固定记忆即使强度低也不会被清空）
+func (mm *MemoryManager) DeleteArchived(promptID string) (int, error) {
+	errValidateID := ValidateID(promptID)
+	if errValidateID != nil {
+		return 0, errValidateID
+	}
+
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+
+	errEnsureLoaded := mm.ensureLoadedLocked(promptID)
+	if errEnsureLoaded != nil {
+		return 0, errEnsureLoaded
+	}
+
+	memories := mm.cache[promptID]
+	filtered := make([]Memory, 0, len(memories))
+	deletedCount := 0
+
+	for _, memory := range memories {
+		if !memory.Pinned && memory.CurrentStrength() < ThresholdArchive {
+			deletedCount++
+		} else {
+			filtered = append(filtered, memory)
+		}
+	}
+
+	if deletedCount == 0 {
+		return 0, nil
+	}
+
+	mm.cache[promptID] = filtered
+	errSave := mm.saveLocked(promptID)
+	if errSave != nil {
+		return 0, errSave
+	}
+	return deletedCount, nil
 }

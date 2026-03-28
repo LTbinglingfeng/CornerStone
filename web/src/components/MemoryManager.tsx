@@ -28,6 +28,17 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId }) => {
     const [filterSubject, setFilterSubject] = useState<'all' | 'user' | 'self'>('all')
     const [filterCategory, setFilterCategory] = useState<string>('all')
 
+    // 选择模式状态
+    const [selectMode, setSelectMode] = useState(false)
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+
+    // 强度编辑状态
+    const [editingStrengthId, setEditingStrengthId] = useState<string | null>(null)
+    const [editingStrengthValue, setEditingStrengthValue] = useState(0)
+
+    // 归档区域折叠状态
+    const [archivedCollapsed, setArchivedCollapsed] = useState(true)
+
     const loadMemories = useCallback(async () => {
         if (!promptId) return
         setLoading(true)
@@ -66,6 +77,38 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId }) => {
         }
     }
 
+    const handleTogglePin = async (memory: Memory) => {
+        try {
+            await memoryService.updateMemory(promptId, memory.id, { pinned: !memory.pinned } as Partial<Memory>)
+            await loadMemories()
+        } catch (error) {
+            console.error('Failed to toggle pin:', error)
+            showToast('操作失败，请重试', 'error')
+        }
+    }
+
+    const handleStrengthEdit = (memory: Memory) => {
+        setEditingStrengthId(memory.id)
+        setEditingStrengthValue(Math.round(memory.current_strength * 100))
+    }
+
+    const handleStrengthConfirm = async (memoryId: string) => {
+        try {
+            await memoryService.updateMemory(promptId, memoryId, {
+                strength: editingStrengthValue / 100,
+            } as Partial<Memory>)
+            setEditingStrengthId(null)
+            await loadMemories()
+        } catch (error) {
+            console.error('Failed to update strength:', error)
+            showToast('修改失败，请重试', 'error')
+        }
+    }
+
+    const handleStrengthCancel = () => {
+        setEditingStrengthId(null)
+    }
+
     const handleExport = async () => {
         try {
             const data = await memoryService.exportMemories(promptId)
@@ -81,6 +124,79 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId }) => {
             console.error('Failed to export memories:', error)
             showToast('导出失败', 'error')
         }
+    }
+
+    // 批量删除
+    const handleBatchDelete = async () => {
+        if (selectedIds.size === 0) return
+        const ok = await confirm({
+            title: '批量删除',
+            message: `确定删除选中的 ${selectedIds.size} 条记忆吗？`,
+            confirmText: '删除',
+            danger: true,
+        })
+        if (!ok) return
+        try {
+            const result = await memoryService.batchDeleteMemories(promptId, Array.from(selectedIds))
+            showToast(`已删除 ${result.deleted} 条记忆`, 'success')
+            setSelectedIds(new Set())
+            setSelectMode(false)
+            await loadMemories()
+        } catch (error) {
+            console.error('Failed to batch delete:', error)
+            showToast('批量删除失败', 'error')
+        }
+    }
+
+    // 清空归档
+    const handleClearArchived = async () => {
+        const ok = await confirm({
+            title: '清空归档',
+            message: '确定清空所有归档记忆吗？固定记忆不会被删除。',
+            confirmText: '清空',
+            danger: true,
+        })
+        if (!ok) return
+        try {
+            const result = await memoryService.deleteArchivedMemories(promptId)
+            showToast(`已清空 ${result.deleted} 条归档记忆`, 'success')
+            await loadMemories()
+        } catch (error) {
+            console.error('Failed to clear archived:', error)
+            showToast('清空归档失败', 'error')
+        }
+    }
+
+    // 选择模式逻辑
+    const toggleSelect = (id: string) => {
+        setSelectedIds((prev) => {
+            const next = new Set(prev)
+            if (next.has(id)) {
+                next.delete(id)
+            } else {
+                next.add(id)
+            }
+            return next
+        })
+    }
+
+    const toggleSelectAll = (memoryList: Memory[]) => {
+        const ids = memoryList.map((m) => m.id)
+        const allSelected = ids.every((id) => selectedIds.has(id))
+        setSelectedIds((prev) => {
+            const next = new Set(prev)
+            if (allSelected) {
+                ids.forEach((id) => next.delete(id))
+            } else {
+                ids.forEach((id) => next.add(id))
+            }
+            return next
+        })
+    }
+
+    const exitSelectMode = () => {
+        setSelectMode(false)
+        setSelectedIds(new Set())
     }
 
     // 筛选后的记忆列表
@@ -102,11 +218,13 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId }) => {
         })
     }, [memories, searchQuery, filterSubject, filterCategory])
 
-    const activeMemories = filteredMemories.filter((m) => m.current_strength >= THRESHOLD_ACTIVE)
+    // 分组：固定记忆、活跃、待激活、归档
+    const pinnedMemories = filteredMemories.filter((m) => m.pinned)
+    const activeMemories = filteredMemories.filter((m) => !m.pinned && m.current_strength >= THRESHOLD_ACTIVE)
     const weakMemories = filteredMemories.filter(
-        (m) => m.current_strength >= THRESHOLD_ARCHIVE && m.current_strength < THRESHOLD_ACTIVE
+        (m) => !m.pinned && m.current_strength >= THRESHOLD_ARCHIVE && m.current_strength < THRESHOLD_ACTIVE
     )
-    const archivedMemories = filteredMemories.filter((m) => m.current_strength < THRESHOLD_ARCHIVE)
+    const archivedMemories = filteredMemories.filter((m) => !m.pinned && m.current_strength < THRESHOLD_ARCHIVE)
 
     // 获取可用的 category 列表
     const availableCategories = useMemo(() => {
@@ -144,6 +262,15 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId }) => {
                     <button className="action-btn" onClick={() => setShowImportModal(true)} title="导入">
                         导入
                     </button>
+                    {selectMode ? (
+                        <button className="action-btn" onClick={exitSelectMode}>
+                            取消选择
+                        </button>
+                    ) : (
+                        <button className="action-btn" onClick={() => setSelectMode(true)}>
+                            选择
+                        </button>
+                    )}
                     <button className="add-btn" onClick={() => setShowAddModal(true)}>
                         + 添加
                     </button>
@@ -207,31 +334,170 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId }) => {
                 </div>
             )}
 
-            <section className="memory-section">
-                <h4>活跃记忆 ({activeMemories.length})</h4>
-                {activeMemories.length === 0 ? (
-                    <p className="empty-hint">暂无活跃记忆</p>
-                ) : (
-                    activeMemories.map((m) => <MemoryItem key={m.id} memory={m} onDelete={() => handleDelete(m.id)} />)
-                )}
-            </section>
-
-            {weakMemories.length > 0 && (
+            {/* 永久记忆区域 */}
+            {pinnedMemories.length > 0 && (
                 <section className="memory-section">
-                    <h4>待激活 ({weakMemories.length})</h4>
-                    {weakMemories.map((m) => (
-                        <MemoryItem key={m.id} memory={m} onDelete={() => handleDelete(m.id)} />
+                    <div className="memory-section-header">
+                        <h4>永久记忆 ({pinnedMemories.length})</h4>
+                        {selectMode && (
+                            <label className="memory-select-all">
+                                <input
+                                    type="checkbox"
+                                    checked={pinnedMemories.every((m) => selectedIds.has(m.id))}
+                                    onChange={() => toggleSelectAll(pinnedMemories)}
+                                />
+                                全选
+                            </label>
+                        )}
+                    </div>
+                    {pinnedMemories.map((m) => (
+                        <MemoryItem
+                            key={m.id}
+                            memory={m}
+                            onDelete={() => handleDelete(m.id)}
+                            onTogglePin={() => handleTogglePin(m)}
+                            selectMode={selectMode}
+                            selected={selectedIds.has(m.id)}
+                            onToggleSelect={() => toggleSelect(m.id)}
+                            editingStrength={editingStrengthId === m.id}
+                            editingStrengthValue={editingStrengthValue}
+                            onStrengthEdit={() => handleStrengthEdit(m)}
+                            onStrengthChange={setEditingStrengthValue}
+                            onStrengthConfirm={() => handleStrengthConfirm(m.id)}
+                            onStrengthCancel={handleStrengthCancel}
+                        />
                     ))}
                 </section>
             )}
 
+            {/* 活跃记忆 */}
+            <section className="memory-section">
+                <div className="memory-section-header">
+                    <h4>活跃记忆 ({activeMemories.length})</h4>
+                    {selectMode && activeMemories.length > 0 && (
+                        <label className="memory-select-all">
+                            <input
+                                type="checkbox"
+                                checked={activeMemories.every((m) => selectedIds.has(m.id))}
+                                onChange={() => toggleSelectAll(activeMemories)}
+                            />
+                            全选
+                        </label>
+                    )}
+                </div>
+                {activeMemories.length === 0 ? (
+                    <p className="empty-hint">暂无活跃记忆</p>
+                ) : (
+                    activeMemories.map((m) => (
+                        <MemoryItem
+                            key={m.id}
+                            memory={m}
+                            onDelete={() => handleDelete(m.id)}
+                            onTogglePin={() => handleTogglePin(m)}
+                            selectMode={selectMode}
+                            selected={selectedIds.has(m.id)}
+                            onToggleSelect={() => toggleSelect(m.id)}
+                            editingStrength={editingStrengthId === m.id}
+                            editingStrengthValue={editingStrengthValue}
+                            onStrengthEdit={() => handleStrengthEdit(m)}
+                            onStrengthChange={setEditingStrengthValue}
+                            onStrengthConfirm={() => handleStrengthConfirm(m.id)}
+                            onStrengthCancel={handleStrengthCancel}
+                        />
+                    ))
+                )}
+            </section>
+
+            {/* 待激活 */}
+            {weakMemories.length > 0 && (
+                <section className="memory-section">
+                    <div className="memory-section-header">
+                        <h4>待激活 ({weakMemories.length})</h4>
+                        {selectMode && (
+                            <label className="memory-select-all">
+                                <input
+                                    type="checkbox"
+                                    checked={weakMemories.every((m) => selectedIds.has(m.id))}
+                                    onChange={() => toggleSelectAll(weakMemories)}
+                                />
+                                全选
+                            </label>
+                        )}
+                    </div>
+                    {weakMemories.map((m) => (
+                        <MemoryItem
+                            key={m.id}
+                            memory={m}
+                            onDelete={() => handleDelete(m.id)}
+                            onTogglePin={() => handleTogglePin(m)}
+                            selectMode={selectMode}
+                            selected={selectedIds.has(m.id)}
+                            onToggleSelect={() => toggleSelect(m.id)}
+                            editingStrength={editingStrengthId === m.id}
+                            editingStrengthValue={editingStrengthValue}
+                            onStrengthEdit={() => handleStrengthEdit(m)}
+                            onStrengthChange={setEditingStrengthValue}
+                            onStrengthConfirm={() => handleStrengthConfirm(m.id)}
+                            onStrengthCancel={handleStrengthCancel}
+                        />
+                    ))}
+                </section>
+            )}
+
+            {/* 归档区域 */}
             {archivedMemories.length > 0 && (
-                <MemorySection
-                    title={`已归档 (${archivedMemories.length})`}
-                    memories={archivedMemories}
-                    onDelete={handleDelete}
-                    collapsible
-                />
+                <section className="memory-section">
+                    <div className="memory-section-header">
+                        <h4 className="collapsible" onClick={() => setArchivedCollapsed(!archivedCollapsed)}>
+                            已归档 ({archivedMemories.length}) {archivedCollapsed ? '▶' : '▼'}
+                        </h4>
+                        {!archivedCollapsed && (
+                            <>
+                                <button className="clear-archived-btn" onClick={handleClearArchived}>
+                                    清空归档
+                                </button>
+                                {selectMode && (
+                                    <label className="memory-select-all">
+                                        <input
+                                            type="checkbox"
+                                            checked={archivedMemories.every((m) => selectedIds.has(m.id))}
+                                            onChange={() => toggleSelectAll(archivedMemories)}
+                                        />
+                                        全选
+                                    </label>
+                                )}
+                            </>
+                        )}
+                    </div>
+                    {!archivedCollapsed &&
+                        archivedMemories.map((m) => (
+                            <MemoryItem
+                                key={m.id}
+                                memory={m}
+                                onDelete={() => handleDelete(m.id)}
+                                onTogglePin={() => handleTogglePin(m)}
+                                selectMode={selectMode}
+                                selected={selectedIds.has(m.id)}
+                                onToggleSelect={() => toggleSelect(m.id)}
+                                editingStrength={editingStrengthId === m.id}
+                                editingStrengthValue={editingStrengthValue}
+                                onStrengthEdit={() => handleStrengthEdit(m)}
+                                onStrengthChange={setEditingStrengthValue}
+                                onStrengthConfirm={() => handleStrengthConfirm(m.id)}
+                                onStrengthCancel={handleStrengthCancel}
+                            />
+                        ))}
+                </section>
+            )}
+
+            {/* 批量操作浮动栏 */}
+            {selectMode && selectedIds.size > 0 && (
+                <div className="batch-action-bar">
+                    <span>已选择 {selectedIds.size} 条</span>
+                    <button className="batch-delete-btn" onClick={handleBatchDelete}>
+                        删除选中
+                    </button>
+                </div>
             )}
 
             {showAddModal && (
@@ -258,6 +524,10 @@ function StatsPanel({ stats }: { stats: MemoryStats }) {
                 <div className="stat-item">
                     <span className="stat-label">总计</span>
                     <span className="stat-value">{stats.total}</span>
+                </div>
+                <div className="stat-item">
+                    <span className="stat-label">固定</span>
+                    <span className="stat-value stat-pinned">{stats.pinned}</span>
                 </div>
                 <div className="stat-item">
                     <span className="stat-label">活跃</span>
@@ -301,11 +571,42 @@ function StatsPanel({ stats }: { stats: MemoryStats }) {
     )
 }
 
-function MemoryItem({ memory, onDelete }: { memory: Memory; onDelete: () => void }) {
+function MemoryItem({
+    memory,
+    onDelete,
+    onTogglePin,
+    selectMode,
+    selected,
+    onToggleSelect,
+    editingStrength,
+    editingStrengthValue,
+    onStrengthEdit,
+    onStrengthChange,
+    onStrengthConfirm,
+    onStrengthCancel,
+}: {
+    memory: Memory
+    onDelete: () => void
+    onTogglePin: () => void
+    selectMode: boolean
+    selected: boolean
+    onToggleSelect: () => void
+    editingStrength: boolean
+    editingStrengthValue: number
+    onStrengthEdit: () => void
+    onStrengthChange: (value: number) => void
+    onStrengthConfirm: () => void
+    onStrengthCancel: () => void
+}) {
     const strengthPercent = Math.round((memory.current_strength || 0) * 100)
 
     return (
-        <div className="memory-item">
+        <div
+            className={`memory-item${memory.pinned ? ' memory-item-pinned' : ''}${selected ? ' memory-item-selected' : ''}`}
+        >
+            {selectMode && (
+                <input type="checkbox" className="memory-checkbox" checked={selected} onChange={onToggleSelect} />
+            )}
             <div className="memory-content">
                 <span className="memory-category">{categoryLabels[memory.category] || memory.category}</span>
                 <span className="memory-text" title={memory.content}>
@@ -313,38 +614,52 @@ function MemoryItem({ memory, onDelete }: { memory: Memory; onDelete: () => void
                 </span>
             </div>
             <div className="memory-meta">
-                <div className="strength-bar">
-                    <div className="strength-fill" style={{ width: `${strengthPercent}%` }} />
-                </div>
-                <span className="strength-value">{strengthPercent}%</span>
+                {memory.pinned ? (
+                    <span className="pinned-label">永久</span>
+                ) : editingStrength ? (
+                    <div className="strength-edit">
+                        <input
+                            type="range"
+                            className="strength-slider"
+                            min="0"
+                            max="100"
+                            value={editingStrengthValue}
+                            onChange={(e) => onStrengthChange(Number(e.target.value))}
+                        />
+                        <span className="strength-value">{editingStrengthValue}%</span>
+                        <button className="strength-edit-confirm" onClick={onStrengthConfirm} title="确认">
+                            ✓
+                        </button>
+                        <button className="strength-edit-cancel" onClick={onStrengthCancel} title="取消">
+                            ✗
+                        </button>
+                    </div>
+                ) : (
+                    <>
+                        <div className="strength-bar">
+                            <div className="strength-fill" style={{ width: `${strengthPercent}%` }} />
+                        </div>
+                        <span
+                            className="strength-value strength-value-editable"
+                            onClick={onStrengthEdit}
+                            title="点击修改强度"
+                        >
+                            {strengthPercent}%
+                        </span>
+                    </>
+                )}
+                <button
+                    className={`pin-btn${memory.pinned ? ' pin-btn-active' : ''}`}
+                    onClick={onTogglePin}
+                    title={memory.pinned ? '取消固定' : '固定为永久记忆'}
+                >
+                    📌
+                </button>
                 <button className="delete-btn" onClick={onDelete} title="删除">
                     ×
                 </button>
             </div>
         </div>
-    )
-}
-
-function MemorySection({
-    title,
-    memories,
-    onDelete,
-    collapsible = false,
-}: {
-    title: string
-    memories: Memory[]
-    onDelete: (id: string) => void
-    collapsible?: boolean
-}) {
-    const [collapsed, setCollapsed] = useState(collapsible)
-
-    return (
-        <section className="memory-section">
-            <h4 className={collapsible ? 'collapsible' : ''} onClick={() => collapsible && setCollapsed(!collapsed)}>
-                {title} {collapsible && (collapsed ? '▶' : '▼')}
-            </h4>
-            {!collapsed && memories.map((m) => <MemoryItem key={m.id} memory={m} onDelete={() => onDelete(m.id)} />)}
-        </section>
     )
 }
 
@@ -361,6 +676,7 @@ function AddMemoryModal({
     const [subject, setSubject] = useState<'user' | 'self'>('user')
     const [category, setCategory] = useState('identity')
     const [content, setContent] = useState('')
+    const [pinned, setPinned] = useState(false)
     const [submitting, setSubmitting] = useState(false)
 
     const categories = subject === 'user' ? userCategories : selfCategories
@@ -375,7 +691,12 @@ function AddMemoryModal({
 
         setSubmitting(true)
         try {
-            await memoryService.addMemory(promptId, { subject, category, content: content.trim() })
+            await memoryService.addMemory(promptId, {
+                subject,
+                category,
+                content: content.trim(),
+                pinned,
+            })
             onSuccess()
             onClose()
         } catch (error) {
@@ -420,6 +741,13 @@ function AddMemoryModal({
                             required
                             autoFocus
                         />
+                    </div>
+
+                    <div className="memory-form-group memory-form-checkbox">
+                        <label>
+                            <input type="checkbox" checked={pinned} onChange={(e) => setPinned(e.target.checked)} />
+                            设为永久记忆
+                        </label>
                     </div>
 
                     <div className="memory-form-actions">

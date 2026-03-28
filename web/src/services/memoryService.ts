@@ -24,6 +24,7 @@ export interface MemoryExportItem {
     content: string
     strength: number
     seen_count: number
+    pinned: boolean
 }
 
 export interface MemoryStats {
@@ -31,6 +32,7 @@ export interface MemoryStats {
     active: number
     weak: number
     archived: number
+    pinned: number
     by_subject: Record<string, number>
     by_category: Record<string, number>
     avg_strength: number
@@ -184,6 +186,34 @@ export const memoryService = {
             throw new Error(data.error || '导出记忆失败')
         }
         return data.data || []
+    },
+
+    async batchDeleteMemories(promptId: string, ids: string[]): Promise<{ deleted: number }> {
+        const data = await apiFetchJson<ApiResponse<{ deleted: number }>>(
+            `/api/memory/${encodeURIComponent(promptId)}/batch`,
+            {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids }),
+            }
+        )
+        if (!data.success || !data.data) {
+            throw new Error(data.error || '批量删除失败')
+        }
+        return data.data
+    },
+
+    async deleteArchivedMemories(promptId: string): Promise<{ deleted: number }> {
+        const data = await apiFetchJson<ApiResponse<{ deleted: number }>>(
+            `/api/memory/${encodeURIComponent(promptId)}/archived`,
+            {
+                method: 'DELETE',
+            }
+        )
+        if (!data.success || !data.data) {
+            throw new Error(data.error || '清空归档失败')
+        }
+        return data.data
     },
 
     async importMemories(
