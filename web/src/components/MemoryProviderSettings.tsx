@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { gsap } from 'gsap'
+import { useEffect, useMemo, useState } from 'react'
+import { AnimatePresence, motion } from 'motion/react'
 import type { Provider, ProviderType } from '../types/chat'
 import { getProviders, updateMemoryProvider } from '../services/api'
 import {
@@ -12,6 +12,7 @@ import {
     CustomSelect,
 } from './provider'
 import { NumericInput } from './NumericInput'
+import { centerModalVariants, drawerVariants, overlayVariants } from '../utils/motion'
 import './ProviderSettings.css'
 
 interface MemoryProviderSettingsProps {
@@ -27,8 +28,6 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
     const [message, setMessage] = useState('')
     const [showModal, setShowModal] = useState(false)
     const [editingProvider, setEditingProvider] = useState<Provider | null>(null)
-    const containerRef = useRef<HTMLDivElement>(null)
-    const modalRef = useRef<HTMLDivElement>(null)
 
     const emptyProvider: Provider = {
         id: 'memory',
@@ -50,21 +49,8 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
     }
 
     useEffect(() => {
-        if (containerRef.current) {
-            gsap.fromTo(containerRef.current, { x: '100%' }, { x: '0%', duration: 0.3, ease: 'power2.out' })
-        }
         loadData()
     }, [])
-
-    useEffect(() => {
-        if (showModal && modalRef.current) {
-            gsap.fromTo(
-                modalRef.current,
-                { opacity: 0, scale: 0.9 },
-                { opacity: 1, scale: 1, duration: 0.2, ease: 'power2.out' }
-            )
-        }
-    }, [showModal])
 
     const activeChatProvider = useMemo(() => {
         return providers.find((p) => p.id === activeProviderId) || null
@@ -82,16 +68,7 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
     }
 
     const handleBack = () => {
-        if (containerRef.current) {
-            gsap.to(containerRef.current, {
-                x: '100%',
-                duration: 0.3,
-                ease: 'power2.in',
-                onComplete: onBack,
-            })
-        } else {
-            onBack()
-        }
+        onBack()
     }
 
     const showMessageToast = (msg: string) => {
@@ -131,21 +108,8 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
     }
 
     const handleCloseModal = () => {
-        if (modalRef.current) {
-            gsap.to(modalRef.current, {
-                opacity: 0,
-                scale: 0.9,
-                duration: 0.2,
-                ease: 'power2.in',
-                onComplete: () => {
-                    setShowModal(false)
-                    setEditingProvider(null)
-                },
-            })
-        } else {
-            setShowModal(false)
-            setEditingProvider(null)
-        }
+        setShowModal(false)
+        setEditingProvider(null)
     }
 
     const handleProviderChange = (field: keyof Provider, value: string | boolean | number) => {
@@ -247,7 +211,13 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
     const isFollowChat = memoryProvider == null
 
     return (
-        <div className="provider-settings" ref={containerRef}>
+        <motion.div
+            className="provider-settings"
+            initial="hidden"
+            animate="visible"
+            exit="hidden"
+            variants={drawerVariants}
+        >
             <div className="provider-settings-header">
                 <button className="back-button" onClick={handleBack}>
                     <svg viewBox="0 0 24 24">
@@ -343,199 +313,217 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                 </div>
             )}
 
-            {showModal && editingProvider && (
-                <div className="modal-overlay" onClick={handleCloseModal}>
-                    <div className="modal-card" ref={modalRef} onClick={(e) => e.stopPropagation()}>
-                        <div className="modal-header">
-                            <h3>记忆提供商配置</h3>
-                            <button className="modal-close" onClick={handleCloseModal}>
-                                <svg viewBox="0 0 24 24">
-                                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
-                                </svg>
-                            </button>
-                        </div>
-
-                        <div className="modal-body">
-                            <div className="modal-group">
-                                <label className="modal-label">供应商ID</label>
-                                <input
-                                    type="text"
-                                    className="modal-input"
-                                    value={editingProvider.id}
-                                    onChange={(e) => handleProviderChange('id', e.target.value)}
-                                    placeholder="memory"
-                                />
+            <AnimatePresence>
+                {showModal && editingProvider && (
+                    <motion.div
+                        className="modal-overlay"
+                        initial="hidden"
+                        animate="visible"
+                        exit="hidden"
+                        variants={overlayVariants}
+                        onClick={handleCloseModal}
+                    >
+                        <motion.div
+                            className="modal-card"
+                            initial="hidden"
+                            animate="visible"
+                            exit="hidden"
+                            variants={centerModalVariants}
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="modal-header">
+                                <h3>记忆提供商配置</h3>
+                                <button className="modal-close" onClick={handleCloseModal}>
+                                    <svg viewBox="0 0 24 24">
+                                        <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                                    </svg>
+                                </button>
                             </div>
 
-                            <div className="modal-group">
-                                <label className="modal-label">显示名称</label>
-                                <input
-                                    type="text"
-                                    className="modal-input"
-                                    value={editingProvider.name}
-                                    onChange={(e) => handleProviderChange('name', e.target.value)}
-                                    placeholder="记忆提供商"
-                                />
-                            </div>
-
-                            <div className="modal-group">
-                                <label className="modal-label">供应商类型</label>
-                                <CustomSelect
-                                    value={editingProvider.type || 'openai'}
-                                    options={PROVIDER_TYPES_CHAT}
-                                    ariaLabel="供应商类型"
-                                    onChange={(value) => handleProviderChange('type', value)}
-                                />
-                            </div>
-
-                            <div className="modal-group">
-                                <label className="modal-label">API 地址 (URL)</label>
-                                <input
-                                    type="text"
-                                    className="modal-input"
-                                    value={editingProvider.base_url}
-                                    onChange={(e) => handleProviderChange('base_url', e.target.value)}
-                                    placeholder="https://api.openai.com/v1"
-                                />
-                            </div>
-
-                            <div className="modal-group">
-                                <label className="modal-label">API 密钥 (Key)</label>
-                                <input
-                                    type="password"
-                                    className="modal-input"
-                                    value={editingProvider.api_key}
-                                    onChange={(e) => handleProviderChange('api_key', e.target.value)}
-                                    placeholder={memoryProvider ? '留空保持不变' : 'sk-...'}
-                                />
-                            </div>
-
-                            <div className="modal-group">
-                                <label className="modal-label">模型</label>
-                                <input
-                                    type="text"
-                                    className="modal-input"
-                                    value={editingProvider.model}
-                                    onChange={(e) => handleProviderChange('model', e.target.value)}
-                                    placeholder="gpt-4"
-                                />
-                            </div>
-
-                            <div className="modal-group">
-                                <label className="modal-label">温度 (0-2)</label>
-                                <NumericInput
-                                    className="modal-input"
-                                    min={0}
-                                    max={2}
-                                    step={0.1}
-                                    value={editingProvider.temperature}
-                                    parseAs="float"
-                                    onValueChange={(value) => handleProviderChange('temperature', value)}
-                                    placeholder="0.8"
-                                    disabled={editingProvider.type === 'anthropic'}
-                                />
-                            </div>
-
-                            <div className="modal-group">
-                                <label className="modal-label">Top P (0-1)</label>
-                                <NumericInput
-                                    className="modal-input"
-                                    min={0}
-                                    max={1}
-                                    step={0.1}
-                                    value={editingProvider.top_p}
-                                    parseAs="float"
-                                    onValueChange={(value) => handleProviderChange('top_p', value)}
-                                    placeholder="1"
-                                />
-                            </div>
-
-                            {(editingProvider.type === 'openai' || editingProvider.type === 'openai_response') && (
+                            <div className="modal-body">
                                 <div className="modal-group">
-                                    <label className="modal-label">思考量 (reasoning effort)</label>
-                                    <CustomSelect
-                                        value={editingProvider.reasoning_effort ?? ''}
-                                        options={OPENAI_REASONING_EFFORT_OPTIONS}
-                                        ariaLabel="思考量"
-                                        onChange={(value) => handleProviderChange('reasoning_effort', value)}
+                                    <label className="modal-label">供应商ID</label>
+                                    <input
+                                        type="text"
+                                        className="modal-input"
+                                        value={editingProvider.id}
+                                        onChange={(e) => handleProviderChange('id', e.target.value)}
+                                        placeholder="memory"
                                     />
                                 </div>
-                            )}
 
-                            {editingProvider.type === 'gemini' && (
-                                <>
-                                    <div className="modal-group">
-                                        <label className="modal-label">Gemini 思考模式</label>
-                                        <CustomSelect
-                                            value={editingProvider.gemini_thinking_mode || 'none'}
-                                            options={GEMINI_THINKING_MODES}
-                                            ariaLabel="Gemini 思考模式"
-                                            onChange={(value) => handleProviderChange('gemini_thinking_mode', value)}
-                                        />
-                                    </div>
-
-                                    <div className="modal-group">
-                                        <label className="modal-label">Gemini 思考参数</label>
-                                        {editingProvider.gemini_thinking_mode === 'thinking_level' && (
-                                            <CustomSelect
-                                                value={editingProvider.gemini_thinking_level || 'low'}
-                                                options={GEMINI_THINKING_LEVELS}
-                                                ariaLabel="Gemini 思考参数"
-                                                onChange={(value) =>
-                                                    handleProviderChange('gemini_thinking_level', value)
-                                                }
-                                            />
-                                        )}
-                                        {editingProvider.gemini_thinking_mode === 'thinking_budget' && (
-                                            <NumericInput
-                                                className="modal-input"
-                                                min={getGeminiThinkingBudgetRange(editingProvider.model).min}
-                                                max={getGeminiThinkingBudgetRange(editingProvider.model).max}
-                                                step={1}
-                                                value={editingProvider.gemini_thinking_budget}
-                                                parseAs="int"
-                                                onValueChange={(value) =>
-                                                    handleProviderChange('gemini_thinking_budget', value)
-                                                }
-                                                placeholder={`${getGeminiThinkingBudgetRange(editingProvider.model).min}-${getGeminiThinkingBudgetRange(editingProvider.model).max}`}
-                                            />
-                                        )}
-                                        {editingProvider.gemini_thinking_mode === 'none' && (
-                                            <input type="text" className="modal-input" value="已关闭" disabled />
-                                        )}
-                                    </div>
-                                </>
-                            )}
-
-                            {editingProvider.type === 'anthropic' && (
                                 <div className="modal-group">
-                                    <label className="modal-label">思考预算 (tokens)</label>
+                                    <label className="modal-label">显示名称</label>
+                                    <input
+                                        type="text"
+                                        className="modal-input"
+                                        value={editingProvider.name}
+                                        onChange={(e) => handleProviderChange('name', e.target.value)}
+                                        placeholder="记忆提供商"
+                                    />
+                                </div>
+
+                                <div className="modal-group">
+                                    <label className="modal-label">供应商类型</label>
+                                    <CustomSelect
+                                        value={editingProvider.type || 'openai'}
+                                        options={PROVIDER_TYPES_CHAT}
+                                        ariaLabel="供应商类型"
+                                        onChange={(value) => handleProviderChange('type', value)}
+                                    />
+                                </div>
+
+                                <div className="modal-group">
+                                    <label className="modal-label">API 地址 (URL)</label>
+                                    <input
+                                        type="text"
+                                        className="modal-input"
+                                        value={editingProvider.base_url}
+                                        onChange={(e) => handleProviderChange('base_url', e.target.value)}
+                                        placeholder="https://api.openai.com/v1"
+                                    />
+                                </div>
+
+                                <div className="modal-group">
+                                    <label className="modal-label">API 密钥 (Key)</label>
+                                    <input
+                                        type="password"
+                                        className="modal-input"
+                                        value={editingProvider.api_key}
+                                        onChange={(e) => handleProviderChange('api_key', e.target.value)}
+                                        placeholder={memoryProvider ? '留空保持不变' : 'sk-...'}
+                                    />
+                                </div>
+
+                                <div className="modal-group">
+                                    <label className="modal-label">模型</label>
+                                    <input
+                                        type="text"
+                                        className="modal-input"
+                                        value={editingProvider.model}
+                                        onChange={(e) => handleProviderChange('model', e.target.value)}
+                                        placeholder="gpt-4"
+                                    />
+                                </div>
+
+                                <div className="modal-group">
+                                    <label className="modal-label">温度 (0-2)</label>
                                     <NumericInput
                                         className="modal-input"
                                         min={0}
-                                        step={1}
-                                        value={editingProvider.thinking_budget}
-                                        parseAs="int"
-                                        onValueChange={(value) => handleProviderChange('thinking_budget', value)}
-                                        placeholder="0"
+                                        max={2}
+                                        step={0.1}
+                                        value={editingProvider.temperature}
+                                        parseAs="float"
+                                        onValueChange={(value) => handleProviderChange('temperature', value)}
+                                        placeholder="0.8"
+                                        disabled={editingProvider.type === 'anthropic'}
                                     />
                                 </div>
-                            )}
 
-                            {/* 记忆提取不需要上下文轮数、流式输出和识图能力配置 */}
-                        </div>
+                                <div className="modal-group">
+                                    <label className="modal-label">Top P (0-1)</label>
+                                    <NumericInput
+                                        className="modal-input"
+                                        min={0}
+                                        max={1}
+                                        step={0.1}
+                                        value={editingProvider.top_p}
+                                        parseAs="float"
+                                        onValueChange={(value) => handleProviderChange('top_p', value)}
+                                        placeholder="1"
+                                    />
+                                </div>
 
-                        <div className="modal-footer">
-                            <button className="modal-btn cancel" onClick={handleCloseModal}>
-                                取消
-                            </button>
-                            <button className="modal-btn save" onClick={handleSaveProvider} disabled={saving}>
-                                {saving ? '保存中...' : '保存'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+                                {(editingProvider.type === 'openai' || editingProvider.type === 'openai_response') && (
+                                    <div className="modal-group">
+                                        <label className="modal-label">思考量 (reasoning effort)</label>
+                                        <CustomSelect
+                                            value={editingProvider.reasoning_effort ?? ''}
+                                            options={OPENAI_REASONING_EFFORT_OPTIONS}
+                                            ariaLabel="思考量"
+                                            onChange={(value) => handleProviderChange('reasoning_effort', value)}
+                                        />
+                                    </div>
+                                )}
+
+                                {editingProvider.type === 'gemini' && (
+                                    <>
+                                        <div className="modal-group">
+                                            <label className="modal-label">Gemini 思考模式</label>
+                                            <CustomSelect
+                                                value={editingProvider.gemini_thinking_mode || 'none'}
+                                                options={GEMINI_THINKING_MODES}
+                                                ariaLabel="Gemini 思考模式"
+                                                onChange={(value) =>
+                                                    handleProviderChange('gemini_thinking_mode', value)
+                                                }
+                                            />
+                                        </div>
+
+                                        <div className="modal-group">
+                                            <label className="modal-label">Gemini 思考参数</label>
+                                            {editingProvider.gemini_thinking_mode === 'thinking_level' && (
+                                                <CustomSelect
+                                                    value={editingProvider.gemini_thinking_level || 'low'}
+                                                    options={GEMINI_THINKING_LEVELS}
+                                                    ariaLabel="Gemini 思考参数"
+                                                    onChange={(value) =>
+                                                        handleProviderChange('gemini_thinking_level', value)
+                                                    }
+                                                />
+                                            )}
+                                            {editingProvider.gemini_thinking_mode === 'thinking_budget' && (
+                                                <NumericInput
+                                                    className="modal-input"
+                                                    min={getGeminiThinkingBudgetRange(editingProvider.model).min}
+                                                    max={getGeminiThinkingBudgetRange(editingProvider.model).max}
+                                                    step={1}
+                                                    value={editingProvider.gemini_thinking_budget}
+                                                    parseAs="int"
+                                                    onValueChange={(value) =>
+                                                        handleProviderChange('gemini_thinking_budget', value)
+                                                    }
+                                                    placeholder={`${getGeminiThinkingBudgetRange(editingProvider.model).min}-${getGeminiThinkingBudgetRange(editingProvider.model).max}`}
+                                                />
+                                            )}
+                                            {editingProvider.gemini_thinking_mode === 'none' && (
+                                                <input type="text" className="modal-input" value="已关闭" disabled />
+                                            )}
+                                        </div>
+                                    </>
+                                )}
+
+                                {editingProvider.type === 'anthropic' && (
+                                    <div className="modal-group">
+                                        <label className="modal-label">思考预算 (tokens)</label>
+                                        <NumericInput
+                                            className="modal-input"
+                                            min={0}
+                                            step={1}
+                                            value={editingProvider.thinking_budget}
+                                            parseAs="int"
+                                            onValueChange={(value) => handleProviderChange('thinking_budget', value)}
+                                            placeholder="0"
+                                        />
+                                    </div>
+                                )}
+
+                                {/* 记忆提取不需要上下文轮数、流式输出和识图能力配置 */}
+                            </div>
+
+                            <div className="modal-footer">
+                                <button className="modal-btn cancel" onClick={handleCloseModal}>
+                                    取消
+                                </button>
+                                <button className="modal-btn save" onClick={handleSaveProvider} disabled={saving}>
+                                    {saving ? '保存中...' : '保存'}
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             {message && (
                 <div
@@ -544,7 +532,7 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                     {message}
                 </div>
             )}
-        </div>
+        </motion.div>
     )
 }
 

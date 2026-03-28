@@ -45,7 +45,9 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
             const pageMessages = data.messages || []
             const total = typeof data.messages_total === 'number' ? data.messages_total : pageMessages.length
             const offset =
-                typeof data.messages_offset === 'number' ? data.messages_offset : Math.max(0, total - pageMessages.length)
+                typeof data.messages_offset === 'number'
+                    ? data.messages_offset
+                    : Math.max(0, total - pageMessages.length)
             setMessages(pageMessages)
             setMessagesOffset(offset)
             setMessagesTotal(total)
@@ -91,7 +93,8 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
             const olderMessages = data.messages || []
             if (olderMessages.length === 0) return false
 
-            const total = typeof data.messages_total === 'number' ? data.messages_total : Math.max(messagesTotal, before)
+            const total =
+                typeof data.messages_total === 'number' ? data.messages_total : Math.max(messagesTotal, before)
             const offset =
                 typeof data.messages_offset === 'number'
                     ? data.messages_offset

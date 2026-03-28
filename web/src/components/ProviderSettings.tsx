@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react'
-import { gsap } from 'gsap'
+import { useState, useEffect } from 'react'
+import { AnimatePresence, motion } from 'motion/react'
 import type { Provider, ProviderType } from '../types/chat'
 import { getProviders, addProvider, updateProvider, deleteProvider, setActiveProvider } from '../services/api'
 import {
@@ -19,6 +19,7 @@ import {
 import { NumericInput } from './NumericInput'
 import { useToast } from '../contexts/ToastContext'
 import { useConfirm } from '../contexts/ConfirmContext'
+import { centerModalVariants, drawerVariants, overlayVariants } from '../utils/motion'
 import './ProviderSettings.css'
 
 interface ProviderSettingsProps {
@@ -35,8 +36,6 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
     const [showModal, setShowModal] = useState(false)
     const [editingProvider, setEditingProvider] = useState<Provider | null>(null)
     const [isAddingNew, setIsAddingNew] = useState(false)
-    const containerRef = useRef<HTMLDivElement>(null)
-    const modalRef = useRef<HTMLDivElement>(null)
 
     const emptyProvider: Provider = {
         id: '',
@@ -62,21 +61,8 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
     }
 
     useEffect(() => {
-        if (containerRef.current) {
-            gsap.fromTo(containerRef.current, { x: '100%' }, { x: '0%', duration: 0.3, ease: 'power2.out' })
-        }
         loadProviders()
     }, [])
-
-    useEffect(() => {
-        if (showModal && modalRef.current) {
-            gsap.fromTo(
-                modalRef.current,
-                { opacity: 0, scale: 0.9 },
-                { opacity: 1, scale: 1, duration: 0.2, ease: 'power2.out' }
-            )
-        }
-    }, [showModal])
 
     const loadProviders = async () => {
         setLoading(true)
@@ -89,16 +75,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
     }
 
     const handleBack = () => {
-        if (containerRef.current) {
-            gsap.to(containerRef.current, {
-                x: '100%',
-                duration: 0.3,
-                ease: 'power2.in',
-                onComplete: onBack,
-            })
-        } else {
-            onBack()
-        }
+        onBack()
     }
 
     const handleSetActive = async (providerId: string) => {
@@ -137,23 +114,9 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
     }
 
     const handleCloseModal = () => {
-        if (modalRef.current) {
-            gsap.to(modalRef.current, {
-                opacity: 0,
-                scale: 0.9,
-                duration: 0.2,
-                ease: 'power2.in',
-                onComplete: () => {
-                    setShowModal(false)
-                    setEditingProvider(null)
-                    setIsAddingNew(false)
-                },
-            })
-        } else {
-            setShowModal(false)
-            setEditingProvider(null)
-            setIsAddingNew(false)
-        }
+        setShowModal(false)
+        setEditingProvider(null)
+        setIsAddingNew(false)
     }
 
     const handleSaveProvider = async () => {
@@ -305,7 +268,13 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
     }
 
     return (
-        <div className="provider-settings" ref={containerRef}>
+        <motion.div
+            className="provider-settings"
+            initial="hidden"
+            animate="visible"
+            exit="hidden"
+            variants={drawerVariants}
+        >
             <div className="provider-settings-header">
                 <button className="back-button" onClick={handleBack}>
                     <svg viewBox="0 0 24 24">
@@ -431,332 +400,361 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
             )}
 
             {/* 悬浮编辑/新增卡片 */}
-            {showModal && editingProvider && (
-                <div className="modal-overlay" onClick={handleCloseModal}>
-                    <div className="modal-card" ref={modalRef} onClick={(e) => e.stopPropagation()}>
-                        <div className="modal-header">
-                            <h3>{isAddingNew ? '添加供应商' : '编辑供应商'}</h3>
-                            <button className="modal-close" onClick={handleCloseModal}>
-                                <svg viewBox="0 0 24 24">
-                                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
-                                </svg>
-                            </button>
-                        </div>
-
-                        <div className="modal-body">
-                            <div className="modal-group">
-                                <label className="modal-label">供应商 ID</label>
-                                <input
-                                    type="text"
-                                    className="modal-input"
-                                    value={editingProvider.id}
-                                    onChange={(e) => handleProviderChange('id', e.target.value)}
-                                    placeholder="unique-id"
-                                    disabled={!isAddingNew}
-                                />
+            <AnimatePresence>
+                {showModal && editingProvider && (
+                    <motion.div
+                        className="modal-overlay"
+                        initial="hidden"
+                        animate="visible"
+                        exit="hidden"
+                        variants={overlayVariants}
+                        onClick={handleCloseModal}
+                    >
+                        <motion.div
+                            className="modal-card"
+                            initial="hidden"
+                            animate="visible"
+                            exit="hidden"
+                            variants={centerModalVariants}
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="modal-header">
+                                <h3>{isAddingNew ? '添加供应商' : '编辑供应商'}</h3>
+                                <button className="modal-close" onClick={handleCloseModal}>
+                                    <svg viewBox="0 0 24 24">
+                                        <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                                    </svg>
+                                </button>
                             </div>
 
-                            <div className="modal-group">
-                                <label className="modal-label">显示名称</label>
-                                <input
-                                    type="text"
-                                    className="modal-input"
-                                    value={editingProvider.name}
-                                    onChange={(e) => handleProviderChange('name', e.target.value)}
-                                    placeholder="OpenAI"
-                                />
-                            </div>
-
-                            <div className="modal-group">
-                                <label className="modal-label">供应商类型</label>
-                                <CustomSelect
-                                    value={editingProvider.type || 'openai'}
-                                    options={PROVIDER_TYPES_ALL}
-                                    ariaLabel="供应商类型"
-                                    onChange={(value) => handleProviderChange('type', value)}
-                                />
-                            </div>
-
-                            <div className="modal-group">
-                                <label className="modal-label">API 地址 (URL)</label>
-                                <input
-                                    type="text"
-                                    className="modal-input"
-                                    value={editingProvider.base_url}
-                                    onChange={(e) => handleProviderChange('base_url', e.target.value)}
-                                    placeholder="https://api.openai.com/v1"
-                                />
-                            </div>
-
-                            <div className="modal-group">
-                                <label className="modal-label">API 密钥 (Key)</label>
-                                <input
-                                    type="password"
-                                    className="modal-input"
-                                    value={editingProvider.api_key}
-                                    onChange={(e) => handleProviderChange('api_key', e.target.value)}
-                                    placeholder={isAddingNew ? 'sk-...' : '留空保持不变'}
-                                />
-                            </div>
-
-                            <div className="modal-group">
-                                <label className="modal-label">模型</label>
-                                <input
-                                    type="text"
-                                    className="modal-input"
-                                    value={editingProvider.model}
-                                    onChange={(e) => handleProviderChange('model', e.target.value)}
-                                    placeholder={
-                                        editingProvider.type === 'gemini_image'
-                                            ? 'nano banana / nanobanana Pro'
-                                            : 'gpt-4'
-                                    }
-                                />
-                            </div>
-
-                            {editingProvider.type === 'gemini_image' && (
-                                <>
-                                    <div className="modal-group">
-                                        <label className="modal-label">生图比例</label>
-                                        <select
-                                            className="modal-input modal-select"
-                                            value={editingProvider.gemini_image_aspect_ratio || '1:1'}
-                                            onChange={(e) =>
-                                                handleProviderChange('gemini_image_aspect_ratio', e.target.value)
-                                            }
-                                        >
-                                            {GEMINI_IMAGE_ASPECT_RATIOS.map((ratio) => (
-                                                <option key={ratio.value} value={ratio.value}>
-                                                    {ratio.label}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-
-                                    <div className="modal-group">
-                                        <label className="modal-label">生图分辨率 (最大边)</label>
-                                        <select
-                                            className="modal-input modal-select"
-                                            value={editingProvider.gemini_image_size || ''}
-                                            onChange={(e) => handleProviderChange('gemini_image_size', e.target.value)}
-                                        >
-                                            {GEMINI_IMAGE_SIZES.map((size) => (
-                                                <option key={size.value || 'default'} value={size.value}>
-                                                    {size.label}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-
-                                    <div className="modal-group">
-                                        <label className="modal-label">生图数量 (1-8)</label>
-                                        <NumericInput
-                                            className="modal-input"
-                                            min={1}
-                                            max={8}
-                                            step={1}
-                                            value={editingProvider.gemini_image_number_of_images ?? 1}
-                                            parseAs="int"
-                                            onValueChange={(value) =>
-                                                handleProviderChange('gemini_image_number_of_images', value)
-                                            }
-                                            placeholder="1"
-                                        />
-                                    </div>
-
-                                    <div className="modal-group">
-                                        <label className="modal-label">输出格式</label>
-                                        <select
-                                            className="modal-input modal-select"
-                                            value={editingProvider.gemini_image_output_mime_type || 'image/jpeg'}
-                                            onChange={(e) =>
-                                                handleProviderChange('gemini_image_output_mime_type', e.target.value)
-                                            }
-                                        >
-                                            {GEMINI_IMAGE_OUTPUT_MIME_TYPES.map((mime) => (
-                                                <option key={mime.value} value={mime.value}>
-                                                    {mime.label}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                </>
-                            )}
-
-                            {editingProvider.type !== 'gemini_image' && (
+                            <div className="modal-body">
                                 <div className="modal-group">
-                                    <label className="modal-label">温度 (0-2)</label>
-                                    <NumericInput
+                                    <label className="modal-label">供应商 ID</label>
+                                    <input
+                                        type="text"
                                         className="modal-input"
-                                        min={0}
-                                        max={2}
-                                        step={0.1}
-                                        value={editingProvider.temperature}
-                                        parseAs="float"
-                                        onValueChange={(value) => handleProviderChange('temperature', value)}
-                                        placeholder="0.8"
-                                        disabled={editingProvider.type === 'anthropic'}
+                                        value={editingProvider.id}
+                                        onChange={(e) => handleProviderChange('id', e.target.value)}
+                                        placeholder="unique-id"
+                                        disabled={!isAddingNew}
                                     />
                                 </div>
-                            )}
 
-                            {editingProvider.type !== 'gemini_image' && (
                                 <div className="modal-group">
-                                    <label className="modal-label">Top P (0-1)</label>
-                                    <NumericInput
+                                    <label className="modal-label">显示名称</label>
+                                    <input
+                                        type="text"
                                         className="modal-input"
-                                        min={0}
-                                        max={1}
-                                        step={0.1}
-                                        value={editingProvider.top_p}
-                                        parseAs="float"
-                                        onValueChange={(value) => handleProviderChange('top_p', value)}
-                                        placeholder="1"
+                                        value={editingProvider.name}
+                                        onChange={(e) => handleProviderChange('name', e.target.value)}
+                                        placeholder="OpenAI"
                                     />
                                 </div>
-                            )}
 
-                            {(editingProvider.type === 'openai' || editingProvider.type === 'openai_response') && (
                                 <div className="modal-group">
-                                    <label className="modal-label">思考量 (reasoning effort)</label>
+                                    <label className="modal-label">供应商类型</label>
                                     <CustomSelect
-                                        value={editingProvider.reasoning_effort ?? ''}
-                                        options={OPENAI_REASONING_EFFORT_OPTIONS}
-                                        ariaLabel="思考量"
-                                        onChange={(value) => handleProviderChange('reasoning_effort', value)}
+                                        value={editingProvider.type || 'openai'}
+                                        options={PROVIDER_TYPES_ALL}
+                                        ariaLabel="供应商类型"
+                                        onChange={(value) => handleProviderChange('type', value)}
                                     />
                                 </div>
-                            )}
 
-                            {editingProvider.type === 'gemini' && (
-                                <>
-                                    <div className="modal-group">
-                                        <label className="modal-label">Gemini 思考模式</label>
-                                        <CustomSelect
-                                            value={editingProvider.gemini_thinking_mode || 'none'}
-                                            options={GEMINI_THINKING_MODES}
-                                            ariaLabel="Gemini 思考模式"
-                                            onChange={(value) => handleProviderChange('gemini_thinking_mode', value)}
-                                        />
-                                    </div>
+                                <div className="modal-group">
+                                    <label className="modal-label">API 地址 (URL)</label>
+                                    <input
+                                        type="text"
+                                        className="modal-input"
+                                        value={editingProvider.base_url}
+                                        onChange={(e) => handleProviderChange('base_url', e.target.value)}
+                                        placeholder="https://api.openai.com/v1"
+                                    />
+                                </div>
 
-                                    <div className="modal-group">
-                                        <label className="modal-label">思考级别 / 预算</label>
-                                        {editingProvider.gemini_thinking_mode === 'thinking_level' && (
+                                <div className="modal-group">
+                                    <label className="modal-label">API 密钥 (Key)</label>
+                                    <input
+                                        type="password"
+                                        className="modal-input"
+                                        value={editingProvider.api_key}
+                                        onChange={(e) => handleProviderChange('api_key', e.target.value)}
+                                        placeholder={isAddingNew ? 'sk-...' : '留空保持不变'}
+                                    />
+                                </div>
+
+                                <div className="modal-group">
+                                    <label className="modal-label">模型</label>
+                                    <input
+                                        type="text"
+                                        className="modal-input"
+                                        value={editingProvider.model}
+                                        onChange={(e) => handleProviderChange('model', e.target.value)}
+                                        placeholder={
+                                            editingProvider.type === 'gemini_image'
+                                                ? 'nano banana / nanobanana Pro'
+                                                : 'gpt-4'
+                                        }
+                                    />
+                                </div>
+
+                                {editingProvider.type === 'gemini_image' && (
+                                    <>
+                                        <div className="modal-group">
+                                            <label className="modal-label">生图比例</label>
                                             <select
                                                 className="modal-input modal-select"
-                                                value={editingProvider.gemini_thinking_level}
+                                                value={editingProvider.gemini_image_aspect_ratio || '1:1'}
                                                 onChange={(e) =>
-                                                    handleProviderChange('gemini_thinking_level', e.target.value)
+                                                    handleProviderChange('gemini_image_aspect_ratio', e.target.value)
                                                 }
                                             >
-                                                {GEMINI_THINKING_LEVELS.map((level) => (
-                                                    <option key={level.value} value={level.value}>
-                                                        {level.label}
+                                                {GEMINI_IMAGE_ASPECT_RATIOS.map((ratio) => (
+                                                    <option key={ratio.value} value={ratio.value}>
+                                                        {ratio.label}
                                                     </option>
                                                 ))}
                                             </select>
-                                        )}
-                                        {editingProvider.gemini_thinking_mode === 'thinking_budget' && (
+                                        </div>
+
+                                        <div className="modal-group">
+                                            <label className="modal-label">生图分辨率 (最大边)</label>
+                                            <select
+                                                className="modal-input modal-select"
+                                                value={editingProvider.gemini_image_size || ''}
+                                                onChange={(e) =>
+                                                    handleProviderChange('gemini_image_size', e.target.value)
+                                                }
+                                            >
+                                                {GEMINI_IMAGE_SIZES.map((size) => (
+                                                    <option key={size.value || 'default'} value={size.value}>
+                                                        {size.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        <div className="modal-group">
+                                            <label className="modal-label">生图数量 (1-8)</label>
                                             <NumericInput
                                                 className="modal-input"
-                                                min={getGeminiThinkingBudgetRange(editingProvider.model).min}
-                                                max={getGeminiThinkingBudgetRange(editingProvider.model).max}
+                                                min={1}
+                                                max={8}
                                                 step={1}
-                                                value={editingProvider.gemini_thinking_budget}
+                                                value={editingProvider.gemini_image_number_of_images ?? 1}
                                                 parseAs="int"
-                                                onValueChange={(value) => handleProviderChange('gemini_thinking_budget', value)}
-                                                placeholder={`${getGeminiThinkingBudgetRange(editingProvider.model).min}-${getGeminiThinkingBudgetRange(editingProvider.model).max}`}
+                                                onValueChange={(value) =>
+                                                    handleProviderChange('gemini_image_number_of_images', value)
+                                                }
+                                                placeholder="1"
                                             />
-                                        )}
-                                        {editingProvider.gemini_thinking_mode === 'none' && (
-                                            <input type="text" className="modal-input" value="已关闭" disabled />
-                                        )}
-                                    </div>
-                                </>
-                            )}
+                                        </div>
 
-                            {editingProvider.type === 'anthropic' && (
-                                <div className="modal-group">
-                                    <label className="modal-label">思考预算 (tokens)</label>
-                                    <NumericInput
-                                        className="modal-input"
-                                        min={0}
-                                        step={1}
-                                        value={editingProvider.thinking_budget}
-                                        parseAs="int"
-                                        onValueChange={(value) => handleProviderChange('thinking_budget', value)}
-                                        placeholder="0"
-                                    />
-                                </div>
-                            )}
+                                        <div className="modal-group">
+                                            <label className="modal-label">输出格式</label>
+                                            <select
+                                                className="modal-input modal-select"
+                                                value={editingProvider.gemini_image_output_mime_type || 'image/jpeg'}
+                                                onChange={(e) =>
+                                                    handleProviderChange(
+                                                        'gemini_image_output_mime_type',
+                                                        e.target.value
+                                                    )
+                                                }
+                                            >
+                                                {GEMINI_IMAGE_OUTPUT_MIME_TYPES.map((mime) => (
+                                                    <option key={mime.value} value={mime.value}>
+                                                        {mime.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </>
+                                )}
 
-                            {editingProvider.type !== 'gemini_image' && (
-                                <>
+                                {editingProvider.type !== 'gemini_image' && (
                                     <div className="modal-group">
-                                        <label className="modal-label">上下文轮数</label>
+                                        <label className="modal-label">温度 (0-2)</label>
                                         <NumericInput
                                             className="modal-input"
-                                            min={1}
-                                            step={1}
-                                            value={editingProvider.context_messages}
-                                            parseAs="int"
-                                            onValueChange={(value) => handleProviderChange('context_messages', value)}
-                                            placeholder="64"
+                                            min={0}
+                                            max={2}
+                                            step={0.1}
+                                            value={editingProvider.temperature}
+                                            parseAs="float"
+                                            onValueChange={(value) => handleProviderChange('temperature', value)}
+                                            placeholder="0.8"
+                                            disabled={editingProvider.type === 'anthropic'}
                                         />
                                     </div>
+                                )}
 
+                                {editingProvider.type !== 'gemini_image' && (
                                     <div className="modal-group">
-                                        <label className="modal-label">流式输出</label>
-                                        <div className="modal-toggle-wrapper">
-                                            <label className="toggle-switch">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={editingProvider.stream}
-                                                    onChange={(e) => handleProviderChange('stream', e.target.checked)}
-                                                />
-                                                <span className="toggle-slider"></span>
-                                            </label>
-                                            <span className="toggle-label">
-                                                {editingProvider.stream ? '开启' : '关闭'}
-                                            </span>
-                                        </div>
+                                        <label className="modal-label">Top P (0-1)</label>
+                                        <NumericInput
+                                            className="modal-input"
+                                            min={0}
+                                            max={1}
+                                            step={0.1}
+                                            value={editingProvider.top_p}
+                                            parseAs="float"
+                                            onValueChange={(value) => handleProviderChange('top_p', value)}
+                                            placeholder="1"
+                                        />
                                     </div>
+                                )}
 
+                                {(editingProvider.type === 'openai' || editingProvider.type === 'openai_response') && (
                                     <div className="modal-group">
-                                        <label className="modal-label">支持识图</label>
-                                        <div className="modal-toggle-wrapper">
-                                            <label className="toggle-switch">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={editingProvider.image_capable}
+                                        <label className="modal-label">思考量 (reasoning effort)</label>
+                                        <CustomSelect
+                                            value={editingProvider.reasoning_effort ?? ''}
+                                            options={OPENAI_REASONING_EFFORT_OPTIONS}
+                                            ariaLabel="思考量"
+                                            onChange={(value) => handleProviderChange('reasoning_effort', value)}
+                                        />
+                                    </div>
+                                )}
+
+                                {editingProvider.type === 'gemini' && (
+                                    <>
+                                        <div className="modal-group">
+                                            <label className="modal-label">Gemini 思考模式</label>
+                                            <CustomSelect
+                                                value={editingProvider.gemini_thinking_mode || 'none'}
+                                                options={GEMINI_THINKING_MODES}
+                                                ariaLabel="Gemini 思考模式"
+                                                onChange={(value) =>
+                                                    handleProviderChange('gemini_thinking_mode', value)
+                                                }
+                                            />
+                                        </div>
+
+                                        <div className="modal-group">
+                                            <label className="modal-label">思考级别 / 预算</label>
+                                            {editingProvider.gemini_thinking_mode === 'thinking_level' && (
+                                                <select
+                                                    className="modal-input modal-select"
+                                                    value={editingProvider.gemini_thinking_level}
                                                     onChange={(e) =>
-                                                        handleProviderChange('image_capable', e.target.checked)
+                                                        handleProviderChange('gemini_thinking_level', e.target.value)
                                                     }
+                                                >
+                                                    {GEMINI_THINKING_LEVELS.map((level) => (
+                                                        <option key={level.value} value={level.value}>
+                                                            {level.label}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            )}
+                                            {editingProvider.gemini_thinking_mode === 'thinking_budget' && (
+                                                <NumericInput
+                                                    className="modal-input"
+                                                    min={getGeminiThinkingBudgetRange(editingProvider.model).min}
+                                                    max={getGeminiThinkingBudgetRange(editingProvider.model).max}
+                                                    step={1}
+                                                    value={editingProvider.gemini_thinking_budget}
+                                                    parseAs="int"
+                                                    onValueChange={(value) =>
+                                                        handleProviderChange('gemini_thinking_budget', value)
+                                                    }
+                                                    placeholder={`${getGeminiThinkingBudgetRange(editingProvider.model).min}-${getGeminiThinkingBudgetRange(editingProvider.model).max}`}
                                                 />
-                                                <span className="toggle-slider"></span>
-                                            </label>
-                                            <span className="toggle-label">
-                                                {editingProvider.image_capable ? '支持' : '不支持'}
-                                            </span>
+                                            )}
+                                            {editingProvider.gemini_thinking_mode === 'none' && (
+                                                <input type="text" className="modal-input" value="已关闭" disabled />
+                                            )}
                                         </div>
-                                    </div>
-                                </>
-                            )}
-                        </div>
+                                    </>
+                                )}
 
-                        <div className="modal-footer">
-                            <button className="modal-btn cancel" onClick={handleCloseModal}>
-                                取消
-                            </button>
-                            <button className="modal-btn save" onClick={handleSaveProvider} disabled={saving}>
-                                {saving ? '保存中...' : '保存'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-        </div>
+                                {editingProvider.type === 'anthropic' && (
+                                    <div className="modal-group">
+                                        <label className="modal-label">思考预算 (tokens)</label>
+                                        <NumericInput
+                                            className="modal-input"
+                                            min={0}
+                                            step={1}
+                                            value={editingProvider.thinking_budget}
+                                            parseAs="int"
+                                            onValueChange={(value) => handleProviderChange('thinking_budget', value)}
+                                            placeholder="0"
+                                        />
+                                    </div>
+                                )}
+
+                                {editingProvider.type !== 'gemini_image' && (
+                                    <>
+                                        <div className="modal-group">
+                                            <label className="modal-label">上下文轮数</label>
+                                            <NumericInput
+                                                className="modal-input"
+                                                min={1}
+                                                step={1}
+                                                value={editingProvider.context_messages}
+                                                parseAs="int"
+                                                onValueChange={(value) =>
+                                                    handleProviderChange('context_messages', value)
+                                                }
+                                                placeholder="64"
+                                            />
+                                        </div>
+
+                                        <div className="modal-group">
+                                            <label className="modal-label">流式输出</label>
+                                            <div className="modal-toggle-wrapper">
+                                                <label className="toggle-switch">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={editingProvider.stream}
+                                                        onChange={(e) =>
+                                                            handleProviderChange('stream', e.target.checked)
+                                                        }
+                                                    />
+                                                    <span className="toggle-slider"></span>
+                                                </label>
+                                                <span className="toggle-label">
+                                                    {editingProvider.stream ? '开启' : '关闭'}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        <div className="modal-group">
+                                            <label className="modal-label">支持识图</label>
+                                            <div className="modal-toggle-wrapper">
+                                                <label className="toggle-switch">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={editingProvider.image_capable}
+                                                        onChange={(e) =>
+                                                            handleProviderChange('image_capable', e.target.checked)
+                                                        }
+                                                    />
+                                                    <span className="toggle-slider"></span>
+                                                </label>
+                                                <span className="toggle-label">
+                                                    {editingProvider.image_capable ? '支持' : '不支持'}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+
+                            <div className="modal-footer">
+                                <button className="modal-btn cancel" onClick={handleCloseModal}>
+                                    取消
+                                </button>
+                                <button className="modal-btn save" onClick={handleSaveProvider} disabled={saving}>
+                                    {saving ? '保存中...' : '保存'}
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </motion.div>
     )
 }
 

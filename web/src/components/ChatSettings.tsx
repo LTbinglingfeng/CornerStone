@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { gsap } from 'gsap'
+import { motion } from 'motion/react'
 import type { ChatSession, Prompt } from '../types/chat'
 import {
     getSessionsByPromptId,
@@ -9,6 +9,7 @@ import {
     deleteSession,
 } from '../services/api'
 import { formatTime } from '../utils/time'
+import { bottomSheetVariants, overlayVariants } from '../utils/motion'
 import './ChatSettings.css'
 
 interface ChatSettingsProps {
@@ -37,16 +38,9 @@ const ChatSettings: React.FC<ChatSettingsProps> = ({
     const [savingTitle, setSavingTitle] = useState(false)
     const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null)
     const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
-    const containerRef = useRef<HTMLDivElement>(null)
-    const overlayRef = useRef<HTMLDivElement>(null)
     const titleInputRef = useRef<HTMLInputElement>(null)
 
     useEffect(() => {
-        // 入场动画
-        if (overlayRef.current && containerRef.current) {
-            gsap.fromTo(overlayRef.current, { opacity: 0 }, { opacity: 1, duration: 0.2 })
-            gsap.fromTo(containerRef.current, { y: '100%' }, { y: '0%', duration: 0.3, ease: 'power2.out' })
-        }
         loadSessions()
     }, [prompt.id])
 
@@ -100,17 +94,7 @@ const ChatSettings: React.FC<ChatSettingsProps> = ({
     }
 
     const handleClose = () => {
-        if (overlayRef.current && containerRef.current) {
-            gsap.to(overlayRef.current, { opacity: 0, duration: 0.2 })
-            gsap.to(containerRef.current, {
-                y: '100%',
-                duration: 0.3,
-                ease: 'power2.in',
-                onComplete: onClose,
-            })
-        } else {
-            onClose()
-        }
+        onClose()
     }
 
     const handleSessionClick = (sessionId: string) => {
@@ -174,8 +158,22 @@ const ChatSettings: React.FC<ChatSettingsProps> = ({
     const isDeletingConfirm = confirmDeleteId !== null && deletingSessionId === confirmDeleteId
 
     return (
-        <div className="chat-settings-overlay" ref={overlayRef} onClick={handleClose}>
-            <div className="chat-settings-container" ref={containerRef} onClick={(e) => e.stopPropagation()}>
+        <motion.div
+            className="chat-settings-overlay"
+            initial="hidden"
+            animate="visible"
+            exit="hidden"
+            variants={overlayVariants}
+            onClick={handleClose}
+        >
+            <motion.div
+                className="chat-settings-container"
+                initial="hidden"
+                animate="visible"
+                exit="hidden"
+                variants={bottomSheetVariants}
+                onClick={(e) => e.stopPropagation()}
+            >
                 {/* 顶部拖动条 */}
                 <div className="chat-settings-handle">
                     <div className="handle-bar"></div>
@@ -286,7 +284,7 @@ const ChatSettings: React.FC<ChatSettingsProps> = ({
                         )}
                     </div>
                 </div>
-            </div>
+            </motion.div>
 
             {confirmDeleteId && (
                 <div
@@ -322,7 +320,7 @@ const ChatSettings: React.FC<ChatSettingsProps> = ({
                     </div>
                 </div>
             )}
-        </div>
+        </motion.div>
     )
 }
 

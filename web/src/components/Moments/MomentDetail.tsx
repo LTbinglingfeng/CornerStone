@@ -51,7 +51,9 @@ const MomentDetail: React.FC<MomentDetailProps> = ({ moment, userInfo, onClose, 
         () => `${getPromptAvatarUrl(data.prompt_id)}?t=${encodeURIComponent(data.updated_at)}`,
         [data.prompt_id, data.updated_at]
     )
-    const imageSrc = data.image_path ? `${normalizeAssetPath(data.image_path)}?t=${encodeURIComponent(data.updated_at)}` : ''
+    const imageSrc = data.image_path
+        ? `${normalizeAssetPath(data.image_path)}?t=${encodeURIComponent(data.updated_at)}`
+        : ''
 
     const handleLike = async () => {
         setSubmitting(true)
@@ -127,7 +129,9 @@ const MomentDetail: React.FC<MomentDetailProps> = ({ moment, userInfo, onClose, 
                                     )}
 
                                     <div className="moment-detail-meta">
-                                        <span className="moment-detail-time">{formatRelativeTime(data.created_at)}</span>
+                                        <span className="moment-detail-time">
+                                            {formatRelativeTime(data.created_at)}
+                                        </span>
                                         <button
                                             className={`moment-detail-like ${isLiked ? 'liked' : ''}`}
                                             type="button"
@@ -154,7 +158,9 @@ const MomentDetail: React.FC<MomentDetailProps> = ({ moment, userInfo, onClose, 
                                     <div className="moment-detail-comments">
                                         {comments.map((comment) => (
                                             <div key={comment.id} className="moment-detail-comment">
-                                                <span className="moment-detail-comment-author">{comment.user_name}</span>
+                                                <span className="moment-detail-comment-author">
+                                                    {comment.user_name}
+                                                </span>
                                                 <span className="moment-detail-comment-colon">：</span>
                                                 <span className="moment-detail-comment-content">{comment.content}</span>
                                             </div>
@@ -191,4 +197,3 @@ const MomentDetail: React.FC<MomentDetailProps> = ({ moment, userInfo, onClose, 
 }
 
 export default MomentDetail
-

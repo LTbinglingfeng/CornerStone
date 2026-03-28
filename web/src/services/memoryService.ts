@@ -148,7 +148,9 @@ export const memoryService = {
     },
 
     async getMemoryExtractionPromptTemplate(): Promise<MemoryExtractionPromptTemplate> {
-        const data = await apiFetchJson<ApiResponse<MemoryExtractionPromptTemplate>>('/api/settings/memory-extraction-prompt')
+        const data = await apiFetchJson<ApiResponse<MemoryExtractionPromptTemplate>>(
+            '/api/settings/memory-extraction-prompt'
+        )
         if (!data.success || !data.data) {
             throw new Error(data.error || '获取记忆提取提示词失败')
         }
@@ -167,9 +169,7 @@ export const memoryService = {
     },
 
     async getMemoryStats(promptId: string): Promise<MemoryStats> {
-        const data = await apiFetchJson<ApiResponse<MemoryStats>>(
-            `/api/memory/${encodeURIComponent(promptId)}/stats`
-        )
+        const data = await apiFetchJson<ApiResponse<MemoryStats>>(`/api/memory/${encodeURIComponent(promptId)}/stats`)
         if (!data.success || !data.data) {
             throw new Error(data.error || '获取记忆统计失败')
         }

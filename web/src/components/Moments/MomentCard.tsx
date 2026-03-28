@@ -68,7 +68,9 @@ const MomentCard: React.FC<MomentCardProps> = ({ moment, userInfo, onClick, onRe
         onClick()
     }
 
-    const imageSrc = moment.image_path ? `${normalizeAssetPath(moment.image_path)}?t=${encodeURIComponent(moment.updated_at)}` : ''
+    const imageSrc = moment.image_path
+        ? `${normalizeAssetPath(moment.image_path)}?t=${encodeURIComponent(moment.updated_at)}`
+        : ''
     const hasInteractions = likes.length > 0 || comments.length > 0
     const previewComments = comments.slice(0, 3)
 
@@ -170,4 +172,3 @@ const MomentCard: React.FC<MomentCardProps> = ({ moment, userInfo, onClick, onRe
 }
 
 export default MomentCard
-

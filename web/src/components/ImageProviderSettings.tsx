@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { gsap } from 'gsap'
+import { useEffect, useMemo, useState } from 'react'
+import { motion } from 'motion/react'
 import type { Provider } from '../types/chat'
 import { getProviders, setImageProvider } from '../services/api'
 import { PROVIDER_TYPES_ALL } from './provider'
 import { useToast } from '../contexts/ToastContext'
+import { drawerVariants } from '../utils/motion'
 import './ProviderSettings.css'
 
 interface ImageProviderSettingsProps {
@@ -16,12 +17,8 @@ const ImageProviderSettings: React.FC<ImageProviderSettingsProps> = ({ onBack })
     const [imageProviderId, setImageProviderId] = useState('')
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
-    const containerRef = useRef<HTMLDivElement>(null)
 
     useEffect(() => {
-        if (containerRef.current) {
-            gsap.fromTo(containerRef.current, { x: '100%' }, { x: '0%', duration: 0.3, ease: 'power2.out' })
-        }
         loadData()
     }, [])
 
@@ -49,16 +46,7 @@ const ImageProviderSettings: React.FC<ImageProviderSettingsProps> = ({ onBack })
     }
 
     const handleBack = () => {
-        if (containerRef.current) {
-            gsap.to(containerRef.current, {
-                x: '100%',
-                duration: 0.3,
-                ease: 'power2.in',
-                onComplete: onBack,
-            })
-        } else {
-            onBack()
-        }
+        onBack()
     }
 
     const handleSelect = async (providerId: string) => {
@@ -77,7 +65,13 @@ const ImageProviderSettings: React.FC<ImageProviderSettingsProps> = ({ onBack })
     const isAuto = imageProviderId === ''
 
     return (
-        <div className="provider-settings" ref={containerRef}>
+        <motion.div
+            className="provider-settings"
+            initial="hidden"
+            animate="visible"
+            exit="hidden"
+            variants={drawerVariants}
+        >
             <div className="provider-settings-header">
                 <button className="back-button" onClick={handleBack}>
                     <svg viewBox="0 0 24 24">
@@ -174,7 +168,7 @@ const ImageProviderSettings: React.FC<ImageProviderSettingsProps> = ({ onBack })
                     )}
                 </div>
             )}
-        </div>
+        </motion.div>
     )
 }
 

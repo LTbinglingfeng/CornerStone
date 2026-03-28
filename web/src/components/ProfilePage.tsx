@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { gsap } from 'gsap'
+import { AnimatePresence, motion } from 'motion/react'
 import { getUserInfo, updateUserInfo, uploadUserAvatar, getUserAvatarUrl, appendQueryParam } from '../services/api'
 import type { UserInfo } from '../types/chat'
 import Settings from './Settings'
+import { centerModalVariants, drawerVariants, overlayVariants } from '../utils/motion'
 import './ProfilePage.css'
 
 const ProfilePage: React.FC = () => {
@@ -15,36 +16,11 @@ const ProfilePage: React.FC = () => {
     const [userAvatarPreview, setUserAvatarPreview] = useState<string | null>(null)
     const [saving, setSaving] = useState(false)
     const [message, setMessage] = useState('')
-    const userModalRef = useRef<HTMLDivElement>(null)
     const userFileInputRef = useRef<HTMLInputElement>(null)
-    const settingsRef = useRef<HTMLDivElement>(null)
 
     useEffect(() => {
         loadUserInfo({ showLoading: true })
     }, [])
-
-    useEffect(() => {
-        if (showUserModal && userModalRef.current) {
-            gsap.fromTo(
-                userModalRef.current,
-                { opacity: 0, scale: 0.9 },
-                { opacity: 1, scale: 1, duration: 0.2, ease: 'power2.out' }
-            )
-        }
-    }, [showUserModal])
-
-    useEffect(() => {
-        if (showSettings && settingsRef.current) {
-            gsap.set(settingsRef.current, { x: '100%', force3D: true })
-            gsap.to(settingsRef.current, {
-                x: 0,
-                duration: 0.3,
-                ease: 'power2.out',
-                force3D: true,
-                overwrite: 'auto',
-            })
-        }
-    }, [showSettings])
 
     const loadUserInfo = async ({ showLoading }: { showLoading: boolean }) => {
         if (showLoading) setLoading(true)
@@ -75,19 +51,7 @@ const ProfilePage: React.FC = () => {
     }
 
     const handleCloseUserModal = () => {
-        if (userModalRef.current) {
-            gsap.to(userModalRef.current, {
-                opacity: 0,
-                scale: 0.9,
-                duration: 0.2,
-                ease: 'power2.in',
-                onComplete: () => {
-                    setShowUserModal(false)
-                },
-            })
-        } else {
-            setShowUserModal(false)
-        }
+        setShowUserModal(false)
     }
 
     const handleUserAvatarClick = () => {
@@ -131,22 +95,7 @@ const ProfilePage: React.FC = () => {
     }
 
     const handleCloseSettings = () => {
-        if (settingsRef.current) {
-            gsap.to(settingsRef.current, {
-                x: '100%',
-                duration: 0.3,
-                ease: 'power2.in',
-                force3D: true,
-                overwrite: 'auto',
-                onComplete: () => {
-                    setShowSettings(false)
-                    loadUserInfo({ showLoading: false })
-                },
-            })
-        } else {
-            setShowSettings(false)
-            loadUserInfo({ showLoading: false })
-        }
+        setShowSettings(false)
     }
 
     const avatarUrl = useMemo(() => {
@@ -214,85 +163,113 @@ const ProfilePage: React.FC = () => {
             )}
 
             {/* 设置二级界面 */}
-            {showSettings && (
-                <div className="settings-overlay" ref={settingsRef}>
-                    <Settings onBack={handleCloseSettings} />
-                </div>
-            )}
+            <AnimatePresence onExitComplete={() => void loadUserInfo({ showLoading: false })}>
+                {showSettings && (
+                    <motion.div
+                        className="settings-overlay"
+                        initial="hidden"
+                        animate="visible"
+                        exit="hidden"
+                        variants={drawerVariants}
+                    >
+                        <Settings onBack={handleCloseSettings} />
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             {/* 用户信息编辑弹窗 */}
-            {showUserModal && (
-                <div className="profile-modal-overlay" onClick={handleCloseUserModal}>
-                    <div className="profile-modal-card" ref={userModalRef} onClick={(e) => e.stopPropagation()}>
-                        <div className="profile-modal-header">
-                            <h3>编辑个人资料</h3>
-                            <button className="profile-modal-close" onClick={handleCloseUserModal}>
-                                <svg viewBox="0 0 24 24">
-                                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
-                                </svg>
-                            </button>
-                        </div>
-
-                        <div className="profile-modal-body">
-                            {/* 头像上传 */}
-                            <div className="user-avatar-upload" onClick={handleUserAvatarClick}>
-                                {userAvatarPreview ? (
-                                    <img src={userAvatarPreview} alt="Avatar" className="user-avatar-preview" />
-                                ) : (
-                                    <div className="user-avatar-placeholder">
-                                        <svg viewBox="0 0 24 24">
-                                            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
-                                        </svg>
-                                        <span>点击上传头像</span>
-                                    </div>
-                                )}
-                                <input
-                                    type="file"
-                                    ref={userFileInputRef}
-                                    onChange={handleUserFileChange}
-                                    accept="image/*"
-                                    style={{ display: 'none' }}
-                                />
+            <AnimatePresence>
+                {showUserModal && (
+                    <motion.div
+                        className="profile-modal-overlay"
+                        initial="hidden"
+                        animate="visible"
+                        exit="hidden"
+                        variants={overlayVariants}
+                        onClick={handleCloseUserModal}
+                    >
+                        <motion.div
+                            className="profile-modal-card"
+                            initial="hidden"
+                            animate="visible"
+                            exit="hidden"
+                            variants={centerModalVariants}
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="profile-modal-header">
+                                <h3>编辑个人资料</h3>
+                                <button className="profile-modal-close" onClick={handleCloseUserModal}>
+                                    <svg viewBox="0 0 24 24">
+                                        <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                                    </svg>
+                                </button>
                             </div>
 
-                            {/* 用户名输入 */}
-                            <div className="form-group">
-                                <label>昵称</label>
-                                <input
-                                    type="text"
-                                    value={editingUserInfo.username}
-                                    onChange={(e) =>
-                                        setEditingUserInfo({ ...editingUserInfo, username: e.target.value })
-                                    }
-                                    placeholder="输入你的昵称"
-                                />
+                            <div className="profile-modal-body">
+                                {/* 头像上传 */}
+                                <div className="user-avatar-upload" onClick={handleUserAvatarClick}>
+                                    {userAvatarPreview ? (
+                                        <img src={userAvatarPreview} alt="Avatar" className="user-avatar-preview" />
+                                    ) : (
+                                        <div className="user-avatar-placeholder">
+                                            <svg viewBox="0 0 24 24">
+                                                <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                                            </svg>
+                                            <span>点击上传头像</span>
+                                        </div>
+                                    )}
+                                    <input
+                                        type="file"
+                                        ref={userFileInputRef}
+                                        onChange={handleUserFileChange}
+                                        accept="image/*"
+                                        style={{ display: 'none' }}
+                                    />
+                                </div>
+
+                                {/* 用户名输入 */}
+                                <div className="form-group">
+                                    <label>昵称</label>
+                                    <input
+                                        type="text"
+                                        value={editingUserInfo.username}
+                                        onChange={(e) =>
+                                            setEditingUserInfo({ ...editingUserInfo, username: e.target.value })
+                                        }
+                                        placeholder="输入你的昵称"
+                                    />
+                                </div>
+
+                                {/* 自我描述输入 */}
+                                <div className="form-group">
+                                    <label>个人简介</label>
+                                    <textarea
+                                        value={editingUserInfo.description}
+                                        onChange={(e) =>
+                                            setEditingUserInfo({ ...editingUserInfo, description: e.target.value })
+                                        }
+                                        placeholder="介绍一下你自己..."
+                                        rows={4}
+                                    />
+                                </div>
                             </div>
 
-                            {/* 自我描述输入 */}
-                            <div className="form-group">
-                                <label>个人简介</label>
-                                <textarea
-                                    value={editingUserInfo.description}
-                                    onChange={(e) =>
-                                        setEditingUserInfo({ ...editingUserInfo, description: e.target.value })
-                                    }
-                                    placeholder="介绍一下你自己..."
-                                    rows={4}
-                                />
+                            <div className="profile-modal-footer">
+                                <button className="profile-modal-btn cancel" onClick={handleCloseUserModal}>
+                                    取消
+                                </button>
+                                <button
+                                    className="profile-modal-btn save"
+                                    onClick={handleSaveUserInfo}
+                                    disabled={saving}
+                                >
+                                    {saving ? '保存中...' : '保存'}
+                                </button>
                             </div>
-                        </div>
-
-                        <div className="profile-modal-footer">
-                            <button className="profile-modal-btn cancel" onClick={handleCloseUserModal}>
-                                取消
-                            </button>
-                            <button className="profile-modal-btn save" onClick={handleSaveUserInfo} disabled={saving}>
-                                {saving ? '保存中...' : '保存'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     )
 }

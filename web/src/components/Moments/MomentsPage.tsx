@@ -75,7 +75,10 @@ const MomentsPage: React.FC = () => {
 
     return (
         <div className="moments-page">
-            <div className="moments-header" style={backgroundImage ? { backgroundImage: `url(${backgroundImage})` } : undefined}>
+            <div
+                className="moments-header"
+                style={backgroundImage ? { backgroundImage: `url(${backgroundImage})` } : undefined}
+            >
                 <div className="moments-header-overlay" />
                 <button className="moments-bg-upload" type="button" onClick={handlePickBackground}>
                     更换背景
@@ -92,7 +95,9 @@ const MomentsPage: React.FC = () => {
                     {userAvatarSrc ? (
                         <img className="moments-user-avatar" src={userAvatarSrc} alt="avatar" />
                     ) : (
-                        <div className="moments-user-avatar moments-user-avatar-placeholder">{username.charAt(0).toUpperCase()}</div>
+                        <div className="moments-user-avatar moments-user-avatar-placeholder">
+                            {username.charAt(0).toUpperCase()}
+                        </div>
                     )}
                 </div>
             </div>
@@ -111,11 +116,15 @@ const MomentsPage: React.FC = () => {
             </div>
 
             {selectedMoment && (
-                <MomentDetail moment={selectedMoment} userInfo={userInfo} onClose={handleDetailClose} onRefresh={refresh} />
+                <MomentDetail
+                    moment={selectedMoment}
+                    userInfo={userInfo}
+                    onClose={handleDetailClose}
+                    onRefresh={refresh}
+                />
             )}
         </div>
     )
 }
 
 export default MomentsPage
-

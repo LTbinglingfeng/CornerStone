@@ -194,11 +194,14 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId }) => {
                 <div className="filter-result-hint">
                     共找到 {filteredMemories.length} 条记忆
                     {filteredMemories.length !== memories.length && ` (共 ${memories.length} 条)`}
-                    <button className="clear-filter-btn" onClick={() => {
-                        setSearchQuery('')
-                        setFilterSubject('all')
-                        setFilterCategory('all')
-                    }}>
+                    <button
+                        className="clear-filter-btn"
+                        onClick={() => {
+                            setSearchQuery('')
+                            setFilterSubject('all')
+                            setFilterCategory('all')
+                        }}
+                    >
                         清除筛选
                     </button>
                 </div>
@@ -482,7 +485,10 @@ function ImportMemoryModal({
         setImporting(true)
         try {
             const result = await memoryService.importMemories(promptId, previewData, mode)
-            showToast(`导入成功：${result.added} 条${result.invalid > 0 ? `，${result.invalid} 条无效` : ''}`, 'success')
+            showToast(
+                `导入成功：${result.added} 条${result.invalid > 0 ? `，${result.invalid} 条无效` : ''}`,
+                'success'
+            )
             onSuccess()
             onClose()
         } catch (error) {
@@ -516,7 +522,9 @@ function ImportMemoryModal({
                             <div className="import-preview-list">
                                 {previewData.slice(0, 5).map((m, i) => (
                                     <div key={i} className="import-preview-item">
-                                        <span className="memory-category">{categoryLabels[m.category] || m.category}</span>
+                                        <span className="memory-category">
+                                            {categoryLabels[m.category] || m.category}
+                                        </span>
                                         <span className="memory-text">{m.content}</span>
                                     </div>
                                 ))}

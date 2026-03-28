@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { gsap } from 'gsap'
+import { AnimatePresence, motion } from 'motion/react'
 import type { ChatMessage, ToolCall } from '../../types/chat'
 import {
     appendQueryParam,
@@ -30,6 +30,7 @@ import { SelectTextModal } from './components/SelectTextModal'
 import type { PacketStep } from './RedPacket'
 import { RedPacketComposer, RedPacketModal, collectOpenedRedPacketKeys, getRedPacketReceivedRecord } from './RedPacket'
 import { buildQuoteLineFromMessage, buildQuotedOutgoingContent, parseQuotedMessageContent } from './utils'
+import { drawerVariants } from '../../utils/motion'
 import './ChatDetail.css'
 
 const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, onSwitchSession }) => {
@@ -144,9 +145,6 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         setSelectTextState(null)
         setActiveRedPacket(null)
         setPacketStep('idle')
-        if (containerRef.current) {
-            gsap.set(containerRef.current, { x: '0%' })
-        }
     }, [sessionId])
 
     const scrollToBottom = () => {
@@ -375,16 +373,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         }
 
         abortRequest()
-        if (containerRef.current) {
-            gsap.to(containerRef.current, {
-                x: '100%',
-                duration: 0.3,
-                ease: 'power2.in',
-                onComplete: onBack,
-            })
-        } else {
-            onBack()
-        }
+        onBack()
     }
 
     const handlePatAssistant = () => {
@@ -554,7 +543,14 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     const assistantDisplayName = prompt?.name?.trim() || 'AI Assistant'
 
     return (
-        <div className="chat-detail" ref={containerRef}>
+        <motion.div
+            className="chat-detail"
+            ref={containerRef}
+            initial="hidden"
+            animate="visible"
+            exit="hidden"
+            variants={drawerVariants}
+        >
             <ChatHeader
                 title={session?.title || '对话'}
                 sending={sending}
@@ -652,22 +648,24 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
                 />
             )}
 
-            {showSettings && prompt && (
-                <ChatSettings
-                    prompt={prompt}
-                    currentSessionId={sessionId}
-                    currentSessionTitle={session?.title}
-                    onClose={() => setShowSettings(false)}
-                    onSwitchSession={(newSessionId) => {
-                        setShowSettings(false)
-                        onSwitchSession?.(newSessionId, prompt.id)
-                    }}
-                    onTitleUpdated={(newTitle) => {
-                        setSession((prev) => (prev ? { ...prev, title: newTitle } : prev))
-                    }}
-                    onExitChat={handleBack}
-                />
-            )}
+            <AnimatePresence>
+                {showSettings && prompt && (
+                    <ChatSettings
+                        prompt={prompt}
+                        currentSessionId={sessionId}
+                        currentSessionTitle={session?.title}
+                        onClose={() => setShowSettings(false)}
+                        onSwitchSession={(newSessionId) => {
+                            setShowSettings(false)
+                            onSwitchSession?.(newSessionId, prompt.id)
+                        }}
+                        onTitleUpdated={(newTitle) => {
+                            setSession((prev) => (prev ? { ...prev, title: newTitle } : prev))
+                        }}
+                        onExitChat={handleBack}
+                    />
+                )}
+            </AnimatePresence>
 
             {activeRedPacket && (
                 <RedPacketModal
@@ -687,7 +685,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
                 onClose={() => setRedPacketComposerOpen(false)}
                 onSend={handleRedPacketComposerSend}
             />
-        </div>
+        </motion.div>
     )
 }
 

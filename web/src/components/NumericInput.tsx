@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react'
 
 type NumericParseMode = 'int' | 'float'
 
-export interface NumericInputProps
-    extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'type' | 'value' | 'onChange'> {
+export interface NumericInputProps extends Omit<
+    React.InputHTMLAttributes<HTMLInputElement>,
+    'type' | 'value' | 'onChange'
+> {
     value: number | null | undefined
     onValueChange: (value: number) => void
     parseAs?: NumericParseMode
@@ -54,7 +56,13 @@ const parseNumberTextOnBlur = (raw: string, parseAs: NumericParseMode) => {
     return Number.isFinite(parsed) ? parsed : null
 }
 
-export const NumericInput: React.FC<NumericInputProps> = ({ value, onValueChange, parseAs = 'float', onBlur, ...rest }) => {
+export const NumericInput: React.FC<NumericInputProps> = ({
+    value,
+    onValueChange,
+    parseAs = 'float',
+    onBlur,
+    ...rest
+}) => {
     const [text, setText] = useState(() => (Number.isFinite(value as number) ? String(value) : ''))
 
     useEffect(() => {

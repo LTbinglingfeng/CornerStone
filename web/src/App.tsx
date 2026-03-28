@@ -1,5 +1,5 @@
-import { useState, useCallback, useRef, useEffect, useLayoutEffect } from 'react'
-import { gsap } from 'gsap'
+import { useState, useCallback, useRef, useEffect } from 'react'
+import { AnimatePresence, motion } from 'motion/react'
 import Header from './components/Header'
 import SearchBar from './components/SearchBar'
 import ChatList from './components/ChatList'
@@ -24,6 +24,7 @@ import {
 } from './services/api'
 import { splitAssistantMessageContent } from './components/ChatDetail/utils'
 import { formatNotificationBody, getNotificationsEnabled, isNotificationSupported } from './utils/notifications'
+import { slideTransition } from './utils/motion'
 import './App.css'
 
 const getErrorStatus = (error: unknown): number | undefined => {
@@ -46,7 +47,6 @@ function App() {
     const [searchQuery, setSearchQuery] = useState('')
     const [activeTab, setActiveTab] = useState<'chat' | 'contacts' | 'moments' | 'settings'>('chat')
     const [showPromptSelector, setShowPromptSelector] = useState(false)
-    const viewsContainerRef = useRef<HTMLDivElement>(null)
     const selectedSessionIdRef = useRef<string | null>(null)
     const selectSessionHandlerRef = useRef<(id: string, promptId?: string) => void>(() => {})
     const sessionUpdatedAtRef = useRef<Map<string, string>>(new Map())
@@ -94,61 +94,30 @@ function App() {
         }
     }
 
-    const setTabPosition = useCallback((index: number) => {
-        if (!viewsContainerRef.current) return
-        gsap.set(viewsContainerRef.current, { xPercent: -100 * index, force3D: true })
+    const handleOpenSessionFromNotification = useCallback((sessionId: string, promptId?: string) => {
+        setActiveTab('chat')
+        setSelectedSessionId(sessionId)
+        setSelectedPromptId(promptId)
     }, [])
-
-    const animateToTab = useCallback((index: number) => {
-        if (!viewsContainerRef.current) return
-        gsap.to(viewsContainerRef.current, {
-            xPercent: -100 * index,
-            duration: 0.3,
-            ease: 'power2.out',
-            force3D: true,
-            overwrite: 'auto',
-        })
-    }, [])
-
-    const handleOpenSessionFromNotification = useCallback(
-        (sessionId: string, promptId?: string) => {
-            animateToTab(0)
-            setActiveTab('chat')
-            setSelectedSessionId(sessionId)
-            setSelectedPromptId(promptId)
-        },
-        [animateToTab]
-    )
 
     const handleTabChange = useCallback(
         (tab: 'chat' | 'contacts' | 'moments' | 'settings') => {
             if (tab === activeTab) return
-            const newIndex = getTabIndex(tab)
-            animateToTab(newIndex)
             setActiveTab(tab)
         },
-        [activeTab, animateToTab]
+        [activeTab]
     )
 
-    const handleStartChatWithPrompt = useCallback(
-        (sessionId: string, promptId: string) => {
-            animateToTab(0)
-            setActiveTab('chat')
-            setSelectedSessionId(sessionId)
-            setSelectedPromptId(promptId)
-        },
-        [animateToTab]
-    )
+    const handleStartChatWithPrompt = useCallback((sessionId: string, promptId: string) => {
+        setActiveTab('chat')
+        setSelectedSessionId(sessionId)
+        setSelectedPromptId(promptId)
+    }, [])
 
     const handleSwitchSession = useCallback((sessionId: string, promptId?: string) => {
         setSelectedSessionId(sessionId)
         setSelectedPromptId(promptId)
     }, [])
-
-    // 初始化位置：在首帧绘制前设置，避免闪屏
-    useLayoutEffect(() => {
-        setTabPosition(getTabIndex(activeTab))
-    }, [setTabPosition])
 
     useEffect(() => {
         if (typeof window === 'undefined') return
@@ -256,7 +225,8 @@ function App() {
                 if (!('serviceWorker' in navigator)) return false
                 try {
                     const registration =
-                        (await navigator.serviceWorker.getRegistration()) || (await navigator.serviceWorker.register('/sw.js'))
+                        (await navigator.serviceWorker.getRegistration()) ||
+                        (await navigator.serviceWorker.register('/sw.js'))
 
                     if (typeof registration?.showNotification !== 'function') return false
 
@@ -331,7 +301,11 @@ function App() {
 
                     const previousUpdatedMs = Date.parse(previousUpdatedAt)
                     const lastMessageMs = Date.parse(lastMessage.timestamp)
-                    if (Number.isFinite(previousUpdatedMs) && Number.isFinite(lastMessageMs) && lastMessageMs <= previousUpdatedMs) {
+                    if (
+                        Number.isFinite(previousUpdatedMs) &&
+                        Number.isFinite(lastMessageMs) &&
+                        lastMessageMs <= previousUpdatedMs
+                    ) {
                         continue
                     }
 
@@ -436,10 +410,16 @@ function App() {
         )
     }
 
+    const activeTabIndex = getTabIndex(activeTab)
+
     return (
         <div className="app-wrapper">
             {/* 平行视窗容器 */}
-            <div className="views-container" ref={viewsContainerRef}>
+            <motion.div
+                className="views-container"
+                animate={{ x: `${-100 * activeTabIndex}%` }}
+                transition={slideTransition}
+            >
                 {/* 聊天页面 */}
                 <div className="view-page">
                     <div className="app-container">
@@ -469,23 +449,30 @@ function App() {
                 <div className="view-page">
                     <ProfilePage />
                 </div>
-            </div>
+            </motion.div>
 
             {/* 底部导航栏（固定不动） */}
             <BottomNav activeTab={activeTab} onTabChange={handleTabChange} />
 
             {/* 聊天详情页面（覆盖层） */}
-            {selectedSessionId && (
-                <ChatDetail
-                    sessionId={selectedSessionId}
-                    promptId={selectedPromptId}
-                    onBack={handleBack}
-                    onSwitchSession={handleSwitchSession}
-                />
-            )}
+            <AnimatePresence>
+                {selectedSessionId && (
+                    <ChatDetail
+                        key="chat-detail"
+                        sessionId={selectedSessionId}
+                        promptId={selectedPromptId}
+                        onBack={handleBack}
+                        onSwitchSession={handleSwitchSession}
+                    />
+                )}
+            </AnimatePresence>
 
             {/* Prompt 选择器 */}
-            {showPromptSelector && <PromptSelector onSelect={handlePromptSelect} onClose={handlePromptSelectorClose} />}
+            <AnimatePresence>
+                {showPromptSelector && (
+                    <PromptSelector onSelect={handlePromptSelect} onClose={handlePromptSelectorClose} />
+                )}
+            </AnimatePresence>
         </div>
     )
 }

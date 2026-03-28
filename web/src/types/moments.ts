@@ -57,4 +57,3 @@ export interface AddCommentRequest {
     content: string
     reply_to?: string
 }
-

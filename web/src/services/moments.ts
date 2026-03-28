@@ -55,11 +55,14 @@ export async function deleteMoment(id: string): Promise<boolean> {
 
 export async function likeMoment(momentId: string, req: AddLikeRequest): Promise<boolean> {
     try {
-        const data = await apiFetchJson<ApiResponse<boolean>>(`${API_BASE}/moments/${encodeURIComponent(momentId)}/like`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(req),
-        })
+        const data = await apiFetchJson<ApiResponse<boolean>>(
+            `${API_BASE}/moments/${encodeURIComponent(momentId)}/like`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(req),
+            }
+        )
         return data.success
     } catch {
         return false
@@ -80,11 +83,14 @@ export async function unlikeMoment(momentId: string, userType: string, userId: s
 
 export async function addComment(momentId: string, req: AddCommentRequest): Promise<Comment | null> {
     try {
-        const data = await apiFetchJson<ApiResponse<Comment>>(`${API_BASE}/moments/${encodeURIComponent(momentId)}/comments`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(req),
-        })
+        const data = await apiFetchJson<ApiResponse<Comment>>(
+            `${API_BASE}/moments/${encodeURIComponent(momentId)}/comments`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(req),
+            }
+        )
         return data.success && data.data ? data.data : null
     } catch {
         return null
@@ -141,4 +147,3 @@ export async function uploadBackground(file: File): Promise<string | null> {
         return null
     }
 }
-

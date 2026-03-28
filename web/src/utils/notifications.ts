@@ -35,4 +35,3 @@ export function formatNotificationBody(content: string, maxLength = 200): string
     if (normalized.length <= maxLength) return normalized
     return normalized.slice(0, maxLength) + '...'
 }
-

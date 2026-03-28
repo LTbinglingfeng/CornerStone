@@ -1,9 +1,10 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
-import { gsap } from 'gsap'
+import { motion } from 'motion/react'
 import type { ChatMessage, Prompt, UserInfo } from '../../../types/chat'
 import type { ActiveRedPacketState, DisplayItem } from '../types'
 import type { PacketStep } from '../RedPacket'
 import { PatBanner, RedPacketBubble, RedPacketReceivedBanner, derivePacketKeys } from '../RedPacket'
+import { bubbleVariants } from '../../../utils/motion'
 import { MessageAvatar } from './MessageAvatar'
 import { MessageBubble } from './MessageBubble'
 
@@ -86,38 +87,18 @@ export const MessageList: React.FC<MessageListProps> = ({
 
     useEffect(() => {
         if (loading) return
-        const list = listRef.current
-        if (!list) return
 
         if (!bubbleKeysSeededRef.current) {
             displayItems.forEach((item) => animatedBubbleKeysRef.current.add(item.key))
             bubbleKeysSeededRef.current = true
             return
         }
-
-        const escapeForSelector = (value: string) => {
-            if (typeof window !== 'undefined' && window.CSS && typeof window.CSS.escape === 'function') {
-                return window.CSS.escape(value)
-            }
-            return value.replace(/[\"\\\\]/g, '\\\\$&')
-        }
-
-        displayItems.forEach((item) => {
-            if (animatedBubbleKeysRef.current.has(item.key)) return
-            animatedBubbleKeysRef.current.add(item.key)
-
-            if (item.type !== 'text' && item.type !== 'red-packet') return
-            const target = list.querySelector<HTMLElement>(`[data-bubble-key="${escapeForSelector(item.key)}"]`)
-            if (!target) return
-
-            gsap.killTweensOf(target)
-            gsap.fromTo(
-                target,
-                { opacity: 0, y: 12 },
-                { opacity: 1, y: 0, duration: 0.25, ease: 'power2.out', force3D: true }
-            )
-        })
     }, [displayItems, listRef, loading])
+
+    useEffect(() => {
+        if (loading || !bubbleKeysSeededRef.current) return
+        displayItems.forEach((item) => animatedBubbleKeysRef.current.add(item.key))
+    }, [displayItems, loading])
 
     const handleScroll = () => {
         const list = listRef.current
@@ -129,6 +110,12 @@ export const MessageList: React.FC<MessageListProps> = ({
         if (!hasMoreBefore || loadingOlder) return
         if (list.scrollTop > 120) return
         void onLoadOlder()
+    }
+
+    const shouldAnimateBubble = (item: DisplayItem) => {
+        if (!bubbleKeysSeededRef.current) return false
+        if (item.type !== 'text' && item.type !== 'red-packet') return false
+        return !animatedBubbleKeysRef.current.has(item.key)
     }
 
     return (
@@ -143,115 +130,121 @@ export const MessageList: React.FC<MessageListProps> = ({
                         <div className="message-load-more">{loadingOlder ? '加载中...' : '继续上滑加载更多'}</div>
                     )}
                     {displayItems.map((item) => {
-                    const isRedPacket = item.type === 'red-packet'
-                    const isRedPacketReceivedBanner = item.type === 'red-packet-received-banner'
-                    const isPatBanner = item.type === 'pat-banner'
-                    const isRecallBanner = item.type === 'recall-banner'
+                        const isRedPacket = item.type === 'red-packet'
+                        const isRedPacketReceivedBanner = item.type === 'red-packet-received-banner'
+                        const isPatBanner = item.type === 'pat-banner'
+                        const isRecallBanner = item.type === 'recall-banner'
 
-                    if (isRedPacketReceivedBanner) {
-                        return (
-                            <div key={item.key} className="message-item pat-banner-item">
-                                <RedPacketReceivedBanner
-                                    toolCall={item.toolCall}
-                                    messages={messages}
-                                    userInfo={userInfo}
-                                    prompt={prompt}
-                                />
-                            </div>
-                        )
-                    }
-
-                    if (isPatBanner) {
-                        return (
-                            <div key={item.key} className="message-item pat-banner-item">
-                                <PatBanner toolCall={item.toolCall} prompt={prompt} />
-                            </div>
-                        )
-                    }
-
-                    if (isRecallBanner) {
-                        return (
-                            <div key={item.key} className="message-item pat-banner-item">
-                                <div className="pat-banner">你撤回了一条消息</div>
-                            </div>
-                        )
-                    }
-
-                    const role: 'user' | 'assistant' = item.role === 'user' ? 'user' : 'assistant'
-                    const leftAvatar =
-                        role === 'assistant' ? (
-                            <MessageAvatar
-                                role="assistant"
-                                avatarSrc={assistantAvatarSrc}
-                                placeholder={assistantPlaceholder}
-                                onDoubleClick={(e) => {
-                                    e.stopPropagation()
-                                    onPatAssistant()
-                                }}
-                                title="双击拍一拍"
-                            />
-                        ) : null
-                    const rightAvatar =
-                        role === 'user' ? (
-                            <MessageAvatar role="user" avatarSrc={userAvatarSrc} placeholder={userPlaceholder} />
-                        ) : null
-
-                    const content = isRedPacket ? (
-                        (() => {
-                            const { primaryKey, legacyKey } = derivePacketKeys(item.toolCall, item.key)
-                            const opened = openedRedPacketKeys.has(primaryKey) || openedRedPacketKeys.has(legacyKey)
-                            const packetKey = openedRedPacketKeys.has(legacyKey) ? legacyKey : primaryKey
-                            const senderName =
-                                role === 'user' ? userDisplayName || '我' : assistantDisplayName || 'AI Assistant'
-                            const senderAvatarSrc = role === 'user' ? userAvatarSrc : assistantAvatarSrc
-                            const initialStep: PacketStep = role === 'user' || opened ? 'opened' : 'idle'
+                        if (isRedPacketReceivedBanner) {
                             return (
-                                <RedPacketBubble
-                                    toolCall={item.toolCall}
-                                    rawKey={item.key}
-                                    role={role}
-                                    opened={opened}
-                                    senderName={senderName}
-                                    senderAvatarSrc={senderAvatarSrc}
-                                    onClick={(params) => {
-                                        onOpenRedPacket(
-                                            {
-                                                params,
-                                                packetKey,
-                                                senderRole: role,
-                                                senderName,
-                                                senderAvatarSrc: senderAvatarSrc || null,
-                                            },
-                                            initialStep
-                                        )
-                                    }}
-                                />
+                                <div key={item.key} className="message-item pat-banner-item">
+                                    <RedPacketReceivedBanner
+                                        toolCall={item.toolCall}
+                                        messages={messages}
+                                        userInfo={userInfo}
+                                        prompt={prompt}
+                                    />
+                                </div>
                             )
-                        })()
-                    ) : (
-                        <MessageBubble
-                            item={item}
-                            getImageUrl={getImageUrl}
-                            onContextMenu={onContextMenu}
-                            onPointerDown={onPointerDown}
-                            onPointerMove={onPointerMove}
-                            onPointerUp={onPointerUp}
-                            onPointerCancel={onPointerCancel}
-                            onPointerLeave={onPointerLeave}
-                        />
-                    )
+                        }
 
-                    return (
-                        <div
-                            key={item.key}
-                            className={`message-item ${item.role} ${isRedPacket ? 'red-packet-item' : ''}`}
-                        >
-                            {leftAvatar}
-                            {content}
-                            {rightAvatar}
-                        </div>
-                    )
-                })}
+                        if (isPatBanner) {
+                            return (
+                                <div key={item.key} className="message-item pat-banner-item">
+                                    <PatBanner toolCall={item.toolCall} prompt={prompt} />
+                                </div>
+                            )
+                        }
+
+                        if (isRecallBanner) {
+                            return (
+                                <div key={item.key} className="message-item pat-banner-item">
+                                    <div className="pat-banner">你撤回了一条消息</div>
+                                </div>
+                            )
+                        }
+
+                        const role: 'user' | 'assistant' = item.role === 'user' ? 'user' : 'assistant'
+                        const leftAvatar =
+                            role === 'assistant' ? (
+                                <MessageAvatar
+                                    role="assistant"
+                                    avatarSrc={assistantAvatarSrc}
+                                    placeholder={assistantPlaceholder}
+                                    onDoubleClick={(e) => {
+                                        e.stopPropagation()
+                                        onPatAssistant()
+                                    }}
+                                    title="双击拍一拍"
+                                />
+                            ) : null
+                        const rightAvatar =
+                            role === 'user' ? (
+                                <MessageAvatar role="user" avatarSrc={userAvatarSrc} placeholder={userPlaceholder} />
+                            ) : null
+
+                        const content = isRedPacket ? (
+                            (() => {
+                                const { primaryKey, legacyKey } = derivePacketKeys(item.toolCall, item.key)
+                                const opened = openedRedPacketKeys.has(primaryKey) || openedRedPacketKeys.has(legacyKey)
+                                const packetKey = openedRedPacketKeys.has(legacyKey) ? legacyKey : primaryKey
+                                const senderName =
+                                    role === 'user' ? userDisplayName || '我' : assistantDisplayName || 'AI Assistant'
+                                const senderAvatarSrc = role === 'user' ? userAvatarSrc : assistantAvatarSrc
+                                const initialStep: PacketStep = role === 'user' || opened ? 'opened' : 'idle'
+                                return (
+                                    <RedPacketBubble
+                                        toolCall={item.toolCall}
+                                        rawKey={item.key}
+                                        role={role}
+                                        opened={opened}
+                                        senderName={senderName}
+                                        senderAvatarSrc={senderAvatarSrc}
+                                        onClick={(params) => {
+                                            onOpenRedPacket(
+                                                {
+                                                    params,
+                                                    packetKey,
+                                                    senderRole: role,
+                                                    senderName,
+                                                    senderAvatarSrc: senderAvatarSrc || null,
+                                                },
+                                                initialStep
+                                            )
+                                        }}
+                                    />
+                                )
+                            })()
+                        ) : (
+                            <MessageBubble
+                                item={item}
+                                getImageUrl={getImageUrl}
+                                onContextMenu={onContextMenu}
+                                onPointerDown={onPointerDown}
+                                onPointerMove={onPointerMove}
+                                onPointerUp={onPointerUp}
+                                onPointerCancel={onPointerCancel}
+                                onPointerLeave={onPointerLeave}
+                            />
+                        )
+
+                        const className = `message-item ${item.role} ${isRedPacket ? 'red-packet-item' : ''}`
+                        const animateBubble = shouldAnimateBubble(item)
+
+                        return (
+                            <motion.div
+                                key={item.key}
+                                className={className}
+                                initial={animateBubble ? 'hidden' : false}
+                                animate="visible"
+                                variants={bubbleVariants}
+                            >
+                                {leftAvatar}
+                                {content}
+                                {rightAvatar}
+                            </motion.div>
+                        )
+                    })}
                 </>
             )}
         </div>
