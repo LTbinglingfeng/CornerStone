@@ -876,7 +876,7 @@ func (s *ClawBotService) getReplyWaitWindow() (string, time.Duration) {
 }
 
 func (s *ClawBotService) sendTextReply(ctx context.Context, cfg config.ClawBotConfig, userID, text string) error {
-	chunks := splitClawBotReply(text, clawBotReplyChunkMaxRune)
+	chunks := splitClawBotReplyMessages(text, clawBotReplyChunkMaxRune)
 	if len(chunks) == 0 {
 		return nil
 	}
@@ -1302,6 +1302,26 @@ func splitClawBotReply(text string, maxRunes int) []string {
 		}
 	}
 	return chunks
+}
+
+func splitClawBotReplyMessages(text string, maxRunes int) []string {
+	segments := splitAssistantMessageContent(text)
+	if len(segments) == 0 {
+		return splitClawBotReply(text, maxRunes)
+	}
+
+	messages := make([]string, 0, len(segments))
+	for _, segment := range segments {
+		chunks := splitClawBotReply(segment, maxRunes)
+		if len(chunks) == 0 {
+			continue
+		}
+		messages = append(messages, chunks...)
+	}
+	if len(messages) == 0 {
+		return splitClawBotReply(text, maxRunes)
+	}
+	return messages
 }
 
 func maskClawBotSecret(value string) string {
