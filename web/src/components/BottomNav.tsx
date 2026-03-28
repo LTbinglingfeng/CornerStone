@@ -1,8 +1,9 @@
+import type { AppTab } from '../utils/routes'
 import './BottomNav.css'
 
 interface BottomNavProps {
-    activeTab: 'chat' | 'contacts' | 'moments' | 'settings'
-    onTabChange: (tab: 'chat' | 'contacts' | 'moments' | 'settings') => void
+    activeTab: AppTab
+    onTabChange: (tab: AppTab) => void
 }
 
 const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange }) => {
@@ -38,10 +39,7 @@ const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange }) => {
                 </div>
                 <span className="nav-label">朋友圈</span>
             </div>
-            <div
-                className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`}
-                onClick={() => onTabChange('settings')}
-            >
+            <div className={`nav-item ${activeTab === 'me' ? 'active' : ''}`} onClick={() => onTabChange('me')}>
                 <div className="nav-icon">
                     <svg viewBox="0 0 24 24">
                         <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />

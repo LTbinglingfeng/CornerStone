@@ -762,10 +762,10 @@ func (cm *ChatManager) RecallMessageByIndex(sessionID string, index int) error {
 	return cm.saveSession(record)
 }
 
-// DeleteTrailingAssistantBatch 删除尾部连续的 assistant 消息批次（用于重新生成）。
-// 仅当会话末尾是 assistant 时才删除；尾部是 user 时不删除任何消息。
+// DeleteTrailingResponseBatch 删除最后一条 user 之后的整段尾部响应（用于重新生成）。
+// 仅当会话末尾不是 user 时才删除；尾部是 user 时不删除任何消息。
 // 返回被删除的消息条数。
-func (cm *ChatManager) DeleteTrailingAssistantBatch(sessionID string) (int, error) {
+func (cm *ChatManager) DeleteTrailingResponseBatch(sessionID string) (int, error) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
@@ -779,13 +779,13 @@ func (cm *ChatManager) DeleteTrailingAssistantBatch(sessionID string) (int, erro
 	}
 
 	n := len(record.Messages)
-	if n == 0 || record.Messages[n-1].Role != "assistant" {
+	if n == 0 || record.Messages[n-1].Role == "user" {
 		return 0, nil
 	}
 
-	// 从尾部向前扫描连续 assistant 的起始位置
-	cutIndex := n - 1
-	for cutIndex > 0 && record.Messages[cutIndex-1].Role == "assistant" {
+	// 从尾部向前扫描，删除最后一条 user 之后的整段响应消息。
+	cutIndex := n
+	for cutIndex > 0 && record.Messages[cutIndex-1].Role != "user" {
 		cutIndex--
 	}
 
@@ -796,6 +796,11 @@ func (cm *ChatManager) DeleteTrailingAssistantBatch(sessionID string) (int, erro
 		return 0, err
 	}
 	return deleted, nil
+}
+
+// DeleteTrailingAssistantBatch 兼容旧调用，语义上等价于删除最后一轮尾部响应。
+func (cm *ChatManager) DeleteTrailingAssistantBatch(sessionID string) (int, error) {
+	return cm.DeleteTrailingResponseBatch(sessionID)
 }
 
 // DeleteMessageByIndex 删除指定索引的消息

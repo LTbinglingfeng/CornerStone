@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import Header from './components/Header'
 import SearchBar from './components/SearchBar'
 import ChatList from './components/ChatList'
@@ -25,6 +26,7 @@ import {
 import { splitAssistantMessageContent } from './components/ChatDetail/utils'
 import { formatNotificationBody, getNotificationsEnabled, isNotificationSupported } from './utils/notifications'
 import { slideTransition } from './utils/motion'
+import { buildChatRoute, getRouteState, normalizePathname, tabOrder, tabRoutes } from './utils/routes'
 import './App.css'
 
 const getErrorStatus = (error: unknown): number | undefined => {
@@ -38,103 +40,109 @@ const getErrorStatus = (error: unknown): number | undefined => {
 }
 
 function App() {
+    const location = useLocation()
+    const navigate = useNavigate()
+    const routeState = getRouteState(location.pathname)
+    const activeTab = routeState?.activeTab || 'chat'
+    const activeTabIndex = tabOrder.indexOf(activeTab)
+    const selectedSessionId = routeState?.activeSessionId || null
+    const selectedPromptId = new URLSearchParams(location.search).get('promptId') || undefined
     const [authMode, setAuthMode] = useState<'loading' | 'setup' | 'login' | 'ready'>('loading')
     const [authUsername, setAuthUsername] = useState<string | null>(null)
     const [authLoading, setAuthLoading] = useState(false)
     const [refreshKey, setRefreshKey] = useState(0)
-    const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
-    const [selectedPromptId, setSelectedPromptId] = useState<string | undefined>(undefined)
     const [searchQuery, setSearchQuery] = useState('')
-    const [activeTab, setActiveTab] = useState<'chat' | 'contacts' | 'moments' | 'settings'>('chat')
     const [showPromptSelector, setShowPromptSelector] = useState(false)
     const selectedSessionIdRef = useRef<string | null>(null)
-    const selectSessionHandlerRef = useRef<(id: string, promptId?: string) => void>(() => {})
+    const openSessionHandlerRef = useRef<(id: string, promptId?: string) => void>(() => {})
     const sessionUpdatedAtRef = useRef<Map<string, string>>(new Map())
     const notificationPollingRef = useRef({ running: false, enabled: false })
 
-    const handleSelectSession = useCallback((id: string, promptId?: string) => {
-        setSelectedSessionId(id)
-        setSelectedPromptId(promptId)
-    }, [])
+    const openSession = useCallback(
+        (id: string, promptId?: string) => {
+            navigate(buildChatRoute(id, promptId))
+        },
+        [navigate]
+    )
+
+    const handleSelectSession = useCallback(
+        (id: string, promptId?: string) => {
+            openSession(id, promptId)
+        },
+        [openSession]
+    )
 
     const handleBack = useCallback(() => {
-        setSelectedSessionId(null)
-        setSelectedPromptId(undefined)
+        navigate(tabRoutes.chat)
         setRefreshKey((k) => k + 1)
-    }, [])
+    }, [navigate])
 
     const handleCreateSession = useCallback(async () => {
         setShowPromptSelector(true)
     }, [])
 
-    const handlePromptSelect = useCallback(async (promptId: string, promptName: string) => {
-        setShowPromptSelector(false)
-        const session = await createSession(promptName, promptId)
-        if (session) {
-            setSelectedSessionId(session.id)
-            setSelectedPromptId(promptId)
-        }
-    }, [])
+    const handlePromptSelect = useCallback(
+        async (promptId: string, promptName: string) => {
+            setShowPromptSelector(false)
+            const session = await createSession(promptName, promptId)
+            if (session) {
+                openSession(session.id, promptId)
+            }
+        },
+        [openSession]
+    )
 
     const handlePromptSelectorClose = useCallback(() => {
         setShowPromptSelector(false)
     }, [])
 
-    // 获取tab对应的索引
-    const getTabIndex = (tab: 'chat' | 'contacts' | 'moments' | 'settings') => {
-        switch (tab) {
-            case 'chat':
-                return 0
-            case 'contacts':
-                return 1
-            case 'moments':
-                return 2
-            case 'settings':
-                return 3
-        }
-    }
-
-    const handleOpenSessionFromNotification = useCallback((sessionId: string, promptId?: string) => {
-        setActiveTab('chat')
-        setSelectedSessionId(sessionId)
-        setSelectedPromptId(promptId)
-    }, [])
-
-    const handleTabChange = useCallback(
-        (tab: 'chat' | 'contacts' | 'moments' | 'settings') => {
-            if (tab === activeTab) return
-            setActiveTab(tab)
+    const handleOpenSessionFromNotification = useCallback(
+        (sessionId: string, promptId?: string) => {
+            navigate(buildChatRoute(sessionId, promptId))
         },
-        [activeTab]
+        [navigate]
     )
 
-    const handleStartChatWithPrompt = useCallback((sessionId: string, promptId: string) => {
-        setActiveTab('chat')
-        setSelectedSessionId(sessionId)
-        setSelectedPromptId(promptId)
-    }, [])
+    const handleTabChange = useCallback(
+        (tab: 'chat' | 'contacts' | 'moments' | 'me') => {
+            const nextPath = tabRoutes[tab]
+            if (normalizePathname(location.pathname) === nextPath) return
+            navigate(nextPath)
+        },
+        [location.pathname, navigate]
+    )
 
-    const handleSwitchSession = useCallback((sessionId: string, promptId?: string) => {
-        setSelectedSessionId(sessionId)
-        setSelectedPromptId(promptId)
-    }, [])
+    const handleStartChatWithPrompt = useCallback(
+        (sessionId: string, promptId: string) => {
+            openSession(sessionId, promptId)
+        },
+        [openSession]
+    )
+
+    const handleSwitchSession = useCallback(
+        (sessionId: string, promptId?: string) => {
+            openSession(sessionId, promptId)
+        },
+        [openSession]
+    )
 
     useEffect(() => {
         if (typeof window === 'undefined') return
 
-        const params = new URLSearchParams(window.location.search)
+        const params = new URLSearchParams(location.search)
         const sessionId = params.get('sessionId')
         if (!sessionId) return
-        const promptId = params.get('promptId') || undefined
-
-        handleOpenSessionFromNotification(sessionId, promptId)
 
         params.delete('sessionId')
-        params.delete('promptId')
-        const search = params.toString()
-        const nextUrl = `${window.location.pathname}${search ? `?${search}` : ''}${window.location.hash}`
-        window.history.replaceState(null, '', nextUrl)
-    }, [handleOpenSessionFromNotification])
+        navigate(
+            {
+                pathname: `${tabRoutes.chat}/${encodeURIComponent(sessionId)}`,
+                search: params.toString() ? `?${params.toString()}` : '',
+                hash: location.hash,
+            },
+            { replace: true }
+        )
+    }, [location.hash, location.search, navigate])
 
     useEffect(() => {
         if (!('serviceWorker' in navigator)) return
@@ -198,8 +206,30 @@ function App() {
     }, [selectedSessionId])
 
     useEffect(() => {
-        selectSessionHandlerRef.current = handleSelectSession
-    }, [handleSelectSession])
+        openSessionHandlerRef.current = openSession
+    }, [openSession])
+
+    useEffect(() => {
+        if (authMode !== 'ready') return
+        if (new URLSearchParams(location.search).has('sessionId')) return
+
+        const normalizedPath = normalizePathname(location.pathname)
+        if (normalizedPath !== location.pathname) {
+            navigate(
+                {
+                    pathname: normalizedPath,
+                    search: location.search,
+                    hash: location.hash,
+                },
+                { replace: true }
+            )
+            return
+        }
+
+        if (normalizedPath === '/' || routeState === null) {
+            navigate(tabRoutes.chat, { replace: true })
+        }
+    }, [authMode, location.hash, location.pathname, location.search, navigate, routeState])
 
     useEffect(() => {
         if (authMode !== 'ready') return
@@ -255,7 +285,7 @@ function App() {
                     notification.onclick = () => {
                         notification.close()
                         window.focus()
-                        selectSessionHandlerRef.current(sessionId, options?.promptId)
+                        openSessionHandlerRef.current(sessionId, options?.promptId)
                     }
                     window.setTimeout(() => notification.close(), 8000)
                 } catch {
@@ -409,8 +439,6 @@ function App() {
             </div>
         )
     }
-
-    const activeTabIndex = getTabIndex(activeTab)
 
     return (
         <div className="app-wrapper">

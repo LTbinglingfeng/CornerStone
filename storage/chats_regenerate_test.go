@@ -156,6 +156,70 @@ func TestDeleteTrailingAssistantBatch_MixedConversation(t *testing.T) {
 	}
 }
 
+func TestDeleteTrailingAssistantBatch_RemovesTrailingNonUserBatch(t *testing.T) {
+	cm := newTestChatManager(t)
+	sid := "test-trailing-non-user"
+	if _, err := cm.CreateSession(sid, "t", "", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now()
+	err := cm.AddMessages(sid, []ChatMessage{
+		{Role: "user", Content: "user_msg", Timestamp: now},
+		{Role: "assistant", Content: "assistant_msg", Timestamp: now.Add(time.Millisecond)},
+		{Role: "tool", Content: "tool_msg", Timestamp: now.Add(2 * time.Millisecond)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	deleted, err := cm.DeleteTrailingAssistantBatch(sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted != 2 {
+		t.Fatalf("expected 2 deleted, got %d", deleted)
+	}
+
+	record, _ := cm.GetSession(sid)
+	if len(record.Messages) != 1 {
+		t.Fatalf("expected 1 message remaining, got %d", len(record.Messages))
+	}
+	if record.Messages[0].Role != "user" {
+		t.Fatalf("expected remaining message to be user, got %s", record.Messages[0].Role)
+	}
+}
+
+func TestDeleteTrailingResponseBatch_NoUserDeletesEntireTail(t *testing.T) {
+	cm := newTestChatManager(t)
+	sid := "test-no-user"
+	if _, err := cm.CreateSession(sid, "t", "", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now()
+	err := cm.AddMessages(sid, []ChatMessage{
+		{Role: "assistant", Content: "assistant_msg", Timestamp: now},
+		{Role: "tool", Content: "tool_msg", Timestamp: now.Add(time.Millisecond)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	deleted, err := cm.DeleteTrailingResponseBatch(sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted != 2 {
+		t.Fatalf("expected 2 deleted, got %d", deleted)
+	}
+
+	record, _ := cm.GetSession(sid)
+	if len(record.Messages) != 0 {
+		t.Fatalf("expected empty session, got %d messages", len(record.Messages))
+	}
+}
+
 func TestDeleteTrailingAssistantBatch_NonExistentSession(t *testing.T) {
 	cm := newTestChatManager(t)
 	_, err := cm.DeleteTrailingAssistantBatch("nonexistent")

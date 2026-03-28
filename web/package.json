@@ -13,7 +13,8 @@
   "dependencies": {
     "motion": "^12.38.0",
     "react": "^19.2.3",
-    "react-dom": "^19.2.3"
+    "react-dom": "^19.2.3",
+    "react-router-dom": "^7.13.2"
   },
   "devDependencies": {
     "@types/react": "^19.2.7",
