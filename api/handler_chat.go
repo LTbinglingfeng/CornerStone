@@ -29,6 +29,46 @@ type ChatMessageRequest struct {
 	Regenerate  bool             `json:"regenerate,omitempty"` // 重新生成最后一轮 AI 响应
 }
 
+func buildChatUserContext(userInfo *storage.UserInfo) string {
+	if userInfo == nil {
+		return ""
+	}
+
+	var sections []string
+	if userInfo.Username != "" {
+		sections = append(sections, fmt.Sprintf("用户名: %s", userInfo.Username))
+	}
+	if userInfo.Description != "" {
+		sections = append(sections, fmt.Sprintf("用户自我描述: %s", userInfo.Description))
+	}
+	if len(sections) == 0 {
+		return ""
+	}
+
+	return "[用户信息]\n" + strings.Join(sections, "\n")
+}
+
+func buildChatSystemPrompt(systemPrompt, userContext, persona string, extraSections ...string) string {
+	sections := make([]string, 0, 3+len(extraSections))
+
+	if trimmed := strings.TrimSpace(systemPrompt); trimmed != "" {
+		sections = append(sections, trimmed)
+	}
+	if trimmed := strings.TrimSpace(userContext); trimmed != "" {
+		sections = append(sections, trimmed)
+	}
+	if trimmed := strings.TrimSpace(persona); trimmed != "" {
+		sections = append(sections, "[人设]\n"+trimmed)
+	}
+	for _, extra := range extraSections {
+		if trimmed := strings.TrimSpace(extra); trimmed != "" {
+			sections = append(sections, trimmed)
+		}
+	}
+
+	return strings.TrimSpace(strings.Join(sections, "\n\n"))
+}
+
 func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		h.jsonResponse(w, http.StatusMethodNotAllowed, Response{Success: false, Error: "Method not allowed"})
@@ -60,17 +100,7 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 	systemPrompt := h.configManager.GetSystemPrompt()
 
 	// 获取用户信息，构建用户上下文
-	userInfo := h.userManager.Get()
-	var userContext string
-	if userInfo.Username != "" || userInfo.Description != "" {
-		userContext = "[用户信息]\n"
-		if userInfo.Username != "" {
-			userContext += fmt.Sprintf("用户名: %s\n", userInfo.Username)
-		}
-		if userInfo.Description != "" {
-			userContext += fmt.Sprintf("用户自我描述: %s\n", userInfo.Description)
-		}
-	}
+	userContext := buildChatUserContext(h.userManager.Get())
 
 	// 生成或使用会话ID
 	sessionID := req.SessionID
@@ -161,32 +191,11 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 	// 构建消息，顺序: 系统提示词 -> 用户信息 -> 人设
 	messages := make([]client.Message, 0, len(historyMessages)+1)
 
-	// 合并: 系统提示词在最前 + 用户信息在中间 + 人设在最后
-	var fullSystemPrompt string
-	if systemPrompt != "" {
-		fullSystemPrompt = systemPrompt + "\n\n"
-	}
-	if userContext != "" {
-		fullSystemPrompt += userContext + "\n"
-	}
-	if persona != "" {
-		fullSystemPrompt += "[人设]\n" + persona
-	}
-
-	// 去除末尾多余换行
-	fullSystemPrompt = strings.TrimSpace(fullSystemPrompt)
-
 	redPacketGuide := strings.TrimSpace(`[红包交互]
 当消息中出现 [用户发红包] 时，表示用户给你发了红包，并会提供 packet_key/amount/message。
 如果你决定领取，请调用工具 red_packet_received 并传入 packet_key。`)
 
-	if redPacketGuide != "" {
-		if fullSystemPrompt == "" {
-			fullSystemPrompt = redPacketGuide
-		} else {
-			fullSystemPrompt = strings.TrimSpace(fullSystemPrompt + "\n\n" + redPacketGuide)
-		}
-	}
+	fullSystemPrompt := buildChatSystemPrompt(systemPrompt, userContext, persona, redPacketGuide)
 
 	if fullSystemPrompt != "" {
 		messages = append(messages, client.Message{

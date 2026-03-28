@@ -6,6 +6,8 @@ import (
 	"cornerstone/config"
 	"cornerstone/logging"
 	"cornerstone/storage"
+	"crypto/sha1"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"sync"
@@ -52,8 +54,8 @@ type clawBotQRCodeSession struct {
 	CreatedAt        time.Time
 }
 
-type clawBotConversation struct {
-	Messages   []client.Message
+type clawBotActiveSession struct {
+	SessionID  string
 	LastActive time.Time
 }
 
@@ -61,11 +63,11 @@ type ClawBotService struct {
 	handler *Handler
 	client  *client.ClawBotClient
 
-	mu            sync.RWMutex
-	qrSessions    map[string]clawBotQRCodeSession
-	conversations map[string]*clawBotConversation
-	contextTokens map[string]string
-	wechatUIN     string
+	mu             sync.RWMutex
+	qrSessions     map[string]clawBotQRCodeSession
+	activeSessions map[string]*clawBotActiveSession
+	contextTokens  map[string]string
+	wechatUIN      string
 
 	workerCancel  context.CancelFunc
 	workerRunning bool
@@ -80,12 +82,12 @@ func NewClawBotService(handler *Handler) *ClawBotService {
 	}
 
 	s := &ClawBotService{
-		handler:       handler,
-		client:        client.NewClawBotClient(),
-		qrSessions:    make(map[string]clawBotQRCodeSession),
-		conversations: make(map[string]*clawBotConversation),
-		contextTokens: make(map[string]string),
-		wechatUIN:     wechatUIN,
+		handler:        handler,
+		client:         client.NewClawBotClient(),
+		qrSessions:     make(map[string]clawBotQRCodeSession),
+		activeSessions: make(map[string]*clawBotActiveSession),
+		contextTokens:  make(map[string]string),
+		wechatUIN:      wechatUIN,
 	}
 	s.ApplyCurrentConfig()
 	go s.cleanupLoop()
@@ -333,11 +335,29 @@ func (s *ClawBotService) handleIncomingMessage(ctx context.Context, cfg config.C
 	}
 
 	s.setContextToken(userID, contextToken)
-	history := s.appendUserMessage(userID, text)
+	if isClawBotNewCommand(text) {
+		s.handleNewCommand(ctx, cfg, userID)
+		return
+	}
 
-	reply, err := s.generateReply(ctx, cfg.PromptID, history)
+	session, err := s.getOrCreateActiveSession(userID, cfg.PromptID)
 	if err != nil {
-		logging.Errorf("clawbot generate reply failed: user=%s err=%v", userID, err)
+		logging.Errorf("clawbot prepare session failed: user=%s err=%v", userID, err)
+		s.setLastError(err)
+		_ = s.sendTextReply(ctx, cfg, userID, "暂时无法开始聊天，请稍后再试。")
+		return
+	}
+
+	if err := s.handler.chatManager.AddMessage(session.SessionID, "user", text); err != nil {
+		logging.Errorf("clawbot save user message failed: user=%s session=%s err=%v", userID, session.SessionID, err)
+		s.setLastError(err)
+		_ = s.sendTextReply(ctx, cfg, userID, "暂时无法处理你的消息，请稍后再试。")
+		return
+	}
+
+	reply, memSession, err := s.generateReply(ctx, session.SessionID, cfg.PromptID)
+	if err != nil {
+		logging.Errorf("clawbot generate reply failed: user=%s session=%s err=%v", userID, session.SessionID, err)
 		s.setLastError(err)
 		reply = "暂时无法处理你的消息，请稍后再试。"
 	}
@@ -346,68 +366,85 @@ func (s *ClawBotService) handleIncomingMessage(ctx context.Context, cfg config.C
 		return
 	}
 
-	chunks := splitClawBotReply(reply, clawBotReplyChunkMaxRune)
-	if len(chunks) == 0 {
+	if err := s.sendTextReply(ctx, cfg, userID, reply); err != nil {
+		s.setLastError(err)
+		logging.Errorf("clawbot send reply failed: user=%s session=%s err=%v", userID, session.SessionID, err)
 		return
 	}
 
-	contextToken = s.getContextToken(userID)
-	for _, chunk := range chunks {
-		if err := s.client.SendTextMessage(ctx, cfg.BaseURL, cfg.BotToken, s.wechatUIN, userID, contextToken, chunk); err != nil {
-			s.setLastError(err)
-			logging.Errorf("clawbot send reply failed: user=%s err=%v", userID, err)
-			return
-		}
+	if err := s.handler.chatManager.AddMessage(session.SessionID, "assistant", reply); err != nil {
+		logging.Errorf("clawbot save assistant message failed: user=%s session=%s err=%v", userID, session.SessionID, err)
+		s.setLastError(err)
+		return
 	}
 
-	s.appendAssistantMessage(userID, reply)
+	if err == nil && memSession != nil {
+		memSession.OnRoundComplete()
+	}
 }
 
-func (s *ClawBotService) generateReply(ctx context.Context, promptID string, history []client.Message) (string, error) {
-	provider := s.handler.configManager.GetActiveProvider()
-	if provider == nil {
-		return "", fmt.Errorf("no active provider configured")
-	}
-	if provider.Type == config.ProviderTypeGeminiImage {
-		return "", fmt.Errorf("active provider is not chat-capable")
-	}
-	if strings.TrimSpace(provider.APIKey) == "" {
-		return "", fmt.Errorf("api key not configured")
+func (s *ClawBotService) handleNewCommand(ctx context.Context, cfg config.ClawBotConfig, userID string) {
+	if _, err := s.createAndActivateSession(userID, cfg.PromptID); err != nil {
+		logging.Errorf("clawbot create new session failed: user=%s err=%v", userID, err)
+		s.setLastError(err)
+		_ = s.sendTextReply(ctx, cfg, userID, "暂时无法开始新聊天，请稍后再试。")
+		return
 	}
 
-	systemPrompt := strings.TrimSpace(s.handler.configManager.GetSystemPrompt())
+	if err := s.sendTextReply(ctx, cfg, userID, "已开始新聊天"); err != nil {
+		s.setLastError(err)
+		logging.Errorf("clawbot send new session confirmation failed: user=%s err=%v", userID, err)
+	}
+}
+
+func (s *ClawBotService) generateReply(ctx context.Context, sessionID, configuredPromptID string) (string, *storage.MemorySession, error) {
+	provider := s.handler.configManager.GetActiveProvider()
+	if provider == nil {
+		return "", nil, fmt.Errorf("no active provider configured")
+	}
+	if provider.Type == config.ProviderTypeGeminiImage {
+		return "", nil, fmt.Errorf("active provider is not chat-capable")
+	}
+	if strings.TrimSpace(provider.APIKey) == "" {
+		return "", nil, fmt.Errorf("api key not configured")
+	}
+
+	session, ok := s.handler.chatManager.GetSession(sessionID)
+	if !ok {
+		return "", nil, fmt.Errorf("session not found: %s", sessionID)
+	}
+
+	systemPrompt := s.handler.configManager.GetSystemPrompt()
+	userContext := buildChatUserContext(s.handler.userManager.Get())
+	effectivePromptID := strings.TrimSpace(session.PromptID)
+	if effectivePromptID == "" {
+		effectivePromptID = strings.TrimSpace(configuredPromptID)
+	}
 	persona := ""
-	if promptID != "" {
-		if prompt, ok := s.handler.promptManager.Get(promptID); ok {
+	validPromptID := ""
+	if effectivePromptID != "" {
+		if prompt, ok := s.handler.promptManager.Get(effectivePromptID); ok {
 			persona = strings.TrimSpace(prompt.Content)
+			validPromptID = effectivePromptID
 		}
 	}
-	cfg := s.handler.configManager.Get()
-	if cfg.MemoryEnabled && promptID != "" && s.handler.memoryManager != nil {
-		persona = storage.BuildPromptWithMemory(persona, s.handler.memoryManager.GetActiveMemories(promptID))
+
+	memSession := s.handler.getOrCreateMemorySession(validPromptID, sessionID)
+	if memSession != nil {
+		persona = storage.BuildPromptWithMemory(persona, memSession.GetActiveMemories())
 	}
 
 	channelGuide := strings.TrimSpace(`[渠道说明]
 你正在通过微信 ClawBot 渠道回复用户。
+你只能回复适合微信文本消息的内容。
 请直接输出可以发送给用户的自然语言消息。
-不要使用红包、拍一拍等仅界面渠道支持的能力。`)
+不要调用网页端工具能力，包括红包、拍一拍、朋友圈等。`)
 
-	var fullSystemPrompt string
-	if systemPrompt != "" {
-		fullSystemPrompt = systemPrompt
-	}
-	if persona != "" {
-		if fullSystemPrompt != "" {
-			fullSystemPrompt += "\n\n"
-		}
-		fullSystemPrompt += "[人设]\n" + persona
-	}
-	if channelGuide != "" {
-		if fullSystemPrompt != "" {
-			fullSystemPrompt += "\n\n"
-		}
-		fullSystemPrompt += channelGuide
-	}
+	history := convertChatMessages(session.Messages)
+	history = mergeTrailingUserMessages(history)
+	history = limitMessagesByTurns(history, provider.ContextMessages)
+
+	fullSystemPrompt := buildChatSystemPrompt(systemPrompt, userContext, persona, channelGuide)
 
 	messages := make([]client.Message, 0, len(history)+1)
 	if strings.TrimSpace(fullSystemPrompt) != "" {
@@ -416,10 +453,11 @@ func (s *ClawBotService) generateReply(ctx context.Context, promptID string, his
 			Content: strings.TrimSpace(fullSystemPrompt),
 		})
 	}
-	messages = append(messages, limitMessagesByTurns(history, provider.ContextMessages)...)
+	messages = append(messages, history...)
+	messages = normalizeMessagesForProvider(messages)
 	resolvedMessages, err := s.handler.prepareMessagesForProvider(messages, provider.ImageCapable)
 	if err != nil {
-		return "", err
+		return "", memSession, err
 	}
 
 	aiClient := newAIClientForProvider(provider)
@@ -460,51 +498,122 @@ func (s *ClawBotService) generateReply(ctx context.Context, promptID string, his
 
 	resp, err := aiClient.Chat(ctx, req)
 	if err != nil {
-		return "", err
+		return "", memSession, err
 	}
 	if len(resp.Choices) == 0 {
-		return "", nil
+		return "", memSession, nil
 	}
-	return strings.TrimSpace(resp.Choices[0].Message.Content), nil
+	return strings.TrimSpace(resp.Choices[0].Message.Content), memSession, nil
 }
 
-func (s *ClawBotService) appendUserMessage(userID, text string) []client.Message {
+func (s *ClawBotService) sendTextReply(ctx context.Context, cfg config.ClawBotConfig, userID, text string) error {
+	chunks := splitClawBotReply(text, clawBotReplyChunkMaxRune)
+	if len(chunks) == 0 {
+		return nil
+	}
+
+	contextToken := s.getContextToken(userID)
+	for _, chunk := range chunks {
+		if err := s.client.SendTextMessage(ctx, cfg.BaseURL, cfg.BotToken, s.wechatUIN, userID, contextToken, chunk); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *ClawBotService) getOrCreateActiveSession(userID, promptID string) (*storage.ChatRecord, error) {
+	if sessionID, ok := s.getActiveSessionID(userID); ok {
+		if session, exists := s.handler.chatManager.GetSession(sessionID); exists {
+			s.touchActiveSession(userID, sessionID)
+			return session, nil
+		}
+		return s.createAndActivateSession(userID, promptID)
+	}
+
+	if session, ok := s.findLatestSessionForUser(userID); ok {
+		s.touchActiveSession(userID, session.SessionID)
+		return session, nil
+	}
+
+	return s.createAndActivateSession(userID, promptID)
+}
+
+func (s *ClawBotService) createAndActivateSession(userID, promptID string) (*storage.ChatRecord, error) {
+	session, err := s.createSessionForUser(userID, promptID)
+	if err != nil {
+		return nil, err
+	}
+	s.touchActiveSession(userID, session.SessionID)
+	return session, nil
+}
+
+func (s *ClawBotService) createSessionForUser(userID, promptID string) (*storage.ChatRecord, error) {
+	promptID = strings.TrimSpace(promptID)
+	promptName := ""
+	if promptID != "" {
+		if prompt, ok := s.handler.promptManager.Get(promptID); ok {
+			promptName = prompt.Name
+		} else {
+			promptID = ""
+		}
+	}
+
+	for attempt := 0; attempt < 8; attempt++ {
+		sessionID := generateClawBotSessionID(userID)
+		if _, exists := s.handler.chatManager.GetSession(sessionID); exists {
+			continue
+		}
+		return s.handler.chatManager.CreateSession(sessionID, "New Chat", promptID, promptName)
+	}
+
+	return nil, fmt.Errorf("failed to allocate unique clawbot session id for user %s", userID)
+}
+
+func (s *ClawBotService) findLatestSessionForUser(userID string) (*storage.ChatRecord, bool) {
+	prefix := clawBotSessionPrefix(userID)
+	sessions := s.handler.chatManager.ListSessions()
+
+	latestID := ""
+	var latestUpdated time.Time
+	for _, session := range sessions {
+		if !strings.HasPrefix(session.ID, prefix) {
+			continue
+		}
+		if latestID == "" || session.UpdatedAt.After(latestUpdated) {
+			latestID = session.ID
+			latestUpdated = session.UpdatedAt
+		}
+	}
+	if latestID == "" {
+		return nil, false
+	}
+
+	record, ok := s.handler.chatManager.GetSession(latestID)
+	return record, ok
+}
+
+func (s *ClawBotService) getActiveSessionID(userID string) (string, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	state, ok := s.activeSessions[userID]
+	if !ok || state == nil || strings.TrimSpace(state.SessionID) == "" {
+		return "", false
+	}
+	return state.SessionID, true
+}
+
+func (s *ClawBotService) touchActiveSession(userID, sessionID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	conv := s.getConversationLocked(userID)
-	conv.Messages = append(conv.Messages, client.Message{
-		Role:    "user",
-		Content: text,
-	})
-	conv.LastActive = time.Now()
-	conv.Messages = limitMessagesByTurns(conv.Messages, 64)
-	return append([]client.Message(nil), conv.Messages...)
-}
-
-func (s *ClawBotService) appendAssistantMessage(userID, text string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	conv := s.getConversationLocked(userID)
-	conv.Messages = append(conv.Messages, client.Message{
-		Role:    "assistant",
-		Content: text,
-	})
-	conv.LastActive = time.Now()
-	conv.Messages = limitMessagesByTurns(conv.Messages, 64)
-}
-
-func (s *ClawBotService) getConversationLocked(userID string) *clawBotConversation {
-	if conv, ok := s.conversations[userID]; ok {
-		return conv
+	if s.activeSessions == nil {
+		s.activeSessions = make(map[string]*clawBotActiveSession)
 	}
-	conv := &clawBotConversation{
-		Messages:   make([]client.Message, 0, 8),
+	s.activeSessions[userID] = &clawBotActiveSession{
+		SessionID:  sessionID,
 		LastActive: time.Now(),
 	}
-	s.conversations[userID] = conv
-	return conv
 }
 
 func (s *ClawBotService) setContextToken(userID, contextToken string) {
@@ -559,12 +668,25 @@ func (s *ClawBotService) cleanupState() {
 			delete(s.qrSessions, id)
 		}
 	}
-	for userID, conv := range s.conversations {
-		if now.Sub(conv.LastActive) > clawBotConversationIdle {
-			delete(s.conversations, userID)
+	for userID, session := range s.activeSessions {
+		if now.Sub(session.LastActive) > clawBotConversationIdle {
+			delete(s.activeSessions, userID)
 			delete(s.contextTokens, userID)
 		}
 	}
+}
+
+func isClawBotNewCommand(text string) bool {
+	return strings.EqualFold(strings.TrimSpace(text), "/new")
+}
+
+func clawBotSessionPrefix(userID string) string {
+	hash := sha1.Sum([]byte(strings.TrimSpace(userID)))
+	return "clawbot_" + hex.EncodeToString(hash[:8]) + "_"
+}
+
+func generateClawBotSessionID(userID string) string {
+	return clawBotSessionPrefix(userID) + generateID()
 }
 
 func newAIClientForProvider(provider *config.Provider) client.AIClient {

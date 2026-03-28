@@ -76,7 +76,11 @@ const ChatList: React.FC<ChatListProps> = ({ onSelectSession, searchQuery = '', 
 
         Object.entries(sessionsByPrompt).forEach(([promptId, promptSessions]) => {
             const prompt = promptMap.get(promptId)
-            if (prompt && promptSessions.length > 0) {
+            if (!prompt) {
+                orphans.push(...promptSessions)
+                return
+            }
+            if (promptSessions.length > 0) {
                 // 按更新时间排序，取最新的
                 const sorted = promptSessions.sort(
                     (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
