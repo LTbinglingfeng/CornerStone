@@ -9,6 +9,8 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +22,10 @@ const (
 	clawBotCleanupInterval   = 5 * time.Minute
 	clawBotReplyChunkMaxRune = 2000
 	clawBotProcessTimeout    = 2 * time.Minute
+
+	clawBotCommandNew      = "new"
+	clawBotCommandList     = "ls"
+	clawBotCommandCheckout = "checkout"
 )
 
 type ClawBotSettingsResponse struct {
@@ -84,6 +90,11 @@ type ClawBotService struct {
 	workerRunning bool
 	lastError     string
 	lastErrorAt   time.Time
+}
+
+type clawBotCommand struct {
+	Name string
+	Args string
 }
 
 func NewClawBotService(handler *Handler) *ClawBotService {
@@ -349,10 +360,23 @@ func (s *ClawBotService) handleIncomingMessage(ctx context.Context, cfg config.C
 	}
 
 	s.setContextToken(userID, contextToken)
-	if isClawBotNewCommand(text) {
-		s.clearPendingReply(userID)
-		s.handleNewCommand(ctx, cfg, userID)
-		return
+	if command, ok := parseClawBotCommand(text); ok {
+		switch command.Name {
+		case clawBotCommandNew:
+			if command.Args == "" {
+				s.clearPendingReply(userID)
+				s.handleNewCommand(ctx, cfg, userID)
+				return
+			}
+		case clawBotCommandList:
+			s.clearPendingReply(userID)
+			s.handleListCommand(ctx, cfg, userID, command.Args)
+			return
+		case clawBotCommandCheckout:
+			s.clearPendingReply(userID)
+			s.handleCheckoutCommand(ctx, cfg, userID, command.Args)
+			return
+		}
 	}
 
 	batch := s.enqueuePendingMessage(userID, text)
@@ -374,6 +398,62 @@ func (s *ClawBotService) handleNewCommand(ctx context.Context, cfg config.ClawBo
 		s.setLastError(err)
 		logging.Errorf("clawbot send new session confirmation failed: user=%s err=%v", userID, err)
 	}
+}
+
+func (s *ClawBotService) handleListCommand(ctx context.Context, cfg config.ClawBotConfig, userID, args string) {
+	if strings.TrimSpace(args) != "" {
+		s.sendCommandReply(ctx, cfg, userID, "用法：/ls", "list usage")
+		return
+	}
+
+	sessions := s.listSessionsForUser(userID, cfg.PromptID)
+	reply := s.formatSessionListReply(userID, cfg.PromptID, sessions)
+	s.sendCommandReply(ctx, cfg, userID, reply, "list reply")
+}
+
+func (s *ClawBotService) handleCheckoutCommand(ctx context.Context, cfg config.ClawBotConfig, userID, args string) {
+	selector := strings.Trim(args, clawBotCommandTrimChars)
+	selector = strings.Trim(selector, clawBotCommandTrailingPunctuation)
+	selector = strings.Trim(selector, clawBotCommandTrimChars)
+	if selector == "" {
+		s.sendCommandReply(ctx, cfg, userID, "用法：/checkout <序号>\n可先发送 /ls 查看当前人设下的会话列表。", "checkout usage")
+		return
+	}
+
+	sessions := s.listSessionsForUser(userID, cfg.PromptID)
+	if len(sessions) == 0 {
+		reply := fmt.Sprintf("当前人设 %s 暂无可切换的会话，可先发送消息或使用 /new 开始新会话。", s.getPromptDisplayName(cfg.PromptID))
+		s.sendCommandReply(ctx, cfg, userID, reply, "checkout empty")
+		return
+	}
+
+	session, index, err := resolveClawBotSessionSelector(sessions, selector)
+	if err != nil {
+		reply := "未找到对应会话，可先发送 /ls 查看当前人设下的会话列表。"
+		if _, convErr := strconv.Atoi(selector); convErr == nil {
+			reply = fmt.Sprintf("会话序号超出范围，当前共 %d 个会话。可先发送 /ls 查看列表。", len(sessions))
+		}
+		s.sendCommandReply(ctx, cfg, userID, reply, "checkout not found")
+		return
+	}
+
+	record, ok := s.handler.chatManager.GetSession(session.ID)
+	if !ok || !s.sessionMatchesUserAndPrompt(record, userID, cfg.PromptID) {
+		s.sendCommandReply(ctx, cfg, userID, "目标会话不可用，可先发送 /ls 刷新当前列表。", "checkout unavailable")
+		return
+	}
+
+	activeID, _ := s.getActiveSessionID(userID)
+	s.touchActiveSession(userID, record.SessionID)
+
+	title := formatClawBotSessionTitle(record.Title)
+	if activeID == record.SessionID {
+		s.sendCommandReply(ctx, cfg, userID, fmt.Sprintf("当前已经在会话 %d：%s", index+1, title), "checkout noop")
+		return
+	}
+
+	reply := fmt.Sprintf("已切换到会话 %d：%s", index+1, title)
+	s.sendCommandReply(ctx, cfg, userID, reply, "checkout reply")
 }
 
 func (s *ClawBotService) processIncomingBatch(ctx context.Context, cfg config.ClawBotConfig, userID string, texts []string) {
@@ -765,16 +845,24 @@ func (s *ClawBotService) sendTextReply(ctx context.Context, cfg config.ClawBotCo
 	return nil
 }
 
+func (s *ClawBotService) sendCommandReply(ctx context.Context, cfg config.ClawBotConfig, userID, text, action string) {
+	if err := s.sendTextReply(ctx, cfg, userID, text); err != nil {
+		s.setLastError(err)
+		logging.Errorf("clawbot send %s failed: user=%s err=%v", action, userID, err)
+	}
+}
+
 func (s *ClawBotService) getOrCreateActiveSession(userID, promptID string) (*storage.ChatRecord, error) {
 	if sessionID, ok := s.getActiveSessionID(userID); ok {
 		if session, exists := s.handler.chatManager.GetSession(sessionID); exists {
-			s.touchActiveSession(userID, sessionID)
-			return session, nil
+			if s.sessionMatchesUserAndPrompt(session, userID, promptID) {
+				s.touchActiveSession(userID, sessionID)
+				return session, nil
+			}
 		}
-		return s.createAndActivateSession(userID, promptID)
 	}
 
-	if session, ok := s.findLatestSessionForUser(userID); ok {
+	if session, ok := s.findLatestSessionForUser(userID, promptID); ok {
 		s.touchActiveSession(userID, session.SessionID)
 		return session, nil
 	}
@@ -813,27 +901,89 @@ func (s *ClawBotService) createSessionForUser(userID, promptID string) (*storage
 	return nil, fmt.Errorf("failed to allocate unique clawbot session id for user %s", userID)
 }
 
-func (s *ClawBotService) findLatestSessionForUser(userID string) (*storage.ChatRecord, bool) {
-	prefix := clawBotSessionPrefix(userID)
-	sessions := s.handler.chatManager.ListSessions()
-
-	latestID := ""
-	var latestUpdated time.Time
-	for _, session := range sessions {
-		if !strings.HasPrefix(session.ID, prefix) {
-			continue
-		}
-		if latestID == "" || session.UpdatedAt.After(latestUpdated) {
-			latestID = session.ID
-			latestUpdated = session.UpdatedAt
-		}
-	}
-	if latestID == "" {
+func (s *ClawBotService) findLatestSessionForUser(userID, promptID string) (*storage.ChatRecord, bool) {
+	sessions := s.listSessionsForUser(userID, promptID)
+	if len(sessions) == 0 {
 		return nil, false
 	}
 
-	record, ok := s.handler.chatManager.GetSession(latestID)
+	record, ok := s.handler.chatManager.GetSession(sessions[0].ID)
 	return record, ok
+}
+
+func (s *ClawBotService) listSessionsForUser(userID, promptID string) []storage.ChatSession {
+	prefix := clawBotSessionPrefix(userID)
+	allSessions := s.handler.chatManager.ListSessions()
+
+	filtered := make([]storage.ChatSession, 0, len(allSessions))
+	for _, session := range allSessions {
+		if !strings.HasPrefix(session.ID, prefix) {
+			continue
+		}
+		if !clawBotSessionMatchesPrompt(session.PromptID, promptID) {
+			continue
+		}
+		filtered = append(filtered, session)
+	}
+
+	sort.Slice(filtered, func(i, j int) bool {
+		if filtered[i].UpdatedAt.Equal(filtered[j].UpdatedAt) {
+			if filtered[i].CreatedAt.Equal(filtered[j].CreatedAt) {
+				return filtered[i].ID < filtered[j].ID
+			}
+			return filtered[i].CreatedAt.After(filtered[j].CreatedAt)
+		}
+		return filtered[i].UpdatedAt.After(filtered[j].UpdatedAt)
+	})
+	return filtered
+}
+
+func (s *ClawBotService) sessionMatchesUserAndPrompt(session *storage.ChatRecord, userID, promptID string) bool {
+	if session == nil {
+		return false
+	}
+	if !strings.HasPrefix(session.SessionID, clawBotSessionPrefix(userID)) {
+		return false
+	}
+	return clawBotSessionMatchesPrompt(session.PromptID, promptID)
+}
+
+func (s *ClawBotService) formatSessionListReply(userID, promptID string, sessions []storage.ChatSession) string {
+	promptName := s.getPromptDisplayName(promptID)
+	if len(sessions) == 0 {
+		return fmt.Sprintf("当前人设：%s\n暂无会话，可先发送消息或使用 /new 开始新会话。", promptName)
+	}
+
+	activeID, _ := s.getActiveSessionID(userID)
+	var builder strings.Builder
+	fmt.Fprintf(&builder, "当前人设：%s\n会话列表（共 %d 个，当前会话以 * 标记）", promptName, len(sessions))
+	for index, session := range sessions {
+		marker := " "
+		if session.ID == activeID {
+			marker = "*"
+		}
+		fmt.Fprintf(&builder, "\n%s %d. %s", marker, index+1, formatClawBotSessionTitle(session.Title))
+		fmt.Fprintf(&builder, "\n   更新于 %s | ID %s", formatClawBotSessionTime(session.UpdatedAt), shortClawBotSessionID(session.ID))
+	}
+	builder.WriteString("\n发送 /checkout <序号> 切换会话，例如 /checkout 2")
+	return builder.String()
+}
+
+func (s *ClawBotService) getPromptDisplayName(promptID string) string {
+	promptID = strings.TrimSpace(promptID)
+	if promptID == "" {
+		return "默认"
+	}
+	if s.handler == nil || s.handler.promptManager == nil {
+		return promptID
+	}
+	if prompt, ok := s.handler.promptManager.Get(promptID); ok {
+		name := strings.TrimSpace(prompt.Name)
+		if name != "" {
+			return name
+		}
+	}
+	return promptID
 }
 
 func (s *ClawBotService) getActiveSessionID(userID string) (string, bool) {
@@ -936,27 +1086,118 @@ func (s *ClawBotService) cleanupState() {
 	}
 }
 
-const clawBotCommandTrimChars = " \t\r\n\v\f\u00a0\ufeff\u200b\u200c\u200d"
+const clawBotCommandTrimChars = " \t\r\n\v\f\u00a0\u3000\ufeff\u200b\u200c\u200d"
 const clawBotCommandTrailingPunctuation = "。．.，,！!？?；;：:、~～"
 
-func isClawBotNewCommand(text string) bool {
+func parseClawBotCommand(text string) (clawBotCommand, bool) {
 	normalized := strings.Trim(text, clawBotCommandTrimChars)
 	if normalized == "" {
-		return false
+		return clawBotCommand{}, false
 	}
 	if strings.HasPrefix(normalized, "／") {
 		normalized = "/" + strings.TrimPrefix(normalized, "／")
 	}
-	normalizedLower := strings.ToLower(normalized)
-	if !strings.HasPrefix(normalizedLower, "/new") {
-		return false
+	if !strings.HasPrefix(normalized, "/") {
+		return clawBotCommand{}, false
 	}
 
-	rest := normalized[len("/new"):]
-	rest = strings.Trim(rest, clawBotCommandTrimChars)
-	rest = strings.Trim(rest, clawBotCommandTrailingPunctuation)
-	rest = strings.Trim(rest, clawBotCommandTrimChars)
-	return rest == ""
+	body := strings.Trim(normalized[1:], clawBotCommandTrimChars)
+	if body == "" {
+		return clawBotCommand{}, false
+	}
+
+	splitAt := strings.IndexFunc(body, func(r rune) bool {
+		return strings.ContainsRune(clawBotCommandTrimChars, r)
+	})
+
+	token := body
+	args := ""
+	if splitAt >= 0 {
+		token = body[:splitAt]
+		args = strings.Trim(body[splitAt+1:], clawBotCommandTrimChars)
+	}
+
+	token = strings.Trim(token, clawBotCommandTrailingPunctuation)
+	token = strings.Trim(token, clawBotCommandTrimChars)
+	if token == "" {
+		return clawBotCommand{}, false
+	}
+
+	return clawBotCommand{
+		Name: strings.ToLower(token),
+		Args: args,
+	}, true
+}
+
+func isClawBotNewCommand(text string) bool {
+	command, ok := parseClawBotCommand(text)
+	return ok && command.Name == clawBotCommandNew && command.Args == ""
+}
+
+func resolveClawBotSessionSelector(sessions []storage.ChatSession, selector string) (storage.ChatSession, int, error) {
+	selector = strings.Trim(selector, clawBotCommandTrimChars)
+	if selector == "" {
+		return storage.ChatSession{}, -1, fmt.Errorf("empty selector")
+	}
+
+	if index, err := strconv.Atoi(selector); err == nil {
+		if index < 1 || index > len(sessions) {
+			return storage.ChatSession{}, -1, fmt.Errorf("index out of range")
+		}
+		return sessions[index-1], index - 1, nil
+	}
+
+	for index, session := range sessions {
+		if session.ID == selector {
+			return session, index, nil
+		}
+	}
+
+	matchIndex := -1
+	for index, session := range sessions {
+		if strings.HasSuffix(session.ID, selector) {
+			if matchIndex >= 0 {
+				return storage.ChatSession{}, -1, fmt.Errorf("ambiguous session selector")
+			}
+			matchIndex = index
+		}
+	}
+	if matchIndex >= 0 {
+		return sessions[matchIndex], matchIndex, nil
+	}
+
+	return storage.ChatSession{}, -1, fmt.Errorf("session not found")
+}
+
+func clawBotSessionMatchesPrompt(sessionPromptID, promptID string) bool {
+	return strings.TrimSpace(sessionPromptID) == strings.TrimSpace(promptID)
+}
+
+func formatClawBotSessionTitle(title string) string {
+	title = strings.Join(strings.Fields(strings.TrimSpace(title)), " ")
+	if title == "" {
+		return "New Chat"
+	}
+
+	runes := []rune(title)
+	if len(runes) > 36 {
+		return string(runes[:36]) + "..."
+	}
+	return title
+}
+
+func formatClawBotSessionTime(updatedAt time.Time) string {
+	if updatedAt.IsZero() {
+		return "未知时间"
+	}
+	return updatedAt.Local().Format("2006-01-02 15:04")
+}
+
+func shortClawBotSessionID(sessionID string) string {
+	if len(sessionID) <= 12 {
+		return sessionID
+	}
+	return sessionID[len(sessionID)-12:]
 }
 
 func clawBotSessionPrefix(userID string) string {
