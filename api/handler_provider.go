@@ -29,10 +29,12 @@ func normalizeProviderBaseURL(providerType config.ProviderType, baseURL string) 
 
 // ConfigUpdateRequest 配置更新请求
 type ConfigUpdateRequest struct {
-	BaseURL      *string `json:"base_url,omitempty"`
-	APIKey       *string `json:"api_key,omitempty"`
-	Model        *string `json:"model,omitempty"`
-	SystemPrompt *string `json:"system_prompt,omitempty"`
+	BaseURL                *string `json:"base_url,omitempty"`
+	APIKey                 *string `json:"api_key,omitempty"`
+	Model                  *string `json:"model,omitempty"`
+	SystemPrompt           *string `json:"system_prompt,omitempty"`
+	ReplyWaitWindowMode    *string `json:"reply_wait_window_mode,omitempty"`
+	ReplyWaitWindowSeconds *int    `json:"reply_wait_window_seconds,omitempty"`
 }
 
 // ProviderRequest 供应商请求
@@ -79,15 +81,19 @@ func (h *Handler) handleConfig(w http.ResponseWriter, r *http.Request) {
 		}
 		// 返回兼容旧格式的配置
 		cfg := struct {
-			BaseURL      string `json:"base_url"`
-			APIKey       string `json:"api_key"`
-			Model        string `json:"model"`
-			SystemPrompt string `json:"system_prompt"`
+			BaseURL                string `json:"base_url"`
+			APIKey                 string `json:"api_key"`
+			Model                  string `json:"model"`
+			SystemPrompt           string `json:"system_prompt"`
+			ReplyWaitWindowMode    string `json:"reply_wait_window_mode"`
+			ReplyWaitWindowSeconds int    `json:"reply_wait_window_seconds"`
 		}{
-			BaseURL:      provider.BaseURL,
-			APIKey:       provider.APIKey,
-			Model:        provider.Model,
-			SystemPrompt: h.configManager.GetSystemPrompt(),
+			BaseURL:                provider.BaseURL,
+			APIKey:                 provider.APIKey,
+			Model:                  provider.Model,
+			SystemPrompt:           h.configManager.GetSystemPrompt(),
+			ReplyWaitWindowMode:    h.configManager.Get().ReplyWaitWindowMode,
+			ReplyWaitWindowSeconds: h.configManager.Get().ReplyWaitWindowSeconds,
 		}
 		// 隐藏完整API密钥
 		if len(cfg.APIKey) > 8 {
@@ -118,6 +124,20 @@ func (h *Handler) handleConfig(w http.ResponseWriter, r *http.Request) {
 		if err := h.configManager.UpdatePartial(updates); err != nil {
 			h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: err.Error()})
 			return
+		}
+
+		if req.ReplyWaitWindowMode != nil || req.ReplyWaitWindowSeconds != nil {
+			cfg := h.configManager.Get()
+			if req.ReplyWaitWindowMode != nil {
+				cfg.ReplyWaitWindowMode = *req.ReplyWaitWindowMode
+			}
+			if req.ReplyWaitWindowSeconds != nil {
+				cfg.ReplyWaitWindowSeconds = *req.ReplyWaitWindowSeconds
+			}
+			if err := h.configManager.Update(cfg); err != nil {
+				h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: err.Error()})
+				return
+			}
 		}
 
 		h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: "Configuration updated"})
@@ -160,13 +180,15 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 			memoryProvider = &clone
 		}
 		result := map[string]interface{}{
-			"providers":          providers,
-			"active_provider_id": activeID,
-			"system_prompt":      h.configManager.GetSystemPrompt(),
-			"image_provider_id":  cfg.ImageProviderID,
-			"memory_provider_id": cfg.MemoryProviderID,
-			"memory_provider":    memoryProvider,
-			"memory_enabled":     cfg.MemoryEnabled,
+			"providers":                 providers,
+			"active_provider_id":        activeID,
+			"system_prompt":             h.configManager.GetSystemPrompt(),
+			"reply_wait_window_mode":    cfg.ReplyWaitWindowMode,
+			"reply_wait_window_seconds": cfg.ReplyWaitWindowSeconds,
+			"image_provider_id":         cfg.ImageProviderID,
+			"memory_provider_id":        cfg.MemoryProviderID,
+			"memory_provider":           memoryProvider,
+			"memory_enabled":            cfg.MemoryEnabled,
 		}
 		h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: result})
 

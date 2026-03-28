@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { getProviders, updateSystemPrompt } from '../services/api'
+import { getProviders, updateConfig, updateSystemPrompt } from '../services/api'
 import {
     memoryService,
     type MemoryExtractionPromptTemplate,
@@ -86,6 +86,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         getReplyWaitWindowConfig()
     )
     const [showReplyWaitModal, setShowReplyWaitModal] = useState(false)
+    const [savingReplyWaitConfig, setSavingReplyWaitConfig] = useState(false)
     const [notificationsEnabled, setNotificationsEnabledState] = useState(() => getNotificationsEnabled())
     const [notificationsSupported, setNotificationsSupported] = useState(() => isNotificationSupported())
     const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | 'unsupported'>(() =>
@@ -108,6 +109,21 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         const providersData = await getProviders()
         if (providersData) {
             setSystemPrompt(providersData.system_prompt)
+            if (
+                typeof providersData.reply_wait_window_mode === 'string' ||
+                typeof providersData.reply_wait_window_seconds === 'number'
+            ) {
+                setReplyWaitWindowConfig({
+                    mode: providersData.reply_wait_window_mode === 'fixed' ? 'fixed' : 'sliding',
+                    seconds:
+                        typeof providersData.reply_wait_window_seconds === 'number'
+                            ? providersData.reply_wait_window_seconds
+                            : getReplyWaitWindowConfig().seconds,
+                })
+                const syncedReplyWaitConfig = getReplyWaitWindowConfig()
+                setReplyWaitConfigState(syncedReplyWaitConfig)
+                setEditingReplyWaitConfig(syncedReplyWaitConfig)
+            }
             const activeProvider = providersData.providers.find((p) => p.id === providersData.active_provider_id)
             setActiveProviderName(activeProvider?.name || '未设置')
             const configuredImageProviderId = providersData.image_provider_id || ''
@@ -281,10 +297,25 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         }
     }
 
-    const handleSaveReplyWaitConfig = () => {
-        setReplyWaitConfig(editingReplyWaitConfig)
-        showToast('回复等候窗口已保存', 'success')
-        handleCloseReplyWaitModal()
+    const handleSaveReplyWaitConfig = async () => {
+        if (savingReplyWaitConfig) return
+        setSavingReplyWaitConfig(true)
+        try {
+            const success = await updateConfig({
+                reply_wait_window_mode: editingReplyWaitConfig.mode,
+                reply_wait_window_seconds: editingReplyWaitConfig.seconds,
+            })
+            if (!success) {
+                showToast('保存失败', 'error')
+                return
+            }
+
+            setReplyWaitConfig(editingReplyWaitConfig)
+            showToast('回复等候窗口已保存', 'success')
+            handleCloseReplyWaitModal()
+        } finally {
+            setSavingReplyWaitConfig(false)
+        }
     }
 
     const handleSaveSystemPrompt = async () => {
@@ -913,7 +944,11 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                                 <button className="prompt-modal-btn cancel" onClick={handleCloseReplyWaitModal}>
                                     取消
                                 </button>
-                                <button className="prompt-modal-btn save" onClick={handleSaveReplyWaitConfig}>
+                                <button
+                                    className="prompt-modal-btn save"
+                                    onClick={() => void handleSaveReplyWaitConfig()}
+                                    disabled={savingReplyWaitConfig}
+                                >
                                     保存
                                 </button>
                             </div>

@@ -106,6 +106,8 @@ export interface ProvidersResponse {
     providers: Provider[]
     active_provider_id: string
     system_prompt: string
+    reply_wait_window_mode?: 'fixed' | 'sliding' | string
+    reply_wait_window_seconds?: number
     image_provider_id?: string
     memory_provider_id?: string
     memory_provider?: Provider | null
@@ -118,6 +120,8 @@ export interface AppConfig {
     api_key: string
     model: string
     system_prompt: string
+    reply_wait_window_mode?: 'fixed' | 'sliding' | string
+    reply_wait_window_seconds?: number
 }
 
 // 提示词模板

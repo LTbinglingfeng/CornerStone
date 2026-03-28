@@ -19,6 +19,7 @@ const (
 	clawBotConversationIdle  = 30 * time.Minute
 	clawBotCleanupInterval   = 5 * time.Minute
 	clawBotReplyChunkMaxRune = 2000
+	clawBotProcessTimeout    = 2 * time.Minute
 )
 
 type ClawBotSettingsResponse struct {
@@ -59,6 +60,15 @@ type clawBotActiveSession struct {
 	LastActive time.Time
 }
 
+type clawBotPendingReply struct {
+	Messages        []string
+	WindowStartedAt time.Time
+	LastActive      time.Time
+	Timer           *time.Timer
+	Processing      bool
+	Ready           bool
+}
+
 type ClawBotService struct {
 	handler *Handler
 	client  *client.ClawBotClient
@@ -66,6 +76,7 @@ type ClawBotService struct {
 	mu             sync.RWMutex
 	qrSessions     map[string]clawBotQRCodeSession
 	activeSessions map[string]*clawBotActiveSession
+	pendingReplies map[string]*clawBotPendingReply
 	contextTokens  map[string]string
 	wechatUIN      string
 
@@ -86,6 +97,7 @@ func NewClawBotService(handler *Handler) *ClawBotService {
 		client:         client.NewClawBotClient(),
 		qrSessions:     make(map[string]clawBotQRCodeSession),
 		activeSessions: make(map[string]*clawBotActiveSession),
+		pendingReplies: make(map[string]*clawBotPendingReply),
 		contextTokens:  make(map[string]string),
 		wechatUIN:      wechatUIN,
 	}
@@ -100,6 +112,8 @@ func (s *ClawBotService) Close() {
 	s.workerCancel = nil
 	s.workerRunning = false
 	s.mu.Unlock()
+
+	s.clearAllPendingReplies()
 
 	if cancel != nil {
 		cancel()
@@ -336,7 +350,34 @@ func (s *ClawBotService) handleIncomingMessage(ctx context.Context, cfg config.C
 
 	s.setContextToken(userID, contextToken)
 	if isClawBotNewCommand(text) {
+		s.clearPendingReply(userID)
 		s.handleNewCommand(ctx, cfg, userID)
+		return
+	}
+
+	batch := s.enqueuePendingMessage(userID, text)
+	if len(batch) == 0 {
+		return
+	}
+	s.processPendingBatchAsync(userID, batch)
+}
+
+func (s *ClawBotService) handleNewCommand(ctx context.Context, cfg config.ClawBotConfig, userID string) {
+	if _, err := s.createAndActivateSession(userID, cfg.PromptID); err != nil {
+		logging.Errorf("clawbot create new session failed: user=%s err=%v", userID, err)
+		s.setLastError(err)
+		_ = s.sendTextReply(ctx, cfg, userID, "暂时无法开始新聊天，请稍后再试。")
+		return
+	}
+
+	if err := s.sendTextReply(ctx, cfg, userID, "已开始新聊天"); err != nil {
+		s.setLastError(err)
+		logging.Errorf("clawbot send new session confirmation failed: user=%s err=%v", userID, err)
+	}
+}
+
+func (s *ClawBotService) processIncomingBatch(ctx context.Context, cfg config.ClawBotConfig, userID string, texts []string) {
+	if len(texts) == 0 {
 		return
 	}
 
@@ -348,8 +389,25 @@ func (s *ClawBotService) handleIncomingMessage(ctx context.Context, cfg config.C
 		return
 	}
 
-	if err := s.handler.chatManager.AddMessage(session.SessionID, "user", text); err != nil {
-		logging.Errorf("clawbot save user message failed: user=%s session=%s err=%v", userID, session.SessionID, err)
+	now := time.Now()
+	storageMessages := make([]storage.ChatMessage, 0, len(texts))
+	for index, text := range texts {
+		trimmed := strings.TrimSpace(text)
+		if trimmed == "" {
+			continue
+		}
+		storageMessages = append(storageMessages, storage.ChatMessage{
+			Role:      "user",
+			Content:   trimmed,
+			Timestamp: now.Add(time.Millisecond * time.Duration(index)),
+		})
+	}
+	if len(storageMessages) == 0 {
+		return
+	}
+
+	if err := s.handler.chatManager.AddMessages(session.SessionID, storageMessages); err != nil {
+		logging.Errorf("clawbot save user messages failed: user=%s session=%s err=%v", userID, session.SessionID, err)
 		s.setLastError(err)
 		_ = s.sendTextReply(ctx, cfg, userID, "暂时无法处理你的消息，请稍后再试。")
 		return
@@ -378,22 +436,8 @@ func (s *ClawBotService) handleIncomingMessage(ctx context.Context, cfg config.C
 		return
 	}
 
-	if err == nil && memSession != nil {
+	if memSession != nil {
 		memSession.OnRoundComplete()
-	}
-}
-
-func (s *ClawBotService) handleNewCommand(ctx context.Context, cfg config.ClawBotConfig, userID string) {
-	if _, err := s.createAndActivateSession(userID, cfg.PromptID); err != nil {
-		logging.Errorf("clawbot create new session failed: user=%s err=%v", userID, err)
-		s.setLastError(err)
-		_ = s.sendTextReply(ctx, cfg, userID, "暂时无法开始新聊天，请稍后再试。")
-		return
-	}
-
-	if err := s.sendTextReply(ctx, cfg, userID, "已开始新聊天"); err != nil {
-		s.setLastError(err)
-		logging.Errorf("clawbot send new session confirmation failed: user=%s err=%v", userID, err)
 	}
 }
 
@@ -504,6 +548,206 @@ func (s *ClawBotService) generateReply(ctx context.Context, sessionID, configure
 		return "", memSession, nil
 	}
 	return strings.TrimSpace(resp.Choices[0].Message.Content), memSession, nil
+}
+
+func (s *ClawBotService) processPendingBatchAsync(userID string, batch []string) {
+	if len(batch) == 0 {
+		s.finishPendingReplyProcessing(userID)
+		return
+	}
+
+	go func() {
+		defer s.finishPendingReplyProcessing(userID)
+
+		cfg := s.handler.configManager.GetClawBotConfig()
+		if !cfg.Enabled || strings.TrimSpace(cfg.BotToken) == "" {
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), clawBotProcessTimeout)
+		defer cancel()
+
+		s.processIncomingBatch(ctx, cfg, userID, batch)
+	}()
+}
+
+func (s *ClawBotService) enqueuePendingMessage(userID, text string) []string {
+	mode, delay := s.getReplyWaitWindow()
+	now := time.Now()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	state := s.pendingReplies[userID]
+	if state == nil {
+		state = &clawBotPendingReply{}
+		s.pendingReplies[userID] = state
+	}
+	if len(state.Messages) == 0 {
+		state.WindowStartedAt = now
+	}
+	state.Messages = append(state.Messages, text)
+	state.LastActive = now
+
+	if delay <= 0 {
+		if state.Processing {
+			state.Ready = true
+			if state.Timer != nil {
+				state.Timer.Stop()
+				state.Timer = nil
+			}
+			return nil
+		}
+		return s.beginPendingProcessingLocked(state)
+	}
+
+	s.schedulePendingReplyLocked(userID, state, mode, delay, now)
+	return nil
+}
+
+func (s *ClawBotService) schedulePendingReplyLocked(userID string, state *clawBotPendingReply, mode string, delay time.Duration, now time.Time) {
+	if state == nil || len(state.Messages) == 0 {
+		return
+	}
+
+	fireAt := now.Add(delay)
+	if mode == string(config.ReplyWaitWindowModeFixed) {
+		startedAt := state.WindowStartedAt
+		if startedAt.IsZero() {
+			startedAt = now
+			state.WindowStartedAt = startedAt
+		}
+		fireAt = startedAt.Add(delay)
+	}
+
+	waitFor := time.Until(fireAt)
+	if waitFor < 0 {
+		waitFor = 0
+	}
+
+	if state.Timer != nil {
+		state.Timer.Stop()
+		state.Timer = nil
+	}
+	state.Timer = time.AfterFunc(waitFor, func() {
+		s.flushPendingReply(userID)
+	})
+}
+
+func (s *ClawBotService) beginPendingProcessingLocked(state *clawBotPendingReply) []string {
+	if state == nil || state.Processing || len(state.Messages) == 0 {
+		return nil
+	}
+	batch := append([]string(nil), state.Messages...)
+	state.Messages = nil
+	state.WindowStartedAt = time.Time{}
+	state.Ready = false
+	state.Processing = true
+	if state.Timer != nil {
+		state.Timer.Stop()
+		state.Timer = nil
+	}
+	return batch
+}
+
+func (s *ClawBotService) flushPendingReply(userID string) {
+	s.mu.Lock()
+	state := s.pendingReplies[userID]
+	if state == nil {
+		s.mu.Unlock()
+		return
+	}
+	state.Timer = nil
+	if state.Processing {
+		state.Ready = true
+		s.mu.Unlock()
+		return
+	}
+	batch := s.beginPendingProcessingLocked(state)
+	s.mu.Unlock()
+
+	if len(batch) == 0 {
+		return
+	}
+	s.processPendingBatchAsync(userID, batch)
+}
+
+func (s *ClawBotService) finishPendingReplyProcessing(userID string) {
+	mode, delay := s.getReplyWaitWindow()
+
+	s.mu.Lock()
+	state := s.pendingReplies[userID]
+	if state == nil {
+		s.mu.Unlock()
+		return
+	}
+	state.Processing = false
+	shouldFlushNow := state.Ready
+	state.Ready = false
+	hasMessages := len(state.Messages) > 0
+	hasTimer := state.Timer != nil
+	if !hasMessages && !hasTimer {
+		delete(s.pendingReplies, userID)
+	}
+	s.mu.Unlock()
+
+	if !hasMessages {
+		return
+	}
+	if shouldFlushNow || delay <= 0 {
+		s.flushPendingReply(userID)
+		return
+	}
+	if hasTimer {
+		return
+	}
+
+	s.mu.Lock()
+	state = s.pendingReplies[userID]
+	if state != nil && !state.Processing && len(state.Messages) > 0 {
+		s.schedulePendingReplyLocked(userID, state, mode, delay, time.Now())
+	}
+	s.mu.Unlock()
+}
+
+func (s *ClawBotService) clearPendingReply(userID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if state, ok := s.pendingReplies[userID]; ok {
+		if state.Timer != nil {
+			state.Timer.Stop()
+		}
+		delete(s.pendingReplies, userID)
+	}
+}
+
+func (s *ClawBotService) clearAllPendingReplies() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for userID, state := range s.pendingReplies {
+		if state.Timer != nil {
+			state.Timer.Stop()
+		}
+		delete(s.pendingReplies, userID)
+	}
+}
+
+func (s *ClawBotService) getReplyWaitWindow() (string, time.Duration) {
+	cfg := s.handler.configManager.Get()
+	mode := cfg.ReplyWaitWindowMode
+	switch mode {
+	case string(config.ReplyWaitWindowModeFixed):
+	case string(config.ReplyWaitWindowModeSliding):
+	default:
+		mode = string(config.ReplyWaitWindowModeSliding)
+	}
+	seconds := cfg.ReplyWaitWindowSeconds
+	if seconds < 0 {
+		seconds = 0
+	}
+	return mode, time.Duration(seconds) * time.Second
 }
 
 func (s *ClawBotService) sendTextReply(ctx context.Context, cfg config.ClawBotConfig, userID, text string) error {
@@ -674,10 +918,45 @@ func (s *ClawBotService) cleanupState() {
 			delete(s.contextTokens, userID)
 		}
 	}
+	for userID, state := range s.pendingReplies {
+		if state == nil {
+			delete(s.pendingReplies, userID)
+			continue
+		}
+		if state.Processing {
+			continue
+		}
+		if now.Sub(state.LastActive) <= clawBotConversationIdle {
+			continue
+		}
+		if state.Timer != nil {
+			state.Timer.Stop()
+		}
+		delete(s.pendingReplies, userID)
+	}
 }
 
+const clawBotCommandTrimChars = " \t\r\n\v\f\u00a0\ufeff\u200b\u200c\u200d"
+const clawBotCommandTrailingPunctuation = "。．.，,！!？?；;：:、~～"
+
 func isClawBotNewCommand(text string) bool {
-	return strings.EqualFold(strings.TrimSpace(text), "/new")
+	normalized := strings.Trim(text, clawBotCommandTrimChars)
+	if normalized == "" {
+		return false
+	}
+	if strings.HasPrefix(normalized, "／") {
+		normalized = "/" + strings.TrimPrefix(normalized, "／")
+	}
+	normalizedLower := strings.ToLower(normalized)
+	if !strings.HasPrefix(normalizedLower, "/new") {
+		return false
+	}
+
+	rest := normalized[len("/new"):]
+	rest = strings.Trim(rest, clawBotCommandTrimChars)
+	rest = strings.Trim(rest, clawBotCommandTrailingPunctuation)
+	rest = strings.Trim(rest, clawBotCommandTrimChars)
+	return rest == ""
 }
 
 func clawBotSessionPrefix(userID string) string {

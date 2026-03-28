@@ -59,6 +59,13 @@ type ClawBotConfig struct {
 	GetUpdatesBuf string `json:"get_updates_buf,omitempty"`
 }
 
+type ReplyWaitWindowMode string
+
+const (
+	ReplyWaitWindowModeFixed   ReplyWaitWindowMode = "fixed"
+	ReplyWaitWindowModeSliding ReplyWaitWindowMode = "sliding"
+)
+
 func isChatProviderType(providerType ProviderType) bool {
 	return providerType != ProviderTypeGeminiImage
 }
@@ -75,6 +82,8 @@ const (
 	DefaultMemoryRefreshInterval   = 5
 	MaxMemoryRefreshInterval       = 99
 	DefaultClawBotBaseURL          = "https://ilinkai.weixin.qq.com"
+	DefaultReplyWaitWindowSeconds  = 2
+	MaxReplyWaitWindowSeconds      = 120
 )
 
 // Provider 供应商配置
@@ -103,20 +112,22 @@ type Provider struct {
 
 // Config 存储应用配置信息
 type Config struct {
-	Providers              []Provider    `json:"providers"`                // 供应商列表
-	ActiveProviderID       string        `json:"active_provider_id"`       // 当前激活的供应商ID
-	ImageProviderID        string        `json:"image_provider_id"`        // 生图供应商ID（gemini_image）
-	MemoryProviderID       string        `json:"memory_provider_id"`       // 记忆提取模型（供应商ID）
-	MemoryProvider         *Provider     `json:"memory_provider"`          // 记忆提取模型（独立配置）
-	MemoryEnabled          bool          `json:"memory_enabled"`           // 记忆功能开关
-	MemoryExtractionRounds int           `json:"memory_extraction_rounds"` // 记忆提取上传的对话轮数（每轮=用户+AI）
-	MemoryRefreshInterval  int           `json:"memory_refresh_interval"`  // 记忆刷新间隔（对话轮数）
-	TTSEnabled             bool          `json:"tts_enabled"`              // TTS开关
-	TTSProvider            *TTSProvider  `json:"tts_provider,omitempty"`   // TTS提供商（仅支持 MiniMax）
-	SystemPrompt           string        `json:"system_prompt"`            // 全局系统提示词
-	TLSCertPath            string        `json:"tls_cert_path,omitempty"`  // TLS证书路径(PEM)，留空禁用HTTPS
-	TLSKeyPath             string        `json:"tls_key_path,omitempty"`   // TLS私钥路径(PEM)，留空禁用HTTPS
-	ClawBot                ClawBotConfig `json:"clawbot"`                  // 微信 iLink ClawBot 配置
+	Providers              []Provider    `json:"providers"`                 // 供应商列表
+	ActiveProviderID       string        `json:"active_provider_id"`        // 当前激活的供应商ID
+	ImageProviderID        string        `json:"image_provider_id"`         // 生图供应商ID（gemini_image）
+	MemoryProviderID       string        `json:"memory_provider_id"`        // 记忆提取模型（供应商ID）
+	MemoryProvider         *Provider     `json:"memory_provider"`           // 记忆提取模型（独立配置）
+	MemoryEnabled          bool          `json:"memory_enabled"`            // 记忆功能开关
+	MemoryExtractionRounds int           `json:"memory_extraction_rounds"`  // 记忆提取上传的对话轮数（每轮=用户+AI）
+	MemoryRefreshInterval  int           `json:"memory_refresh_interval"`   // 记忆刷新间隔（对话轮数）
+	TTSEnabled             bool          `json:"tts_enabled"`               // TTS开关
+	TTSProvider            *TTSProvider  `json:"tts_provider,omitempty"`    // TTS提供商（仅支持 MiniMax）
+	SystemPrompt           string        `json:"system_prompt"`             // 全局系统提示词
+	ReplyWaitWindowMode    string        `json:"reply_wait_window_mode"`    // 回复等候窗口模式 (fixed/sliding)
+	ReplyWaitWindowSeconds int           `json:"reply_wait_window_seconds"` // 回复等候窗口秒数
+	TLSCertPath            string        `json:"tls_cert_path,omitempty"`   // TLS证书路径(PEM)，留空禁用HTTPS
+	TLSKeyPath             string        `json:"tls_key_path,omitempty"`    // TLS私钥路径(PEM)，留空禁用HTTPS
+	ClawBot                ClawBotConfig `json:"clawbot"`                   // 微信 iLink ClawBot 配置
 }
 
 // Manager 配置管理器
@@ -159,6 +170,8 @@ func DefaultConfig() Config {
 		TTSEnabled:             false,
 		TTSProvider:            nil,
 		SystemPrompt:           "You are a helpful assistant.",
+		ReplyWaitWindowMode:    string(ReplyWaitWindowModeSliding),
+		ReplyWaitWindowSeconds: DefaultReplyWaitWindowSeconds,
 		ClawBot: ClawBotConfig{
 			BaseURL: DefaultClawBotBaseURL,
 		},
@@ -241,6 +254,7 @@ func (m *Manager) Load() error {
 				MemoryRefreshInterval:  DefaultMemoryRefreshInterval,
 				SystemPrompt:           oldConfig.SystemPrompt,
 			}
+			m.applyConfigDefaults()
 			// 保存新格式
 			if errSave := m.saveUnsafe(); errSave != nil {
 				return errSave
@@ -272,6 +286,16 @@ func (m *Manager) Load() error {
 
 func (m *Manager) applyConfigDefaults() bool {
 	changed := false
+	replyWaitMode := normalizeReplyWaitWindowMode(m.config.ReplyWaitWindowMode)
+	if replyWaitMode != m.config.ReplyWaitWindowMode {
+		m.config.ReplyWaitWindowMode = replyWaitMode
+		changed = true
+	}
+	replyWaitSeconds := normalizeReplyWaitWindowSeconds(m.config.ReplyWaitWindowSeconds)
+	if replyWaitSeconds != m.config.ReplyWaitWindowSeconds {
+		m.config.ReplyWaitWindowSeconds = replyWaitSeconds
+		changed = true
+	}
 	if m.config.MemoryExtractionRounds <= 0 {
 		m.config.MemoryExtractionRounds = DefaultMemoryExtractionRounds
 		changed = true
@@ -608,6 +632,7 @@ func (m *Manager) Update(cfg Config) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.config = cfg
+	m.applyConfigDefaults()
 	return m.saveUnsafe()
 }
 
@@ -637,7 +662,33 @@ func (m *Manager) UpdatePartial(updates map[string]string) error {
 		}
 	}
 
+	m.applyConfigDefaults()
 	return m.saveUnsafe()
+}
+
+func normalizeReplyWaitWindowMode(mode string) string {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	switch ReplyWaitWindowMode(mode) {
+	case ReplyWaitWindowModeFixed:
+		return string(ReplyWaitWindowModeFixed)
+	case ReplyWaitWindowModeSliding:
+		return string(ReplyWaitWindowModeSliding)
+	default:
+		return string(ReplyWaitWindowModeSliding)
+	}
+}
+
+func normalizeReplyWaitWindowSeconds(seconds int) int {
+	if seconds < 0 {
+		return 0
+	}
+	if seconds > MaxReplyWaitWindowSeconds {
+		return MaxReplyWaitWindowSeconds
+	}
+	if seconds == 0 {
+		return 0
+	}
+	return seconds
 }
 
 // GetActiveProvider 获取当前激活的供应商配置
