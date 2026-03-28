@@ -2,12 +2,42 @@
     padding-bottom: 28px;
 }
 
+/* ── 状态卡片 ── */
 .clawbot-status-card {
-    padding: 14px;
-    margin-bottom: 16px;
-    border-radius: 14px;
-    background: linear-gradient(135deg, rgba(7, 193, 96, 0.12), rgba(7, 193, 96, 0.03));
-    border: 1px solid rgba(7, 193, 96, 0.16);
+    position: relative;
+    padding: 20px;
+    margin-bottom: 20px;
+    border-radius: 16px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    overflow: hidden;
+    transition: border-color 0.3s ease, background-color 0.3s ease;
+}
+
+.clawbot-status-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    border-radius: 16px 16px 0 0;
+    background: rgba(100, 116, 139, 0.5);
+    transition: background 0.4s ease;
+}
+
+.clawbot-status-card.status-running::before {
+    background: linear-gradient(90deg, #07c160, #10b981);
+}
+
+.clawbot-status-card.status-error::before,
+.clawbot-status-card.status-missing_token::before {
+    background: linear-gradient(90deg, #ef4444, #f87171);
+}
+
+.clawbot-status-card.status-disabled::before,
+.clawbot-status-card.status-stopped::before {
+    background: rgba(100, 116, 139, 0.5);
 }
 
 .clawbot-status-top {
@@ -17,6 +47,50 @@
     gap: 12px;
 }
 
+.clawbot-status-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.clawbot-status-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    background: rgba(100, 116, 139, 0.12);
+    transition: background 0.3s ease;
+}
+
+.clawbot-status-card.status-running .clawbot-status-icon {
+    background: rgba(7, 193, 96, 0.12);
+}
+
+.clawbot-status-card.status-error .clawbot-status-icon,
+.clawbot-status-card.status-missing_token .clawbot-status-icon {
+    background: rgba(239, 68, 68, 0.12);
+}
+
+.clawbot-status-icon svg {
+    width: 20px;
+    height: 20px;
+    fill: rgba(100, 116, 139, 0.8);
+    transition: fill 0.3s ease;
+}
+
+.clawbot-status-card.status-running .clawbot-status-icon svg {
+    fill: #07c160;
+}
+
+.clawbot-status-card.status-error .clawbot-status-icon svg,
+.clawbot-status-card.status-missing_token .clawbot-status-icon svg {
+    fill: #ef4444;
+}
+
 .clawbot-status-title {
     color: var(--text-primary);
     font-size: 15px;
@@ -24,82 +98,216 @@
 }
 
 .clawbot-status-pill {
-    padding: 4px 10px;
+    padding: 4px 12px;
     border-radius: 999px;
     font-size: 12px;
     font-weight: 600;
     color: #fff;
-    background: rgba(148, 163, 184, 0.9);
+    background: rgba(100, 116, 139, 0.8);
+    flex-shrink: 0;
+    letter-spacing: 0.02em;
+    transition: background 0.3s ease;
 }
 
 .clawbot-status-pill.running {
-    background: rgba(7, 193, 96, 0.92);
+    background: rgba(7, 193, 96, 0.9);
+    animation: clawbot-pill-glow 2.5s ease-in-out infinite;
 }
 
 .clawbot-status-pill.error,
 .clawbot-status-pill.missing_token {
-    background: rgba(239, 68, 68, 0.92);
+    background: rgba(239, 68, 68, 0.9);
 }
 
 .clawbot-status-pill.disabled,
 .clawbot-status-pill.stopped {
-    background: rgba(100, 116, 139, 0.92);
+    background: rgba(100, 116, 139, 0.72);
 }
 
-.clawbot-status-detail {
-    margin-top: 10px;
-    color: var(--text-primary);
-    font-size: 13px;
-    line-height: 1.5;
+@keyframes clawbot-pill-glow {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.78; }
 }
 
-.clawbot-status-subdetail {
-    margin-top: 6px;
-    color: var(--text-secondary);
+.clawbot-status-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border-color);
+}
+
+.clawbot-status-meta-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-size: 12px;
-    word-break: break-all;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+.clawbot-status-meta-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: rgba(100, 116, 139, 0.5);
+}
+
+.clawbot-status-meta-dot.active {
+    background: #07c160;
+    box-shadow: 0 0 0 2px rgba(7, 193, 96, 0.2);
+}
+
+.clawbot-status-meta-dot.inactive {
+    background: rgba(100, 116, 139, 0.4);
 }
 
 .clawbot-status-error {
-    margin-top: 10px;
-    color: #b91c1c;
+    margin-top: 12px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: rgba(239, 68, 68, 0.08);
+    color: #ef4444;
     font-size: 12px;
     line-height: 1.5;
     word-break: break-word;
 }
 
-.clawbot-inline-btn {
+/* ── 设置分区 ── */
+.clawbot-section {
+    margin-bottom: 20px;
+}
+
+.clawbot-section-title {
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 12px;
+    padding-left: 2px;
+}
+
+.clawbot-section-card {
+    background: var(--bg-secondary);
+    border-radius: 14px;
+    border: 1px solid var(--border-color);
+    overflow: hidden;
+    transition: border-color 0.3s ease, background-color 0.3s ease;
+}
+
+.clawbot-section-card .settings-group {
+    padding: 16px;
+    margin-bottom: 0;
+}
+
+.clawbot-section-card .settings-group + .settings-group {
+    border-top: 1px solid var(--border-color);
+}
+
+.clawbot-section-card .settings-label {
+    text-transform: none;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 10px;
+}
+
+.clawbot-section-card .settings-input {
+    border-radius: 10px;
+}
+
+/* ── Token 管理区 ── */
+.clawbot-token-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     margin-top: 10px;
-    padding: 0;
-    border: none;
-    background: none;
-    color: var(--accent-color);
-    font-size: 13px;
+}
+
+.clawbot-token-status {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+.clawbot-inline-btn {
+    padding: 5px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 500;
     cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: all 0.2s ease;
+}
+
+.clawbot-inline-btn:hover {
+    border-color: var(--text-secondary);
+    color: var(--text-primary);
 }
 
 .clawbot-inline-btn.danger {
-    color: #b91c1c;
+    color: #ef4444;
+    border-color: rgba(239, 68, 68, 0.3);
+    background: rgba(239, 68, 68, 0.06);
 }
 
-.clawbot-token-hint {
-    margin-top: 8px;
-    color: var(--text-secondary);
-    font-size: 12px;
+.clawbot-inline-btn.danger:hover {
+    border-color: rgba(239, 68, 68, 0.5);
+    background: rgba(239, 68, 68, 0.1);
 }
 
+/* ── 操作按钮 ── */
 .clawbot-actions {
-    display: grid;
+    display: flex;
     gap: 12px;
-    margin-top: 20px;
+    margin-top: 24px;
 }
 
-.clawbot-qrcode-card {
-    margin-top: 20px;
-    padding: 16px;
-    border-radius: 14px;
+.clawbot-actions .save-button {
+    flex: 1;
+}
+
+.clawbot-btn-secondary {
+    flex: 1;
+    padding: 12px 20px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
     background: var(--bg-secondary);
     border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    text-align: center;
+}
+
+.clawbot-btn-secondary:hover {
+    background: var(--bg-tertiary);
+    border-color: var(--text-secondary);
+}
+
+.clawbot-btn-secondary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* ── 二维码卡片 ── */
+.clawbot-qrcode-card {
+    margin-top: 24px;
+    padding: 20px;
+    border-radius: 16px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    transition: border-color 0.3s ease, background-color 0.3s ease;
 }
 
 .clawbot-qrcode-header {
@@ -107,7 +315,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    margin-bottom: 12px;
+    margin-bottom: 16px;
 }
 
 .clawbot-qrcode-title {
@@ -117,39 +325,55 @@
 }
 
 .clawbot-qrcode-status {
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
     color: var(--text-secondary);
-    font-size: 12px;
+    background: var(--bg-tertiary);
     text-transform: lowercase;
+    letter-spacing: 0.02em;
+}
+
+.clawbot-qrcode-body {
+    display: flex;
+    justify-content: center;
+    padding: 12px;
+    background: #ffffff;
+    border-radius: 14px;
+    border: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 .clawbot-qrcode-image {
     display: block;
-    width: min(100%, 320px);
-    margin: 0 auto;
-    border-radius: 12px;
-    background: #fff;
+    width: min(100%, 260px);
+    border-radius: 8px;
 }
 
 .clawbot-qrcode-loading {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: min(100%, 320px);
+    width: min(100%, 260px);
     aspect-ratio: 1;
     margin: 0 auto;
-    border-radius: 12px;
-    background: #fff;
-    color: #111827;
+    border-radius: 8px;
+    color: #6b7280;
     font-size: 13px;
 }
 
 .clawbot-qrcode-text {
-    min-height: 160px;
+    min-height: 140px;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 12px;
 }
 
 .clawbot-qrcode-hint {
-    margin-top: 12px;
+    margin-top: 14px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: var(--bg-tertiary);
     color: var(--text-secondary);
     font-size: 12px;
-    line-height: 1.5;
+    line-height: 1.6;
 }
