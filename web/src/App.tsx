@@ -16,6 +16,7 @@ import PersonaEditor from './components/PersonaEditor'
 import {
     appendQueryParam,
     createSession,
+    getErrorMessage,
     getAuthStatus,
     getPromptAvatarUrl,
     getSession,
@@ -25,6 +26,7 @@ import {
     setupAuth,
 } from './services/api'
 import { splitAssistantMessageContent } from './components/ChatDetail/utils'
+import { useToast } from './contexts/ToastContext'
 import { formatNotificationBody, getNotificationsEnabled, isNotificationSupported } from './utils/notifications'
 import { slideTransition } from './utils/motion'
 import { buildChatRoute, getRouteState, normalizePathname, tabOrder, tabRoutes } from './utils/routes'
@@ -41,6 +43,7 @@ const getErrorStatus = (error: unknown): number | undefined => {
 }
 
 function App() {
+    const { showToast } = useToast()
     const location = useLocation()
     const navigate = useNavigate()
     const routeState = getRouteState(location.pathname)
@@ -87,12 +90,18 @@ function App() {
     const handlePromptSelect = useCallback(
         async (promptId: string, promptName: string) => {
             setShowPromptSelector(false)
-            const session = await createSession(promptName, promptId)
-            if (session) {
-                openSession(session.id, promptId)
+            try {
+                const session = await createSession(promptName, promptId)
+                if (session) {
+                    openSession(session.id, promptId)
+                    return
+                }
+                showToast('创建会话失败，请重试', 'error')
+            } catch (error) {
+                showToast(getErrorMessage(error, '创建会话失败，请重试'), 'error')
             }
         },
-        [openSession]
+        [openSession, showToast]
     )
 
     const handlePromptSelectorClose = useCallback(() => {
@@ -336,7 +345,12 @@ function App() {
                     sessionUpdatedAtRef.current.set(session.id, session.updated_at)
                     if (inChatDetail) continue
 
-                    const record = await getSession(session.id)
+                    let record = null
+                    try {
+                        record = await getSession(session.id)
+                    } catch {
+                        continue
+                    }
                     const messages = record?.messages || []
                     if (messages.length === 0) continue
                     const lastMessage = messages[messages.length - 1]

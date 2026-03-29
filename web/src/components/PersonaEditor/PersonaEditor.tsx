@@ -8,6 +8,7 @@ import {
     uploadPromptAvatar,
     getPromptAvatarUrl,
     deletePromptAvatar,
+    getErrorMessage,
 } from '../../services/api'
 import { useToast } from '../../contexts/ToastContext'
 import { useConfirm } from '../../contexts/ConfirmContext'
@@ -43,22 +44,29 @@ const PersonaEditor: React.FC<PersonaEditorProps> = ({ promptId, onBack }) => {
 
         const load = async () => {
             setLoading(true)
-            const prompt = await getPrompt(promptId)
-            if (prompt) {
-                setFormData({
-                    name: prompt.name,
-                    content: prompt.content,
-                    description: prompt.description || '',
-                })
-                if (prompt.avatar) {
-                    setAvatarPreview(getPromptAvatarUrl(promptId))
-                    setHasExistingAvatar(true)
+            try {
+                const prompt = await getPrompt(promptId)
+                if (prompt) {
+                    setFormData({
+                        name: prompt.name,
+                        content: prompt.content,
+                        description: prompt.description || '',
+                    })
+                    if (prompt.avatar) {
+                        setAvatarPreview(getPromptAvatarUrl(promptId))
+                        setHasExistingAvatar(true)
+                    }
                 }
+            } catch (error) {
+                showToast(getErrorMessage(error, '加载角色失败'), 'error')
+                onBack()
+                return
+            } finally {
+                setLoading(false)
             }
-            setLoading(false)
         }
-        load()
-    }, [promptId])
+        void load()
+    }, [onBack, promptId, showToast])
 
     // 保存
     const handleSave = useCallback(async () => {
@@ -74,34 +82,24 @@ const PersonaEditor: React.FC<PersonaEditorProps> = ({ promptId, onBack }) => {
         setSaving(true)
         try {
             if (isEditing && promptId) {
-                // 更新
-                const success = await updatePrompt(promptId, formData)
-                if (!success) {
-                    showToast('更新失败', 'error')
-                    return
-                }
-                // 删除头像
+                await updatePrompt(promptId, formData)
                 if (avatarDeleted && hasExistingAvatar) {
                     await deletePromptAvatar(promptId)
                 }
-                // 上传新头像
                 if (avatarFile) {
                     await uploadPromptAvatar(promptId, avatarFile)
                 }
                 showToast('更新成功', 'success')
             } else {
-                // 创建
                 const newPrompt = await createPrompt(formData)
-                if (!newPrompt) {
-                    showToast('创建失败', 'error')
-                    return
-                }
                 if (avatarFile) {
                     await uploadPromptAvatar(newPrompt.id, avatarFile)
                 }
                 showToast('创建成功', 'success')
             }
             onBack()
+        } catch (error) {
+            showToast(getErrorMessage(error, isEditing ? '更新失败' : '创建失败'), 'error')
         } finally {
             setSaving(false)
         }
@@ -117,12 +115,12 @@ const PersonaEditor: React.FC<PersonaEditorProps> = ({ promptId, onBack }) => {
             danger: true,
         })
         if (ok) {
-            const success = await deletePrompt(promptId)
-            if (success) {
+            try {
+                await deletePrompt(promptId)
                 showToast('删除成功', 'success')
                 onBack()
-            } else {
-                showToast('删除失败', 'error')
+            } catch (error) {
+                showToast(getErrorMessage(error, '删除失败'), 'error')
             }
         }
     }, [promptId, formData.name, confirm, onBack, showToast])

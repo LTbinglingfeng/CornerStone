@@ -33,6 +33,16 @@ export function appendQueryParam(url: string, key: string, value: string | numbe
     return `${url}${separator}${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`
 }
 
+export function getErrorMessage(error: unknown, fallback: string): string {
+    if (error instanceof Error) {
+        const message = error.message.trim()
+        if (message !== '') {
+            return message
+        }
+    }
+    return fallback
+}
+
 async function apiFetch(url: string, init: RequestInit = {}): Promise<Response> {
     const headers = new Headers(init.headers || {})
     const token = getAuthToken()
@@ -102,12 +112,11 @@ export async function loginAuth(username: string, password: string): Promise<Aut
 }
 
 export async function getSessions(): Promise<ChatSession[]> {
-    try {
-        const data = await apiFetchJson<ApiResponse<ChatSession[]>>(`${MANAGEMENT_BASE}/sessions`)
-        return data.success && data.data ? data.data : []
-    } catch {
-        return []
+    const data = await apiFetchJson<ApiResponse<ChatSession[]>>(`${MANAGEMENT_BASE}/sessions`)
+    if (!data.success) {
+        throw new Error(data.error || '加载会话失败')
     }
+    return data.data || []
 }
 
 export async function createSession(title?: string, promptId?: string): Promise<ChatRecord | null> {
@@ -127,12 +136,11 @@ export async function createSession(title?: string, promptId?: string): Promise<
 }
 
 export async function getSession(id: string): Promise<ChatRecord | null> {
-    try {
-        const data = await apiFetchJson<ApiResponse<ChatRecord>>(`${MANAGEMENT_BASE}/sessions/${id}`)
-        return data.success && data.data ? data.data : null
-    } catch {
-        return null
+    const data = await apiFetchJson<ApiResponse<ChatRecord>>(`${MANAGEMENT_BASE}/sessions/${id}`)
+    if (!data.success || !data.data) {
+        throw new Error(data.error || '加载会话失败')
     }
+    return data.data
 }
 
 export interface GetSessionMessagesPageOptions {
@@ -494,76 +502,69 @@ export async function updateSystemPrompt(systemPrompt: string): Promise<boolean>
 
 // 获取所有提示词
 export async function getPrompts(): Promise<Prompt[]> {
-    try {
-        const data = await apiFetchJson<ApiResponse<Prompt[]>>(`${MANAGEMENT_BASE}/prompts`)
-        return data.success && data.data ? data.data : []
-    } catch {
-        return []
+    const data = await apiFetchJson<ApiResponse<Prompt[]>>(`${MANAGEMENT_BASE}/prompts`)
+    if (!data.success) {
+        throw new Error(data.error || '加载提示词失败')
     }
+    return data.data || []
 }
 
 // 获取单个提示词
 export async function getPrompt(id: string): Promise<Prompt | null> {
-    try {
-        const data = await apiFetchJson<ApiResponse<Prompt>>(`${MANAGEMENT_BASE}/prompts/${id}`)
-        return data.success && data.data ? data.data : null
-    } catch {
-        return null
+    const data = await apiFetchJson<ApiResponse<Prompt>>(`${MANAGEMENT_BASE}/prompts/${id}`)
+    if (!data.success || !data.data) {
+        throw new Error(data.error || '加载提示词失败')
     }
+    return data.data
 }
 
 // 创建提示词
-export async function createPrompt(prompt: Partial<Prompt>): Promise<Prompt | null> {
-    try {
-        const data = await apiFetchJson<ApiResponse<Prompt>>(`${MANAGEMENT_BASE}/prompts`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(prompt),
-        })
-        return data.success && data.data ? data.data : null
-    } catch {
-        return null
+export async function createPrompt(prompt: Partial<Prompt>): Promise<Prompt> {
+    const data = await apiFetchJson<ApiResponse<Prompt>>(`${MANAGEMENT_BASE}/prompts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(prompt),
+    })
+    if (!data.success || !data.data) {
+        throw new Error(data.error || '创建提示词失败')
     }
+    return data.data
 }
 
 // 更新提示词
-export async function updatePrompt(id: string, prompt: Partial<Prompt>): Promise<boolean> {
-    try {
-        const data = await apiFetchJson<ApiResponse<Prompt>>(`${MANAGEMENT_BASE}/prompts/${id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(prompt),
-        })
-        return data.success
-    } catch {
-        return false
+export async function updatePrompt(id: string, prompt: Partial<Prompt>): Promise<Prompt> {
+    const data = await apiFetchJson<ApiResponse<Prompt>>(`${MANAGEMENT_BASE}/prompts/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(prompt),
+    })
+    if (!data.success || !data.data) {
+        throw new Error(data.error || '更新提示词失败')
     }
+    return data.data
 }
 
 // 删除提示词
-export async function deletePrompt(id: string): Promise<boolean> {
-    try {
-        const data = await apiFetchJson<ApiResponse<string>>(`${MANAGEMENT_BASE}/prompts/${id}`, { method: 'DELETE' })
-        return data.success
-    } catch {
-        return false
+export async function deletePrompt(id: string): Promise<void> {
+    const data = await apiFetchJson<ApiResponse<string>>(`${MANAGEMENT_BASE}/prompts/${id}`, { method: 'DELETE' })
+    if (!data.success) {
+        throw new Error(data.error || '删除提示词失败')
     }
 }
 
 // 上传提示词头像
-export async function uploadPromptAvatar(id: string, file: File): Promise<string | null> {
-    try {
-        const formData = new FormData()
-        formData.append('avatar', file)
+export async function uploadPromptAvatar(id: string, file: File): Promise<string> {
+    const formData = new FormData()
+    formData.append('avatar', file)
 
-        const data = await apiFetchJson<ApiResponse<string>>(`${MANAGEMENT_BASE}/prompts-avatar/${id}`, {
-            method: 'POST',
-            body: formData,
-        })
-        return data.success && data.data ? data.data : null
-    } catch {
-        return null
+    const data = await apiFetchJson<ApiResponse<string>>(`${MANAGEMENT_BASE}/prompts-avatar/${id}`, {
+        method: 'POST',
+        body: formData,
+    })
+    if (!data.success || !data.data) {
+        throw new Error(data.error || '上传头像失败')
     }
+    return data.data
 }
 
 // 获取提示词头像URL
@@ -572,14 +573,12 @@ export function getPromptAvatarUrl(id: string): string {
 }
 
 // 删除提示词头像
-export async function deletePromptAvatar(id: string): Promise<boolean> {
-    try {
-        const data = await apiFetchJson<ApiResponse<string>>(`${MANAGEMENT_BASE}/prompts-avatar/${id}`, {
-            method: 'DELETE',
-        })
-        return data.success
-    } catch {
-        return false
+export async function deletePromptAvatar(id: string): Promise<void> {
+    const data = await apiFetchJson<ApiResponse<string>>(`${MANAGEMENT_BASE}/prompts-avatar/${id}`, {
+        method: 'DELETE',
+    })
+    if (!data.success) {
+        throw new Error(data.error || '删除头像失败')
     }
 }
 

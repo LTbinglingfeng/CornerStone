@@ -7,3 +7,4 @@ cornerstone*
 test-output
 *.md
 sw.js
+!web/public/sw.js

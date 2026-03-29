@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { ChatSession, Prompt } from '../types/chat'
-import { getSessions, getPrompts, getPromptAvatarUrl, appendQueryParam } from '../services/api'
+import { getSessions, getPrompts, getPromptAvatarUrl, appendQueryParam, getErrorMessage } from '../services/api'
 import { formatTime } from '../utils/time'
 import ContextMenu from './ContextMenu'
 import { deleteSession } from '../services/api'
+import { useToast } from '../contexts/ToastContext'
 import './ChatList.css'
 
 interface ChatListProps {
@@ -25,9 +26,11 @@ interface MenuState {
 }
 
 const ChatList: React.FC<ChatListProps> = ({ onSelectSession, searchQuery = '', refreshToken }) => {
+    const { showToast } = useToast()
     const [promptsWithChats, setPromptsWithChats] = useState<PromptWithLatestChat[]>([])
     const [orphanSessions, setOrphanSessions] = useState<ChatSession[]>([])
     const [loading, setLoading] = useState(true)
+    const [error, setError] = useState('')
     const lastRefreshTokenRef = useRef<number | undefined>(undefined)
     const [menuState, setMenuState] = useState<MenuState>({
         visible: false,
@@ -53,57 +56,66 @@ const ChatList: React.FC<ChatListProps> = ({ onSelectSession, searchQuery = '', 
         if (showLoading) {
             setLoading(true)
         }
-        const [sessions, prompts] = await Promise.all([getSessions(), getPrompts()])
+        try {
+            const [sessions, prompts] = await Promise.all([getSessions(), getPrompts()])
 
-        // 按 prompt_id 分组聊天
-        const sessionsByPrompt: Record<string, ChatSession[]> = {}
-        const orphans: ChatSession[] = []
+            // 按 prompt_id 分组聊天
+            const sessionsByPrompt: Record<string, ChatSession[]> = {}
+            const orphans: ChatSession[] = []
 
-        sessions.forEach((session) => {
-            if (session.prompt_id) {
-                if (!sessionsByPrompt[session.prompt_id]) {
-                    sessionsByPrompt[session.prompt_id] = []
+            sessions.forEach((session) => {
+                if (session.prompt_id) {
+                    if (!sessionsByPrompt[session.prompt_id]) {
+                        sessionsByPrompt[session.prompt_id] = []
+                    }
+                    sessionsByPrompt[session.prompt_id].push(session)
+                } else {
+                    orphans.push(session)
                 }
-                sessionsByPrompt[session.prompt_id].push(session)
-            } else {
-                orphans.push(session)
-            }
-        })
+            })
 
-        // 构建带有最新聊天的 prompt 列表
-        const promptMap = new Map(prompts.map((p) => [p.id, p]))
-        const result: PromptWithLatestChat[] = []
+            // 构建带有最新聊天的 prompt 列表
+            const promptMap = new Map(prompts.map((p) => [p.id, p]))
+            const result: PromptWithLatestChat[] = []
 
-        Object.entries(sessionsByPrompt).forEach(([promptId, promptSessions]) => {
-            const prompt = promptMap.get(promptId)
-            if (!prompt) {
-                orphans.push(...promptSessions)
-                return
-            }
-            if (promptSessions.length > 0) {
-                // 按更新时间排序，取最新的
-                const sorted = promptSessions.sort(
-                    (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-                )
-                result.push({
-                    prompt,
-                    latestSession: sorted[0],
-                    sessionCount: sorted.length,
-                })
-            }
-        })
+            Object.entries(sessionsByPrompt).forEach(([promptId, promptSessions]) => {
+                const prompt = promptMap.get(promptId)
+                if (!prompt) {
+                    orphans.push(...promptSessions)
+                    return
+                }
+                if (promptSessions.length > 0) {
+                    // 按更新时间排序，取最新的
+                    const sorted = promptSessions.sort(
+                        (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+                    )
+                    result.push({
+                        prompt,
+                        latestSession: sorted[0],
+                        sessionCount: sorted.length,
+                    })
+                }
+            })
 
-        // 按最新聊天时间排序
-        result.sort(
-            (a, b) => new Date(b.latestSession.updated_at).getTime() - new Date(a.latestSession.updated_at).getTime()
-        )
+            // 按最新聊天时间排序
+            result.sort(
+                (a, b) =>
+                    new Date(b.latestSession.updated_at).getTime() - new Date(a.latestSession.updated_at).getTime()
+            )
 
-        // 孤儿聊天也按时间排序
-        orphans.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+            // 孤儿聊天也按时间排序
+            orphans.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
 
-        setPromptsWithChats(result)
-        setOrphanSessions(orphans)
-        setLoading(false)
+            setPromptsWithChats(result)
+            setOrphanSessions(orphans)
+            setError('')
+        } catch (error) {
+            setPromptsWithChats([])
+            setOrphanSessions([])
+            setError(getErrorMessage(error, '加载会话失败，请重试'))
+        } finally {
+            setLoading(false)
+        }
     }
 
     const handleLongPress = useCallback((sessionId: string, position: { x: number; y: number }) => {
@@ -122,8 +134,10 @@ const ChatList: React.FC<ChatListProps> = ({ onSelectSession, searchQuery = '', 
         const success = await deleteSession(menuState.sessionId)
         if (success) {
             loadData(false)
+        } else {
+            showToast('删除失败，请重试', 'error')
         }
-    }, [menuState.sessionId])
+    }, [loadData, menuState.sessionId, showToast])
 
     const getAvatarUrl = (prompt: Prompt) => {
         if (prompt.avatar) {
@@ -157,6 +171,14 @@ const ChatList: React.FC<ChatListProps> = ({ onSelectSession, searchQuery = '', 
         return (
             <div className="chat-list">
                 <div className="chat-list-empty">加载中...</div>
+            </div>
+        )
+    }
+
+    if (error) {
+        return (
+            <div className="chat-list">
+                <div className="chat-list-empty">{error}</div>
             </div>
         )
     }

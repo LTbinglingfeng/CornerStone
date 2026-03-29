@@ -43,6 +43,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         messages,
         setMessages,
         messagesOffset,
+        setMessagesTotal,
         loadingOlder,
         loadOlder,
         prompt,
@@ -265,6 +266,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
             return
         }
         setMessages((prev) => prev.filter((_, index) => index !== messageIndex))
+        setMessagesTotal((prev) => Math.max(0, prev - 1))
         setMessageMenu(null)
     }
 

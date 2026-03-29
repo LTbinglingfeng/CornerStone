@@ -5,6 +5,7 @@ import {
     getPromptAvatarUrl,
     createSession,
     appendQueryParam,
+    getErrorMessage,
 } from '../services/api'
 import type { Prompt } from '../types/chat'
 import { useToast } from '../contexts/ToastContext'
@@ -22,12 +23,20 @@ const Contacts: React.FC<ContactsProps> = ({ onStartChat, onEditPersona, refresh
     const { confirm } = useConfirm()
     const [prompts, setPrompts] = useState<Prompt[]>([])
     const [loading, setLoading] = useState(true)
+    const [error, setError] = useState('')
 
     const loadPrompts = async () => {
         setLoading(true)
-        const data = await getPrompts()
-        setPrompts(data)
-        setLoading(false)
+        try {
+            const data = await getPrompts()
+            setPrompts(data)
+            setError('')
+        } catch (error) {
+            setPrompts([])
+            setError(getErrorMessage(error, '加载提示词失败，请重试'))
+        } finally {
+            setLoading(false)
+        }
     }
 
     useEffect(() => {
@@ -42,12 +51,12 @@ const Contacts: React.FC<ContactsProps> = ({ onStartChat, onEditPersona, refresh
             danger: true,
         })
         if (ok) {
-            const success = await deletePrompt(prompt.id)
-            if (success) {
+            try {
+                await deletePrompt(prompt.id)
                 showToast('删除成功', 'success')
-                loadPrompts()
-            } else {
-                showToast('删除失败', 'error')
+                await loadPrompts()
+            } catch (error) {
+                showToast(getErrorMessage(error, '删除失败'), 'error')
             }
         }
     }
@@ -57,7 +66,9 @@ const Contacts: React.FC<ContactsProps> = ({ onStartChat, onEditPersona, refresh
         const session = await createSession(prompt.name, prompt.id)
         if (session) {
             onStartChat(session.id, prompt.id)
+            return
         }
+        showToast('创建会话失败，请重试', 'error')
     }
 
     const getAvatarUrl = (prompt: Prompt) => {
@@ -82,6 +93,10 @@ const Contacts: React.FC<ContactsProps> = ({ onStartChat, onEditPersona, refresh
             <div className="contacts-content">
                 {loading ? (
                     <div className="contacts-loading">加载中...</div>
+                ) : error ? (
+                    <div className="contacts-empty">
+                        <p>{error}</p>
+                    </div>
                 ) : prompts.length === 0 ? (
                     <div className="contacts-empty">
                         <div className="empty-icon">

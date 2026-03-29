@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'motion/react'
-import { getPrompts, getPromptAvatarUrl, appendQueryParam } from '../services/api'
+import { getPrompts, getPromptAvatarUrl, appendQueryParam, getErrorMessage } from '../services/api'
 import type { Prompt } from '../types/chat'
 import { centerModalVariants, overlayVariants } from '../utils/motion'
 import './PromptSelector.css'
@@ -13,6 +13,7 @@ interface PromptSelectorProps {
 const PromptSelector: React.FC<PromptSelectorProps> = ({ onSelect, onClose }) => {
     const [prompts, setPrompts] = useState<Prompt[]>([])
     const [loading, setLoading] = useState(true)
+    const [error, setError] = useState('')
 
     useEffect(() => {
         loadPrompts()
@@ -20,9 +21,16 @@ const PromptSelector: React.FC<PromptSelectorProps> = ({ onSelect, onClose }) =>
 
     const loadPrompts = async () => {
         setLoading(true)
-        const data = await getPrompts()
-        setPrompts(data)
-        setLoading(false)
+        try {
+            const data = await getPrompts()
+            setPrompts(data)
+            setError('')
+        } catch (error) {
+            setPrompts([])
+            setError(getErrorMessage(error, '加载提示词失败，请重试'))
+        } finally {
+            setLoading(false)
+        }
     }
 
     const handleSelect = (prompt: Prompt) => {
@@ -65,6 +73,11 @@ const PromptSelector: React.FC<PromptSelectorProps> = ({ onSelect, onClose }) =>
                 <div className="prompt-selector-content">
                     {loading ? (
                         <div className="prompt-selector-loading">加载中...</div>
+                    ) : error ? (
+                        <div className="prompt-selector-empty">
+                            <p>{error}</p>
+                            <p className="hint">请稍后重试</p>
+                        </div>
                     ) : prompts.length === 0 ? (
                         <div className="prompt-selector-empty">
                             <p>暂无提示词模板</p>
