@@ -1,8 +1,15 @@
-# CornerStone
+<div align="center">
 
-English | [中文](README_CN.md)
+<img src="web/public/logo_black.svg" alt="Octopus Logo" width="120" height="120">
 
-CornerStone is a self-hosted AI chat client with a Go backend and a React + TypeScript frontend. It combines chat sessions, persona management, memory extraction, Moments-style posting, image generation, TTS, and local data persistence in one web application.
+### CornerStone
+
+**CornerStone is a self-hosted AI chat client with a Go backend and a React + TypeScript frontend. It combines chat sessions, persona management, memory extraction, Moments-style posting, image generation, TTS, and local data persistence in one web application.
+**
+
+ English | [简体中文](README_CN.md)
+
+</div>
 
 ## Overview
 
