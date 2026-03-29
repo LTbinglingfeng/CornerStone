@@ -8,3 +8,5 @@ test-output
 *.md
 sw.js
 !web/public/sw.js
+!README.md
+!README_CN.md
