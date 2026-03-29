@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="web/public/logo_black.svg" alt="CornerStone Logo" width="120" height="120">
+<img src="web/public/logo_black.jpg" alt="CornerStone Logo" width="120" height="120">
 
 ### CornerStone
 
