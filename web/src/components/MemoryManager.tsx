@@ -4,6 +4,8 @@ import { categoryLabels, selfCategories, userCategories } from '../types/memory'
 import { memoryService, type MemoryExportItem, type MemoryStats } from '../services/memoryService'
 import { useToast } from '../contexts/ToastContext'
 import { useConfirm } from '../contexts/ConfirmContext'
+import CustomSelect from './provider/CustomSelect'
+import type { SelectOption } from './provider/constants'
 import './MemoryManager.css'
 
 interface MemoryManagerProps {
@@ -233,6 +235,20 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId }) => {
         return [...userCategories, ...selfCategories]
     }, [filterSubject])
 
+    // CustomSelect 选项
+    const subjectOptions: SelectOption[] = [
+        { value: 'all', label: '全部类型' },
+        { value: 'user', label: '关于用户' },
+        { value: 'self', label: '关于角色' },
+    ]
+
+    const categoryOptions: SelectOption[] = useMemo(() => {
+        return [
+            { value: 'all', label: '全部分类' },
+            ...availableCategories.map((c) => ({ value: c, label: categoryLabels[c] || c })),
+        ]
+    }, [availableCategories])
+
     // 当 subject 切换时重置 category
     useEffect(() => {
         if (filterCategory !== 'all' && !availableCategories.includes(filterCategory)) {
@@ -293,27 +309,22 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId }) => {
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                 />
-                <select
-                    className="memory-filter-select"
-                    value={filterSubject}
-                    onChange={(e) => setFilterSubject(e.target.value as 'all' | 'user' | 'self')}
-                >
-                    <option value="all">全部类型</option>
-                    <option value="user">关于用户</option>
-                    <option value="self">关于角色</option>
-                </select>
-                <select
-                    className="memory-filter-select"
-                    value={filterCategory}
-                    onChange={(e) => setFilterCategory(e.target.value)}
-                >
-                    <option value="all">全部分类</option>
-                    {availableCategories.map((c) => (
-                        <option key={c} value={c}>
-                            {categoryLabels[c]}
-                        </option>
-                    ))}
-                </select>
+                <div className="memory-filter-select-wrapper">
+                    <CustomSelect
+                        value={filterSubject}
+                        options={subjectOptions}
+                        onChange={(v) => setFilterSubject(v as 'all' | 'user' | 'self')}
+                        ariaLabel="类型筛选"
+                    />
+                </div>
+                <div className="memory-filter-select-wrapper">
+                    <CustomSelect
+                        value={filterCategory}
+                        options={categoryOptions}
+                        onChange={setFilterCategory}
+                        ariaLabel="分类筛选"
+                    />
+                </div>
             </div>
 
             {/* 筛选结果提示 */}
@@ -714,21 +725,25 @@ function AddMemoryModal({
                 <form onSubmit={handleSubmit}>
                     <div className="memory-form-group">
                         <label>类型</label>
-                        <select value={subject} onChange={(e) => setSubject(e.target.value as 'user' | 'self')}>
-                            <option value="user">关于用户</option>
-                            <option value="self">关于角色</option>
-                        </select>
+                        <CustomSelect
+                            value={subject}
+                            options={[
+                                { value: 'user', label: '关于用户' },
+                                { value: 'self', label: '关于角色' },
+                            ]}
+                            onChange={(v) => setSubject(v as 'user' | 'self')}
+                            ariaLabel="记忆类型"
+                        />
                     </div>
 
                     <div className="memory-form-group">
                         <label>分类</label>
-                        <select value={category} onChange={(e) => setCategory(e.target.value)}>
-                            {categories.map((c) => (
-                                <option key={c} value={c}>
-                                    {categoryLabels[c]}
-                                </option>
-                            ))}
-                        </select>
+                        <CustomSelect
+                            value={category}
+                            options={categories.map((c) => ({ value: c, label: categoryLabels[c] || c }))}
+                            onChange={setCategory}
+                            ariaLabel="记忆分类"
+                        />
                     </div>
 
                     <div className="memory-form-group">
@@ -743,11 +758,14 @@ function AddMemoryModal({
                         />
                     </div>
 
-                    <div className="memory-form-group memory-form-checkbox">
-                        <label>
-                            <input type="checkbox" checked={pinned} onChange={(e) => setPinned(e.target.checked)} />
-                            设为永久记忆
-                        </label>
+                    <div className="memory-form-group memory-form-toggle">
+                        <div className="modal-toggle-wrapper">
+                            <label className="toggle-switch">
+                                <input type="checkbox" checked={pinned} onChange={(e) => setPinned(e.target.checked)} />
+                                <span className="toggle-slider"></span>
+                            </label>
+                            <span className="toggle-label">设为永久记忆</span>
+                        </div>
                     </div>
 
                     <div className="memory-form-actions">
@@ -864,10 +882,15 @@ function ImportMemoryModal({
 
                         <div className="memory-form-group">
                             <label>导入模式</label>
-                            <select value={mode} onChange={(e) => setMode(e.target.value as 'merge' | 'replace')}>
-                                <option value="merge">合并（保留现有记忆）</option>
-                                <option value="replace">替换（删除现有记忆）</option>
-                            </select>
+                            <CustomSelect
+                                value={mode}
+                                options={[
+                                    { value: 'merge', label: '合并（保留现有记忆）' },
+                                    { value: 'replace', label: '替换（删除现有记忆）' },
+                                ]}
+                                onChange={(v) => setMode(v as 'merge' | 'replace')}
+                                ariaLabel="导入模式"
+                            />
                         </div>
                     </>
                 )}

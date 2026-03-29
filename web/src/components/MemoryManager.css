@@ -416,7 +416,6 @@
     color: var(--text-secondary);
 }
 
-.memory-form-group select,
 .memory-form-group input[type='text'] {
     width: 100%;
     padding: 12px 14px;
@@ -429,26 +428,15 @@
     box-sizing: border-box;
 }
 
-.memory-form-group input:focus,
-.memory-form-group select:focus {
+.memory-form-group input[type='text']:focus {
     border-color: var(--accent-color);
 }
 
-/* 永久记忆勾选框 */
-.memory-form-checkbox label {
+/* 永久记忆 toggle-switch */
+.memory-form-toggle .modal-toggle-wrapper {
     display: flex;
     align-items: center;
-    gap: 8px;
-    cursor: pointer;
-    font-size: 14px;
-    color: var(--text-primary);
-}
-
-.memory-form-checkbox input[type='checkbox'] {
-    width: 16px;
-    height: 16px;
-    cursor: pointer;
-    accent-color: var(--accent-color);
+    gap: 12px;
 }
 
 .memory-form-actions {
@@ -573,19 +561,14 @@
     border-color: var(--accent-color);
 }
 
-.memory-filter-select {
-    padding: 10px 14px;
-    border: 1px solid var(--border-color);
-    border-radius: 10px;
-    font-size: 14px;
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
-    outline: none;
-    min-width: 100px;
+/* 筛选区 CustomSelect 容器 */
+.memory-filter-select-wrapper {
+    min-width: 120px;
 }
 
-.memory-filter-select:focus {
-    border-color: var(--accent-color);
+.memory-filter-select-wrapper .modal-select-trigger {
+    padding: 10px 14px;
+    font-size: 14px;
 }
 
 .filter-result-hint {
