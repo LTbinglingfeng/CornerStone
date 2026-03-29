@@ -10,12 +10,14 @@ import './MemoryManager.css'
 
 interface MemoryManagerProps {
     promptId: string
+    embedded?: boolean
+    onMemoryCountChange?: (count: number) => void
 }
 
 const THRESHOLD_ACTIVE = 0.3
 const THRESHOLD_ARCHIVE = 0.15
 
-const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId }) => {
+const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId, embedded, onMemoryCountChange }) => {
     const { showToast } = useToast()
     const { confirm } = useConfirm()
     const [memories, setMemories] = useState<Memory[]>([])
@@ -51,12 +53,13 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId }) => {
             ])
             setMemories(data)
             setStats(statsData)
+            onMemoryCountChange?.(data.length)
         } catch (error) {
             console.error('Failed to load memories:', error)
         } finally {
             setLoading(false)
         }
-    }, [promptId])
+    }, [promptId, onMemoryCountChange])
 
     useEffect(() => {
         loadMemories()
@@ -256,16 +259,18 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId }) => {
         }
     }, [filterSubject, filterCategory, availableCategories])
 
+    const rootCls = `memory-manager${embedded ? ' embedded' : ''}`
+
     if (!promptId) {
-        return <div className="memory-manager loading">请先选择角色</div>
+        return <div className={`${rootCls} loading`}>请先选择角色</div>
     }
 
     if (loading) {
-        return <div className="memory-manager loading">加载中...</div>
+        return <div className={`${rootCls} loading`}>加载中...</div>
     }
 
     return (
-        <div className="memory-manager">
+        <div className={rootCls}>
             <div className="memory-header">
                 <h3>记忆管理</h3>
                 <div className="memory-header-actions">

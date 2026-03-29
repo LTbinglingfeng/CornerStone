@@ -1,0 +1,375 @@
+/* PersonaEditor 全屏容器 */
+.persona-editor {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: var(--bg-primary);
+    display: flex;
+    flex-direction: column;
+    z-index: 100;
+    transition: background-color 0.3s ease;
+}
+
+/* 56px sticky header */
+.persona-editor-header {
+    height: 56px;
+    min-height: 56px;
+    background-color: var(--bg-secondary);
+    border-bottom: 0.5px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 4px;
+    flex-shrink: 0;
+    transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+.persona-editor-header .header-left,
+.persona-editor-header .header-right {
+    display: flex;
+    align-items: center;
+    min-width: 72px;
+}
+
+.persona-editor-header .header-right {
+    justify-content: flex-end;
+}
+
+.persona-editor-header .header-title {
+    flex: 1;
+    text-align: center;
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--text-primary);
+    transition: color 0.3s ease;
+}
+
+.persona-editor-header .back-btn {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    background: none;
+    border: none;
+    color: var(--accent-color);
+    font-size: 15px;
+    cursor: pointer;
+    padding: 8px 12px;
+    border-radius: 8px;
+}
+
+.persona-editor-header .back-btn svg {
+    width: 22px;
+    height: 22px;
+    fill: var(--accent-color);
+}
+
+.persona-editor-header .back-btn:active {
+    opacity: 0.6;
+}
+
+.persona-editor-header .save-btn {
+    background: none;
+    border: none;
+    color: var(--accent-color);
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 8px 16px;
+    border-radius: 8px;
+    transition: opacity 0.2s;
+}
+
+.persona-editor-header .save-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.persona-editor-header .save-btn:active:not(:disabled) {
+    opacity: 0.6;
+}
+
+/* 滚动内容区域 */
+.persona-editor-content {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: env(safe-area-inset-bottom, 20px);
+}
+
+/* Hero 区域：头像 + 名称 + 描述 */
+.persona-hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 20px 24px;
+}
+
+.persona-hero .avatar-container {
+    position: relative;
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    overflow: hidden;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    margin-bottom: 20px;
+    flex-shrink: 0;
+}
+
+.persona-hero .avatar-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.persona-hero .avatar-fallback {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, var(--accent-color), #5856d6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 36px;
+    font-weight: 600;
+}
+
+.persona-hero .avatar-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.persona-hero .avatar-container:hover .avatar-overlay {
+    opacity: 1;
+}
+
+.persona-hero .avatar-overlay svg {
+    width: 28px;
+    height: 28px;
+    fill: white;
+}
+
+.persona-hero .avatar-delete-link {
+    background: none;
+    border: none;
+    color: var(--danger-color);
+    font-size: 13px;
+    cursor: pointer;
+    padding: 4px 8px;
+    margin-top: -12px;
+    margin-bottom: 8px;
+}
+
+.persona-hero .avatar-delete-link:hover {
+    text-decoration: underline;
+}
+
+.persona-hero .name-input {
+    width: 100%;
+    max-width: 320px;
+    text-align: center;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid var(--border-color);
+    color: var(--text-primary);
+    font-size: 20px;
+    font-weight: 600;
+    padding: 8px 4px;
+    outline: none;
+    transition: border-color 0.3s ease, color 0.3s ease;
+}
+
+.persona-hero .name-input::placeholder {
+    color: var(--text-placeholder);
+    font-weight: 400;
+}
+
+.persona-hero .name-input:focus {
+    border-bottom-color: var(--accent-color);
+}
+
+.persona-hero .description-input {
+    width: 100%;
+    max-width: 320px;
+    text-align: center;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 14px;
+    padding: 8px 4px;
+    outline: none;
+    resize: none;
+    line-height: 1.5;
+    overflow: hidden;
+    font-family: inherit;
+    transition: color 0.3s ease;
+}
+
+.persona-hero .description-input::placeholder {
+    color: var(--text-placeholder);
+}
+
+.persona-hero .description-input:focus {
+    color: var(--text-primary);
+}
+
+/* Card 区块 */
+.persona-section {
+    margin: 0 16px 16px;
+    background-color: var(--bg-secondary);
+    border-radius: 12px;
+    padding: 16px;
+    transition: background-color 0.3s ease;
+}
+
+.persona-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.persona-section-header .section-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: color 0.3s ease;
+}
+
+.persona-section-header .section-icon {
+    width: 20px;
+    height: 20px;
+    fill: var(--accent-color);
+    flex-shrink: 0;
+}
+
+.persona-section-header .section-badge {
+    font-size: 12px;
+    color: var(--text-secondary);
+    transition: color 0.3s ease;
+}
+
+/* 系统提示词 textarea */
+.prompt-textarea {
+    width: 100%;
+    min-height: 200px;
+    background-color: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 12px 14px;
+    color: var(--text-primary);
+    font-size: 14px;
+    font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+    line-height: 1.6;
+    outline: none;
+    resize: vertical;
+    box-sizing: border-box;
+    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+.prompt-textarea::placeholder {
+    color: var(--text-placeholder);
+    font-family: inherit;
+}
+
+.prompt-textarea:focus {
+    border-color: var(--accent-color);
+}
+
+/* 记忆管理区域 */
+.persona-memory-section .persona-section-header {
+    cursor: pointer;
+    user-select: none;
+    margin-bottom: 0;
+}
+
+.persona-memory-section .persona-section-header:hover .section-title {
+    color: var(--accent-color);
+}
+
+.memory-count-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 7px;
+    background-color: var(--accent-color);
+    color: white;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 11px;
+}
+
+.memory-chevron {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    color: var(--text-secondary);
+}
+
+.memory-chevron svg {
+    width: 16px;
+    height: 16px;
+    fill: var(--text-secondary);
+}
+
+.persona-memory-section .memory-content-wrapper {
+    padding-top: 12px;
+}
+
+/* 危险操作区 */
+.danger-zone {
+    margin: 16px 16px 32px;
+    padding: 16px;
+    border: 1px solid var(--danger-color);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.danger-zone .delete-persona-btn {
+    background: transparent;
+    border: none;
+    color: var(--danger-color);
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+    padding: 8px 16px;
+    transition: opacity 0.2s;
+}
+
+.danger-zone .delete-persona-btn:hover {
+    opacity: 0.8;
+}
+
+.danger-zone .delete-persona-btn:active {
+    opacity: 0.6;
+}
+
+/* MemoryManager embedded 覆盖样式 */
+.memory-manager.embedded {
+    padding: 0;
+}
+
+.memory-manager.embedded .memory-header {
+    margin-top: 12px;
+}
+
+.memory-manager.embedded .batch-action-bar {
+    margin: 16px 0 0;
+}

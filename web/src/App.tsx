@@ -12,6 +12,7 @@ import BottomNav from './components/BottomNav'
 import PromptSelector from './components/PromptSelector'
 import AuthSetupPage from './components/AuthSetupPage'
 import AuthLoginPage from './components/AuthLoginPage'
+import PersonaEditor from './components/PersonaEditor'
 import {
     appendQueryParam,
     createSession,
@@ -53,6 +54,8 @@ function App() {
     const [refreshKey, setRefreshKey] = useState(0)
     const [searchQuery, setSearchQuery] = useState('')
     const [showPromptSelector, setShowPromptSelector] = useState(false)
+    const [editingPromptId, setEditingPromptId] = useState<string | null>(null)
+    const [contactsRefreshToken, setContactsRefreshToken] = useState(0)
     const selectedSessionIdRef = useRef<string | null>(null)
     const openSessionHandlerRef = useRef<(id: string, promptId?: string) => void>(() => {})
     const sessionUpdatedAtRef = useRef<Map<string, string>>(new Map())
@@ -125,6 +128,16 @@ function App() {
         },
         [openSession]
     )
+
+    // 人设编辑器: promptId='' 表示新建, promptId='xxx' 表示编辑
+    const handleEditPersona = useCallback((promptId?: string) => {
+        setEditingPromptId(promptId ?? '')
+    }, [])
+
+    const handlePersonaEditorBack = useCallback(() => {
+        setEditingPromptId(null)
+        setContactsRefreshToken((k) => k + 1)
+    }, [])
 
     useEffect(() => {
         if (typeof window === 'undefined') return
@@ -465,7 +478,11 @@ function App() {
 
                 {/* 通讯录页面 */}
                 <div className="view-page">
-                    <Contacts onStartChat={handleStartChatWithPrompt} />
+                    <Contacts
+                        onStartChat={handleStartChatWithPrompt}
+                        onEditPersona={handleEditPersona}
+                        refreshToken={contactsRefreshToken}
+                    />
                 </div>
 
                 {/* 朋友圈页面 */}
@@ -499,6 +516,17 @@ function App() {
             <AnimatePresence>
                 {showPromptSelector && (
                     <PromptSelector onSelect={handlePromptSelect} onClose={handlePromptSelectorClose} />
+                )}
+            </AnimatePresence>
+
+            {/* 人设编辑器（覆盖层） */}
+            <AnimatePresence>
+                {editingPromptId !== null && (
+                    <PersonaEditor
+                        key="persona-editor"
+                        promptId={editingPromptId || undefined}
+                        onBack={handlePersonaEditorBack}
+                    />
                 )}
             </AnimatePresence>
         </div>
