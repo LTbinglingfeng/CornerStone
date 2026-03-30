@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'motion/react'
 import type { Provider } from '../types/chat'
 import { getProviders, setImageProvider } from '../services/api'
-import { PROVIDER_TYPES_ALL } from './provider'
+import { useT } from '../contexts/I18nContext'
+import { getProviderTypesAll } from './provider'
 import { useToast } from '../contexts/ToastContext'
 import { drawerVariants } from '../utils/motion'
 import './ProviderSettings.css'
@@ -12,6 +13,7 @@ interface ImageProviderSettingsProps {
 }
 
 const ImageProviderSettings: React.FC<ImageProviderSettingsProps> = ({ onBack }) => {
+    const { t } = useT()
     const { showToast } = useToast()
     const [providers, setProviders] = useState<Provider[]>([])
     const [imageProviderId, setImageProviderId] = useState('')
@@ -55,9 +57,9 @@ const ImageProviderSettings: React.FC<ImageProviderSettingsProps> = ({ onBack })
         const ok = await setImageProvider(providerId)
         if (ok) {
             setImageProviderId(providerId)
-            showToast(providerId ? '已切换生图供应商' : '已切换为自动选择', 'success')
+            showToast(providerId ? t('settings.imageProvider') : t('imageProvider.autoSelect'), 'success')
         } else {
-            showToast('设置失败', 'error')
+            showToast(t('settings.settingFailed'), 'error')
         }
         setSaving(false)
     }
@@ -78,17 +80,16 @@ const ImageProviderSettings: React.FC<ImageProviderSettingsProps> = ({ onBack })
                         <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
                     </svg>
                 </button>
-                <div className="provider-settings-title">生图供应商</div>
+                <div className="provider-settings-title">{t('imageProvider.title')}</div>
                 <div style={{ width: 44 }}></div>
             </div>
 
             {loading ? (
-                <div className="provider-settings-loading">加载中...</div>
+                <div className="provider-settings-loading">{t('common.loading')}</div>
             ) : (
                 <div className="provider-settings-content">
                     <div style={{ marginBottom: 12, color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.4 }}>
-                        提示：生图供应商仅用于生图功能，不影响对话模型。需要先在「供应商管理」中添加类型为 Gemini
-                        生图的供应商。
+                        {t('imageProvider.hint')}
                     </div>
 
                     <div className="provider-cards">
@@ -100,32 +101,36 @@ const ImageProviderSettings: React.FC<ImageProviderSettingsProps> = ({ onBack })
                             }}
                         >
                             <div className="provider-card-header">
-                                <div className="provider-card-id">自动选择</div>
-                                {isAuto && <span className="active-indicator">使用中</span>}
+                                <div className="provider-card-id">{t('imageProvider.autoSelect')}</div>
+                                {isAuto && <span className="active-indicator">{t('imageProvider.inUse')}</span>}
                             </div>
                             <div className="provider-card-body">
                                 <div className="provider-card-row">
-                                    <span className="provider-card-label">当前</span>
-                                    <span className="provider-card-value">{autoProvider?.name || '未配置'}</span>
+                                    <span className="provider-card-label">{t('common.current')}</span>
+                                    <span className="provider-card-value">
+                                        {autoProvider?.name || t('common.notConfigured')}
+                                    </span>
                                 </div>
                                 <div className="provider-card-row">
-                                    <span className="provider-card-label">模型</span>
-                                    <span className="provider-card-value model">{autoProvider?.model || '未设置'}</span>
+                                    <span className="provider-card-label">{t('provider.model')}</span>
+                                    <span className="provider-card-value model">
+                                        {autoProvider?.model || t('common.notSet')}
+                                    </span>
                                 </div>
                             </div>
                         </div>
 
                         {imageProviders.length === 0 ? (
                             <div style={{ padding: 12, color: 'var(--text-secondary)', fontSize: 12 }}>
-                                暂无可用的生图供应商
+                                {t('imageProvider.noProviders')}
                             </div>
                         ) : (
                             imageProviders.map((provider) => {
                                 const isSelected = provider.id === imageProviderId
                                 const typeLabel =
-                                    PROVIDER_TYPES_ALL.find((t) => t.value === provider.type)?.label ||
+                                    getProviderTypesAll().find((type) => type.value === provider.type)?.label ||
                                     provider.type ||
-                                    'Gemini 生图'
+                                    t('provider.geminiImage')
                                 return (
                                     <div
                                         key={provider.id}
@@ -137,21 +142,25 @@ const ImageProviderSettings: React.FC<ImageProviderSettingsProps> = ({ onBack })
                                     >
                                         <div className="provider-card-header">
                                             <div className="provider-card-id">{provider.id}</div>
-                                            {isSelected && <span className="active-indicator">使用中</span>}
+                                            {isSelected && (
+                                                <span className="active-indicator">{t('imageProvider.inUse')}</span>
+                                            )}
                                         </div>
                                         <div className="provider-card-body">
                                             <div className="provider-card-row">
-                                                <span className="provider-card-label">名称</span>
-                                                <span className="provider-card-value">{provider.name || '未命名'}</span>
-                                            </div>
-                                            <div className="provider-card-row">
-                                                <span className="provider-card-label">模型</span>
-                                                <span className="provider-card-value model">
-                                                    {provider.model || '未设置'}
+                                                <span className="provider-card-label">{t('imageProvider.name')}</span>
+                                                <span className="provider-card-value">
+                                                    {provider.name || t('common.unnamed')}
                                                 </span>
                                             </div>
                                             <div className="provider-card-row">
-                                                <span className="provider-card-label">类型</span>
+                                                <span className="provider-card-label">{t('provider.model')}</span>
+                                                <span className="provider-card-value model">
+                                                    {provider.model || t('common.notSet')}
+                                                </span>
+                                            </div>
+                                            <div className="provider-card-row">
+                                                <span className="provider-card-label">{t('imageProvider.type')}</span>
                                                 <span className="provider-card-value type">{typeLabel}</span>
                                             </div>
                                         </div>
@@ -163,7 +172,7 @@ const ImageProviderSettings: React.FC<ImageProviderSettingsProps> = ({ onBack })
 
                     {!isAuto && !selectedProvider && (
                         <div style={{ marginTop: 12, color: 'var(--text-secondary)', fontSize: 12 }}>
-                            当前选择的生图供应商不存在，请重新选择
+                            {t('imageProvider.providerNotExist')}
                         </div>
                     )}
                 </div>

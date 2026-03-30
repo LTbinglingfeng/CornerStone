@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { useT } from '../../../contexts/I18nContext'
 
 interface RedPacketComposerProps {
     open: boolean
@@ -9,6 +10,7 @@ interface RedPacketComposerProps {
 }
 
 export const RedPacketComposer: React.FC<RedPacketComposerProps> = ({ open, sending, onClose, onSend }) => {
+    const { t } = useT()
     const [amountDraft, setAmountDraft] = useState('')
     const [blessingDraft, setBlessingDraft] = useState('')
     const [error, setError] = useState<string | null>(null)
@@ -28,16 +30,16 @@ export const RedPacketComposer: React.FC<RedPacketComposerProps> = ({ open, send
         setError(null)
         const amountValue = Number.parseFloat(amountDraft)
         if (!Number.isFinite(amountValue) || amountValue <= 0) {
-            setError('请输入正确的金额')
+            setError(t('redPacket.invalidAmount'))
             return
         }
         const blessing = blessingDraft.trim()
         if (!blessing) {
-            setError('请输入祝福语')
+            setError(t('redPacket.greetingRequired'))
             return
         }
         if (blessing.length > 10) {
-            setError('祝福语不能超过10个字')
+            setError(t('redPacket.greetingTooLong'))
             return
         }
 
@@ -52,12 +54,12 @@ export const RedPacketComposer: React.FC<RedPacketComposerProps> = ({ open, send
     return createPortal(
         <div className="rp-compose-overlay">
             <div className="rp-compose-topbar">
-                <button type="button" className="rp-compose-back" onClick={onClose} aria-label="返回">
+                <button type="button" className="rp-compose-back" onClick={onClose} aria-label={t('common.back')}>
                     <svg viewBox="0 0 24 24" aria-hidden="true">
                         <path d="M15.5 5.5a1 1 0 0 1 0 1.4L10.4 12l5.1 5.1a1 1 0 1 1-1.4 1.4l-5.8-5.8a1 1 0 0 1 0-1.4l5.8-5.8a1 1 0 0 1 1.4 0z" />
                     </svg>
                 </button>
-                <div className="rp-compose-topbar-title">发红包</div>
+                <div className="rp-compose-topbar-title">{t('redPacket.sendRedPacket')}</div>
                 <div className="rp-compose-topbar-spacer" />
             </div>
 
@@ -71,7 +73,7 @@ export const RedPacketComposer: React.FC<RedPacketComposerProps> = ({ open, send
                             inputMode="decimal"
                             min="0.01"
                             step="0.01"
-                            placeholder="单个金额"
+                            placeholder={t('redPacket.amountPlaceholder')}
                             value={amountDraft}
                             onChange={(e) => setAmountDraft(e.target.value)}
                         />
@@ -89,7 +91,7 @@ export const RedPacketComposer: React.FC<RedPacketComposerProps> = ({ open, send
                         <input
                             className="rp-compose-row-input"
                             type="text"
-                            placeholder="恭喜发财，大吉大利"
+                            placeholder={t('redPacket.greetingPlaceholder')}
                             value={blessingDraft}
                             maxLength={10}
                             onChange={(e) => setBlessingDraft(e.target.value)}
@@ -112,10 +114,10 @@ export const RedPacketComposer: React.FC<RedPacketComposerProps> = ({ open, send
                 {error && <div className="rp-compose-error">{error}</div>}
 
                 <button type="button" className="rp-compose-send" onClick={handleSend} disabled={sending}>
-                    塞钱进红包
+                    {t('redPacket.sendButton')}
                 </button>
 
-                <div className="rp-compose-footnote">未领取的红包，将于24小时后发起退款</div>
+                <div className="rp-compose-footnote">{t('redPacket.refundHint')}</div>
             </div>
         </div>,
         document.body

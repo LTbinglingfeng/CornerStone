@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'motion/react'
 import { getPrompts, getPromptAvatarUrl, appendQueryParam, getErrorMessage } from '../services/api'
+import { useT } from '../contexts/I18nContext'
 import type { Prompt } from '../types/chat'
 import { centerModalVariants, overlayVariants } from '../utils/motion'
 import './PromptSelector.css'
@@ -11,6 +12,7 @@ interface PromptSelectorProps {
 }
 
 const PromptSelector: React.FC<PromptSelectorProps> = ({ onSelect, onClose }) => {
+    const { t } = useT()
     const [prompts, setPrompts] = useState<Prompt[]>([])
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
@@ -27,7 +29,7 @@ const PromptSelector: React.FC<PromptSelectorProps> = ({ onSelect, onClose }) =>
             setError('')
         } catch (error) {
             setPrompts([])
-            setError(getErrorMessage(error, '加载提示词失败，请重试'))
+            setError(getErrorMessage(error, t('promptSelector.loadFailed')))
         } finally {
             setLoading(false)
         }
@@ -62,7 +64,7 @@ const PromptSelector: React.FC<PromptSelectorProps> = ({ onSelect, onClose }) =>
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="prompt-selector-header">
-                    <h3>选择对话角色</h3>
+                    <h3>{t('promptSelector.title')}</h3>
                     <button className="prompt-selector-close" onClick={onClose}>
                         <svg viewBox="0 0 24 24">
                             <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
@@ -72,16 +74,16 @@ const PromptSelector: React.FC<PromptSelectorProps> = ({ onSelect, onClose }) =>
 
                 <div className="prompt-selector-content">
                     {loading ? (
-                        <div className="prompt-selector-loading">加载中...</div>
+                        <div className="prompt-selector-loading">{t('common.loading')}</div>
                     ) : error ? (
                         <div className="prompt-selector-empty">
                             <p>{error}</p>
-                            <p className="hint">请稍后重试</p>
+                            <p className="hint">{t('common.tryAgainLater')}</p>
                         </div>
                     ) : prompts.length === 0 ? (
                         <div className="prompt-selector-empty">
-                            <p>暂无提示词模板</p>
-                            <p className="hint">请先在通讯录中创建提示词</p>
+                            <p>{t('promptSelector.noPrompts')}</p>
+                            <p className="hint">{t('promptSelector.createFirst')}</p>
                         </div>
                     ) : (
                         <div className="prompt-selector-list">

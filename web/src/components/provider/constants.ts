@@ -1,38 +1,39 @@
 import type { ProviderType } from '../../types/chat'
+import { translate } from '../../i18n'
 
 export type SelectOption = { value: string; label: string }
 
-export const PROVIDER_TYPES_ALL: { value: ProviderType; label: string }[] = [
-    { value: 'openai', label: 'OpenAI 兼容' },
-    { value: 'openai_response', label: 'OpenAI Responses' },
-    { value: 'gemini', label: 'Google Gemini' },
-    { value: 'gemini_image', label: 'Gemini 生图' },
-    { value: 'anthropic', label: 'Anthropic Claude' },
+export const getProviderTypesAll = (): { value: ProviderType; label: string }[] => [
+    { value: 'openai', label: translate('provider.openaiCompatible') },
+    { value: 'openai_response', label: translate('provider.openaiResponses') },
+    { value: 'gemini', label: translate('provider.googleGemini') },
+    { value: 'gemini_image', label: translate('provider.geminiImage') },
+    { value: 'anthropic', label: translate('provider.anthropicClaude') },
 ]
 
-export const PROVIDER_TYPES_CHAT: { value: ProviderType; label: string }[] = [
-    { value: 'openai', label: 'OpenAI 兼容' },
-    { value: 'openai_response', label: 'OpenAI Responses' },
-    { value: 'gemini', label: 'Google Gemini' },
-    { value: 'anthropic', label: 'Anthropic Claude' },
+export const getProviderTypesChat = (): { value: ProviderType; label: string }[] => [
+    { value: 'openai', label: translate('provider.openaiCompatible') },
+    { value: 'openai_response', label: translate('provider.openaiResponses') },
+    { value: 'gemini', label: translate('provider.googleGemini') },
+    { value: 'anthropic', label: translate('provider.anthropicClaude') },
 ]
 
-export const OPENAI_REASONING_EFFORT_OPTIONS: SelectOption[] = [
-    { value: '', label: '默认' },
-    { value: 'low', label: '低 (low)' },
-    { value: 'medium', label: '中 (medium)' },
-    { value: 'high', label: '高 (high)' },
+export const getOpenAIReasoningEffortOptions = (): SelectOption[] => [
+    { value: '', label: translate('provider.defaultEffort') },
+    { value: 'low', label: translate('provider.lowEffort') },
+    { value: 'medium', label: translate('provider.mediumEffort') },
+    { value: 'high', label: translate('provider.highEffort') },
 ]
 
-export const GEMINI_THINKING_MODES: SelectOption[] = [
-    { value: 'none', label: '不思考' },
-    { value: 'thinking_level', label: 'thinkingLevel (Gemini 3 系列)' },
-    { value: 'thinking_budget', label: 'thinkingBudget (Gemini 2.5 系列)' },
+export const getGeminiThinkingModes = (): SelectOption[] => [
+    { value: 'none', label: translate('provider.noThinking') },
+    { value: 'thinking_level', label: translate('provider.thinkingLevelGemini3') },
+    { value: 'thinking_budget', label: translate('provider.thinkingBudgetGemini25') },
 ]
 
-export const GEMINI_THINKING_LEVELS: SelectOption[] = [
-    { value: 'low', label: '低 (low)' },
-    { value: 'high', label: '高 (high)' },
+export const getGeminiThinkingLevels = (): SelectOption[] => [
+    { value: 'low', label: translate('provider.lowEffort') },
+    { value: 'high', label: translate('provider.highEffort') },
 ]
 
 export const GEMINI_IMAGE_ASPECT_RATIOS: SelectOption[] = [
@@ -43,8 +44,8 @@ export const GEMINI_IMAGE_ASPECT_RATIOS: SelectOption[] = [
     { value: '16:9', label: '16:9' },
 ]
 
-export const GEMINI_IMAGE_SIZES: SelectOption[] = [
-    { value: '', label: '默认' },
+export const getGeminiImageSizes = (): SelectOption[] => [
+    { value: '', label: translate('provider.defaultEffort') },
     { value: '1K', label: '1K' },
     { value: '2K', label: '2K' },
 ]

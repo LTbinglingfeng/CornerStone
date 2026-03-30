@@ -3,15 +3,16 @@ import { AnimatePresence, motion } from 'motion/react'
 import type { Provider, ProviderType } from '../types/chat'
 import { getProviders, updateMemoryProvider } from '../services/api'
 import {
-    PROVIDER_TYPES_CHAT,
-    OPENAI_REASONING_EFFORT_OPTIONS,
-    GEMINI_THINKING_MODES,
-    GEMINI_THINKING_LEVELS,
+    getProviderTypesChat,
+    getOpenAIReasoningEffortOptions,
+    getGeminiThinkingModes,
+    getGeminiThinkingLevels,
     getGeminiThinkingBudgetRange,
     clampGeminiThinkingBudget,
     CustomSelect,
 } from './provider'
 import { NumericInput } from './NumericInput'
+import { useT } from '../contexts/I18nContext'
 import { centerModalVariants, drawerVariants, overlayVariants } from '../utils/motion'
 import './ProviderSettings.css'
 
@@ -20,18 +21,24 @@ interface MemoryProviderSettingsProps {
 }
 
 const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack }) => {
+    const { t } = useT()
     const [providers, setProviders] = useState<Provider[]>([])
     const [activeProviderId, setActiveProviderId] = useState('')
     const [memoryProvider, setMemoryProvider] = useState<Provider | null>(null)
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
     const [message, setMessage] = useState('')
+    const [messageType, setMessageType] = useState<'success' | 'error'>('success')
     const [showModal, setShowModal] = useState(false)
     const [editingProvider, setEditingProvider] = useState<Provider | null>(null)
+    const providerTypesChat = getProviderTypesChat()
+    const openAIReasoningEffortOptions = getOpenAIReasoningEffortOptions()
+    const geminiThinkingModes = getGeminiThinkingModes()
+    const geminiThinkingLevels = getGeminiThinkingLevels()
 
     const emptyProvider: Provider = {
         id: 'memory',
-        name: '记忆提供商',
+        name: '',
         type: 'openai',
         base_url: '',
         api_key: '',
@@ -71,9 +78,13 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
         onBack()
     }
 
-    const showMessageToast = (msg: string) => {
+    const showMessageToast = (msg: string, type: 'success' | 'error' = 'success') => {
         setMessage(msg)
-        setTimeout(() => setMessage(''), 2000)
+        setMessageType(type)
+        setTimeout(() => {
+            setMessage('')
+            setMessageType('success')
+        }, 2000)
     }
 
     const handleUseFollowChat = async () => {
@@ -82,9 +93,9 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
         const updated = await updateMemoryProvider(false)
         if (updated !== undefined) {
             setMemoryProvider(null)
-            showMessageToast('已切换为跟随对话模型')
+            showMessageToast(t('settings.followChatModel'))
         } else {
-            showMessageToast('切换失败')
+            showMessageToast(t('settings.settingFailed'), 'error')
         }
         setSaving(false)
     }
@@ -171,28 +182,28 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
         if (!editingProvider) return
 
         if (!editingProvider.id || !editingProvider.name) {
-            showMessageToast('ID 和名称为必填项')
+            showMessageToast(t('memoryProvider.idRequired'), 'error')
             return
         }
 
         if (!editingProvider.base_url.trim()) {
-            showMessageToast('API 地址为必填项')
+            showMessageToast(t('memoryProvider.apiUrlRequired'), 'error')
             return
         }
 
         if (!editingProvider.model.trim()) {
-            showMessageToast('模型为必填项')
+            showMessageToast(t('memoryProvider.modelRequired'), 'error')
             return
         }
 
         const hasStoredApiKey = Boolean(memoryProvider?.api_key)
         if (!hasStoredApiKey && !editingProvider.api_key.trim()) {
-            showMessageToast('API 密钥为必填项')
+            showMessageToast(t('memoryProvider.apiKeyRequired'), 'error')
             return
         }
 
         if (editingProvider.type === 'gemini_image') {
-            showMessageToast('Gemini 生图不允许用于记忆')
+            showMessageToast(t('memoryProvider.geminiImageNotAllowed'), 'error')
             return
         }
 
@@ -200,10 +211,10 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
         const updated = await updateMemoryProvider(true, editingProvider)
         if (updated) {
             setMemoryProvider(updated)
-            showMessageToast('记忆提供商已保存')
+            showMessageToast(t('memoryProvider.saved'))
             handleCloseModal()
         } else {
-            showMessageToast('保存失败')
+            showMessageToast(t('common.saveFailed'), 'error')
         }
         setSaving(false)
     }
@@ -224,16 +235,16 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                         <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
                     </svg>
                 </button>
-                <div className="provider-settings-title">记忆提供商</div>
+                <div className="provider-settings-title">{t('memoryProvider.title')}</div>
                 <div style={{ width: 44 }}></div>
             </div>
 
             {loading ? (
-                <div className="provider-settings-loading">加载中...</div>
+                <div className="provider-settings-loading">{t('common.loading')}</div>
             ) : (
                 <div className="provider-settings-content">
                     <div style={{ marginBottom: 12, color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.4 }}>
-                        提示：记忆提供商仅用于长期记忆提取，不影响对话模型。Gemini 生图不允许作为记忆提供商。
+                        {t('memoryProvider.hint')}
                     </div>
 
                     <div className="provider-cards">
@@ -245,24 +256,26 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                             }}
                         >
                             <div className="provider-card-header">
-                                <div className="provider-card-id">跟随对话模型</div>
-                                {isFollowChat && <div className="active-indicator">当前</div>}
+                                <div className="provider-card-id">{t('settings.followChatModel')}</div>
+                                {isFollowChat && <div className="active-indicator">{t('common.current')}</div>}
                             </div>
                             <div className="provider-card-body">
                                 <div className="provider-card-row">
-                                    <span className="provider-card-label">名称</span>
-                                    <span className="provider-card-value">{activeChatProvider?.name || '未设置'}</span>
-                                </div>
-                                <div className="provider-card-row">
-                                    <span className="provider-card-label">模型</span>
-                                    <span className="provider-card-value model">
-                                        {activeChatProvider?.model || '未设置'}
+                                    <span className="provider-card-label">{t('imageProvider.name')}</span>
+                                    <span className="provider-card-value">
+                                        {activeChatProvider?.name || t('common.notSet')}
                                     </span>
                                 </div>
                                 <div className="provider-card-row">
-                                    <span className="provider-card-label">类型</span>
+                                    <span className="provider-card-label">{t('provider.model')}</span>
+                                    <span className="provider-card-value model">
+                                        {activeChatProvider?.model || t('common.notSet')}
+                                    </span>
+                                </div>
+                                <div className="provider-card-row">
+                                    <span className="provider-card-label">{t('imageProvider.type')}</span>
                                     <span className="provider-card-value type">
-                                        {activeChatProvider?.type || 'unknown'}
+                                        {activeChatProvider?.type || t('memoryProvider.unknown')}
                                     </span>
                                 </div>
                             </div>
@@ -273,24 +286,26 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                             onClick={() => openEditModal()}
                         >
                             <div className="provider-card-header">
-                                <div className="provider-card-id">独立记忆提供商</div>
-                                {!isFollowChat && <div className="active-indicator">当前</div>}
+                                <div className="provider-card-id">{t('memoryProvider.independent')}</div>
+                                {!isFollowChat && <div className="active-indicator">{t('common.current')}</div>}
                             </div>
                             <div className="provider-card-body">
                                 <div className="provider-card-row">
-                                    <span className="provider-card-label">名称</span>
-                                    <span className="provider-card-value">{memoryProvider?.name || '未配置'}</span>
-                                </div>
-                                <div className="provider-card-row">
-                                    <span className="provider-card-label">模型</span>
-                                    <span className="provider-card-value model">
-                                        {memoryProvider?.model || '未配置'}
+                                    <span className="provider-card-label">{t('imageProvider.name')}</span>
+                                    <span className="provider-card-value">
+                                        {memoryProvider?.name || t('common.notConfigured')}
                                     </span>
                                 </div>
                                 <div className="provider-card-row">
-                                    <span className="provider-card-label">类型</span>
+                                    <span className="provider-card-label">{t('provider.model')}</span>
+                                    <span className="provider-card-value model">
+                                        {memoryProvider?.model || t('common.notConfigured')}
+                                    </span>
+                                </div>
+                                <div className="provider-card-row">
+                                    <span className="provider-card-label">{t('imageProvider.type')}</span>
                                     <span className="provider-card-value type">
-                                        {memoryProvider?.type || 'unknown'}
+                                        {memoryProvider?.type || t('memoryProvider.unknown')}
                                     </span>
                                 </div>
                             </div>
@@ -305,7 +320,7 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                                     <svg viewBox="0 0 24 24">
                                         <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1.003 1.003 0 000-1.42l-2.34-2.34a1.003 1.003 0 00-1.42 0l-1.83 1.83 3.75 3.75 1.84-1.82z" />
                                     </svg>
-                                    {memoryProvider ? '编辑' : '配置'}
+                                    {memoryProvider ? t('common.edit') : t('common.configure')}
                                 </button>
                             </div>
                         </div>
@@ -332,7 +347,7 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                             onClick={(e) => e.stopPropagation()}
                         >
                             <div className="modal-header">
-                                <h3>记忆提供商配置</h3>
+                                <h3>{t('memoryProvider.configTitle')}</h3>
                                 <button className="modal-close" onClick={handleCloseModal}>
                                     <svg viewBox="0 0 24 24">
                                         <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
@@ -342,7 +357,7 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
 
                             <div className="modal-body">
                                 <div className="modal-group">
-                                    <label className="modal-label">供应商ID</label>
+                                    <label className="modal-label">{t('memoryProvider.providerId')}</label>
                                     <input
                                         type="text"
                                         className="modal-input"
@@ -353,28 +368,28 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                                 </div>
 
                                 <div className="modal-group">
-                                    <label className="modal-label">显示名称</label>
+                                    <label className="modal-label">{t('provider.displayName')}</label>
                                     <input
                                         type="text"
                                         className="modal-input"
                                         value={editingProvider.name}
                                         onChange={(e) => handleProviderChange('name', e.target.value)}
-                                        placeholder="记忆提供商"
+                                        placeholder={t('memoryProvider.title')}
                                     />
                                 </div>
 
                                 <div className="modal-group">
-                                    <label className="modal-label">供应商类型</label>
+                                    <label className="modal-label">{t('provider.type')}</label>
                                     <CustomSelect
                                         value={editingProvider.type || 'openai'}
-                                        options={PROVIDER_TYPES_CHAT}
-                                        ariaLabel="供应商类型"
+                                        options={providerTypesChat}
+                                        ariaLabel={t('provider.type')}
                                         onChange={(value) => handleProviderChange('type', value)}
                                     />
                                 </div>
 
                                 <div className="modal-group">
-                                    <label className="modal-label">API 地址 (URL)</label>
+                                    <label className="modal-label">{t('memoryProvider.apiUrl')}</label>
                                     <input
                                         type="text"
                                         className="modal-input"
@@ -385,18 +400,18 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                                 </div>
 
                                 <div className="modal-group">
-                                    <label className="modal-label">API 密钥 (Key)</label>
+                                    <label className="modal-label">{t('memoryProvider.apiKey')}</label>
                                     <input
                                         type="password"
                                         className="modal-input"
                                         value={editingProvider.api_key}
                                         onChange={(e) => handleProviderChange('api_key', e.target.value)}
-                                        placeholder={memoryProvider ? '留空保持不变' : 'sk-...'}
+                                        placeholder={memoryProvider ? t('memoryProvider.apiKeyHint') : 'sk-...'}
                                     />
                                 </div>
 
                                 <div className="modal-group">
-                                    <label className="modal-label">模型</label>
+                                    <label className="modal-label">{t('memoryProvider.model')}</label>
                                     <input
                                         type="text"
                                         className="modal-input"
@@ -407,7 +422,7 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                                 </div>
 
                                 <div className="modal-group">
-                                    <label className="modal-label">温度 (0-2)</label>
+                                    <label className="modal-label">{t('memoryProvider.temperature')}</label>
                                     <NumericInput
                                         className="modal-input"
                                         min={0}
@@ -422,7 +437,7 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                                 </div>
 
                                 <div className="modal-group">
-                                    <label className="modal-label">Top P (0-1)</label>
+                                    <label className="modal-label">{t('memoryProvider.topP')}</label>
                                     <NumericInput
                                         className="modal-input"
                                         min={0}
@@ -437,11 +452,11 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
 
                                 {(editingProvider.type === 'openai' || editingProvider.type === 'openai_response') && (
                                     <div className="modal-group">
-                                        <label className="modal-label">思考量 (reasoning effort)</label>
+                                        <label className="modal-label">{t('memoryProvider.reasoningEffort')}</label>
                                         <CustomSelect
                                             value={editingProvider.reasoning_effort ?? ''}
-                                            options={OPENAI_REASONING_EFFORT_OPTIONS}
-                                            ariaLabel="思考量"
+                                            options={openAIReasoningEffortOptions}
+                                            ariaLabel={t('memoryProvider.reasoningEffort')}
                                             onChange={(value) => handleProviderChange('reasoning_effort', value)}
                                         />
                                     </div>
@@ -450,11 +465,13 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                                 {editingProvider.type === 'gemini' && (
                                     <>
                                         <div className="modal-group">
-                                            <label className="modal-label">Gemini 思考模式</label>
+                                            <label className="modal-label">
+                                                {t('memoryProvider.geminiThinkingMode')}
+                                            </label>
                                             <CustomSelect
                                                 value={editingProvider.gemini_thinking_mode || 'none'}
-                                                options={GEMINI_THINKING_MODES}
-                                                ariaLabel="Gemini 思考模式"
+                                                options={geminiThinkingModes}
+                                                ariaLabel={t('memoryProvider.geminiThinkingMode')}
                                                 onChange={(value) =>
                                                     handleProviderChange('gemini_thinking_mode', value)
                                                 }
@@ -462,12 +479,14 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                                         </div>
 
                                         <div className="modal-group">
-                                            <label className="modal-label">Gemini 思考参数</label>
+                                            <label className="modal-label">
+                                                {t('memoryProvider.geminiThinkingParams')}
+                                            </label>
                                             {editingProvider.gemini_thinking_mode === 'thinking_level' && (
                                                 <CustomSelect
                                                     value={editingProvider.gemini_thinking_level || 'low'}
-                                                    options={GEMINI_THINKING_LEVELS}
-                                                    ariaLabel="Gemini 思考参数"
+                                                    options={geminiThinkingLevels}
+                                                    ariaLabel={t('memoryProvider.geminiThinkingParams')}
                                                     onChange={(value) =>
                                                         handleProviderChange('gemini_thinking_level', value)
                                                     }
@@ -488,7 +507,12 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                                                 />
                                             )}
                                             {editingProvider.gemini_thinking_mode === 'none' && (
-                                                <input type="text" className="modal-input" value="已关闭" disabled />
+                                                <input
+                                                    type="text"
+                                                    className="modal-input"
+                                                    value={t('common.disabled')}
+                                                    disabled
+                                                />
                                             )}
                                         </div>
                                     </>
@@ -496,7 +520,7 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
 
                                 {editingProvider.type === 'anthropic' && (
                                     <div className="modal-group">
-                                        <label className="modal-label">思考预算 (tokens)</label>
+                                        <label className="modal-label">{t('memoryProvider.thinkingBudget')}</label>
                                         <NumericInput
                                             className="modal-input"
                                             min={0}
@@ -514,10 +538,10 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
 
                             <div className="modal-footer">
                                 <button className="modal-btn cancel" onClick={handleCloseModal}>
-                                    取消
+                                    {t('common.cancel')}
                                 </button>
                                 <button className="modal-btn save" onClick={handleSaveProvider} disabled={saving}>
-                                    {saving ? '保存中...' : '保存'}
+                                    {saving ? t('common.saving') : t('common.save')}
                                 </button>
                             </div>
                         </motion.div>
@@ -525,13 +549,7 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                 )}
             </AnimatePresence>
 
-            {message && (
-                <div
-                    className={`provider-message ${message.includes('成功') || message.includes('已') ? 'success' : 'error'}`}
-                >
-                    {message}
-                </div>
-            )}
+            {message && <div className={`provider-message ${messageType}`}>{message}</div>}
         </motion.div>
     )
 }

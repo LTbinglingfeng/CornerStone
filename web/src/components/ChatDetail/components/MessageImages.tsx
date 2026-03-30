@@ -5,6 +5,7 @@ interface MessageImagesProps {
 }
 
 export const MessageImages: React.FC<MessageImagesProps> = ({ timestamp, imagePaths, getImageUrl }) => {
+    const { t } = useT()
     if (!imagePaths || imagePaths.length === 0) return null
 
     return (
@@ -13,10 +14,11 @@ export const MessageImages: React.FC<MessageImagesProps> = ({ timestamp, imagePa
                 <img
                     key={`${timestamp}-image-${index}`}
                     src={getImageUrl(imagePath)}
-                    alt="聊天图片"
+                    alt={t('chat.chatImage')}
                     className="message-image"
                 />
             ))}
         </div>
     )
 }
+import { useT } from '../../../contexts/I18nContext'

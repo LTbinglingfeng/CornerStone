@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import { motion } from 'motion/react'
 import type { ChatMessage, Prompt, UserInfo } from '../../../types/chat'
+import { useT } from '../../../contexts/I18nContext'
 import type { ActiveRedPacketState, DisplayItem } from '../types'
 import type { PacketStep } from '../RedPacket'
 import { PatBanner, RedPacketBubble, RedPacketReceivedBanner, derivePacketKeys } from '../RedPacket'
@@ -65,6 +66,7 @@ export const MessageList: React.FC<MessageListProps> = ({
     onPointerCancel,
     onPointerLeave,
 }) => {
+    const { t } = useT()
     const animatedBubbleKeysRef = useRef<Set<string>>(new Set())
     const bubbleKeysSeededRef = useRef(false)
     const shouldScrollToBottomRef = useRef(true)
@@ -121,13 +123,15 @@ export const MessageList: React.FC<MessageListProps> = ({
     return (
         <div className="message-list" ref={listRef} onScroll={handleScroll}>
             {loading ? (
-                <div className="empty-messages">加载中...</div>
+                <div className="empty-messages">{t('common.loading')}</div>
             ) : displayItems.length === 0 ? (
-                <div className="empty-messages">开始新的对话</div>
+                <div className="empty-messages">{t('chat.startNewChat')}</div>
             ) : (
                 <>
                     {hasMoreBefore && (
-                        <div className="message-load-more">{loadingOlder ? '加载中...' : '继续上滑加载更多'}</div>
+                        <div className="message-load-more">
+                            {loadingOlder ? t('common.loading') : t('chat.loadMore')}
+                        </div>
                     )}
                     {displayItems.map((item) => {
                         const isRedPacket = item.type === 'red-packet'
@@ -159,7 +163,7 @@ export const MessageList: React.FC<MessageListProps> = ({
                         if (isRecallBanner) {
                             return (
                                 <div key={item.key} className="message-item pat-banner-item">
-                                    <div className="pat-banner">你撤回了一条消息</div>
+                                    <div className="pat-banner">{t('chat.recalledBanner')}</div>
                                 </div>
                             )
                         }
@@ -175,7 +179,7 @@ export const MessageList: React.FC<MessageListProps> = ({
                                         e.stopPropagation()
                                         onPatAssistant()
                                     }}
-                                    title="双击拍一拍"
+                                    title={t('chat.doubleTapPoke')}
                                 />
                             ) : null
                         const rightAvatar =
@@ -189,7 +193,9 @@ export const MessageList: React.FC<MessageListProps> = ({
                                 const opened = openedRedPacketKeys.has(primaryKey) || openedRedPacketKeys.has(legacyKey)
                                 const packetKey = openedRedPacketKeys.has(legacyKey) ? legacyKey : primaryKey
                                 const senderName =
-                                    role === 'user' ? userDisplayName || '我' : assistantDisplayName || 'AI Assistant'
+                                    role === 'user'
+                                        ? userDisplayName || t('chat.defaultUserName')
+                                        : assistantDisplayName || t('chat.defaultAIName')
                                 const senderAvatarSrc = role === 'user' ? userAvatarSrc : assistantAvatarSrc
                                 const initialStep: PacketStep = role === 'user' || opened ? 'opened' : 'idle'
                                 return (

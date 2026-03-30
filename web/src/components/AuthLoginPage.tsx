@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useT } from '../contexts/I18nContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { logoBlackDataUrl, logoWhiteDataUrl } from 'virtual:cornerstone-logos'
 import './AuthLoginPage.css'
@@ -10,6 +11,7 @@ interface AuthLoginPageProps {
 }
 
 const AuthLoginPage: React.FC<AuthLoginPageProps> = ({ username, onSubmit, loading = false }) => {
+    const { t } = useT()
     const { theme } = useTheme()
     const [inputUsername, setInputUsername] = useState(username || '')
     const [password, setPassword] = useState('')
@@ -27,11 +29,11 @@ const AuthLoginPage: React.FC<AuthLoginPageProps> = ({ username, onSubmit, loadi
         event.preventDefault()
         const trimmed = inputUsername.trim()
         if (!trimmed) {
-            setError('请输入用户名')
+            setError(t('auth.enterUsername'))
             return
         }
         if (!password) {
-            setError('请输入密码')
+            setError(t('auth.enterPasswordPlaceholder'))
             return
         }
         setError(null)
@@ -49,12 +51,12 @@ const AuthLoginPage: React.FC<AuthLoginPageProps> = ({ username, onSubmit, loadi
                 <div className="auth-logo-wrapper">
                     <img className="auth-logo" src={logoSrc} alt="CornerStone" />
                 </div>
-                <div className="auth-title">输入密码</div>
-                <div className="auth-subtitle">欢迎回来，请验证密码</div>
+                <div className="auth-title">{t('auth.enterPassword')}</div>
+                <div className="auth-subtitle">{t('auth.welcomeBack')}</div>
                 <form className="auth-form" onSubmit={handleSubmit}>
                     <div className="auth-field">
                         <label className="auth-label" htmlFor="auth-login-username">
-                            用户名
+                            {t('auth.username')}
                         </label>
                         <input
                             id="auth-login-username"
@@ -64,14 +66,14 @@ const AuthLoginPage: React.FC<AuthLoginPageProps> = ({ username, onSubmit, loadi
                                 if (error) setError(null)
                                 setInputUsername(event.target.value)
                             }}
-                            placeholder="请输入用户名"
+                            placeholder={t('auth.enterUsername')}
                             autoComplete="username"
                             disabled={loading || isUsernameLocked}
                         />
                     </div>
                     <div className="auth-field">
                         <label className="auth-label" htmlFor="auth-login-password">
-                            密码
+                            {t('auth.password')}
                         </label>
                         <input
                             id="auth-login-password"
@@ -82,14 +84,14 @@ const AuthLoginPage: React.FC<AuthLoginPageProps> = ({ username, onSubmit, loadi
                                 if (error) setError(null)
                                 setPassword(event.target.value)
                             }}
-                            placeholder="请输入密码"
+                            placeholder={t('auth.enterPasswordPlaceholder')}
                             autoComplete="current-password"
                             disabled={loading}
                         />
                     </div>
                     {error && <div className="auth-error">{error}</div>}
                     <button className="auth-button" type="submit" disabled={loading}>
-                        {loading ? '验证中...' : '进入应用'}
+                        {loading ? t('auth.verifying') : t('auth.enterApp')}
                     </button>
                 </form>
             </div>

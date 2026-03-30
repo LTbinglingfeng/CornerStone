@@ -1,9 +1,16 @@
 import type { ChatMessage } from '../../types/chat'
-import { ASSISTANT_MESSAGE_SPLIT_TOKEN, QUOTE_PREFIX_CANDIDATES, RECALLED_MESSAGE_SUFFIX } from './constants'
+import { translate } from '../../i18n'
+import {
+    ASSISTANT_MESSAGE_SPLIT_TOKEN,
+    QUOTE_PREFIX_CANDIDATES,
+    RECALLED_MESSAGE_SUFFIX_CANDIDATES,
+    getQuotedMessagePrefix,
+} from './constants'
 
 export const isRecalledMessage = (message: ChatMessage): boolean => {
     if (message.role !== 'user') return false
-    return message.content.trimEnd().endsWith(RECALLED_MESSAGE_SUFFIX)
+    const trimmed = message.content.trimEnd()
+    return RECALLED_MESSAGE_SUFFIX_CANDIDATES.some((suffix) => trimmed.endsWith(suffix))
 }
 
 export const parseQuotedMessageContent = (content: string): { quoteLine: string; text: string } | null => {
@@ -24,7 +31,7 @@ export const parseQuotedMessageContent = (content: string): { quoteLine: string;
 }
 
 export const buildQuotedOutgoingContent = (quoteLine: string, text: string): string => {
-    const header = `引用的信息: ${quoteLine}`
+    const header = `${getQuotedMessagePrefix()} ${quoteLine}`
     if (text.trim() === '') return header
     return `${header}\n${text}`
 }
@@ -62,14 +69,14 @@ export const buildQuoteLineFromMessage = (
     const parsed = parseQuotedMessageContent(rawContent)
     let quoteText = (parsed ? parsed.text : rawContent).trim()
     if (!quoteText && message.image_paths && message.image_paths.length > 0) {
-        quoteText = '图片'
+        quoteText = translate('chat.imageText')
     }
     quoteText = quoteText.replace(/\s+/g, ' ').trim()
     const maxLen = 80
     if (quoteText.length > maxLen) {
         quoteText = quoteText.slice(0, maxLen) + '...'
     }
-    return `${name}：${quoteText || '...'}`
+    return `${name}: ${quoteText || '...'}`
 }
 
 export const buildSelectableText = (message: ChatMessage): string => {

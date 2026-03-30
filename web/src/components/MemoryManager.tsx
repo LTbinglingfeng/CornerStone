@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Memory } from '../types/memory'
-import { categoryLabels, selfCategories, userCategories } from '../types/memory'
+import { getCategoryLabel, selfCategories, userCategories } from '../types/memory'
 import { memoryService, type MemoryExportItem, type MemoryStats } from '../services/memoryService'
+import { useT } from '../contexts/I18nContext'
 import { useToast } from '../contexts/ToastContext'
 import { useConfirm } from '../contexts/ConfirmContext'
 import CustomSelect from './provider/CustomSelect'
@@ -18,6 +19,7 @@ const THRESHOLD_ACTIVE = 0.3
 const THRESHOLD_ARCHIVE = 0.15
 
 const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId, embedded, onMemoryCountChange }) => {
+    const { t } = useT()
     const { showToast } = useToast()
     const { confirm } = useConfirm()
     const [memories, setMemories] = useState<Memory[]>([])
@@ -67,9 +69,9 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId, embedded, onMem
 
     const handleDelete = async (memoryId: string) => {
         const ok = await confirm({
-            title: '删除记忆',
-            message: '确定删除这条记忆吗？',
-            confirmText: '删除',
+            title: t('memory.deleteMemory'),
+            message: t('memory.deleteMemoryConfirm'),
+            confirmText: t('common.delete'),
             danger: true,
         })
         if (!ok) return
@@ -78,7 +80,7 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId, embedded, onMem
             await loadMemories()
         } catch (error) {
             console.error('Failed to delete memory:', error)
-            showToast('删除失败，请重试', 'error')
+            showToast(t('memory.deleteFailed'), 'error')
         }
     }
 
@@ -88,7 +90,7 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId, embedded, onMem
             await loadMemories()
         } catch (error) {
             console.error('Failed to toggle pin:', error)
-            showToast('操作失败，请重试', 'error')
+            showToast(t('common.operationFailed'), 'error')
         }
     }
 
@@ -106,7 +108,7 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId, embedded, onMem
             await loadMemories()
         } catch (error) {
             console.error('Failed to update strength:', error)
-            showToast('修改失败，请重试', 'error')
+            showToast(t('memory.modifyFailed'), 'error')
         }
     }
 
@@ -124,10 +126,10 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId, embedded, onMem
             a.download = `memories-${promptId}-${new Date().toISOString().slice(0, 10)}.json`
             a.click()
             URL.revokeObjectURL(url)
-            showToast(`已导出 ${data.length} 条记忆`, 'success')
+            showToast(t('memory.exported', { count: data.length }), 'success')
         } catch (error) {
             console.error('Failed to export memories:', error)
-            showToast('导出失败', 'error')
+            showToast(t('memory.exportFailed'), 'error')
         }
     }
 
@@ -135,40 +137,40 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId, embedded, onMem
     const handleBatchDelete = async () => {
         if (selectedIds.size === 0) return
         const ok = await confirm({
-            title: '批量删除',
-            message: `确定删除选中的 ${selectedIds.size} 条记忆吗？`,
-            confirmText: '删除',
+            title: t('memory.batchDelete'),
+            message: t('memory.batchDeleteConfirm', { count: selectedIds.size }),
+            confirmText: t('common.delete'),
             danger: true,
         })
         if (!ok) return
         try {
             const result = await memoryService.batchDeleteMemories(promptId, Array.from(selectedIds))
-            showToast(`已删除 ${result.deleted} 条记忆`, 'success')
+            showToast(t('memory.batchDeleted', { count: result.deleted }), 'success')
             setSelectedIds(new Set())
             setSelectMode(false)
             await loadMemories()
         } catch (error) {
             console.error('Failed to batch delete:', error)
-            showToast('批量删除失败', 'error')
+            showToast(t('memory.batchDeleteFailed'), 'error')
         }
     }
 
     // 清空归档
     const handleClearArchived = async () => {
         const ok = await confirm({
-            title: '清空归档',
-            message: '确定清空所有归档记忆吗？固定记忆不会被删除。',
-            confirmText: '清空',
+            title: t('memory.clearArchived'),
+            message: t('memory.clearArchivedConfirm'),
+            confirmText: t('memory.clear'),
             danger: true,
         })
         if (!ok) return
         try {
             const result = await memoryService.deleteArchivedMemories(promptId)
-            showToast(`已清空 ${result.deleted} 条归档记忆`, 'success')
+            showToast(t('memory.clearedArchived', { count: result.deleted }), 'success')
             await loadMemories()
         } catch (error) {
             console.error('Failed to clear archived:', error)
-            showToast('清空归档失败', 'error')
+            showToast(t('memory.clearArchivedFailed'), 'error')
         }
     }
 
@@ -240,17 +242,17 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId, embedded, onMem
 
     // CustomSelect 选项
     const subjectOptions: SelectOption[] = [
-        { value: 'all', label: '全部类型' },
-        { value: 'user', label: '关于用户' },
-        { value: 'self', label: '关于角色' },
+        { value: 'all', label: t('memory.allTypes') },
+        { value: 'user', label: t('memory.aboutUser') },
+        { value: 'self', label: t('memory.aboutCharacter') },
     ]
 
     const categoryOptions: SelectOption[] = useMemo(() => {
         return [
-            { value: 'all', label: '全部分类' },
-            ...availableCategories.map((c) => ({ value: c, label: categoryLabels[c] || c })),
+            { value: 'all', label: t('memory.allCategories') },
+            ...availableCategories.map((c) => ({ value: c, label: getCategoryLabel(c) })),
         ]
-    }, [availableCategories])
+    }, [availableCategories, t])
 
     // 当 subject 切换时重置 category
     useEffect(() => {
@@ -262,45 +264,43 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId, embedded, onMem
     const rootCls = `memory-manager${embedded ? ' embedded' : ''}`
 
     if (!promptId) {
-        return <div className={`${rootCls} loading`}>请先选择角色</div>
+        return <div className={`${rootCls} loading`}>{t('memory.selectCharacterFirst')}</div>
     }
 
     if (loading) {
-        return <div className={`${rootCls} loading`}>加载中...</div>
+        return <div className={`${rootCls} loading`}>{t('common.loading')}</div>
     }
 
     return (
         <div className={rootCls}>
             <div className="memory-header">
-                <h3>记忆管理</h3>
+                <h3>{t('memory.title')}</h3>
                 <div className="memory-header-actions">
-                    <button className="action-btn" onClick={() => setShowStats(!showStats)} title="统计">
-                        {showStats ? '隐藏统计' : '统计'}
+                    <button className="action-btn" onClick={() => setShowStats(!showStats)} title={t('memory.stats')}>
+                        {showStats ? t('memory.hideStats') : t('memory.stats')}
                     </button>
-                    <button className="action-btn" onClick={handleExport} title="导出">
-                        导出
+                    <button className="action-btn" onClick={handleExport} title={t('common.export')}>
+                        {t('common.export')}
                     </button>
-                    <button className="action-btn" onClick={() => setShowImportModal(true)} title="导入">
-                        导入
+                    <button className="action-btn" onClick={() => setShowImportModal(true)} title={t('common.import')}>
+                        {t('common.import')}
                     </button>
                     {selectMode ? (
                         <button className="action-btn" onClick={exitSelectMode}>
-                            取消选择
+                            {t('common.cancelSelect')}
                         </button>
                     ) : (
                         <button className="action-btn" onClick={() => setSelectMode(true)}>
-                            选择
+                            {t('common.select')}
                         </button>
                     )}
                     <button className="add-btn" onClick={() => setShowAddModal(true)}>
-                        + 添加
+                        + {t('common.add')}
                     </button>
                 </div>
             </div>
 
-            <div className="memory-hint">
-                提示：记忆会保存在本地。开启长期记忆后，系统会将最近若干轮对话片段发送给记忆处理模型用于提取，请勿输入敏感信息。
-            </div>
+            <div className="memory-hint">{t('memory.hint')}</div>
 
             {/* 统计面板 */}
             {showStats && stats && <StatsPanel stats={stats} />}
@@ -310,7 +310,7 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId, embedded, onMem
                 <input
                     type="text"
                     className="memory-search"
-                    placeholder="搜索记忆内容..."
+                    placeholder={t('memory.searchPlaceholder')}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                 />
@@ -319,7 +319,7 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId, embedded, onMem
                         value={filterSubject}
                         options={subjectOptions}
                         onChange={(v) => setFilterSubject(v as 'all' | 'user' | 'self')}
-                        ariaLabel="类型筛选"
+                        ariaLabel={t('memory.typeFilter')}
                     />
                 </div>
                 <div className="memory-filter-select-wrapper">
@@ -327,7 +327,7 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId, embedded, onMem
                         value={filterCategory}
                         options={categoryOptions}
                         onChange={setFilterCategory}
-                        ariaLabel="分类筛选"
+                        ariaLabel={t('memory.categoryFilter')}
                     />
                 </div>
             </div>
@@ -335,8 +335,8 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId, embedded, onMem
             {/* 筛选结果提示 */}
             {(searchQuery || filterSubject !== 'all' || filterCategory !== 'all') && (
                 <div className="filter-result-hint">
-                    共找到 {filteredMemories.length} 条记忆
-                    {filteredMemories.length !== memories.length && ` (共 ${memories.length} 条)`}
+                    {t('memory.foundCount', { count: filteredMemories.length })}
+                    {filteredMemories.length !== memories.length && t('memory.totalCount', { count: memories.length })}
                     <button
                         className="clear-filter-btn"
                         onClick={() => {
@@ -345,7 +345,7 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId, embedded, onMem
                             setFilterCategory('all')
                         }}
                     >
-                        清除筛选
+                        {t('memory.clearFilter')}
                     </button>
                 </div>
             )}
@@ -354,7 +354,9 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId, embedded, onMem
             {pinnedMemories.length > 0 && (
                 <section className="memory-section">
                     <div className="memory-section-header">
-                        <h4>永久记忆 ({pinnedMemories.length})</h4>
+                        <h4>
+                            {t('memory.pinnedMemories')} ({pinnedMemories.length})
+                        </h4>
                         {selectMode && (
                             <label className="memory-select-all">
                                 <input
@@ -362,7 +364,7 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId, embedded, onMem
                                     checked={pinnedMemories.every((m) => selectedIds.has(m.id))}
                                     onChange={() => toggleSelectAll(pinnedMemories)}
                                 />
-                                全选
+                                {t('common.selectAll')}
                             </label>
                         )}
                     </div>
@@ -389,7 +391,9 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId, embedded, onMem
             {/* 活跃记忆 */}
             <section className="memory-section">
                 <div className="memory-section-header">
-                    <h4>活跃记忆 ({activeMemories.length})</h4>
+                    <h4>
+                        {t('memory.activeMemories')} ({activeMemories.length})
+                    </h4>
                     {selectMode && activeMemories.length > 0 && (
                         <label className="memory-select-all">
                             <input
@@ -397,12 +401,12 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId, embedded, onMem
                                 checked={activeMemories.every((m) => selectedIds.has(m.id))}
                                 onChange={() => toggleSelectAll(activeMemories)}
                             />
-                            全选
+                            {t('common.selectAll')}
                         </label>
                     )}
                 </div>
                 {activeMemories.length === 0 ? (
-                    <p className="empty-hint">暂无活跃记忆</p>
+                    <p className="empty-hint">{t('memory.noActiveMemories')}</p>
                 ) : (
                     activeMemories.map((m) => (
                         <MemoryItem
@@ -428,7 +432,9 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId, embedded, onMem
             {weakMemories.length > 0 && (
                 <section className="memory-section">
                     <div className="memory-section-header">
-                        <h4>待激活 ({weakMemories.length})</h4>
+                        <h4>
+                            {t('memory.weakMemories')} ({weakMemories.length})
+                        </h4>
                         {selectMode && (
                             <label className="memory-select-all">
                                 <input
@@ -436,7 +442,7 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId, embedded, onMem
                                     checked={weakMemories.every((m) => selectedIds.has(m.id))}
                                     onChange={() => toggleSelectAll(weakMemories)}
                                 />
-                                全选
+                                {t('common.selectAll')}
                             </label>
                         )}
                     </div>
@@ -465,12 +471,13 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId, embedded, onMem
                 <section className="memory-section">
                     <div className="memory-section-header">
                         <h4 className="collapsible" onClick={() => setArchivedCollapsed(!archivedCollapsed)}>
-                            已归档 ({archivedMemories.length}) {archivedCollapsed ? '▶' : '▼'}
+                            {t('memory.archivedMemories')} ({archivedMemories.length}){' '}
+                            {archivedCollapsed ? t('memory.expand') : t('memory.collapse')}
                         </h4>
                         {!archivedCollapsed && (
                             <>
                                 <button className="clear-archived-btn" onClick={handleClearArchived}>
-                                    清空归档
+                                    {t('memory.clearArchived')}
                                 </button>
                                 {selectMode && (
                                     <label className="memory-select-all">
@@ -479,7 +486,7 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId, embedded, onMem
                                             checked={archivedMemories.every((m) => selectedIds.has(m.id))}
                                             onChange={() => toggleSelectAll(archivedMemories)}
                                         />
-                                        全选
+                                        {t('common.selectAll')}
                                     </label>
                                 )}
                             </>
@@ -509,9 +516,9 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId, embedded, onMem
             {/* 批量操作浮动栏 */}
             {selectMode && selectedIds.size > 0 && (
                 <div className="batch-action-bar">
-                    <span>已选择 {selectedIds.size} 条</span>
+                    <span>{t('memory.selectedCount', { count: selectedIds.size })}</span>
                     <button className="batch-delete-btn" onClick={handleBatchDelete}>
-                        删除选中
+                        {t('memory.deleteSelected')}
                     </button>
                 </div>
             )}
@@ -532,54 +539,55 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId, embedded, onMem
 }
 
 function StatsPanel({ stats }: { stats: MemoryStats }) {
+    const { t } = useT()
     const avgStrengthPercent = Math.round(stats.avg_strength * 100)
 
     return (
         <div className="memory-stats-panel">
             <div className="stats-row">
                 <div className="stat-item">
-                    <span className="stat-label">总计</span>
+                    <span className="stat-label">{t('common.total')}</span>
                     <span className="stat-value">{stats.total}</span>
                 </div>
                 <div className="stat-item">
-                    <span className="stat-label">固定</span>
+                    <span className="stat-label">{t('memory.pinned')}</span>
                     <span className="stat-value stat-pinned">{stats.pinned}</span>
                 </div>
                 <div className="stat-item">
-                    <span className="stat-label">活跃</span>
+                    <span className="stat-label">{t('memory.active')}</span>
                     <span className="stat-value stat-active">{stats.active}</span>
                 </div>
                 <div className="stat-item">
-                    <span className="stat-label">待激活</span>
+                    <span className="stat-label">{t('memory.weak')}</span>
                     <span className="stat-value stat-weak">{stats.weak}</span>
                 </div>
                 <div className="stat-item">
-                    <span className="stat-label">归档</span>
+                    <span className="stat-label">{t('memory.archived')}</span>
                     <span className="stat-value stat-archived">{stats.archived}</span>
                 </div>
             </div>
             <div className="stats-row">
                 <div className="stat-item">
-                    <span className="stat-label">平均强度</span>
+                    <span className="stat-label">{t('memory.avgStrength')}</span>
                     <span className="stat-value">{avgStrengthPercent}%</span>
                 </div>
                 <div className="stat-item">
-                    <span className="stat-label">总使用次数</span>
+                    <span className="stat-label">{t('memory.totalUsageCount')}</span>
                     <span className="stat-value">{stats.total_seen_count}</span>
                 </div>
                 <div className="stat-item">
-                    <span className="stat-label">关于用户</span>
+                    <span className="stat-label">{t('memory.aboutUser')}</span>
                     <span className="stat-value">{stats.by_subject['user'] || 0}</span>
                 </div>
                 <div className="stat-item">
-                    <span className="stat-label">关于角色</span>
+                    <span className="stat-label">{t('memory.aboutCharacter')}</span>
                     <span className="stat-value">{stats.by_subject['self'] || 0}</span>
                 </div>
             </div>
             <div className="stats-categories">
                 {Object.entries(stats.by_category).map(([cat, count]) => (
                     <span key={cat} className="stats-category-tag">
-                        {categoryLabels[cat] || cat}: {count}
+                        {getCategoryLabel(cat)}: {count}
                     </span>
                 ))}
             </div>
@@ -614,6 +622,7 @@ function MemoryItem({
     onStrengthConfirm: () => void
     onStrengthCancel: () => void
 }) {
+    const { t } = useT()
     const strengthPercent = Math.round((memory.current_strength || 0) * 100)
 
     return (
@@ -624,14 +633,14 @@ function MemoryItem({
                 <input type="checkbox" className="memory-checkbox" checked={selected} onChange={onToggleSelect} />
             )}
             <div className="memory-content">
-                <span className="memory-category">{categoryLabels[memory.category] || memory.category}</span>
+                <span className="memory-category">{getCategoryLabel(memory.category)}</span>
                 <span className="memory-text" title={memory.content}>
                     {memory.content}
                 </span>
             </div>
             <div className="memory-meta">
                 {memory.pinned ? (
-                    <span className="pinned-label">永久</span>
+                    <span className="pinned-label">{t('memory.pinned')}</span>
                 ) : editingStrength ? (
                     <div className="strength-edit">
                         <input
@@ -643,10 +652,14 @@ function MemoryItem({
                             onChange={(e) => onStrengthChange(Number(e.target.value))}
                         />
                         <span className="strength-value">{editingStrengthValue}%</span>
-                        <button className="strength-edit-confirm" onClick={onStrengthConfirm} title="确认">
+                        <button
+                            className="strength-edit-confirm"
+                            onClick={onStrengthConfirm}
+                            title={t('common.confirm')}
+                        >
                             ✓
                         </button>
-                        <button className="strength-edit-cancel" onClick={onStrengthCancel} title="取消">
+                        <button className="strength-edit-cancel" onClick={onStrengthCancel} title={t('common.cancel')}>
                             ✗
                         </button>
                     </div>
@@ -658,7 +671,7 @@ function MemoryItem({
                         <span
                             className="strength-value strength-value-editable"
                             onClick={onStrengthEdit}
-                            title="点击修改强度"
+                            title={t('memory.clickToModifyStrength')}
                         >
                             {strengthPercent}%
                         </span>
@@ -667,11 +680,11 @@ function MemoryItem({
                 <button
                     className={`pin-btn${memory.pinned ? ' pin-btn-active' : ''}`}
                     onClick={onTogglePin}
-                    title={memory.pinned ? '取消固定' : '固定为永久记忆'}
+                    title={memory.pinned ? t('memory.unpin') : t('memory.pinAsPermament')}
                 >
                     📌
                 </button>
-                <button className="delete-btn" onClick={onDelete} title="删除">
+                <button className="delete-btn" onClick={onDelete} title={t('common.delete')}>
                     ×
                 </button>
             </div>
@@ -688,6 +701,7 @@ function AddMemoryModal({
     onClose: () => void
     onSuccess: () => void
 }) {
+    const { t } = useT()
     const { showToast } = useToast()
     const [subject, setSubject] = useState<'user' | 'self'>('user')
     const [category, setCategory] = useState('identity')
@@ -717,7 +731,7 @@ function AddMemoryModal({
             onClose()
         } catch (error) {
             console.error('Failed to add memory:', error)
-            showToast('添加失败，请重试', 'error')
+            showToast(t('memory.addFailed'), 'error')
         } finally {
             setSubmitting(false)
         }
@@ -726,38 +740,38 @@ function AddMemoryModal({
     return (
         <div className="memory-modal-overlay" onClick={onClose}>
             <div className="memory-modal" onClick={(e) => e.stopPropagation()}>
-                <h3>添加记忆</h3>
+                <h3>{t('memory.addMemory')}</h3>
                 <form onSubmit={handleSubmit}>
                     <div className="memory-form-group">
-                        <label>类型</label>
+                        <label>{t('memory.memoryType')}</label>
                         <CustomSelect
                             value={subject}
                             options={[
-                                { value: 'user', label: '关于用户' },
-                                { value: 'self', label: '关于角色' },
+                                { value: 'user', label: t('memory.aboutUser') },
+                                { value: 'self', label: t('memory.aboutCharacter') },
                             ]}
                             onChange={(v) => setSubject(v as 'user' | 'self')}
-                            ariaLabel="记忆类型"
+                            ariaLabel={t('memory.memoryType')}
                         />
                     </div>
 
                     <div className="memory-form-group">
-                        <label>分类</label>
+                        <label>{t('memory.memoryCategory')}</label>
                         <CustomSelect
                             value={category}
-                            options={categories.map((c) => ({ value: c, label: categoryLabels[c] || c }))}
+                            options={categories.map((c) => ({ value: c, label: getCategoryLabel(c) }))}
                             onChange={setCategory}
-                            ariaLabel="记忆分类"
+                            ariaLabel={t('memory.memoryCategory')}
                         />
                     </div>
 
                     <div className="memory-form-group">
-                        <label>内容</label>
+                        <label>{t('memory.content')}</label>
                         <input
                             type="text"
                             value={content}
                             onChange={(e) => setContent(e.target.value)}
-                            placeholder={subject === 'user' ? '用户叫...' : '我答应...'}
+                            placeholder={subject === 'user' ? t('memory.userPlaceholder') : t('memory.selfPlaceholder')}
                             required
                             autoFocus
                         />
@@ -769,16 +783,16 @@ function AddMemoryModal({
                                 <input type="checkbox" checked={pinned} onChange={(e) => setPinned(e.target.checked)} />
                                 <span className="toggle-slider"></span>
                             </label>
-                            <span className="toggle-label">设为永久记忆</span>
+                            <span className="toggle-label">{t('memory.setPinned')}</span>
                         </div>
                     </div>
 
                     <div className="memory-form-actions">
                         <button type="button" onClick={onClose} disabled={submitting}>
-                            取消
+                            {t('common.cancel')}
                         </button>
                         <button type="submit" disabled={submitting || !content.trim()}>
-                            {submitting ? '添加中...' : '添加'}
+                            {submitting ? t('common.adding') : t('common.add')}
                         </button>
                     </div>
                 </form>
@@ -796,6 +810,7 @@ function ImportMemoryModal({
     onClose: () => void
     onSuccess: () => void
 }) {
+    const { t } = useT()
     const { showToast } = useToast()
     const { confirm } = useConfirm()
     const [mode, setMode] = useState<'merge' | 'replace'>('merge')
@@ -815,7 +830,7 @@ function ImportMemoryModal({
             }
             setPreviewData(data)
         } catch {
-            showToast('文件格式无效，请选择正确的 JSON 文件', 'error')
+            showToast(t('memory.invalidFileFormat'), 'error')
             setPreviewData(null)
         }
     }
@@ -825,9 +840,9 @@ function ImportMemoryModal({
 
         if (mode === 'replace') {
             const ok = await confirm({
-                title: '替换模式',
-                message: '替换模式会删除所有现有记忆，确定继续吗？',
-                confirmText: '继续',
+                title: t('memory.replaceModeTitle'),
+                message: t('memory.replaceModeConfirm'),
+                confirmText: t('common.continue'),
                 danger: true,
             })
             if (!ok) return
@@ -836,15 +851,13 @@ function ImportMemoryModal({
         setImporting(true)
         try {
             const result = await memoryService.importMemories(promptId, previewData, mode)
-            showToast(
-                `导入成功：${result.added} 条${result.invalid > 0 ? `，${result.invalid} 条无效` : ''}`,
-                'success'
-            )
+            const invalidText = result.invalid > 0 ? t('memory.invalidSuffix', { count: result.invalid }) : ''
+            showToast(t('memory.importSuccess', { added: result.added, invalid: invalidText }), 'success')
             onSuccess()
             onClose()
         } catch (error) {
             console.error('Failed to import memories:', error)
-            showToast('导入失败', 'error')
+            showToast(t('memory.importFailed'), 'error')
         } finally {
             setImporting(false)
         }
@@ -853,10 +866,10 @@ function ImportMemoryModal({
     return (
         <div className="memory-modal-overlay" onClick={onClose}>
             <div className="memory-modal memory-modal-wide" onClick={(e) => e.stopPropagation()}>
-                <h3>导入记忆</h3>
+                <h3>{t('memory.importMemory')}</h3>
 
                 <div className="memory-form-group">
-                    <label>选择文件</label>
+                    <label>{t('memory.selectFile')}</label>
                     <input
                         ref={fileInputRef}
                         type="file"
@@ -869,32 +882,32 @@ function ImportMemoryModal({
                 {previewData && (
                     <>
                         <div className="import-preview">
-                            <p>将导入 {previewData.length} 条记忆</p>
+                            <p>{t('memory.importCount', { count: previewData.length })}</p>
                             <div className="import-preview-list">
                                 {previewData.slice(0, 5).map((m, i) => (
                                     <div key={i} className="import-preview-item">
-                                        <span className="memory-category">
-                                            {categoryLabels[m.category] || m.category}
-                                        </span>
+                                        <span className="memory-category">{getCategoryLabel(m.category)}</span>
                                         <span className="memory-text">{m.content}</span>
                                     </div>
                                 ))}
                                 {previewData.length > 5 && (
-                                    <div className="import-preview-more">...还有 {previewData.length - 5} 条</div>
+                                    <div className="import-preview-more">
+                                        ...{t('memory.moreItems', { count: previewData.length - 5 })}
+                                    </div>
                                 )}
                             </div>
                         </div>
 
                         <div className="memory-form-group">
-                            <label>导入模式</label>
+                            <label>{t('common.import')}</label>
                             <CustomSelect
                                 value={mode}
                                 options={[
-                                    { value: 'merge', label: '合并（保留现有记忆）' },
-                                    { value: 'replace', label: '替换（删除现有记忆）' },
+                                    { value: 'merge', label: t('memory.mergeMode') },
+                                    { value: 'replace', label: t('memory.replaceMode') },
                                 ]}
                                 onChange={(v) => setMode(v as 'merge' | 'replace')}
-                                ariaLabel="导入模式"
+                                ariaLabel={t('common.import')}
                             />
                         </div>
                     </>
@@ -902,14 +915,14 @@ function ImportMemoryModal({
 
                 <div className="memory-form-actions">
                     <button type="button" onClick={onClose} disabled={importing}>
-                        取消
+                        {t('common.cancel')}
                     </button>
                     <button
                         type="button"
                         onClick={handleImport}
                         disabled={importing || !previewData || previewData.length === 0}
                     >
-                        {importing ? '导入中...' : '导入'}
+                        {importing ? t('common.importing') : t('common.import')}
                     </button>
                 </div>
             </div>

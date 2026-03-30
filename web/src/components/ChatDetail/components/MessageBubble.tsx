@@ -3,6 +3,7 @@ import type { DisplayItem } from '../types'
 import { parseQuotedMessageContent } from '../utils'
 import { MessageImages } from './MessageImages'
 import { getTTSAudioUrl } from '../../../services/api'
+import { useT } from '../../../contexts/I18nContext'
 
 interface MessageBubbleProps {
     item: DisplayItem
@@ -25,6 +26,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
     onPointerCancel,
     onPointerLeave,
 }) => {
+    const { t } = useT()
     if (item.type !== 'text') return null
 
     const parsedQuote = parseQuotedMessageContent(item.message.content)
@@ -106,7 +108,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                         <svg viewBox="0 0 24 24" aria-hidden="true">
                             {ttsPlaying ? <path d="M6 5h4v14H6V5zm8 0h4v14h-4V5z" /> : <path d="M8 5v14l11-7L8 5z" />}
                         </svg>
-                        <span>{ttsPlaying ? '暂停语音' : '播放语音'}</span>
+                        <span>{ttsPlaying ? t('chat.pauseTTS') : t('chat.playTTS')}</span>
                     </button>
                 )}
             </div>

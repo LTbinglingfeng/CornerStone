@@ -10,6 +10,7 @@ import {
     deletePromptAvatar,
     getErrorMessage,
 } from '../../services/api'
+import { useT } from '../../contexts/I18nContext'
 import { useToast } from '../../contexts/ToastContext'
 import { useConfirm } from '../../contexts/ConfirmContext'
 import { drawerVariants } from '../../utils/motion'
@@ -24,6 +25,7 @@ interface PersonaEditorProps {
 }
 
 const PersonaEditor: React.FC<PersonaEditorProps> = ({ promptId, onBack }) => {
+    const { t } = useT()
     const { showToast } = useToast()
     const { confirm } = useConfirm()
     const isEditing = !!promptId
@@ -58,7 +60,7 @@ const PersonaEditor: React.FC<PersonaEditorProps> = ({ promptId, onBack }) => {
                     }
                 }
             } catch (error) {
-                showToast(getErrorMessage(error, '加载角色失败'), 'error')
+                showToast(getErrorMessage(error, t('persona.loadFailed')), 'error')
                 onBack()
                 return
             } finally {
@@ -71,11 +73,11 @@ const PersonaEditor: React.FC<PersonaEditorProps> = ({ promptId, onBack }) => {
     // 保存
     const handleSave = useCallback(async () => {
         if (!formData.name.trim()) {
-            showToast('名称不能为空', 'error')
+            showToast(t('persona.nameRequired'), 'error')
             return
         }
         if (!formData.content.trim()) {
-            showToast('系统提示词不能为空', 'error')
+            showToast(t('persona.promptRequired'), 'error')
             return
         }
 
@@ -89,41 +91,44 @@ const PersonaEditor: React.FC<PersonaEditorProps> = ({ promptId, onBack }) => {
                 if (avatarFile) {
                     await uploadPromptAvatar(promptId, avatarFile)
                 }
-                showToast('更新成功', 'success')
+                showToast(t('persona.updateSuccess'), 'success')
             } else {
                 const newPrompt = await createPrompt(formData)
                 if (avatarFile) {
                     await uploadPromptAvatar(newPrompt.id, avatarFile)
                 }
-                showToast('创建成功', 'success')
+                showToast(t('persona.createSuccess'), 'success')
             }
             onBack()
         } catch (error) {
-            showToast(getErrorMessage(error, isEditing ? '更新失败' : '创建失败'), 'error')
+            showToast(
+                getErrorMessage(error, isEditing ? t('persona.updateFailed') : t('persona.createFailed')),
+                'error'
+            )
         } finally {
             setSaving(false)
         }
-    }, [formData, promptId, isEditing, avatarFile, avatarDeleted, hasExistingAvatar, onBack, showToast])
+    }, [avatarDeleted, avatarFile, formData, hasExistingAvatar, isEditing, onBack, promptId, showToast, t])
 
     // 删除角色
     const handleDelete = useCallback(async () => {
         if (!promptId) return
         const ok = await confirm({
-            title: '删除角色',
-            message: `确定要删除 "${formData.name}" 吗？此操作不可撤销。`,
-            confirmText: '删除',
+            title: t('persona.deletePersona'),
+            message: t('persona.deletePersonaConfirm', { name: formData.name }),
+            confirmText: t('common.delete'),
             danger: true,
         })
         if (ok) {
             try {
                 await deletePrompt(promptId)
-                showToast('删除成功', 'success')
+                showToast(t('persona.deleteSuccess'), 'success')
                 onBack()
             } catch (error) {
-                showToast(getErrorMessage(error, '删除失败'), 'error')
+                showToast(getErrorMessage(error, t('persona.deleteFailed')), 'error')
             }
         }
-    }, [promptId, formData.name, confirm, onBack, showToast])
+    }, [confirm, formData.name, onBack, promptId, showToast, t])
 
     // 头像变更
     const handleAvatarChange = useCallback((file: File) => {
@@ -158,10 +163,10 @@ const PersonaEditor: React.FC<PersonaEditorProps> = ({ promptId, onBack }) => {
                             <svg viewBox="0 0 24 24">
                                 <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
                             </svg>
-                            返回
+                            {t('common.back')}
                         </button>
                     </div>
-                    <div className="header-title">加载中...</div>
+                    <div className="header-title">{t('common.loading')}</div>
                     <div className="header-right" />
                 </div>
             </motion.div>
@@ -183,13 +188,13 @@ const PersonaEditor: React.FC<PersonaEditorProps> = ({ promptId, onBack }) => {
                         <svg viewBox="0 0 24 24">
                             <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
                         </svg>
-                        返回
+                        {t('common.back')}
                     </button>
                 </div>
-                <div className="header-title">{isEditing ? '编辑角色' : '新建角色'}</div>
+                <div className="header-title">{isEditing ? t('persona.editTitle') : t('persona.createTitle')}</div>
                 <div className="header-right">
                     <button className="save-btn" onClick={handleSave} disabled={saving}>
-                        {saving ? '保存中...' : '保存'}
+                        {saving ? t('common.saving') : t('common.save')}
                     </button>
                 </div>
             </div>
@@ -228,7 +233,7 @@ const PersonaEditor: React.FC<PersonaEditorProps> = ({ promptId, onBack }) => {
                 {isEditing && (
                     <div className="danger-zone">
                         <button className="delete-persona-btn" onClick={handleDelete}>
-                            删除此角色
+                            {t('persona.deleteThisPersona')}
                         </button>
                     </div>
                 )}

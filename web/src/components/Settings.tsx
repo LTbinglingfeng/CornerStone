@@ -8,6 +8,7 @@ import {
 } from '../services/memoryService'
 import { ttsService, type TTSProviderConfig } from '../services/ttsService'
 import { clawBotService, type ClawBotSettings } from '../services/clawbotService'
+import { localeNames, type Locale } from '../i18n'
 import type { Provider } from '../types/chat'
 import {
     getReplyWaitWindowConfig,
@@ -20,6 +21,7 @@ import ProviderSettings from './ProviderSettings'
 import MemoryProviderSettings from './MemoryProviderSettings'
 import ImageProviderSettings from './ImageProviderSettings'
 import ClawBotSettingsPanel from './ClawBotSettings'
+import { useT } from '../contexts/I18nContext'
 import { useToast } from '../contexts/ToastContext'
 import {
     getNotificationsEnabled,
@@ -35,12 +37,13 @@ interface SettingsProps {
 }
 
 const Settings: React.FC<SettingsProps> = ({ onBack }) => {
+    const { t, locale, setLocale } = useT()
     const { showToast } = useToast()
     const [systemPrompt, setSystemPrompt] = useState('')
     const [editingPrompt, setEditingPrompt] = useState('')
     const [activeProviderName, setActiveProviderName] = useState('')
     const [imageProviderPreview, setImageProviderPreview] = useState<{ title: string; detail: string }>({
-        title: '未配置',
+        title: '',
         detail: '',
     })
     const [memoryProvider, setMemoryProvider] = useState<Provider | null>(null)
@@ -98,6 +101,12 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     }, [])
 
     useEffect(() => {
+        if (!loading) {
+            void loadData({ showLoading: false })
+        }
+    }, [locale])
+
+    useEffect(() => {
         const supported = isNotificationSupported()
         setNotificationsSupported(supported)
         setNotificationPermission(supported ? Notification.permission : 'unsupported')
@@ -125,24 +134,27 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                 setEditingReplyWaitConfig(syncedReplyWaitConfig)
             }
             const activeProvider = providersData.providers.find((p) => p.id === providersData.active_provider_id)
-            setActiveProviderName(activeProvider?.name || '未设置')
+            setActiveProviderName(activeProvider?.name || t('common.notSet'))
             const configuredImageProviderId = providersData.image_provider_id || ''
             const imageProviders = providersData.providers.filter((p) => p.type === 'gemini_image')
             if (configuredImageProviderId) {
                 const selected = imageProviders.find((p) => p.id === configuredImageProviderId)
                 setImageProviderPreview({
-                    title: selected?.name || '未配置',
+                    title: selected?.name || t('common.notConfigured'),
                     detail: selected?.model || '',
                 })
             } else {
                 const auto = imageProviders[0]
                 if (auto) {
                     setImageProviderPreview({
-                        title: '自动选择',
+                        title: t('imageProvider.autoSelect'),
                         detail: `${auto.name || auto.id}${auto.model ? ` · ${auto.model}` : ''}`,
                     })
                 } else {
-                    setImageProviderPreview({ title: '未配置', detail: '暂无生图供应商' })
+                    setImageProviderPreview({
+                        title: t('common.notConfigured'),
+                        detail: t('imageProvider.noProviders'),
+                    })
                 }
             }
             setMemoryProvider(providersData.memory_provider || null)
@@ -218,10 +230,10 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
             setMemoryExtractionRounds(settings.rounds)
             setMemoryExtractionMaxRounds(settings.max_rounds)
             setMemoryExtractionProviderName(settings.provider_name || '')
-            showToast('记忆提取轮数已保存', 'success')
+            showToast(t('settings.memoryExtractionRoundsSaved'), 'success')
             handleCloseMemoryExtractionRoundsModal()
         } catch (error) {
-            const message = error instanceof Error ? error.message : '保存失败'
+            const message = error instanceof Error ? error.message : t('common.saveFailed')
             showToast(message, 'error')
         } finally {
             setSavingMemoryExtractionRounds(false)
@@ -246,10 +258,10 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
             setMemoryExtractionSettings(settings)
             setMemoryRefreshInterval(settings.refresh_interval)
             setMemoryRefreshMaxInterval(settings.max_refresh_interval)
-            showToast('记忆刷新间隔已保存', 'success')
+            showToast(t('settings.memoryRefreshIntervalSaved'), 'success')
             handleCloseMemoryRefreshIntervalModal()
         } catch (error) {
-            const message = error instanceof Error ? error.message : '保存失败'
+            const message = error instanceof Error ? error.message : t('common.saveFailed')
             showToast(message, 'error')
         } finally {
             setSavingMemoryRefreshInterval(false)
@@ -269,7 +281,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                 setEditingMemoryExtractionPrompt(data.template || '')
                 setDefaultMemoryExtractionPrompt(data.default_template || '')
             } catch (error) {
-                const message = error instanceof Error ? error.message : '加载失败'
+                const message = error instanceof Error ? error.message : t('common.loadFailed')
                 showToast(message, 'error')
                 setShowMemoryExtractionPromptModal(false)
             } finally {
@@ -287,10 +299,10 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         setSavingMemoryExtractionPrompt(true)
         try {
             await memoryService.updateMemoryExtractionPromptTemplate(editingMemoryExtractionPrompt)
-            showToast('记忆提取提示词已保存', 'success')
+            showToast(t('settings.memoryExtractionPromptSaved'), 'success')
             handleCloseMemoryExtractionPromptModal()
         } catch (error) {
-            const message = error instanceof Error ? error.message : '保存失败'
+            const message = error instanceof Error ? error.message : t('common.saveFailed')
             showToast(message, 'error')
         } finally {
             setSavingMemoryExtractionPrompt(false)
@@ -306,12 +318,12 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                 reply_wait_window_seconds: editingReplyWaitConfig.seconds,
             })
             if (!success) {
-                showToast('保存失败', 'error')
+                showToast(t('common.saveFailed'), 'error')
                 return
             }
 
             setReplyWaitConfig(editingReplyWaitConfig)
-            showToast('回复等候窗口已保存', 'success')
+            showToast(t('settings.replyWaitWindowSaved'), 'success')
             handleCloseReplyWaitModal()
         } finally {
             setSavingReplyWaitConfig(false)
@@ -323,10 +335,10 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         const success = await updateSystemPrompt(editingPrompt)
         if (success) {
             setSystemPrompt(editingPrompt)
-            showToast('系统提示词已保存', 'success')
+            showToast(t('settings.systemPromptSaved'), 'success')
             handleClosePromptModal()
         } else {
-            showToast('保存失败', 'error')
+            showToast(t('common.saveFailed'), 'error')
         }
         setSaving(false)
     }
@@ -335,7 +347,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         if (!enabled) {
             setNotificationsEnabled(false)
             setNotificationsEnabledState(false)
-            showToast('已关闭系统通知', 'success')
+            showToast(t('settings.notificationDisabled'), 'success')
             return
         }
 
@@ -344,12 +356,12 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
             setNotificationPermission('unsupported')
             setNotificationsEnabled(false)
             setNotificationsEnabledState(false)
-            showToast('当前浏览器不支持系统通知', 'error')
+            showToast(t('settings.notificationNotSupported'), 'error')
             return
         }
 
         if (typeof window !== 'undefined' && window.isSecureContext === false && location.hostname !== 'localhost') {
-            showToast('系统通知需要 HTTPS 环境', 'error')
+            showToast(t('settings.notificationNeedsHTTPS'), 'error')
             return
         }
 
@@ -358,13 +370,18 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         if (permission !== 'granted') {
             setNotificationsEnabled(false)
             setNotificationsEnabledState(false)
-            showToast(permission === 'denied' ? '已拒绝通知权限，请在浏览器设置中开启' : '请允许通知权限', 'error')
+            showToast(
+                permission === 'denied'
+                    ? t('settings.notificationDeniedHint')
+                    : t('settings.notificationPermissionHint'),
+                'error'
+            )
             return
         }
 
         setNotificationsEnabled(true)
         setNotificationsEnabledState(true)
-        showToast('已开启系统通知', 'success')
+        showToast(t('settings.notificationEnabled'), 'success')
     }
 
     const handleTTSEnabledChange = async (enabled: boolean) => {
@@ -374,10 +391,10 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
             const settings = await ttsService.updateTTSSettings({ enabled })
             setTTSEnabledState(settings.enabled)
             setTTSProvider(settings.provider)
-            showToast(enabled ? '已开启 TTS' : '已关闭 TTS', 'success')
+            showToast(enabled ? t('settings.ttsEnabled') : t('settings.ttsDisabled'), 'success')
         } catch (error) {
             console.error('Failed to set tts enabled:', error)
-            showToast('设置失败', 'error')
+            showToast(t('settings.settingFailed'), 'error')
         } finally {
             setSaving(false)
         }
@@ -433,11 +450,11 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
             const settings = await ttsService.updateTTSSettings({ provider })
             setTTSEnabledState(settings.enabled)
             setTTSProvider(settings.provider)
-            showToast('已保存 TTS 提供商', 'success')
+            showToast(t('settings.ttsSaved'), 'success')
             handleCloseTTSProviderModal()
         } catch (error) {
             console.error('Failed to save tts provider:', error)
-            showToast('保存失败', 'error')
+            showToast(t('common.saveFailed'), 'error')
         } finally {
             setSaving(false)
         }
@@ -449,10 +466,10 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         try {
             await memoryService.setMemoryEnabled(enabled)
             setMemoryEnabled(enabled)
-            showToast(enabled ? '已开启长期记忆' : '已关闭长期记忆', 'success')
+            showToast(enabled ? t('settings.memoryEnabled') : t('settings.memoryDisabled'), 'success')
         } catch (error) {
             console.error('Failed to set memory enabled:', error)
-            showToast('设置失败', 'error')
+            showToast(t('settings.settingFailed'), 'error')
         } finally {
             setSaving(false)
         }
@@ -475,23 +492,23 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     }
 
     const getPromptPreview = () => {
-        if (!systemPrompt) return '未设置'
+        if (!systemPrompt) return t('common.notSet')
         if (systemPrompt.length <= 20) return systemPrompt
         return systemPrompt.substring(0, 20) + '...'
     }
 
     const getMemoryProviderPreview = () => {
         if (memoryProvider) {
-            const name = memoryProvider.name || '未命名'
-            const model = memoryProvider.model || '未设置模型'
+            const name = memoryProvider.name || t('common.unnamed')
+            const model = memoryProvider.model || t('settings.modelNotSet')
             return { title: name, detail: model }
         }
-        if (activeProviderName) return { title: '跟随对话模型', detail: activeProviderName }
-        return { title: '跟随对话模型', detail: '默认' }
+        if (activeProviderName) return { title: t('settings.followChatModel'), detail: activeProviderName }
+        return { title: t('settings.followChatModel'), detail: t('common.default') }
     }
 
     const getTTSProviderPreview = () => {
-        if (!ttsProvider) return { title: '未配置', detail: '' }
+        if (!ttsProvider) return { title: t('common.notConfigured'), detail: '' }
         const model = ttsProvider.model || ''
         const voiceId = ttsProvider.voice_setting?.voice_id || ''
         const detail = [model, voiceId].filter(Boolean).join(' · ')
@@ -504,42 +521,44 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
 
     const getMemoryExtractionRoundsPreview = () => {
         const rounds = memoryExtractionRounds || memoryExtractionSettings?.rounds || 5
-        return `${rounds}轮`
+        return t('settings.roundsPreview', { count: rounds })
     }
 
     const getMemoryExtractionRoundsDetail = () => {
         const maxRounds = memoryExtractionMaxRounds || memoryExtractionSettings?.max_rounds || 1
-        const providerLabel = memoryExtractionProviderName ? `（上限来自：${memoryExtractionProviderName}）` : ''
-        return `最多${maxRounds}轮${providerLabel}`
+        if (memoryExtractionProviderName) {
+            return t('settings.maxRoundsWithProvider', { max: maxRounds, provider: memoryExtractionProviderName })
+        }
+        return t('settings.maxRounds', { max: maxRounds })
     }
 
     const getMemoryRefreshIntervalPreview = () => {
         const interval = memoryRefreshInterval || memoryExtractionSettings?.refresh_interval || 5
-        return `${interval}轮`
+        return t('settings.roundsPreview', { count: interval })
     }
 
     const getMemoryRefreshIntervalDetail = () => {
         const maxInterval = memoryRefreshMaxInterval || memoryExtractionSettings?.max_refresh_interval || 99
-        return `最多${maxInterval}轮`
+        return t('settings.maxRounds', { max: maxInterval })
     }
 
     const getClawBotPreview = () => {
-        if (!clawBotSettings) return { title: '未配置', detail: '' }
+        if (!clawBotSettings) return { title: t('common.notConfigured'), detail: '' }
         const statusMap: Record<string, string> = {
-            disabled: '未启用',
-            missing_token: '缺少 Bot Token',
-            running: '运行中',
-            error: '异常',
-            stopped: '已停止',
+            disabled: t('clawBot.disabled'),
+            missing_token: t('clawBot.missingToken'),
+            running: t('clawBot.running'),
+            error: t('clawBot.error'),
+            stopped: t('clawBot.stopped'),
         }
-        const title = statusMap[clawBotSettings.status] || clawBotSettings.status || '未配置'
+        const title = statusMap[clawBotSettings.status] || clawBotSettings.status || t('common.notConfigured')
         const detail = clawBotSettings.prompt_name
-            ? `人设：${clawBotSettings.prompt_name}`
+            ? `${t('settings.persona')}：${clawBotSettings.prompt_name}`
             : clawBotSettings.ilink_user_id
-              ? `账号：${clawBotSettings.ilink_user_id}`
+              ? `${t('settings.account')}：${clawBotSettings.ilink_user_id}`
               : clawBotSettings.has_bot_token
-                ? '已保存 Bot Token'
-                : '未保存 Bot Token'
+                ? t('settings.hasBotToken')
+                : t('settings.noBotToken')
         return { title, detail }
     }
 
@@ -555,20 +574,20 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                         <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
                     </svg>
                 </button>
-                <div className="settings-title">设置</div>
+                <div className="settings-title">{t('settings.title')}</div>
                 <div style={{ width: 44 }}></div>
             </div>
 
             {loading ? (
-                <div className="settings-loading">加载中...</div>
+                <div className="settings-loading">{t('common.loading')}</div>
             ) : (
                 <div className="settings-content">
                     {/* 供应商设置入口 */}
                     <div className="settings-section">
-                        <h3>供应商</h3>
+                        <h3>{t('settings.providers')}</h3>
                         <button className="settings-entry-btn" onClick={() => setShowProviderSettings(true)}>
                             <div className="settings-entry-info">
-                                <span className="settings-entry-label">当前供应商</span>
+                                <span className="settings-entry-label">{t('settings.currentProvider')}</span>
                                 <span className="settings-entry-value">{activeProviderName}</span>
                             </div>
                             <svg className="settings-entry-arrow" viewBox="0 0 24 24">
@@ -582,7 +601,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                             style={{ marginTop: 12 }}
                         >
                             <div className="settings-entry-info">
-                                <span className="settings-entry-label">生图供应商</span>
+                                <span className="settings-entry-label">{t('settings.imageProvider')}</span>
                                 <span className="settings-entry-value">{imageProviderPreview.title}</span>
                                 {imageProviderPreview.detail && (
                                     <span className="settings-entry-subvalue">{imageProviderPreview.detail}</span>
@@ -595,10 +614,10 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                     </div>
 
                     <div className="settings-section">
-                        <h3>接入渠道</h3>
+                        <h3>{t('settings.channels')}</h3>
                         <button className="settings-entry-btn" onClick={() => setShowClawBotSettings(true)}>
                             <div className="settings-entry-info">
-                                <span className="settings-entry-label">微信 ClawBot</span>
+                                <span className="settings-entry-label">{t('settings.wechatClawBot')}</span>
                                 <span className="settings-entry-value">{clawBotPreview.title}</span>
                                 {clawBotPreview.detail && (
                                     <span className="settings-entry-subvalue">{clawBotPreview.detail}</span>
@@ -612,10 +631,10 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
 
                     {/* 全局设置 */}
                     <div className="settings-section">
-                        <h3>全局设置</h3>
+                        <h3>{t('settings.globalSettings')}</h3>
                         <button className="settings-entry-btn" onClick={handleOpenPromptModal}>
                             <div className="settings-entry-info">
-                                <span className="settings-entry-label">默认系统提示词</span>
+                                <span className="settings-entry-label">{t('settings.defaultSystemPrompt')}</span>
                                 <span className="settings-entry-value">{getPromptPreview()}</span>
                             </div>
                             <svg className="settings-entry-arrow" viewBox="0 0 24 24">
@@ -629,7 +648,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                             style={{ marginTop: 12 }}
                         >
                             <div className="settings-entry-info">
-                                <span className="settings-entry-label">回复等候窗口</span>
+                                <span className="settings-entry-label">{t('settings.replyWaitWindow')}</span>
                                 <span className="settings-entry-value">{getReplyWaitPreview()}</span>
                             </div>
                             <svg className="settings-entry-arrow" viewBox="0 0 24 24">
@@ -638,7 +657,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                         </button>
 
                         <div className="settings-group" style={{ marginTop: 12 }}>
-                            <label className="settings-label">系统通知</label>
+                            <label className="settings-label">{t('settings.systemNotifications')}</label>
                             <div className="modal-toggle-wrapper">
                                 <label className="toggle-switch">
                                     <input
@@ -652,23 +671,38 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                                 <span className="toggle-label">
                                     {notificationsSupported
                                         ? notificationsEnabled
-                                            ? '开启'
+                                            ? t('common.enable')
                                             : notificationPermission === 'denied'
-                                              ? '已拒绝'
-                                              : '关闭'
-                                        : '不支持'}
+                                              ? t('common.denied')
+                                              : t('common.disable')
+                                        : t('common.notSupported')}
                                 </span>
                             </div>
-                            <p className="prompt-modal-hint memory-toggle-hint">仅在不在聊天详情界面时提醒</p>
+                            <p className="prompt-modal-hint memory-toggle-hint">{t('settings.notifyWhenNotInChat')}</p>
+                        </div>
+
+                        <div className="settings-group" style={{ marginTop: 12 }}>
+                            <label className="settings-label">{t('settings.language')}</label>
+                            <select
+                                className="settings-input"
+                                value={locale}
+                                onChange={(event) => setLocale(event.target.value as Locale)}
+                            >
+                                {(Object.entries(localeNames) as [Locale, string][]).map(([value, label]) => (
+                                    <option key={value} value={value}>
+                                        {label}
+                                    </option>
+                                ))}
+                            </select>
                         </div>
                     </div>
 
                     {/* 语音设置 */}
                     <div className="settings-section">
-                        <h3>语音</h3>
+                        <h3>{t('settings.voice')}</h3>
 
                         <div className="settings-group">
-                            <label className="settings-label">TTS</label>
+                            <label className="settings-label">{t('settings.tts')}</label>
                             <div className="modal-toggle-wrapper">
                                 <label className="toggle-switch">
                                     <input
@@ -679,9 +713,11 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                                     />
                                     <span className="toggle-slider"></span>
                                 </label>
-                                <span className="toggle-label">{ttsEnabled ? '开启' : '关闭'}</span>
+                                <span className="toggle-label">
+                                    {ttsEnabled ? t('common.enable') : t('common.disable')}
+                                </span>
                             </div>
-                            <p className="prompt-modal-hint memory-toggle-hint">开启后会为 AI 回复生成语音按钮</p>
+                            <p className="prompt-modal-hint memory-toggle-hint">{t('settings.ttsHint')}</p>
                         </div>
 
                         <button
@@ -690,7 +726,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                             style={{ marginTop: 12 }}
                         >
                             <div className="settings-entry-info">
-                                <span className="settings-entry-label">TTS 提供商</span>
+                                <span className="settings-entry-label">{t('settings.ttsProvider')}</span>
                                 <span className="settings-entry-value">{ttsProviderPreview.title}</span>
                                 {ttsProviderPreview.detail && (
                                     <span className="settings-entry-subvalue">{ttsProviderPreview.detail}</span>
@@ -704,15 +740,14 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
 
                     {/* 长期记忆设置 */}
                     <div className="settings-section">
-                        <h3>长期记忆</h3>
+                        <h3>{t('settings.longTermMemory')}</h3>
 
                         <p className="prompt-modal-hint">
-                            提示：开启后会将最近 {memoryExtractionRounds || 5}{' '}
-                            轮对话片段发送给记忆处理模型用于提取，请勿输入敏感信息。
+                            {t('settings.memoryHint', { rounds: memoryExtractionRounds || 5 })}
                         </p>
 
                         <div className="settings-group">
-                            <label className="settings-label">记忆功能</label>
+                            <label className="settings-label">{t('settings.memoryFunction')}</label>
                             <div className="modal-toggle-wrapper">
                                 <label className="toggle-switch">
                                     <input
@@ -723,9 +758,11 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                                     />
                                     <span className="toggle-slider"></span>
                                 </label>
-                                <span className="toggle-label">{memoryEnabled ? '开启' : '关闭'}</span>
+                                <span className="toggle-label">
+                                    {memoryEnabled ? t('common.enable') : t('common.disable')}
+                                </span>
                             </div>
-                            <p className="prompt-modal-hint memory-toggle-hint">关闭后将不会提取和使用记忆</p>
+                            <p className="prompt-modal-hint memory-toggle-hint">{t('settings.memoryDisableHint')}</p>
                         </div>
 
                         <button
@@ -734,7 +771,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                             style={{ marginTop: 12 }}
                         >
                             <div className="settings-entry-info">
-                                <span className="settings-entry-label">记忆提供商</span>
+                                <span className="settings-entry-label">{t('settings.memoryProvider')}</span>
                                 <span className="settings-entry-value">{memoryProviderPreview.title}</span>
                                 <span className="settings-entry-subvalue">{memoryProviderPreview.detail}</span>
                             </div>
@@ -742,9 +779,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                                 <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
                             </svg>
                         </button>
-                        <p className="prompt-modal-hint memory-provider-hint">
-                            用于提取和处理长期记忆，建议选择快速便宜的模型
-                        </p>
+                        <p className="prompt-modal-hint memory-provider-hint">{t('settings.memoryProviderHint')}</p>
 
                         <button
                             className="settings-entry-btn"
@@ -752,7 +787,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                             style={{ marginTop: 12 }}
                         >
                             <div className="settings-entry-info">
-                                <span className="settings-entry-label">记忆提取轮数</span>
+                                <span className="settings-entry-label">{t('settings.memoryExtractionRounds')}</span>
                                 <span className="settings-entry-value">{getMemoryExtractionRoundsPreview()}</span>
                                 <span className="settings-entry-subvalue">{getMemoryExtractionRoundsDetail()}</span>
                             </div>
@@ -761,7 +796,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                             </svg>
                         </button>
                         <p className="prompt-modal-hint memory-provider-hint">
-                            每轮包含用户与 AI 各一条消息，数值越大提取越完整，但也更耗时
+                            {t('settings.memoryExtractionRoundsHint')}
                         </p>
 
                         <button
@@ -770,7 +805,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                             style={{ marginTop: 12 }}
                         >
                             <div className="settings-entry-info">
-                                <span className="settings-entry-label">记忆刷新间隔</span>
+                                <span className="settings-entry-label">{t('settings.memoryRefreshInterval')}</span>
                                 <span className="settings-entry-value">{getMemoryRefreshIntervalPreview()}</span>
                                 <span className="settings-entry-subvalue">{getMemoryRefreshIntervalDetail()}</span>
                             </div>
@@ -778,7 +813,9 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                                 <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
                             </svg>
                         </button>
-                        <p className="prompt-modal-hint memory-provider-hint">每隔多少轮对话触发一次记忆提取</p>
+                        <p className="prompt-modal-hint memory-provider-hint">
+                            {t('settings.memoryRefreshIntervalHint')}
+                        </p>
 
                         <button
                             className="settings-entry-btn"
@@ -786,11 +823,10 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                             style={{ marginTop: 12 }}
                         >
                             <div className="settings-entry-info">
-                                <span className="settings-entry-label">记忆提取提示词</span>
-                                <span className="settings-entry-value">编辑</span>
+                                <span className="settings-entry-label">{t('settings.memoryExtractionPrompt')}</span>
+                                <span className="settings-entry-value">{t('common.edit')}</span>
                                 <span className="settings-entry-subvalue">
-                                    支持 &#123;&#123;user&#125;&#125;/&#123;&#123;avatar&#125;&#125;/
-                                    &#123;&#123;EXISTING_MEMORIES&#125;&#125;/&#123;&#123;CHAT_CONTENT&#125;&#125;
+                                    {t('settings.memoryExtractionPromptSupport')}
                                 </span>
                             </div>
                             <svg className="settings-entry-arrow" viewBox="0 0 24 24">
@@ -836,7 +872,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                             onClick={(e) => e.stopPropagation()}
                         >
                             <div className="prompt-modal-header">
-                                <h3>编辑系统提示词</h3>
+                                <h3>{t('settings.editSystemPrompt')}</h3>
                                 <button className="prompt-modal-close" onClick={handleClosePromptModal}>
                                     <svg viewBox="0 0 24 24">
                                         <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
@@ -845,26 +881,26 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                             </div>
 
                             <div className="prompt-modal-body">
-                                <p className="prompt-modal-hint">此提示词将作为所有对话的默认全局系统提示词</p>
+                                <p className="prompt-modal-hint">{t('settings.systemPromptHint')}</p>
                                 <textarea
                                     className="prompt-modal-textarea"
                                     value={editingPrompt}
                                     onChange={(e) => setEditingPrompt(e.target.value)}
-                                    placeholder="输入系统提示词..."
+                                    placeholder={t('settings.systemPromptPlaceholder')}
                                     rows={8}
                                 />
                             </div>
 
                             <div className="prompt-modal-footer">
                                 <button className="prompt-modal-btn cancel" onClick={handleClosePromptModal}>
-                                    取消
+                                    {t('common.cancel')}
                                 </button>
                                 <button
                                     className="prompt-modal-btn save"
                                     onClick={handleSaveSystemPrompt}
                                     disabled={saving}
                                 >
-                                    {saving ? '保存中...' : '保存'}
+                                    {saving ? t('common.saving') : t('common.save')}
                                 </button>
                             </div>
                         </motion.div>
@@ -891,7 +927,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                             onClick={(e) => e.stopPropagation()}
                         >
                             <div className="prompt-modal-header">
-                                <h3>回复等候窗口</h3>
+                                <h3>{t('settings.replyWaitWindow')}</h3>
                                 <button className="prompt-modal-close" onClick={handleCloseReplyWaitModal}>
                                     <svg viewBox="0 0 24 24">
                                         <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
@@ -900,10 +936,10 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                             </div>
 
                             <div className="prompt-modal-body">
-                                <p className="prompt-modal-hint">用于合并你连续发送的多条消息后再让 AI 回复</p>
+                                <p className="prompt-modal-hint">{t('settings.replyWaitWindowHint')}</p>
 
                                 <div className="settings-group">
-                                    <label className="settings-label">合并模式</label>
+                                    <label className="settings-label">{t('settings.mergeMode')}</label>
                                     <select
                                         className="settings-input"
                                         value={editingReplyWaitConfig.mode}
@@ -914,13 +950,13 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                                             }))
                                         }
                                     >
-                                        <option value="fixed">固定时间</option>
-                                        <option value="sliding">滑动时间</option>
+                                        <option value="fixed">{t('settings.fixedTime')}</option>
+                                        <option value="sliding">{t('settings.slidingTime')}</option>
                                     </select>
                                 </div>
 
                                 <div className="settings-group">
-                                    <label className="settings-label">等待秒数</label>
+                                    <label className="settings-label">{t('settings.waitSeconds')}</label>
                                     <NumericInput
                                         className="settings-input"
                                         min={0}
@@ -937,19 +973,19 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                                     />
                                 </div>
 
-                                <p className="prompt-modal-hint">0 秒表示立即发送（不合并）</p>
+                                <p className="prompt-modal-hint">{t('settings.zeroSecondsHint')}</p>
                             </div>
 
                             <div className="prompt-modal-footer">
                                 <button className="prompt-modal-btn cancel" onClick={handleCloseReplyWaitModal}>
-                                    取消
+                                    {t('common.cancel')}
                                 </button>
                                 <button
                                     className="prompt-modal-btn save"
                                     onClick={() => void handleSaveReplyWaitConfig()}
                                     disabled={savingReplyWaitConfig}
                                 >
-                                    保存
+                                    {t('common.save')}
                                 </button>
                             </div>
                         </motion.div>
@@ -976,7 +1012,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                             onClick={(e) => e.stopPropagation()}
                         >
                             <div className="prompt-modal-header">
-                                <h3>TTS 提供商</h3>
+                                <h3>{t('settings.ttsProvider')}</h3>
                                 <button className="prompt-modal-close" onClick={handleCloseTTSProviderModal}>
                                     <svg viewBox="0 0 24 24">
                                         <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
@@ -985,7 +1021,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                             </div>
 
                             <div className="prompt-modal-body">
-                                <p className="prompt-modal-hint">仅支持 MiniMax，同步生成 mp3 音频</p>
+                                <p className="prompt-modal-hint">{t('settings.ttsProviderHint')}</p>
 
                                 <div className="settings-group">
                                     <label className="settings-label">Base URL</label>
@@ -1011,7 +1047,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                                         placeholder="MiniMax API Key"
                                         autoComplete="off"
                                     />
-                                    <p className="prompt-modal-hint">已配置过可保留为 ****，不修改则保持不变</p>
+                                    <p className="prompt-modal-hint">{t('settings.ttsApiKeyHint')}</p>
                                 </div>
 
                                 <div className="settings-group">
@@ -1081,14 +1117,14 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                                     onClick={handleCloseTTSProviderModal}
                                     disabled={saving}
                                 >
-                                    取消
+                                    {t('common.cancel')}
                                 </button>
                                 <button
                                     className="prompt-modal-btn save"
                                     onClick={handleSaveTTSProvider}
                                     disabled={saving}
                                 >
-                                    {saving ? '保存中...' : '保存'}
+                                    {saving ? t('common.saving') : t('common.save')}
                                 </button>
                             </div>
                         </motion.div>
@@ -1115,7 +1151,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                             onClick={(e) => e.stopPropagation()}
                         >
                             <div className="prompt-modal-header">
-                                <h3>记忆提取轮数</h3>
+                                <h3>{t('settings.memoryExtractionRounds')}</h3>
                                 <button className="prompt-modal-close" onClick={handleCloseMemoryExtractionRoundsModal}>
                                     <svg viewBox="0 0 24 24">
                                         <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
@@ -1124,11 +1160,9 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                             </div>
 
                             <div className="prompt-modal-body">
-                                <p className="prompt-modal-hint">
-                                    用于控制发送给记忆提取模型的最近对话轮数（每轮 = 用户 + AI）
-                                </p>
+                                <p className="prompt-modal-hint">{t('settings.memoryExtractionRoundsModalHint')}</p>
                                 <div className="settings-group">
-                                    <label className="settings-label">轮数</label>
+                                    <label className="settings-label">{t('settings.rounds')}</label>
                                     <NumericInput
                                         className="settings-input"
                                         min={1}
@@ -1150,14 +1184,14 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                                     className="prompt-modal-btn cancel"
                                     onClick={handleCloseMemoryExtractionRoundsModal}
                                 >
-                                    取消
+                                    {t('common.cancel')}
                                 </button>
                                 <button
                                     className="prompt-modal-btn save"
                                     onClick={handleSaveMemoryExtractionRounds}
                                     disabled={savingMemoryExtractionRounds}
                                 >
-                                    {savingMemoryExtractionRounds ? '保存中...' : '保存'}
+                                    {savingMemoryExtractionRounds ? t('common.saving') : t('common.save')}
                                 </button>
                             </div>
                         </motion.div>
@@ -1184,7 +1218,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                             onClick={(e) => e.stopPropagation()}
                         >
                             <div className="prompt-modal-header">
-                                <h3>记忆刷新间隔</h3>
+                                <h3>{t('settings.memoryRefreshInterval')}</h3>
                                 <button className="prompt-modal-close" onClick={handleCloseMemoryRefreshIntervalModal}>
                                     <svg viewBox="0 0 24 24">
                                         <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
@@ -1193,9 +1227,9 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                             </div>
 
                             <div className="prompt-modal-body">
-                                <p className="prompt-modal-hint">每隔多少轮对话触发一次记忆提取（每轮 = 用户 + AI）</p>
+                                <p className="prompt-modal-hint">{t('settings.memoryRefreshIntervalModalHint')}</p>
                                 <div className="settings-group">
-                                    <label className="settings-label">间隔轮数</label>
+                                    <label className="settings-label">{t('settings.intervalRounds')}</label>
                                     <NumericInput
                                         className="settings-input"
                                         min={1}
@@ -1217,14 +1251,14 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                                     className="prompt-modal-btn cancel"
                                     onClick={handleCloseMemoryRefreshIntervalModal}
                                 >
-                                    取消
+                                    {t('common.cancel')}
                                 </button>
                                 <button
                                     className="prompt-modal-btn save"
                                     onClick={handleSaveMemoryRefreshInterval}
                                     disabled={savingMemoryRefreshInterval}
                                 >
-                                    {savingMemoryRefreshInterval ? '保存中...' : '保存'}
+                                    {savingMemoryRefreshInterval ? t('common.saving') : t('common.save')}
                                 </button>
                             </div>
                         </motion.div>
@@ -1251,7 +1285,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                             onClick={(e) => e.stopPropagation()}
                         >
                             <div className="prompt-modal-header">
-                                <h3>记忆提取提示词</h3>
+                                <h3>{t('settings.memoryExtractionPrompt')}</h3>
                                 <button className="prompt-modal-close" onClick={handleCloseMemoryExtractionPromptModal}>
                                     <svg viewBox="0 0 24 24">
                                         <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
@@ -1260,12 +1294,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                             </div>
 
                             <div className="prompt-modal-body">
-                                <p className="prompt-modal-hint">
-                                    必须保留 &#123;&#123;EXISTING_MEMORIES&#125;&#125; 与
-                                    &#123;&#123;CHAT_CONTENT&#125;&#125; 占位符。
-                                    可用变量：&#123;&#123;user&#125;&#125;（用户） /
-                                    &#123;&#123;avatar&#125;&#125;（角色）
-                                </p>
+                                <p className="prompt-modal-hint">{t('settings.memoryExtractionPromptHint')}</p>
 
                                 <div className="memory-extraction-template-actions">
                                     <button
@@ -1274,7 +1303,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                                         disabled={loadingMemoryExtractionPrompt || defaultMemoryExtractionPrompt === ''}
                                         type="button"
                                     >
-                                        恢复默认
+                                        {t('settings.restoreDefault')}
                                     </button>
                                 </div>
 
@@ -1282,7 +1311,11 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                                     className="prompt-modal-textarea"
                                     value={editingMemoryExtractionPrompt}
                                     onChange={(e) => setEditingMemoryExtractionPrompt(e.target.value)}
-                                    placeholder={loadingMemoryExtractionPrompt ? '加载中...' : '输入记忆提取提示词...'}
+                                    placeholder={
+                                        loadingMemoryExtractionPrompt
+                                            ? t('common.loading')
+                                            : t('settings.memoryExtractionPromptPlaceholder')
+                                    }
                                     rows={12}
                                     disabled={loadingMemoryExtractionPrompt}
                                 />
@@ -1293,14 +1326,14 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                                     className="prompt-modal-btn cancel"
                                     onClick={handleCloseMemoryExtractionPromptModal}
                                 >
-                                    取消
+                                    {t('common.cancel')}
                                 </button>
                                 <button
                                     className="prompt-modal-btn save"
                                     onClick={handleSaveMemoryExtractionPrompt}
                                     disabled={savingMemoryExtractionPrompt || loadingMemoryExtractionPrompt}
                                 >
-                                    {savingMemoryExtractionPrompt ? '保存中...' : '保存'}
+                                    {savingMemoryExtractionPrompt ? t('common.saving') : t('common.save')}
                                 </button>
                             </div>
                         </motion.div>

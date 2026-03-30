@@ -3,6 +3,7 @@ import { motion } from 'motion/react'
 import QRCode from 'qrcode'
 import { getPrompts } from '../services/api'
 import { clawBotService, type ClawBotQRCodeStartResponse, type ClawBotSettings } from '../services/clawbotService'
+import { useT } from '../contexts/I18nContext'
 import type { Prompt } from '../types/chat'
 import { CustomSelect } from './provider'
 import { useToast } from '../contexts/ToastContext'
@@ -22,15 +23,8 @@ type ClawBotFormState = {
     clear_bot_token: boolean
 }
 
-const statusLabelMap: Record<string, string> = {
-    disabled: '未启用',
-    missing_token: '缺少 Bot Token',
-    running: '运行中',
-    error: '异常',
-    stopped: '已停止',
-}
-
 const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
+    const { t } = useT()
     const { showToast } = useToast()
     const pollTimerRef = useRef<number | null>(null)
     const [loading, setLoading] = useState(true)
@@ -92,10 +86,10 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
 
     const promptOptions = useMemo(
         () => [
-            { value: '', label: '不绑定人设' },
+            { value: '', label: t('clawBot.noPersonaBind') },
             ...prompts.map((prompt) => ({ value: prompt.id, label: prompt.name })),
         ],
-        [prompts]
+        [prompts, t]
     )
 
     const loadData = async () => {
@@ -112,7 +106,7 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
                 clear_bot_token: false,
             })
         } catch (error) {
-            const message = error instanceof Error ? error.message : '加载失败'
+            const message = error instanceof Error ? error.message : t('common.loadFailed')
             showToast(message, 'error')
         } finally {
             setLoading(false)
@@ -144,18 +138,18 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
                 if (result.status === 'confirmed' && result.settings) {
                     syncSettings(result.settings)
                     setQRData(null)
-                    showToast('扫码登录成功', 'success')
+                    showToast(t('clawBot.scanLogin'), 'success')
                     return
                 }
 
                 if (result.status === 'expired') {
-                    showToast('二维码已过期，请重新获取', 'error')
+                    showToast(t('service.getQRCodeFailed'), 'error')
                     return
                 }
 
                 scheduleQRCodePoll(sessionID)
             } catch (error) {
-                const message = error instanceof Error ? error.message : '轮询失败'
+                const message = error instanceof Error ? error.message : t('service.pollQRCodeFailed')
                 showToast(message, 'error')
             }
         }, 2500)
@@ -173,9 +167,9 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
                 clear_bot_token: form.clear_bot_token,
             })
             syncSettings(nextSettings)
-            showToast('ClawBot 设置已保存', 'success')
+            showToast(t('clawBot.saved'), 'success')
         } catch (error) {
-            const message = error instanceof Error ? error.message : '保存失败'
+            const message = error instanceof Error ? error.message : t('common.saveFailed')
             showToast(message, 'error')
         } finally {
             setSaving(false)
@@ -199,7 +193,7 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
             setQRStatus('wait')
             scheduleQRCodePoll(result.session_id)
         } catch (error) {
-            const message = error instanceof Error ? error.message : '获取二维码失败'
+            const message = error instanceof Error ? error.message : t('service.getQRCodeFailed')
             showToast(message, 'error')
         } finally {
             setQRLoading(false)
@@ -207,7 +201,14 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
     }
 
     const currentStatus = settings?.status || 'disabled'
-    const statusLabel = statusLabelMap[currentStatus] || currentStatus || '未配置'
+    const statusLabelMap: Record<string, string> = {
+        disabled: t('clawBot.disabled'),
+        missing_token: t('clawBot.missingToken'),
+        running: t('clawBot.running'),
+        error: t('clawBot.error'),
+        stopped: t('clawBot.stopped'),
+    }
+    const statusLabel = statusLabelMap[currentStatus] || currentStatus || t('common.notConfigured')
 
     return (
         <motion.div
@@ -223,12 +224,12 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
                         <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
                     </svg>
                 </button>
-                <div className="provider-settings-title">微信 ClawBot</div>
+                <div className="provider-settings-title">{t('clawBot.title')}</div>
                 <div style={{ width: 44 }}></div>
             </div>
 
             {loading ? (
-                <div className="provider-settings-loading">加载中...</div>
+                <div className="provider-settings-loading">{t('common.loading')}</div>
             ) : (
                 <div className="provider-settings-content">
                     {/* ── 运行状态卡片 ── */}
@@ -246,7 +247,7 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
                                         )}
                                     </svg>
                                 </div>
-                                <div className="clawbot-status-title">运行状态</div>
+                                <div className="clawbot-status-title">{t('clawBot.runStatus')}</div>
                             </div>
                             <div className={`clawbot-status-pill ${currentStatus}`}>{statusLabel}</div>
                         </div>
@@ -256,12 +257,12 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
                                 <span
                                     className={`clawbot-status-meta-dot ${settings?.polling ? 'active' : 'inactive'}`}
                                 />
-                                {settings?.polling ? '后台轮询中' : '当前未轮询'}
+                                {settings?.polling ? t('clawBot.backgroundPolling') : t('clawBot.notPolling')}
                             </div>
                             {settings?.prompt_name && (
                                 <div className="clawbot-status-meta-item">
                                     <span className="clawbot-status-meta-dot active" />
-                                    人设：{settings.prompt_name}
+                                    {t('clawBot.bindPersona')}：{settings.prompt_name}
                                 </div>
                             )}
                             {settings?.ilink_user_id && (
@@ -277,10 +278,10 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
 
                     {/* ── 基础设置 ── */}
                     <div className="clawbot-section">
-                        <div className="clawbot-section-title">基础设置</div>
+                        <div className="clawbot-section-title">{t('settings.globalSettings')}</div>
                         <div className="clawbot-section-card">
                             <div className="settings-group">
-                                <label className="settings-label">启用渠道</label>
+                                <label className="settings-label">{t('clawBot.enableChannel')}</label>
                                 <div className="modal-toggle-wrapper">
                                     <label className="toggle-switch">
                                         <input
@@ -296,15 +297,15 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
                                         />
                                         <span className="toggle-slider"></span>
                                     </label>
-                                    <span className="toggle-label">{form.enabled ? '已开启' : '已关闭'}</span>
+                                    <span className="toggle-label">
+                                        {form.enabled ? t('common.enabled') : t('common.disabled')}
+                                    </span>
                                 </div>
-                                <p className="prompt-modal-hint memory-toggle-hint">
-                                    聊天仅保存在内存，不会写入聊天记录文件
-                                </p>
+                                <p className="prompt-modal-hint memory-toggle-hint">{t('clawBot.chatMemoryOnly')}</p>
                             </div>
 
                             <div className="settings-group">
-                                <label className="settings-label">Base URL</label>
+                                <label className="settings-label">{t('clawBot.baseUrl')}</label>
                                 <input
                                     className="settings-input"
                                     value={form.base_url}
@@ -317,12 +318,12 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
                             </div>
 
                             <div className="settings-group">
-                                <label className="settings-label">绑定人设</label>
+                                <label className="settings-label">{t('clawBot.bindPersona')}</label>
                                 <CustomSelect
                                     value={form.prompt_id}
                                     options={promptOptions}
                                     onChange={(value) => setForm((current) => ({ ...current, prompt_id: value }))}
-                                    ariaLabel="选择 ClawBot 人设"
+                                    ariaLabel={t('clawBot.bindPersona')}
                                     disabled={saving}
                                 />
                             </div>
@@ -331,24 +332,28 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
 
                     {/* ── 认证凭据 ── */}
                     <div className="clawbot-section">
-                        <div className="clawbot-section-title">认证凭据</div>
+                        <div className="clawbot-section-title">{t('settings.account')}</div>
                         <div className="clawbot-section-card">
                             <div className="settings-group">
-                                <label className="settings-label">Bot Token</label>
+                                <label className="settings-label">{t('clawBot.botToken')}</label>
                                 <input
                                     className="settings-input"
                                     value={form.bot_token}
                                     onChange={(event) =>
                                         setForm((current) => ({ ...current, bot_token: event.target.value }))
                                     }
-                                    placeholder={settings?.has_bot_token ? '留空则保留已保存 token' : '输入 Bot Token'}
+                                    placeholder={
+                                        settings?.has_bot_token
+                                            ? t('clawBot.tokenKeepHint')
+                                            : t('clawBot.tokenPlaceholder')
+                                    }
                                     disabled={saving}
                                 />
                                 <div className="clawbot-token-row">
                                     <span className="clawbot-token-status">
                                         {settings?.has_bot_token
-                                            ? `已保存：${settings.bot_token || '****'}`
-                                            : '当前未保存 Bot Token'}
+                                            ? t('clawBot.savedToken', { token: settings.bot_token || '****' })
+                                            : t('clawBot.currentNotSavedToken')}
                                     </span>
                                     {settings?.has_bot_token && (
                                         <button
@@ -362,7 +367,9 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
                                                 }))
                                             }
                                         >
-                                            {form.clear_bot_token ? '已标记清空' : '清空 Token'}
+                                            {form.clear_bot_token
+                                                ? t('clawBot.markedCleared')
+                                                : t('clawBot.clearToken')}
                                         </button>
                                     )}
                                 </div>
@@ -378,10 +385,10 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
                             onClick={handleStartQRCode}
                             disabled={qrLoading || saving}
                         >
-                            {qrLoading ? '获取中...' : '扫码获取'}
+                            {qrLoading ? t('clawBot.getting') : t('clawBot.scanToGet')}
                         </button>
                         <button type="button" className="save-button" onClick={handleSave} disabled={saving}>
-                            {saving ? '保存中...' : '保存设置'}
+                            {saving ? t('common.saving') : t('clawBot.saveSettings')}
                         </button>
                     </div>
 
@@ -389,14 +396,14 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
                     {qrData && (
                         <div className="clawbot-qrcode-card">
                             <div className="clawbot-qrcode-header">
-                                <div className="clawbot-qrcode-title">扫码登录</div>
+                                <div className="clawbot-qrcode-title">{t('clawBot.scanLogin')}</div>
                                 <div className="clawbot-qrcode-status">{qrStatus || 'wait'}</div>
                             </div>
                             <div className="clawbot-qrcode-body">
                                 {qrDisplaySrc ? (
                                     <img className="clawbot-qrcode-image" src={qrDisplaySrc} alt="ClawBot QR Code" />
                                 ) : qrData.qrcode_img_content || qrData.qrcode ? (
-                                    <div className="clawbot-qrcode-loading">二维码生成中...</div>
+                                    <div className="clawbot-qrcode-loading">{t('clawBot.qrGenerating')}</div>
                                 ) : (
                                     <textarea
                                         className="settings-textarea clawbot-qrcode-text"
@@ -405,10 +412,7 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
                                     />
                                 )}
                             </div>
-                            <div className="clawbot-qrcode-hint">
-                                状态值按官方接口原样展示，`scaned` 表示已扫码待确认。
-                                {qrDisplaySrc ? ' 当前展示的是按接口返回内容本地生成的二维码。' : ''}
-                            </div>
+                            <div className="clawbot-qrcode-hint">{t('clawBot.qrCodeHint')}</div>
                         </div>
                     )}
                 </div>

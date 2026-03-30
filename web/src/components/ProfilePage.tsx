@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { getUserInfo, updateUserInfo, uploadUserAvatar, getUserAvatarUrl, appendQueryParam } from '../services/api'
+import { useT } from '../contexts/I18nContext'
 import type { UserInfo } from '../types/chat'
 import Settings from './Settings'
 import { centerModalVariants, drawerVariants, overlayVariants } from '../utils/motion'
 import './ProfilePage.css'
 
 const ProfilePage: React.FC = () => {
+    const { t } = useT()
     const [userInfo, setUserInfo] = useState<UserInfo | null>(null)
     const [loading, setLoading] = useState(true)
     const [showSettings, setShowSettings] = useState(false)
@@ -16,6 +18,7 @@ const ProfilePage: React.FC = () => {
     const [userAvatarPreview, setUserAvatarPreview] = useState<string | null>(null)
     const [saving, setSaving] = useState(false)
     const [message, setMessage] = useState('')
+    const [messageType, setMessageType] = useState<'success' | 'error'>('success')
     const userFileInputRef = useRef<HTMLInputElement>(null)
 
     useEffect(() => {
@@ -31,9 +34,13 @@ const ProfilePage: React.FC = () => {
         if (showLoading) setLoading(false)
     }
 
-    const showMessageToast = (msg: string) => {
+    const showMessageToast = (msg: string, type: 'success' | 'error' = 'success') => {
         setMessage(msg)
-        setTimeout(() => setMessage(''), 2000)
+        setMessageType(type)
+        setTimeout(() => {
+            setMessage('')
+            setMessageType('success')
+        }, 2000)
     }
 
     const handleOpenUserModal = () => {
@@ -79,11 +86,11 @@ const ProfilePage: React.FC = () => {
                     await uploadUserAvatar(userAvatarFile)
                 }
                 setUserInfo(updated)
-                showMessageToast('个人信息已保存')
+                showMessageToast(t('profile.infoSaved'))
                 handleCloseUserModal()
                 await loadUserInfo({ showLoading: false })
             } else {
-                showMessageToast('保存失败')
+                showMessageToast(t('common.saveFailed'), 'error')
             }
         } finally {
             setSaving(false)
@@ -107,12 +114,12 @@ const ProfilePage: React.FC = () => {
         <div className="profile-page">
             <div className="profile-header">
                 <div style={{ width: 44 }}></div>
-                <div className="profile-title">我</div>
+                <div className="profile-title">{t('profile.title')}</div>
                 <div style={{ width: 44 }}></div>
             </div>
 
             {loading ? (
-                <div className="profile-loading">加载中...</div>
+                <div className="profile-loading">{t('common.loading')}</div>
             ) : (
                 <div className="profile-content">
                     {/* 个人信息卡片 */}
@@ -129,8 +136,8 @@ const ProfilePage: React.FC = () => {
                             )}
                         </div>
                         <div className="profile-info">
-                            <div className="profile-name">{userInfo?.username || '未设置昵称'}</div>
-                            <div className="profile-desc">{userInfo?.description || '暂无个人简介'}</div>
+                            <div className="profile-name">{userInfo?.username || t('profile.noNickname')}</div>
+                            <div className="profile-desc">{userInfo?.description || t('profile.noBio')}</div>
                         </div>
                         <svg className="profile-arrow" viewBox="0 0 24 24">
                             <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
@@ -145,20 +152,14 @@ const ProfilePage: React.FC = () => {
                                     <path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
                                 </svg>
                             </div>
-                            <span className="menu-label">设置</span>
+                            <span className="menu-label">{t('profile.settings')}</span>
                             <svg className="menu-arrow" viewBox="0 0 24 24">
                                 <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
                             </svg>
                         </div>
                     </div>
 
-                    {message && (
-                        <div
-                            className={`profile-message ${message.includes('成功') || message.includes('已') ? 'success' : 'error'}`}
-                        >
-                            {message}
-                        </div>
-                    )}
+                    {message && <div className={`profile-message ${messageType}`}>{message}</div>}
                 </div>
             )}
 
@@ -197,7 +198,7 @@ const ProfilePage: React.FC = () => {
                             onClick={(e) => e.stopPropagation()}
                         >
                             <div className="profile-modal-header">
-                                <h3>编辑个人资料</h3>
+                                <h3>{t('profile.personalInfo')}</h3>
                                 <button className="profile-modal-close" onClick={handleCloseUserModal}>
                                     <svg viewBox="0 0 24 24">
                                         <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
@@ -215,7 +216,7 @@ const ProfilePage: React.FC = () => {
                                             <svg viewBox="0 0 24 24">
                                                 <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
                                             </svg>
-                                            <span>点击上传头像</span>
+                                            <span>{t('profile.uploadAvatar')}</span>
                                         </div>
                                     )}
                                     <input
@@ -229,26 +230,26 @@ const ProfilePage: React.FC = () => {
 
                                 {/* 用户名输入 */}
                                 <div className="form-group">
-                                    <label>昵称</label>
+                                    <label>{t('profile.nickname')}</label>
                                     <input
                                         type="text"
                                         value={editingUserInfo.username}
                                         onChange={(e) =>
                                             setEditingUserInfo({ ...editingUserInfo, username: e.target.value })
                                         }
-                                        placeholder="输入你的昵称"
+                                        placeholder={t('profile.nicknamePlaceholder')}
                                     />
                                 </div>
 
                                 {/* 自我描述输入 */}
                                 <div className="form-group">
-                                    <label>个人简介</label>
+                                    <label>{t('profile.bio')}</label>
                                     <textarea
                                         value={editingUserInfo.description}
                                         onChange={(e) =>
                                             setEditingUserInfo({ ...editingUserInfo, description: e.target.value })
                                         }
-                                        placeholder="介绍一下你自己..."
+                                        placeholder={t('profile.bioPlaceholder')}
                                         rows={4}
                                     />
                                 </div>
@@ -256,14 +257,14 @@ const ProfilePage: React.FC = () => {
 
                             <div className="profile-modal-footer">
                                 <button className="profile-modal-btn cancel" onClick={handleCloseUserModal}>
-                                    取消
+                                    {t('common.cancel')}
                                 </button>
                                 <button
                                     className="profile-modal-btn save"
                                     onClick={handleSaveUserInfo}
                                     disabled={saving}
                                 >
-                                    {saving ? '保存中...' : '保存'}
+                                    {saving ? t('common.saving') : t('common.save')}
                                 </button>
                             </div>
                         </motion.div>

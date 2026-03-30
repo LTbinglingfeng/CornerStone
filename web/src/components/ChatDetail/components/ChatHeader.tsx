@@ -15,6 +15,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
     onBack,
     onOpenSettings,
 }) => {
+    const { t } = useT()
     const showTyping = sending && assistantVisibleSegments === 0
 
     return (
@@ -25,7 +26,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                 </svg>
             </button>
             <div className={`chat-detail-title${showTyping ? ' typing' : ''}`}>
-                {showTyping ? '对方正在输入中…' : title}
+                {showTyping ? t('chat.typingIndicator') : title}
             </div>
             {showSettingsButton && (
                 <button className="settings-button" onClick={onOpenSettings}>
@@ -37,3 +38,4 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
         </div>
     )
 }
+import { useT } from '../../../contexts/I18nContext'

@@ -1,4 +1,5 @@
 import type { ApiResponse } from '../types/chat'
+import { translate } from '../i18n'
 import { apiFetchJson } from './api'
 
 export interface ClawBotSettings {
@@ -30,7 +31,7 @@ export const clawBotService = {
     async getSettings(): Promise<ClawBotSettings> {
         const data = await apiFetchJson<ApiResponse<ClawBotSettings>>('/api/settings/clawbot')
         if (!data.success || !data.data) {
-            throw new Error(data.error || '获取 ClawBot 设置失败')
+            throw new Error(data.error || translate('service.getClawBotSettingsFailed'))
         }
         return data.data
     },
@@ -48,7 +49,7 @@ export const clawBotService = {
             body: JSON.stringify(update),
         })
         if (!data.success || !data.data) {
-            throw new Error(data.error || '保存 ClawBot 设置失败')
+            throw new Error(data.error || translate('service.saveClawBotSettingsFailed'))
         }
         return data.data
     },
@@ -60,7 +61,7 @@ export const clawBotService = {
             body: JSON.stringify({ base_url: baseURL }),
         })
         if (!data.success || !data.data) {
-            throw new Error(data.error || '获取二维码失败')
+            throw new Error(data.error || translate('service.getQRCodeFailed'))
         }
         return data.data
     },
@@ -72,7 +73,7 @@ export const clawBotService = {
             body: JSON.stringify({ session_id: sessionID }),
         })
         if (!data.success || !data.data) {
-            throw new Error(data.error || '轮询二维码状态失败')
+            throw new Error(data.error || translate('service.pollQRCodeFailed'))
         }
         return data.data
     },

@@ -1,5 +1,6 @@
 import { useRef, useCallback } from 'react'
 import type { ChatSession } from '../types/chat'
+import { useT } from '../contexts/I18nContext'
 import { formatTime } from '../utils/time'
 import './ChatItem.css'
 
@@ -17,6 +18,7 @@ function getAvatarInfo(title: string): { text: string; color: string } {
 }
 
 const ChatItem: React.FC<ChatItemProps> = ({ session, onClick, onLongPress }) => {
+    const { t } = useT()
     const avatar = getAvatarInfo(session.title)
     const longPressTimer = useRef<number | null>(null)
     const isLongPress = useRef(false)
@@ -82,7 +84,7 @@ const ChatItem: React.FC<ChatItemProps> = ({ session, onClick, onLongPress }) =>
                     <span className="chat-name">{session.title}</span>
                     <span className="chat-time">{formatTime(session.updated_at)}</span>
                 </div>
-                <div className="chat-message">点击查看对话</div>
+                <div className="chat-message">{t('chat.clickToView')}</div>
             </div>
         </div>
     )

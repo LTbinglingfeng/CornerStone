@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { UserInfo } from '../../types/chat'
 import type { Moment } from '../../types/moments'
+import { useT } from '../../contexts/I18nContext'
 import { getPromptAvatarUrl } from '../../services/api'
 import { likeMoment, unlikeMoment } from '../../services/moments'
 import { formatRelativeTime } from '../../utils/time'
@@ -27,6 +28,7 @@ function normalizeAssetPath(path: string): string {
 }
 
 const MomentCard: React.FC<MomentCardProps> = ({ moment, userInfo, onClick, onRefresh }) => {
+    const { t } = useT()
     const [showActions, setShowActions] = useState(false)
     const [avatarFailed, setAvatarFailed] = useState(false)
     const actionsRef = useRef<HTMLDivElement>(null)
@@ -48,7 +50,7 @@ const MomentCard: React.FC<MomentCardProps> = ({ moment, userInfo, onClick, onRe
     )
 
     const userId = userInfo?.username?.trim() || 'user'
-    const userName = userInfo?.username?.trim() || '我'
+    const userName = userInfo?.username?.trim() || t('moments.defaultUser')
     const likes = moment.likes || []
     const comments = moment.comments || []
     const isLiked = likes.some((l) => l.user_type === 'user' && l.user_id === userId)
@@ -96,12 +98,14 @@ const MomentCard: React.FC<MomentCardProps> = ({ moment, userInfo, onClick, onRe
                 <div className="moment-text">{moment.content}</div>
 
                 {(moment.status === 'pending' || moment.status === 'generating') && (
-                    <div className="moment-image-placeholder">配图生成中...</div>
+                    <div className="moment-image-placeholder">{t('moments.imageGenerating')}</div>
                 )}
 
                 {moment.status === 'failed' && (
                     <div className="moment-image-placeholder moment-image-error">
-                        配图生成失败{moment.error_msg ? `：${moment.error_msg}` : ''}
+                        {t('moments.imageGenerateFailed', {
+                            error: moment.error_msg ? `: ${moment.error_msg}` : '',
+                        })}
                     </div>
                 )}
 
@@ -132,10 +136,10 @@ const MomentCard: React.FC<MomentCardProps> = ({ moment, userInfo, onClick, onRe
                         {showActions && (
                             <div className="moment-actions-menu">
                                 <button type="button" onClick={handleLike}>
-                                    {isLiked ? '取消' : '赞'}
+                                    {isLiked ? t('common.cancel') : t('moments.like')}
                                 </button>
                                 <button type="button" onClick={handleComment}>
-                                    评论
+                                    {t('moments.comment')}
                                 </button>
                             </div>
                         )}

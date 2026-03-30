@@ -1,4 +1,5 @@
 import type { ApiResponse } from '../types/chat'
+import { translate } from '../i18n'
 import { apiFetchJson } from './api'
 
 export type TTSProviderType = 'minimax'
@@ -26,7 +27,7 @@ export const ttsService = {
     async getTTSSettings(): Promise<TTSSettings> {
         const data = await apiFetchJson<ApiResponse<TTSSettings>>('/api/settings/tts')
         if (!data.success || !data.data) {
-            throw new Error(data.error || '获取TTS设置失败')
+            throw new Error(data.error || translate('service.getTTSSettingsFailed'))
         }
         return {
             enabled: !!data.data.enabled,
@@ -49,7 +50,7 @@ export const ttsService = {
             body: JSON.stringify(payload),
         })
         if (!data.success || !data.data) {
-            throw new Error(data.error || '保存TTS设置失败')
+            throw new Error(data.error || translate('service.saveTTSSettingsFailed'))
         }
         return {
             enabled: !!data.data.enabled,

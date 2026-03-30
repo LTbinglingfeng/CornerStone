@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { UserInfo } from '../../types/chat'
 import type { Moment } from '../../types/moments'
+import { useT } from '../../contexts/I18nContext'
 import { getPromptAvatarUrl } from '../../services/api'
 import { addComment, getMoment, likeMoment, unlikeMoment } from '../../services/moments'
 import { formatRelativeTime } from '../../utils/time'
@@ -20,13 +21,14 @@ function normalizeAssetPath(path: string): string {
 }
 
 const MomentDetail: React.FC<MomentDetailProps> = ({ moment, userInfo, onClose, onRefresh }) => {
+    const { t } = useT()
     const [data, setData] = useState<Moment>(moment)
     const [loading, setLoading] = useState(true)
     const [commentText, setCommentText] = useState('')
     const [submitting, setSubmitting] = useState(false)
 
     const userId = userInfo?.username?.trim() || 'user'
-    const userName = userInfo?.username?.trim() || '我'
+    const userName = userInfo?.username?.trim() || t('moments.defaultUser')
     const likes = data.likes || []
     const comments = data.comments || []
     const isLiked = likes.some((l) => l.user_type === 'user' && l.user_id === userId)
@@ -95,15 +97,15 @@ const MomentDetail: React.FC<MomentDetailProps> = ({ moment, userInfo, onClose, 
             <div className="moment-detail">
                 <div className="moment-detail-header">
                     <button className="moment-detail-close" type="button" onClick={onClose}>
-                        关闭
+                        {t('common.close')}
                     </button>
-                    <div className="moment-detail-title">详情</div>
+                    <div className="moment-detail-title">{t('common.details')}</div>
                     <div className="moment-detail-spacer" />
                 </div>
 
                 <div className="moment-detail-body">
                     {loading ? (
-                        <div className="moment-detail-loading">加载中...</div>
+                        <div className="moment-detail-loading">{t('common.loading')}</div>
                     ) : (
                         <>
                             <div className="moment-detail-main">
@@ -115,11 +117,15 @@ const MomentDetail: React.FC<MomentDetailProps> = ({ moment, userInfo, onClose, 
                                     <div className="moment-detail-text">{data.content}</div>
 
                                     {(data.status === 'pending' || data.status === 'generating') && (
-                                        <div className="moment-detail-image-placeholder">配图生成中...</div>
+                                        <div className="moment-detail-image-placeholder">
+                                            {t('moments.imageGenerating')}
+                                        </div>
                                     )}
                                     {data.status === 'failed' && (
                                         <div className="moment-detail-image-placeholder moment-detail-image-error">
-                                            配图生成失败{data.error_msg ? `：${data.error_msg}` : ''}
+                                            {t('moments.imageGenerateFailed', {
+                                                error: data.error_msg ? `: ${data.error_msg}` : '',
+                                            })}
                                         </div>
                                     )}
                                     {data.status === 'published' && imageSrc && (
@@ -138,7 +144,7 @@ const MomentDetail: React.FC<MomentDetailProps> = ({ moment, userInfo, onClose, 
                                             onClick={handleLike}
                                             disabled={submitting}
                                         >
-                                            {isLiked ? '已赞' : '赞'}
+                                            {isLiked ? t('moments.liked') : t('moments.like')}
                                         </button>
                                     </div>
                                 </div>
@@ -167,7 +173,7 @@ const MomentDetail: React.FC<MomentDetailProps> = ({ moment, userInfo, onClose, 
                                         ))}
                                     </div>
                                 ) : (
-                                    <div className="moment-detail-empty">暂无评论</div>
+                                    <div className="moment-detail-empty">{t('moments.noComments')}</div>
                                 )}
                             </div>
                         </>
@@ -179,7 +185,7 @@ const MomentDetail: React.FC<MomentDetailProps> = ({ moment, userInfo, onClose, 
                         className="moment-detail-input"
                         value={commentText}
                         onChange={(e) => setCommentText(e.target.value)}
-                        placeholder="写评论..."
+                        placeholder={t('moments.commentPlaceholder')}
                         disabled={submitting}
                     />
                     <button
@@ -188,7 +194,7 @@ const MomentDetail: React.FC<MomentDetailProps> = ({ moment, userInfo, onClose, 
                         onClick={handleSendComment}
                         disabled={submitting || commentText.trim() === ''}
                     >
-                        发送
+                        {t('common.send')}
                     </button>
                 </div>
             </div>

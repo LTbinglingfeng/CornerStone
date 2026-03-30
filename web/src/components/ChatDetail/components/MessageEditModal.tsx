@@ -1,4 +1,5 @@
 import { createPortal } from 'react-dom'
+import { useT } from '../../../contexts/I18nContext'
 import type { MessageEditState } from '../types'
 
 interface MessageEditModalProps {
@@ -16,12 +17,18 @@ export const MessageEditModal: React.FC<MessageEditModalProps> = ({
     onSave,
     saveDisabled,
 }) => {
+    const { t } = useT()
     return createPortal(
         <div className="message-edit-overlay" onClick={onClose}>
             <div className="message-edit-card" onClick={(e) => e.stopPropagation()}>
                 <div className="message-edit-header">
-                    <div className="message-edit-title">编辑消息</div>
-                    <button type="button" className="message-edit-close" onClick={onClose} aria-label="关闭编辑">
+                    <div className="message-edit-title">{t('chat.editMessage')}</div>
+                    <button
+                        type="button"
+                        className="message-edit-close"
+                        onClick={onClose}
+                        aria-label={t('common.close')}
+                    >
                         ×
                     </button>
                 </div>
@@ -37,10 +44,10 @@ export const MessageEditModal: React.FC<MessageEditModalProps> = ({
 
                 <div className="message-edit-footer">
                     <button type="button" className="message-edit-btn cancel" onClick={onClose}>
-                        取消
+                        {t('common.cancel')}
                     </button>
                     <button type="button" className="message-edit-btn save" onClick={onSave} disabled={saveDisabled}>
-                        保存
+                        {t('common.save')}
                     </button>
                 </div>
             </div>

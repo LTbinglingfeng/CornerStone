@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode, useRef } from 'react'
 import { createPortal } from 'react-dom'
+import { useT } from './I18nContext'
 import './ConfirmModal.css'
 
 interface ConfirmOptions {
@@ -25,6 +26,7 @@ export const useConfirm = () => {
 }
 
 export const ConfirmProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+    const { t } = useT()
     const [isOpen, setIsOpen] = useState(false)
     const [options, setOptions] = useState<ConfirmOptions>({ message: '' })
     const resolveRef = useRef<(value: boolean) => void>(null)
@@ -60,18 +62,18 @@ export const ConfirmProvider: React.FC<{ children: ReactNode }> = ({ children })
                     <div className="confirm-modal-overlay" onClick={handleCancel}>
                         <div className="confirm-modal-card" onClick={(e) => e.stopPropagation()}>
                             <div className="confirm-modal-header">
-                                <div className="confirm-modal-title">{options.title || '确认'}</div>
+                                <div className="confirm-modal-title">{options.title || t('common.confirm')}</div>
                             </div>
                             <div className="confirm-modal-body">{options.message}</div>
                             <div className="confirm-modal-footer">
                                 <button className="confirm-modal-btn cancel" onClick={handleCancel}>
-                                    {options.cancelText || '取消'}
+                                    {options.cancelText || t('common.cancel')}
                                 </button>
                                 <button
                                     className={`confirm-modal-btn confirm ${options.danger ? 'danger' : ''}`}
                                     onClick={handleConfirm}
                                 >
-                                    {options.confirmText || '确定'}
+                                    {options.confirmText || t('common.ok')}
                                 </button>
                             </div>
                         </div>

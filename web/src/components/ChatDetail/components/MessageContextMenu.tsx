@@ -1,4 +1,5 @@
 import type { ChatMessage } from '../../../types/chat'
+import { useT } from '../../../contexts/I18nContext'
 import ContextMenu, { type MenuItem } from '../../ContextMenu'
 import type { MessageMenuState } from '../types'
 import { buildSelectableText, isRecalledMessage } from '../utils'
@@ -28,14 +29,15 @@ export const MessageContextMenu: React.FC<MessageContextMenuProps> = ({
     onQuote,
     onRegenerate,
 }) => {
+    const { t } = useT()
     const items: MenuItem[] = []
     const selectableText = buildSelectableText(state.message).trim()
     if (selectableText) {
-        items.push({ label: '选择文本', onClick: () => onSelectText(selectableText) })
+        items.push({ label: t('chat.selectText'), onClick: () => onSelectText(selectableText) })
     }
 
     if (!sending && state.message.role === 'user' && !isRecalledMessage(state.message)) {
-        items.push({ label: '撤回', onClick: () => onRecall(state.messageIndex) })
+        items.push({ label: t('chat.recall'), onClick: () => onRecall(state.messageIndex) })
     }
 
     // 重新生成：仅对尾部连续 assistant 批次中的消息显示
@@ -47,17 +49,17 @@ export const MessageContextMenu: React.FC<MessageContextMenuProps> = ({
                 batchStart--
             }
             if (state.messageIndex >= batchStart) {
-                items.push({ label: '重新生成', onClick: () => onRegenerate() })
+                items.push({ label: t('chat.regenerate'), onClick: () => onRegenerate() })
             }
         }
     }
 
     if (!sending) {
-        items.push({ label: '编辑', onClick: () => onEdit(state.messageIndex) })
-        items.push({ label: '删除', danger: true, onClick: () => onDelete(state.messageIndex) })
+        items.push({ label: t('common.edit'), onClick: () => onEdit(state.messageIndex) })
+        items.push({ label: t('common.delete'), danger: true, onClick: () => onDelete(state.messageIndex) })
     }
 
-    items.push({ label: '引用', onClick: () => onQuote(state.message) })
+    items.push({ label: t('chat.quote'), onClick: () => onQuote(state.message) })
 
     return <ContextMenu items={items} position={state.position} onClose={onClose} />
 }

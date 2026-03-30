@@ -1,5 +1,6 @@
 import type { Prompt, UserInfo } from '../../../types/chat'
 import { appendQueryParam, getPromptAvatarUrl } from '../../../services/api'
+import { useT } from '../../../contexts/I18nContext'
 import type { ActiveRedPacketState } from '../types'
 import type { PacketStep, RedPacketReceivedRecord } from './types'
 import { formatRedPacketTime } from './utils'
@@ -23,9 +24,10 @@ export const RedPacketModal: React.FC<RedPacketModalProps> = ({
     prompt,
     getReceivedRecord,
 }) => {
+    const { t } = useT()
     const received = getReceivedRecord(activeRedPacket.packetKey)
     const senderName = activeRedPacket.senderName
-    const senderMessage = activeRedPacket.params.message || '恭喜发财，大吉大利'
+    const senderMessage = activeRedPacket.params.message || t('redPacket.defaultGreeting')
 
     const getPromptAvatarSrc = () => {
         if (prompt?.avatar) {
@@ -35,14 +37,19 @@ export const RedPacketModal: React.FC<RedPacketModalProps> = ({
     }
 
     if (packetStep === 'opened' && activeRedPacket.senderRole === 'user') {
-        const receiverName = prompt?.name?.trim() || 'AI Assistant'
+        const receiverName = prompt?.name?.trim() || t('chat.defaultAIName')
         const receiverTime = received?.timestamp ? formatRedPacketTime(received.timestamp) : ''
         const receiverAvatarSrc = getPromptAvatarSrc()
         return (
             <div className="rp-detail-overlay">
                 <div className="rp-detail-top">
                     <div className="rp-detail-nav">
-                        <button type="button" className="rp-detail-back" onClick={onClose} aria-label="返回">
+                        <button
+                            type="button"
+                            className="rp-detail-back"
+                            onClick={onClose}
+                            aria-label={t('common.back')}
+                        >
                             <svg viewBox="0 0 24 24" aria-hidden="true">
                                 <path d="M15.5 5.5a1 1 0 0 1 0 1.4L10.4 12l5.1 5.1a1 1 0 1 1-1.4 1.4l-5.8-5.8a1 1 0 0 1 0-1.4l5.8-5.8a1 1 0 0 1 1.4 0z" />
                             </svg>
@@ -58,13 +65,18 @@ export const RedPacketModal: React.FC<RedPacketModalProps> = ({
                                 {senderName.charAt(0)?.toUpperCase() || 'U'}
                             </div>
                         )}
-                        <div className="rp-detail-title">{senderName}的红包</div>
+                        <div className="rp-detail-title">
+                            {senderName}
+                            {t('redPacket.senderRedPacket')}
+                        </div>
                         <div className="rp-detail-message">{senderMessage}</div>
                     </div>
                 </div>
 
                 <div className="rp-detail-body">
-                    <div className="rp-detail-summary">1个红包共{activeRedPacket.params.amount.toFixed(2)}元</div>
+                    <div className="rp-detail-summary">
+                        {t('redPacket.packetSummary', { amount: activeRedPacket.params.amount.toFixed(2) })}
+                    </div>
 
                     <div className="rp-detail-list">
                         <div className="rp-detail-item">
@@ -77,9 +89,11 @@ export const RedPacketModal: React.FC<RedPacketModalProps> = ({
                             )}
                             <div className="rp-detail-item-main">
                                 <div className="rp-detail-item-name">{receiverName}</div>
-                                <div className="rp-detail-item-time">{receiverTime || '未领取'}</div>
+                                <div className="rp-detail-item-time">{receiverTime || t('redPacket.notClaimed')}</div>
                             </div>
-                            <div className="rp-detail-item-amount">{activeRedPacket.params.amount.toFixed(2)}元</div>
+                            <div className="rp-detail-item-amount">
+                                {activeRedPacket.params.amount.toFixed(2)} {t('redPacket.yuan')}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -90,8 +104,8 @@ export const RedPacketModal: React.FC<RedPacketModalProps> = ({
     const receiverName =
         received?.receiverName ||
         (activeRedPacket.senderRole === 'assistant'
-            ? userInfo?.username?.trim() || '你'
-            : prompt?.name?.trim() || 'AI Assistant')
+            ? userInfo?.username?.trim() || t('chat.defaultTargetName')
+            : prompt?.name?.trim() || t('chat.defaultAIName'))
 
     return (
         <div className="rp-modal-overlay">
@@ -120,7 +134,7 @@ export const RedPacketModal: React.FC<RedPacketModalProps> = ({
                                 className={`rp-open-btn ${packetStep === 'opening' ? 'opening' : ''}`}
                                 onClick={onOpen}
                             >
-                                開
+                                {t('redPacket.openButton')}
                             </button>
                         </div>
                     </div>
@@ -140,7 +154,10 @@ export const RedPacketModal: React.FC<RedPacketModalProps> = ({
                                         {senderName.charAt(0)?.toUpperCase() || 'A'}
                                     </div>
                                 )}
-                                <span className="rp-sender-name dark">{senderName}的红包</span>
+                                <span className="rp-sender-name dark">
+                                    {senderName}
+                                    {t('redPacket.senderRedPacket')}
+                                </span>
                             </div>
                             <div className="rp-wishing dark">{senderMessage}</div>
                         </div>
@@ -153,13 +170,13 @@ export const RedPacketModal: React.FC<RedPacketModalProps> = ({
                         <div className="rp-result-footer">
                             <div className="rp-result-meta">
                                 <div className="rp-result-meta-row">
-                                    <span className="rp-result-meta-label">领取者</span>
+                                    <span className="rp-result-meta-label">{t('redPacket.recipient')}</span>
                                     <span className="rp-result-meta-value">{receiverName}</span>
                                 </div>
                                 <div className="rp-result-meta-hint">
                                     {activeRedPacket.senderRole === 'assistant'
-                                        ? '已存入零钱，可直接使用'
-                                        : `已被${receiverName}领取`}
+                                        ? t('redPacket.savedToWallet')
+                                        : t('redPacket.claimedBy', { name: receiverName })}
                                 </div>
                             </div>
                         </div>

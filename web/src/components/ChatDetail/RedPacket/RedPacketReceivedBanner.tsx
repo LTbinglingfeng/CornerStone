@@ -1,4 +1,5 @@
 import type { ChatMessage, Prompt, ToolCall, UserInfo } from '../../../types/chat'
+import { useT } from '../../../contexts/I18nContext'
 import { inferRedPacketParties } from './utils'
 
 interface RedPacketReceivedBannerProps {
@@ -14,10 +15,12 @@ export const RedPacketReceivedBanner: React.FC<RedPacketReceivedBannerProps> = (
     userInfo,
     prompt,
 }) => {
+    const { t } = useT()
+    const redPacketWordToken = '__RED_PACKET_WORD__'
     if (toolCall.function.name !== 'red_packet_received') return null
 
-    let receiverName = userInfo?.username?.trim() || '你'
-    let senderName = prompt?.name?.trim() || 'AI Assistant'
+    let receiverName = userInfo?.username?.trim() || t('chat.defaultTargetName')
+    let senderName = prompt?.name?.trim() || t('chat.defaultAIName')
     let packetKey = ''
     let inferredSenderRole: null | 'user' | 'assistant' = null
 
@@ -35,8 +38,8 @@ export const RedPacketReceivedBanner: React.FC<RedPacketReceivedBannerProps> = (
             const inferred = inferRedPacketParties(
                 messages,
                 packetKey,
-                userInfo?.username?.trim() || '你',
-                prompt?.name?.trim() || 'AI Assistant'
+                userInfo?.username?.trim() || t('chat.defaultTargetName'),
+                prompt?.name?.trim() || t('chat.defaultAIName')
             )
             if (inferred) {
                 receiverName = inferred.receiverName
@@ -58,6 +61,15 @@ export const RedPacketReceivedBanner: React.FC<RedPacketReceivedBannerProps> = (
         // ignore invalid payload
     }
 
+    const redPacketWord = t('redPacket.redPacketWord')
+    const receivedBannerText = t('redPacket.receivedBanner', {
+        receiverName,
+        senderName,
+        redPacket: redPacketWordToken,
+    })
+    const [bannerPrefix, bannerSuffix = ''] = receivedBannerText.split(redPacketWordToken)
+    const hasRedPacketWordToken = receivedBannerText.includes(redPacketWordToken)
+
     return (
         <div className="red-packet-received-banner">
             <svg className="red-packet-received-banner-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -66,7 +78,15 @@ export const RedPacketReceivedBanner: React.FC<RedPacketReceivedBannerProps> = (
                 <circle cx="12" cy="12" r="1.4" fill="#d4a94a" />
             </svg>
             <span className="red-packet-received-banner-text">
-                {receiverName}领取了{senderName}的<span className="red-packet-received-banner-highlight">红包</span>
+                {hasRedPacketWordToken ? (
+                    <>
+                        {bannerPrefix}
+                        <span className="red-packet-received-banner-highlight">{redPacketWord}</span>
+                        {bannerSuffix}
+                    </>
+                ) : (
+                    receivedBannerText
+                )}
             </span>
         </div>
     )

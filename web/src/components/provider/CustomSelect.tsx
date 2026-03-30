@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useT } from '../../contexts/I18nContext'
 import type { SelectOption } from './constants'
 
 interface CustomSelectProps {
@@ -10,10 +11,11 @@ interface CustomSelectProps {
 }
 
 const CustomSelect: React.FC<CustomSelectProps> = ({ value, options, onChange, ariaLabel, disabled = false }) => {
+    const { t } = useT()
     const [open, setOpen] = useState(false)
     const wrapperRef = useRef<HTMLDivElement>(null)
     const selectedOption = options.find((option) => option.value === value)
-    const displayLabel = selectedOption?.label || value || options[0]?.label || '请选择'
+    const displayLabel = selectedOption?.label || value || options[0]?.label || t('common.select')
 
     useEffect(() => {
         if (!open) return

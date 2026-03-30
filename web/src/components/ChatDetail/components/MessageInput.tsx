@@ -1,4 +1,5 @@
 import type { QuoteDraft } from '../types'
+import { useT } from '../../../contexts/I18nContext'
 import { AttachmentPanel } from './AttachmentPanel'
 
 interface MessageInputProps {
@@ -46,6 +47,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     attachmentPanelRef,
     onFocusInput,
 }) => {
+    const { t } = useT()
     const handleKeyDown = (e: React.KeyboardEvent) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault()
@@ -69,7 +71,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
                         type="button"
                         className="chat-quote-preview-close"
                         onClick={onClearQuote}
-                        aria-label="关闭引用"
+                        aria-label={t('chat.closeQuote')}
                     >
                         ×
                     </button>
@@ -93,7 +95,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
                     type="button"
                     className={`attachment-button ${showAttachmentMenu ? 'open' : ''}`}
                     onClick={onToggleAttachmentMenu}
-                    aria-label="更多功能"
+                    aria-label={t('chat.moreFeatures')}
                 >
                     <svg viewBox="0 0 24 24" aria-hidden="true">
                         <path d="M19 11H13V5a1 1 0 0 0-2 0v6H5a1 1 0 0 0 0 2h6v6a1 1 0 0 0 2 0v-6h6a1 1 0 0 0 0-2z" />
@@ -110,7 +112,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
                 <textarea
                     ref={textareaRef}
                     className="chat-input"
-                    placeholder="输入消息..."
+                    placeholder={t('chat.inputPlaceholder')}
                     value={value}
                     onChange={handleInputChange}
                     onFocus={() => window.setTimeout(onFocusInput, 0)}

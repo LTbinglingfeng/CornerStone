@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ChatMessage, ToolCall } from '../../../types/chat'
+import { translate } from '../../../i18n'
 import { sendMessage as sendMessageApi, sendMessageBeacon as sendMessageBeaconApi } from '../../../services/api'
 import { getReplyWaitWindowConfig } from '../../../utils/replyWaitWindow'
 import { useMessageReveal } from './useMessageReveal'
@@ -329,7 +330,8 @@ export function useMessageStream(options: UseMessageStreamOptions): UseMessageSt
                     return
                 }
 
-                const message = error instanceof Error && error.message ? error.message : '发送失败，请重试'
+                const message =
+                    error instanceof Error && error.message ? error.message : translate('common.operationFailed')
                 onError?.(message)
                 const fallbackAssistantTimestamp = new Date().toISOString()
                 const activeStreamingTimestamp = streamingTimestampRef.current

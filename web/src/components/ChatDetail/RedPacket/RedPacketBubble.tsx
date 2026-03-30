@@ -1,5 +1,6 @@
 import type { ToolCall } from '../../../types/chat'
 import type { RedPacketParams } from '../../../types/chat'
+import { useT } from '../../../contexts/I18nContext'
 
 interface RedPacketBubbleProps {
     toolCall: ToolCall
@@ -12,6 +13,7 @@ interface RedPacketBubbleProps {
 }
 
 export const RedPacketBubble: React.FC<RedPacketBubbleProps> = ({ toolCall, rawKey, role, opened, onClick }) => {
+    const { t } = useT()
     if (toolCall.function.name !== 'send_red_packet') return null
 
     try {
@@ -35,13 +37,17 @@ export const RedPacketBubble: React.FC<RedPacketBubbleProps> = ({ toolCall, rawK
                         </svg>
                     </div>
                     <div className="rp-text">
-                        <div className="rp-title">{params.message || '恭喜发财，大吉大利'}</div>
+                        <div className="rp-title">{params.message || t('redPacket.defaultGreeting')}</div>
                         <div className="rp-status">
-                            {role === 'user' ? '查看红包' : shouldTreatAsOpened ? '已领取' : '领取红包'}
+                            {role === 'user'
+                                ? t('redPacket.viewRedPacket')
+                                : shouldTreatAsOpened
+                                  ? t('redPacket.claimed')
+                                  : t('redPacket.claimRedPacket')}
                         </div>
                     </div>
                 </div>
-                <div className="rp-footer">微信红包</div>
+                <div className="rp-footer">{t('redPacket.wechatRedPacket')}</div>
             </div>
         )
     } catch {

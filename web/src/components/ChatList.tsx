@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { ChatSession, Prompt } from '../types/chat'
 import { getSessions, getPrompts, getPromptAvatarUrl, appendQueryParam, getErrorMessage } from '../services/api'
+import { useT } from '../contexts/I18nContext'
 import { formatTime } from '../utils/time'
 import ContextMenu from './ContextMenu'
 import { deleteSession } from '../services/api'
@@ -26,6 +27,7 @@ interface MenuState {
 }
 
 const ChatList: React.FC<ChatListProps> = ({ onSelectSession, searchQuery = '', refreshToken }) => {
+    const { t } = useT()
     const { showToast } = useToast()
     const [promptsWithChats, setPromptsWithChats] = useState<PromptWithLatestChat[]>([])
     const [orphanSessions, setOrphanSessions] = useState<ChatSession[]>([])
@@ -112,7 +114,7 @@ const ChatList: React.FC<ChatListProps> = ({ onSelectSession, searchQuery = '', 
         } catch (error) {
             setPromptsWithChats([])
             setOrphanSessions([])
-            setError(getErrorMessage(error, '加载会话失败，请重试'))
+            setError(getErrorMessage(error, t('service.loadSessionFailed')))
         } finally {
             setLoading(false)
         }
@@ -135,9 +137,9 @@ const ChatList: React.FC<ChatListProps> = ({ onSelectSession, searchQuery = '', 
         if (success) {
             loadData(false)
         } else {
-            showToast('删除失败，请重试', 'error')
+            showToast(t('memory.deleteFailed'), 'error')
         }
-    }, [loadData, menuState.sessionId, showToast])
+    }, [loadData, menuState.sessionId, showToast, t])
 
     const getAvatarUrl = (prompt: Prompt) => {
         if (prompt.avatar) {
@@ -170,7 +172,7 @@ const ChatList: React.FC<ChatListProps> = ({ onSelectSession, searchQuery = '', 
     if (loading) {
         return (
             <div className="chat-list">
-                <div className="chat-list-empty">加载中...</div>
+                <div className="chat-list-empty">{t('common.loading')}</div>
             </div>
         )
     }
@@ -186,9 +188,7 @@ const ChatList: React.FC<ChatListProps> = ({ onSelectSession, searchQuery = '', 
     if (filteredPromptsWithChats.length === 0 && filteredOrphanSessions.length === 0) {
         return (
             <div className="chat-list">
-                <div className="chat-list-empty">
-                    {hasQuery ? '未找到匹配的会话' : '暂无会话，点击右上角 + 创建新会话'}
-                </div>
+                <div className="chat-list-empty">{hasQuery ? t('chat.noMatchingSessions') : t('chat.noSessions')}</div>
             </div>
         )
     }
@@ -222,7 +222,11 @@ const ChatList: React.FC<ChatListProps> = ({ onSelectSession, searchQuery = '', 
                         </div>
                         <div className="chat-message">
                             {latestSession.title}
-                            {sessionCount > 1 && <span className="session-count">{sessionCount}条对话</span>}
+                            {sessionCount > 1 && (
+                                <span className="session-count">
+                                    {t('chat.conversationCount', { count: sessionCount })}
+                                </span>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -231,7 +235,9 @@ const ChatList: React.FC<ChatListProps> = ({ onSelectSession, searchQuery = '', 
             {/* 无 Prompt 的孤儿聊天 */}
             {filteredOrphanSessions.length > 0 && (
                 <>
-                    {filteredPromptsWithChats.length > 0 && <div className="orphan-section-title">其他对话</div>}
+                    {filteredPromptsWithChats.length > 0 && (
+                        <div className="orphan-section-title">{t('chat.otherChats')}</div>
+                    )}
                     {filteredOrphanSessions.map((session) => (
                         <div
                             key={session.id}
@@ -252,7 +258,7 @@ const ChatList: React.FC<ChatListProps> = ({ onSelectSession, searchQuery = '', 
                                     <span className="chat-name">{session.title}</span>
                                     <span className="chat-time">{formatTime(session.updated_at)}</span>
                                 </div>
-                                <div className="chat-message">点击查看对话</div>
+                                <div className="chat-message">{t('chat.clickToView')}</div>
                             </div>
                         </div>
                     ))}
@@ -265,7 +271,7 @@ const ChatList: React.FC<ChatListProps> = ({ onSelectSession, searchQuery = '', 
                     onClose={handleCloseMenu}
                     items={[
                         {
-                            label: '删除上次对话',
+                            label: t('chat.deleteLastChat'),
                             onClick: handleDeleteSession,
                             danger: true,
                         },

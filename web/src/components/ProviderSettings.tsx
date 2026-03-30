@@ -3,12 +3,12 @@ import { AnimatePresence, motion } from 'motion/react'
 import type { Provider, ProviderType } from '../types/chat'
 import { getProviders, addProvider, updateProvider, deleteProvider, setActiveProvider } from '../services/api'
 import {
-    PROVIDER_TYPES_ALL,
-    OPENAI_REASONING_EFFORT_OPTIONS,
-    GEMINI_THINKING_MODES,
-    GEMINI_THINKING_LEVELS,
+    getProviderTypesAll,
+    getOpenAIReasoningEffortOptions,
+    getGeminiThinkingModes,
+    getGeminiThinkingLevels,
     GEMINI_IMAGE_ASPECT_RATIOS,
-    GEMINI_IMAGE_SIZES,
+    getGeminiImageSizes,
     GEMINI_IMAGE_OUTPUT_MIME_TYPES,
     getGeminiThinkingBudgetRange,
     clampGeminiThinkingBudget,
@@ -17,6 +17,7 @@ import {
     CustomSelect,
 } from './provider'
 import { NumericInput } from './NumericInput'
+import { useT } from '../contexts/I18nContext'
 import { useToast } from '../contexts/ToastContext'
 import { useConfirm } from '../contexts/ConfirmContext'
 import { centerModalVariants, drawerVariants, overlayVariants } from '../utils/motion'
@@ -27,6 +28,7 @@ interface ProviderSettingsProps {
 }
 
 const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
+    const { t } = useT()
     const { showToast } = useToast()
     const { confirm } = useConfirm()
     const [providers, setProviders] = useState<Provider[]>([])
@@ -36,6 +38,11 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
     const [showModal, setShowModal] = useState(false)
     const [editingProvider, setEditingProvider] = useState<Provider | null>(null)
     const [isAddingNew, setIsAddingNew] = useState(false)
+    const providerTypesAll = getProviderTypesAll()
+    const openAIReasoningEffortOptions = getOpenAIReasoningEffortOptions()
+    const geminiThinkingModes = getGeminiThinkingModes()
+    const geminiThinkingLevels = getGeminiThinkingLevels()
+    const geminiImageSizes = getGeminiImageSizes()
 
     const emptyProvider: Provider = {
         id: '',
@@ -82,9 +89,9 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
         const success = await setActiveProvider(providerId)
         if (success) {
             setActiveProviderId(providerId)
-            showToast('已切换供应商', 'success')
+            showToast(t('settings.currentProvider'), 'success')
         } else {
-            showToast('切换失败', 'error')
+            showToast(t('settings.settingFailed'), 'error')
         }
     }
 
@@ -123,23 +130,23 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
         if (!editingProvider) return
 
         if (!editingProvider.id || !editingProvider.name) {
-            showToast('ID 和名称为必填项', 'error')
+            showToast(t('memoryProvider.idRequired'), 'error')
             return
         }
 
         if (!editingProvider.base_url.trim()) {
-            showToast('API 地址为必填项', 'error')
+            showToast(t('memoryProvider.apiUrlRequired'), 'error')
             return
         }
 
         if (!editingProvider.model.trim()) {
-            showToast('模型为必填项', 'error')
+            showToast(t('memoryProvider.modelRequired'), 'error')
             return
         }
 
         const hasStoredApiKey = !isAddingNew && Boolean(providers.find((p) => p.id === editingProvider.id)?.api_key)
         if ((isAddingNew || !hasStoredApiKey) && !editingProvider.api_key.trim()) {
-            showToast('API 密钥为必填项', 'error')
+            showToast(t('memoryProvider.apiKeyRequired'), 'error')
             return
         }
 
@@ -149,19 +156,19 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
             const result = await addProvider(editingProvider)
             if (result) {
                 await loadProviders()
-                showToast('供应商添加成功', 'success')
+                showToast(t('provider.addSuccess'), 'success')
                 handleCloseModal()
             } else {
-                showToast('添加失败，ID 可能已存在', 'error')
+                showToast(t('provider.addFailed'), 'error')
             }
         } else {
             const success = await updateProvider(editingProvider)
             if (success) {
                 await loadProviders()
-                showToast('供应商更新成功', 'success')
+                showToast(t('common.save'), 'success')
                 handleCloseModal()
             } else {
-                showToast('更新失败', 'error')
+                showToast(t('provider.updateFailed'), 'error')
             }
         }
 
@@ -170,14 +177,14 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
 
     const handleDeleteProvider = async (id: string) => {
         if (providers.length <= 1) {
-            showToast('至少保留一个供应商', 'error')
+            showToast(t('provider.keepAtLeastOne'), 'error')
             return
         }
 
         const ok = await confirm({
-            title: '删除供应商',
-            message: '确定要删除此供应商吗？',
-            confirmText: '删除',
+            title: t('provider.deleteProvider'),
+            message: t('provider.deleteProviderConfirm'),
+            confirmText: t('common.delete'),
             danger: true,
         })
         if (!ok) return
@@ -185,9 +192,9 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
         const success = await deleteProvider(id)
         if (success) {
             await loadProviders()
-            showToast('供应商已删除', 'success')
+            showToast(t('provider.providerDeleted'), 'success')
         } else {
-            showToast('删除失败', 'error')
+            showToast(t('memory.deleteFailed'), 'error')
         }
     }
 
@@ -281,8 +288,8 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                         <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
                     </svg>
                 </button>
-                <div className="provider-settings-title">供应商管理</div>
-                <button className="header-add-button" onClick={handleAddNew}>
+                <div className="provider-settings-title">{t('provider.title')}</div>
+                <button className="header-add-button" onClick={handleAddNew} title={t('provider.addProvider')}>
                     <svg viewBox="0 0 24 24">
                         <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
                     </svg>
@@ -290,7 +297,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
             </div>
 
             {loading ? (
-                <div className="provider-settings-loading">加载中...</div>
+                <div className="provider-settings-loading">{t('common.loading')}</div>
             ) : (
                 <div className="provider-settings-content">
                     <div className="provider-cards">
@@ -304,7 +311,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                     onClick={() => {
                                         if (isActive) return
                                         if (!isChatSelectable) {
-                                            showToast('该供应商仅用于生图，无法用于对话', 'info')
+                                            showToast(t('provider.imageOnly'), 'info')
                                             return
                                         }
                                         handleSetActive(provider.id)
@@ -312,15 +319,17 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                 >
                                     <div className="provider-card-header">
                                         <div className="provider-card-id">{provider.id}</div>
-                                        {isActive && <span className="active-indicator">使用中</span>}
+                                        {isActive && (
+                                            <span className="active-indicator">{t('imageProvider.inUse')}</span>
+                                        )}
                                     </div>
                                     <div className="provider-card-body">
                                         <div className="provider-card-row">
-                                            <span className="provider-card-label">类型</span>
+                                            <span className="provider-card-label">{t('provider.type')}</span>
                                             <span className="provider-card-value type">
-                                                {PROVIDER_TYPES_ALL.find((t) => t.value === provider.type)?.label ||
+                                                {providerTypesAll.find((type) => type.value === provider.type)?.label ||
                                                     provider.type ||
-                                                    'OpenAI 兼容'}
+                                                    t('provider.openaiCompatible')}
                                             </span>
                                         </div>
                                         <div className="provider-card-row">
@@ -334,11 +343,11 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                             </span>
                                         </div>
                                         <div className="provider-card-row">
-                                            <span className="provider-card-label">模型</span>
+                                            <span className="provider-card-label">{t('provider.model')}</span>
                                             <span className="provider-card-value model">{provider.model}</span>
                                         </div>
                                         <div className="provider-card-row">
-                                            <span className="provider-card-label">温度</span>
+                                            <span className="provider-card-label">{t('provider.temperature')}</span>
                                             <span className="provider-card-value">{provider.temperature}</span>
                                         </div>
                                         <div className="provider-card-row">
@@ -346,23 +355,27 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                             <span className="provider-card-value">{provider.top_p}</span>
                                         </div>
                                         <div className="provider-card-row">
-                                            <span className="provider-card-label">上下文</span>
-                                            <span className="provider-card-value">{provider.context_messages} 轮</span>
-                                        </div>
-                                        <div className="provider-card-row">
-                                            <span className="provider-card-label">流式</span>
-                                            <span
-                                                className={`provider-card-value ${provider.stream ? 'stream-on' : 'stream-off'}`}
-                                            >
-                                                {provider.stream ? '开启' : '关闭'}
+                                            <span className="provider-card-label">{t('provider.context')}</span>
+                                            <span className="provider-card-value">
+                                                {provider.context_messages} {t('provider.roundUnit')}
                                             </span>
                                         </div>
                                         <div className="provider-card-row">
-                                            <span className="provider-card-label">识图</span>
+                                            <span className="provider-card-label">{t('provider.streaming')}</span>
+                                            <span
+                                                className={`provider-card-value ${provider.stream ? 'stream-on' : 'stream-off'}`}
+                                            >
+                                                {provider.stream ? t('common.enable') : t('common.disable')}
+                                            </span>
+                                        </div>
+                                        <div className="provider-card-row">
+                                            <span className="provider-card-label">{t('provider.vision')}</span>
                                             <span
                                                 className={`provider-card-value ${provider.image_capable ? 'vision-on' : 'vision-off'}`}
                                             >
-                                                {provider.image_capable ? '支持' : '不支持'}
+                                                {provider.image_capable
+                                                    ? t('common.supported')
+                                                    : t('common.notSupported')}
                                             </span>
                                         </div>
                                     </div>
@@ -377,7 +390,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                             <svg viewBox="0 0 24 24">
                                                 <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
                                             </svg>
-                                            编辑
+                                            {t('common.edit')}
                                         </button>
                                         <button
                                             className="card-action-btn delete"
@@ -389,7 +402,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                             <svg viewBox="0 0 24 24">
                                                 <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
                                             </svg>
-                                            删除
+                                            {t('common.delete')}
                                         </button>
                                     </div>
                                 </div>
@@ -419,7 +432,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                             onClick={(e) => e.stopPropagation()}
                         >
                             <div className="modal-header">
-                                <h3>{isAddingNew ? '添加供应商' : '编辑供应商'}</h3>
+                                <h3>{isAddingNew ? t('provider.addProvider') : t('common.edit')}</h3>
                                 <button className="modal-close" onClick={handleCloseModal}>
                                     <svg viewBox="0 0 24 24">
                                         <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
@@ -429,7 +442,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
 
                             <div className="modal-body">
                                 <div className="modal-group">
-                                    <label className="modal-label">供应商 ID</label>
+                                    <label className="modal-label">{t('provider.id')}</label>
                                     <input
                                         type="text"
                                         className="modal-input"
@@ -441,7 +454,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                 </div>
 
                                 <div className="modal-group">
-                                    <label className="modal-label">显示名称</label>
+                                    <label className="modal-label">{t('provider.displayName')}</label>
                                     <input
                                         type="text"
                                         className="modal-input"
@@ -452,17 +465,17 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                 </div>
 
                                 <div className="modal-group">
-                                    <label className="modal-label">供应商类型</label>
+                                    <label className="modal-label">{t('provider.type')}</label>
                                     <CustomSelect
                                         value={editingProvider.type || 'openai'}
-                                        options={PROVIDER_TYPES_ALL}
-                                        ariaLabel="供应商类型"
+                                        options={providerTypesAll}
+                                        ariaLabel={t('provider.type')}
                                         onChange={(value) => handleProviderChange('type', value)}
                                     />
                                 </div>
 
                                 <div className="modal-group">
-                                    <label className="modal-label">API 地址 (URL)</label>
+                                    <label className="modal-label">{t('provider.apiUrl')}</label>
                                     <input
                                         type="text"
                                         className="modal-input"
@@ -473,18 +486,18 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                 </div>
 
                                 <div className="modal-group">
-                                    <label className="modal-label">API 密钥 (Key)</label>
+                                    <label className="modal-label">{t('provider.apiKey')}</label>
                                     <input
                                         type="password"
                                         className="modal-input"
                                         value={editingProvider.api_key}
                                         onChange={(e) => handleProviderChange('api_key', e.target.value)}
-                                        placeholder={isAddingNew ? 'sk-...' : '留空保持不变'}
+                                        placeholder={isAddingNew ? 'sk-...' : t('memoryProvider.apiKeyHint')}
                                     />
                                 </div>
 
                                 <div className="modal-group">
-                                    <label className="modal-label">模型</label>
+                                    <label className="modal-label">{t('provider.model')}</label>
                                     <input
                                         type="text"
                                         className="modal-input"
@@ -501,7 +514,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                 {editingProvider.type === 'gemini_image' && (
                                     <>
                                         <div className="modal-group">
-                                            <label className="modal-label">生图比例</label>
+                                            <label className="modal-label">{t('provider.imageAspectRatio')}</label>
                                             <select
                                                 className="modal-input modal-select"
                                                 value={editingProvider.gemini_image_aspect_ratio || '1:1'}
@@ -518,7 +531,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                         </div>
 
                                         <div className="modal-group">
-                                            <label className="modal-label">生图分辨率 (最大边)</label>
+                                            <label className="modal-label">{t('provider.imageResolution')}</label>
                                             <select
                                                 className="modal-input modal-select"
                                                 value={editingProvider.gemini_image_size || ''}
@@ -526,7 +539,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                                     handleProviderChange('gemini_image_size', e.target.value)
                                                 }
                                             >
-                                                {GEMINI_IMAGE_SIZES.map((size) => (
+                                                {geminiImageSizes.map((size) => (
                                                     <option key={size.value || 'default'} value={size.value}>
                                                         {size.label}
                                                     </option>
@@ -535,7 +548,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                         </div>
 
                                         <div className="modal-group">
-                                            <label className="modal-label">生图数量 (1-8)</label>
+                                            <label className="modal-label">{t('provider.imageQuantity')}</label>
                                             <NumericInput
                                                 className="modal-input"
                                                 min={1}
@@ -551,7 +564,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                         </div>
 
                                         <div className="modal-group">
-                                            <label className="modal-label">输出格式</label>
+                                            <label className="modal-label">{t('provider.outputFormat')}</label>
                                             <select
                                                 className="modal-input modal-select"
                                                 value={editingProvider.gemini_image_output_mime_type || 'image/jpeg'}
@@ -574,7 +587,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
 
                                 {editingProvider.type !== 'gemini_image' && (
                                     <div className="modal-group">
-                                        <label className="modal-label">温度 (0-2)</label>
+                                        <label className="modal-label">{t('provider.temperature')}</label>
                                         <NumericInput
                                             className="modal-input"
                                             min={0}
@@ -591,7 +604,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
 
                                 {editingProvider.type !== 'gemini_image' && (
                                     <div className="modal-group">
-                                        <label className="modal-label">Top P (0-1)</label>
+                                        <label className="modal-label">{t('provider.topP')}</label>
                                         <NumericInput
                                             className="modal-input"
                                             min={0}
@@ -607,11 +620,11 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
 
                                 {(editingProvider.type === 'openai' || editingProvider.type === 'openai_response') && (
                                     <div className="modal-group">
-                                        <label className="modal-label">思考量 (reasoning effort)</label>
+                                        <label className="modal-label">{t('provider.reasoningEffort')}</label>
                                         <CustomSelect
                                             value={editingProvider.reasoning_effort ?? ''}
-                                            options={OPENAI_REASONING_EFFORT_OPTIONS}
-                                            ariaLabel="思考量"
+                                            options={openAIReasoningEffortOptions}
+                                            ariaLabel={t('provider.reasoningEffort')}
                                             onChange={(value) => handleProviderChange('reasoning_effort', value)}
                                         />
                                     </div>
@@ -620,11 +633,11 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                 {editingProvider.type === 'gemini' && (
                                     <>
                                         <div className="modal-group">
-                                            <label className="modal-label">Gemini 思考模式</label>
+                                            <label className="modal-label">{t('provider.geminiThinkingMode')}</label>
                                             <CustomSelect
                                                 value={editingProvider.gemini_thinking_mode || 'none'}
-                                                options={GEMINI_THINKING_MODES}
-                                                ariaLabel="Gemini 思考模式"
+                                                options={geminiThinkingModes}
+                                                ariaLabel={t('provider.geminiThinkingMode')}
                                                 onChange={(value) =>
                                                     handleProviderChange('gemini_thinking_mode', value)
                                                 }
@@ -632,7 +645,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                         </div>
 
                                         <div className="modal-group">
-                                            <label className="modal-label">思考级别 / 预算</label>
+                                            <label className="modal-label">{t('provider.thinkingLevelBudget')}</label>
                                             {editingProvider.gemini_thinking_mode === 'thinking_level' && (
                                                 <select
                                                     className="modal-input modal-select"
@@ -641,7 +654,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                                         handleProviderChange('gemini_thinking_level', e.target.value)
                                                     }
                                                 >
-                                                    {GEMINI_THINKING_LEVELS.map((level) => (
+                                                    {geminiThinkingLevels.map((level) => (
                                                         <option key={level.value} value={level.value}>
                                                             {level.label}
                                                         </option>
@@ -663,7 +676,12 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                                 />
                                             )}
                                             {editingProvider.gemini_thinking_mode === 'none' && (
-                                                <input type="text" className="modal-input" value="已关闭" disabled />
+                                                <input
+                                                    type="text"
+                                                    className="modal-input"
+                                                    value={t('common.disabled')}
+                                                    disabled
+                                                />
                                             )}
                                         </div>
                                     </>
@@ -671,7 +689,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
 
                                 {editingProvider.type === 'anthropic' && (
                                     <div className="modal-group">
-                                        <label className="modal-label">思考预算 (tokens)</label>
+                                        <label className="modal-label">{t('memoryProvider.thinkingBudget')}</label>
                                         <NumericInput
                                             className="modal-input"
                                             min={0}
@@ -687,7 +705,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                 {editingProvider.type !== 'gemini_image' && (
                                     <>
                                         <div className="modal-group">
-                                            <label className="modal-label">上下文轮数</label>
+                                            <label className="modal-label">{t('provider.contextRounds')}</label>
                                             <NumericInput
                                                 className="modal-input"
                                                 min={1}
@@ -702,7 +720,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                         </div>
 
                                         <div className="modal-group">
-                                            <label className="modal-label">流式输出</label>
+                                            <label className="modal-label">{t('provider.streamingOutput')}</label>
                                             <div className="modal-toggle-wrapper">
                                                 <label className="toggle-switch">
                                                     <input
@@ -715,13 +733,13 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                                     <span className="toggle-slider"></span>
                                                 </label>
                                                 <span className="toggle-label">
-                                                    {editingProvider.stream ? '开启' : '关闭'}
+                                                    {editingProvider.stream ? t('common.enable') : t('common.disable')}
                                                 </span>
                                             </div>
                                         </div>
 
                                         <div className="modal-group">
-                                            <label className="modal-label">支持识图</label>
+                                            <label className="modal-label">{t('provider.visionSupport')}</label>
                                             <div className="modal-toggle-wrapper">
                                                 <label className="toggle-switch">
                                                     <input
@@ -734,7 +752,9 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                                     <span className="toggle-slider"></span>
                                                 </label>
                                                 <span className="toggle-label">
-                                                    {editingProvider.image_capable ? '支持' : '不支持'}
+                                                    {editingProvider.image_capable
+                                                        ? t('common.supported')
+                                                        : t('common.notSupported')}
                                                 </span>
                                             </div>
                                         </div>
@@ -744,10 +764,10 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
 
                             <div className="modal-footer">
                                 <button className="modal-btn cancel" onClick={handleCloseModal}>
-                                    取消
+                                    {t('common.cancel')}
                                 </button>
                                 <button className="modal-btn save" onClick={handleSaveProvider} disabled={saving}>
-                                    {saving ? '保存中...' : '保存'}
+                                    {saving ? t('common.saving') : t('common.save')}
                                 </button>
                             </div>
                         </motion.div>

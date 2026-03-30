@@ -1,4 +1,5 @@
 import type { ChatMessage, ToolCall } from '../../../types/chat'
+import { getLocale, translate } from '../../../i18n'
 import type { RedPacketReceivedRecord } from './types'
 
 export const normalizePacketKey = (rawKey: string) => rawKey.replace(/[^a-zA-Z0-9_-]/g, '_')
@@ -70,11 +71,15 @@ export const getRedPacketReceivedRecord = (
 export const formatRedPacketTime = (timestamp: string) => {
     const date = new Date(timestamp)
     if (!Number.isFinite(date.getTime())) return ''
+    const locale = getLocale()
+    if (locale === 'en') {
+        return `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+    }
     const month = date.getMonth() + 1
     const day = date.getDate()
     const hours = String(date.getHours()).padStart(2, '0')
     const minutes = String(date.getMinutes()).padStart(2, '0')
-    return `${month}月${day}日 ${hours}:${minutes}`
+    return `${month}${translate('redPacket.month')}${day}${translate('redPacket.day')} ${hours}:${minutes}`
 }
 
 export const inferRedPacketParties = (

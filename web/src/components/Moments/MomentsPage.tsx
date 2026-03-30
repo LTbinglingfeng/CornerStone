@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { UserInfo } from '../../types/chat'
 import type { Moment } from '../../types/moments'
+import { useT } from '../../contexts/I18nContext'
 import { getUserAvatarUrl, getUserInfo } from '../../services/api'
 import { getMoments, getMomentsConfig, uploadBackground } from '../../services/moments'
 import MomentCard from './MomentCard'
@@ -14,6 +15,7 @@ function normalizeAssetPath(path?: string): string {
 }
 
 const MomentsPage: React.FC = () => {
+    const { t } = useT()
     const [moments, setMoments] = useState<Moment[]>([])
     const [userInfo, setUserInfo] = useState<UserInfo | null>(null)
     const [backgroundImage, setBackgroundImage] = useState('')
@@ -66,11 +68,11 @@ const MomentsPage: React.FC = () => {
         void refresh()
     }
 
-    const username = userInfo?.username?.trim() || '用户'
+    const username = userInfo?.username?.trim() || t('moments.user')
     const userAvatarSrc = userInfo?.avatar ? `${getUserAvatarUrl()}?t=${encodeURIComponent(userInfo.updated_at)}` : ''
 
     if (loading) {
-        return <div className="moments-loading">加载中...</div>
+        return <div className="moments-loading">{t('common.loading')}</div>
     }
 
     return (
@@ -81,7 +83,7 @@ const MomentsPage: React.FC = () => {
             >
                 <div className="moments-header-overlay" />
                 <button className="moments-bg-upload" type="button" onClick={handlePickBackground}>
-                    更换背景
+                    {t('moments.changeBackground')}
                 </button>
                 <input
                     ref={fileInputRef}
@@ -112,7 +114,7 @@ const MomentsPage: React.FC = () => {
                         onRefresh={refresh}
                     />
                 ))}
-                {moments.length === 0 && <div className="moments-empty">暂无朋友圈动态</div>}
+                {moments.length === 0 && <div className="moments-empty">{t('moments.noMoments')}</div>}
             </div>
 
             {selectedMoment && (

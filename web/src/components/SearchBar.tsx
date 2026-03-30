@@ -1,3 +1,4 @@
+import { useT } from '../contexts/I18nContext'
 import './SearchBar.css'
 
 interface SearchBarProps {
@@ -6,7 +7,8 @@ interface SearchBarProps {
     placeholder?: string
 }
 
-const SearchBar: React.FC<SearchBarProps> = ({ value, onChange, placeholder = '搜索' }) => {
+const SearchBar: React.FC<SearchBarProps> = ({ value, onChange, placeholder }) => {
+    const { t } = useT()
     return (
         <div className="search-bar">
             <div className="search-container">
@@ -16,7 +18,7 @@ const SearchBar: React.FC<SearchBarProps> = ({ value, onChange, placeholder = '�
                 <input
                     type="text"
                     className="search-input"
-                    placeholder={placeholder}
+                    placeholder={placeholder || t('chat.searchPlaceholder')}
                     value={value}
                     onChange={(e) => onChange(e.target.value)}
                 />

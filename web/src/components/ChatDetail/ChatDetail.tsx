@@ -15,6 +15,7 @@ import {
 import ChatSettings from '../ChatSettings'
 import { useToast } from '../../contexts/ToastContext'
 import { useConfirm } from '../../contexts/ConfirmContext'
+import { useT } from '../../contexts/I18nContext'
 import type { ActiveRedPacketState, ChatDetailProps, MessageEditState, MessageMenuState, QuoteDraft } from './types'
 import { useChatSession } from './hooks/useChatSession'
 import { useDisplayItems } from './hooks/useDisplayItems'
@@ -30,12 +31,14 @@ import { SelectTextModal } from './components/SelectTextModal'
 import type { PacketStep } from './RedPacket'
 import { RedPacketComposer, RedPacketModal, collectOpenedRedPacketKeys, getRedPacketReceivedRecord } from './RedPacket'
 import { buildQuoteLineFromMessage, buildQuotedOutgoingContent, parseQuotedMessageContent } from './utils'
+import { getRecalledMessageSuffix } from './constants'
 import { drawerVariants } from '../../utils/motion'
 import './ChatDetail.css'
 
 const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, onSwitchSession }) => {
     const { showToast } = useToast()
     const { confirm } = useConfirm()
+    const { t } = useT()
 
     const {
         session,
@@ -237,7 +240,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         const absoluteIndex = messagesOffset + editState.messageIndex
         const updated = await updateSessionMessage(sessionId, absoluteIndex, content)
         if (!updated) {
-            showToast('编辑失败，请重试', 'error')
+            showToast(t('chat.editFailed'), 'error')
             return
         }
         setMessages((prev) => {
@@ -252,9 +255,9 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
 
     const handleDeleteMessage = async (messageIndex: number) => {
         const ok = await confirm({
-            title: '删除消息',
-            message: '确定删除这条消息吗？',
-            confirmText: '删除',
+            title: t('chat.deleteMessage'),
+            message: t('chat.deleteMessageConfirm'),
+            confirmText: t('common.delete'),
             danger: true,
         })
         if (!ok) return
@@ -262,7 +265,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         const absoluteIndex = messagesOffset + messageIndex
         const updated = await deleteSessionMessage(sessionId, absoluteIndex)
         if (!updated) {
-            showToast('删除失败，请重试', 'error')
+            showToast(t('memory.deleteFailed'), 'error')
             return
         }
         setMessages((prev) => prev.filter((_, index) => index !== messageIndex))
@@ -271,8 +274,8 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     }
 
     const getRoleDisplayName = (role: string) => {
-        if (role === 'assistant') return prompt?.name || 'AI'
-        return userInfo?.username || '我'
+        if (role === 'assistant') return prompt?.name || t('chat.defaultAIName')
+        return userInfo?.username || t('chat.defaultUserName')
     }
 
     const handleQuoteMessage = (message: ChatMessage) => {
@@ -285,7 +288,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         const absoluteIndex = messagesOffset + messageIndex
         const updated = await recallSessionMessage(sessionId, absoluteIndex)
         if (!updated) {
-            showToast('撤回失败，请重试', 'error')
+            showToast(t('chat.recallFailed'), 'error')
             return
         }
         setMessages((prev) => {
@@ -293,7 +296,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
             if (messageIndex < 0 || messageIndex >= next.length) return prev
             const msg = next[messageIndex]
             if (msg.role !== 'user') return prev
-            const suffix = '(已撤回)'
+            const suffix = getRecalledMessageSuffix()
             const trimmed = msg.content.replace(/[ \t\r\n]+$/g, '')
             next[messageIndex] = {
                 ...msg,
@@ -329,7 +332,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         if (uploadedPaths.length > 0) {
             setPendingImages((prev) => [...prev, ...uploadedPaths])
         } else {
-            showToast('图片上传失败', 'error')
+            showToast(t('chat.imageUploadFailed'), 'error')
         }
 
         setUploadingImage(false)
@@ -346,7 +349,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         const hasImages = pendingImages.length > 0
         if ((!trimmedText && !hasImages) || sending || uploadingImage) return
         if (hasImages && !imageCapable) {
-            showToast('当前模型不支持图片输入', 'error')
+            showToast(t('chat.modelNoImageSupport'), 'error')
             return
         }
 
@@ -395,7 +398,10 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
             type: 'function',
             function: {
                 name: 'send_pat',
-                arguments: JSON.stringify({ name: userInfo?.username?.trim() || '我', target: '你' }),
+                arguments: JSON.stringify({
+                    name: userInfo?.username?.trim() || t('chat.defaultUserName'),
+                    target: t('chat.defaultTargetName'),
+                }),
             },
         }
 
@@ -456,8 +462,8 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         if (!activeRedPacket) return
         if (packetStep !== 'idle') return
 
-        const receiverName = userInfo?.username?.trim() || '你'
-        const senderName = prompt?.name?.trim() || 'AI Assistant'
+        const receiverName = userInfo?.username?.trim() || t('chat.defaultTargetName')
+        const senderName = prompt?.name?.trim() || t('chat.defaultAIName')
 
         setPacketStep('opening')
         if (redPacketOpenTimeoutRef.current !== null) {
@@ -541,8 +547,8 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     const assistantAvatarSrc = getPromptAvatarSrc()
     const userPlaceholder = userInfo?.username?.charAt(0)?.toUpperCase() || 'U'
     const assistantPlaceholder = prompt?.name?.charAt(0)?.toUpperCase() || 'A'
-    const userDisplayName = userInfo?.username?.trim() || '我'
-    const assistantDisplayName = prompt?.name?.trim() || 'AI Assistant'
+    const userDisplayName = userInfo?.username?.trim() || t('chat.defaultUserName')
+    const assistantDisplayName = prompt?.name?.trim() || t('chat.defaultAIName')
 
     return (
         <motion.div
@@ -554,7 +560,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
             variants={drawerVariants}
         >
             <ChatHeader
-                title={session?.title || '对话'}
+                title={session?.title || t('chat.newChat')}
                 sending={sending}
                 assistantVisibleSegments={assistantVisibleSegments}
                 showSettingsButton={!!prompt}

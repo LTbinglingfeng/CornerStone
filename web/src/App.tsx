@@ -27,6 +27,7 @@ import {
 } from './services/api'
 import { splitAssistantMessageContent } from './components/ChatDetail/utils'
 import { useToast } from './contexts/ToastContext'
+import { useT } from './contexts/I18nContext'
 import { formatNotificationBody, getNotificationsEnabled, isNotificationSupported } from './utils/notifications'
 import { slideTransition } from './utils/motion'
 import { buildChatRoute, getRouteState, normalizePathname, tabOrder, tabRoutes } from './utils/routes'
@@ -44,6 +45,7 @@ const getErrorStatus = (error: unknown): number | undefined => {
 
 function App() {
     const { showToast } = useToast()
+    const { t } = useT()
     const location = useLocation()
     const navigate = useNavigate()
     const routeState = getRouteState(location.pathname)
@@ -96,12 +98,12 @@ function App() {
                     openSession(session.id, promptId)
                     return
                 }
-                showToast('创建会话失败，请重试', 'error')
+                showToast(t('chat.createSessionFailed'), 'error')
             } catch (error) {
-                showToast(getErrorMessage(error, '创建会话失败，请重试'), 'error')
+                showToast(getErrorMessage(error, t('chat.createSessionFailed')), 'error')
             }
         },
-        [openSession, showToast]
+        [openSession, showToast, t]
     )
 
     const handlePromptSelectorClose = useCallback(() => {
@@ -138,7 +140,6 @@ function App() {
         [openSession]
     )
 
-    // 人设编辑器: promptId='' 表示新建, promptId='xxx' 表示编辑
     const handleEditPersona = useCallback((promptId?: string) => {
         setEditingPromptId(promptId ?? '')
     }, [])
@@ -366,7 +367,7 @@ function App() {
                         continue
                     }
 
-                    const title = record?.title || record?.prompt_name || '新消息'
+                    const title = record?.title || record?.prompt_name || t('chat.newChat')
                     const icon = record?.prompt_id
                         ? appendQueryParam(getPromptAvatarUrl(record.prompt_id), 't', Date.now())
                         : '/logo_black.jpg'
@@ -375,9 +376,9 @@ function App() {
                     const bodies =
                         messageParts.length > 0
                             ? messageParts
-                                  .map((part) => formatNotificationBody(part) || '收到一条新消息')
+                                  .map((part) => formatNotificationBody(part) || t('chat.newMessageReceived'))
                                   .filter((part) => part !== '')
-                            : [formatNotificationBody(lastMessage.content || '') || '收到一条新消息']
+                            : [formatNotificationBody(lastMessage.content || '') || t('chat.newMessageReceived')]
 
                     bodies.forEach((body, index) => {
                         showChatMessageNotification(session.id, title, body, {
@@ -409,7 +410,7 @@ function App() {
             cancelled = true
             window.clearInterval(intervalId)
         }
-    }, [authMode])
+    }, [authMode, t])
 
     const handleSetup = useCallback(async (username: string, password: string) => {
         setAuthLoading(true)
@@ -422,16 +423,16 @@ function App() {
         } catch (error) {
             const status = getErrorStatus(error)
             if (status === 409) {
-                return '已存在账号，请直接登录'
+                return t('auth.accountExists')
             }
             if (status === 400) {
-                return '请填写有效的用户名和密码'
+                return t('auth.invalidCredentials')
             }
-            return '创建失败，请稍后重试'
+            return t('auth.createFailed')
         } finally {
             setAuthLoading(false)
         }
-    }, [])
+    }, [t])
 
     const handleLogin = useCallback(async (username: string, password: string) => {
         setAuthLoading(true)
@@ -444,21 +445,21 @@ function App() {
         } catch (error) {
             const status = getErrorStatus(error)
             if (status === 401) {
-                return '用户名或密码错误'
+                return t('auth.wrongPassword')
             }
             if (status === 409) {
-                return '请先设置用户名和密码'
+                return t('auth.setupFirst')
             }
-            return '登录失败，请重试'
+            return t('auth.loginFailed')
         } finally {
             setAuthLoading(false)
         }
-    }, [])
+    }, [t])
 
     if (authMode !== 'ready') {
         return (
             <div className="app-wrapper">
-                {authMode === 'loading' && <div className="auth-loading">加载中...</div>}
+                {authMode === 'loading' && <div className="auth-loading">{t('common.loading')}</div>}
                 {authMode === 'setup' && <AuthSetupPage onSubmit={handleSetup} loading={authLoading} />}
                 {authMode === 'login' && (
                     <AuthLoginPage username={authUsername} onSubmit={handleLogin} loading={authLoading} />
@@ -469,13 +470,11 @@ function App() {
 
     return (
         <div className="app-wrapper">
-            {/* 平行视窗容器 */}
             <motion.div
                 className="views-container"
                 animate={{ x: `${-100 * activeTabIndex}%` }}
                 transition={slideTransition}
             >
-                {/* 聊天页面 */}
                 <div className="view-page">
                     <div className="app-container">
                         <div className="main-content">
@@ -490,7 +489,6 @@ function App() {
                     </div>
                 </div>
 
-                {/* 通讯录页面 */}
                 <div className="view-page">
                     <Contacts
                         onStartChat={handleStartChatWithPrompt}
@@ -499,21 +497,17 @@ function App() {
                     />
                 </div>
 
-                {/* 朋友圈页面 */}
                 <div className="view-page">
                     <MomentsPage />
                 </div>
 
-                {/* 我的页面 */}
                 <div className="view-page">
                     <ProfilePage />
                 </div>
             </motion.div>
 
-            {/* 底部导航栏（固定不动） */}
             <BottomNav activeTab={activeTab} onTabChange={handleTabChange} />
 
-            {/* 聊天详情页面（覆盖层） */}
             <AnimatePresence>
                 {selectedSessionId && (
                     <ChatDetail
@@ -526,14 +520,12 @@ function App() {
                 )}
             </AnimatePresence>
 
-            {/* Prompt 选择器 */}
             <AnimatePresence>
                 {showPromptSelector && (
                     <PromptSelector onSelect={handlePromptSelect} onClose={handlePromptSelectorClose} />
                 )}
             </AnimatePresence>
 
-            {/* 人设编辑器（覆盖层） */}
             <AnimatePresence>
                 {editingPromptId !== null && (
                     <PersonaEditor

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useT } from '../contexts/I18nContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { logoBlackDataUrl, logoWhiteDataUrl } from 'virtual:cornerstone-logos'
 import './AuthSetupPage.css'
@@ -9,6 +10,7 @@ interface AuthSetupPageProps {
 }
 
 const AuthSetupPage: React.FC<AuthSetupPageProps> = ({ onSubmit, loading = false }) => {
+    const { t } = useT()
     const { theme } = useTheme()
     const [username, setUsername] = useState('')
     const [password, setPassword] = useState('')
@@ -21,15 +23,15 @@ const AuthSetupPage: React.FC<AuthSetupPageProps> = ({ onSubmit, loading = false
         event.preventDefault()
         const trimmed = username.trim()
         if (!trimmed) {
-            setError('请输入用户名')
+            setError(t('auth.enterUsername'))
             return
         }
         if (!password) {
-            setError('请输入密码')
+            setError(t('auth.enterPasswordPlaceholder'))
             return
         }
         if (password !== confirmPassword) {
-            setError('两次密码不一致')
+            setError(t('auth.passwordMismatch'))
             return
         }
         setError(null)
@@ -45,12 +47,12 @@ const AuthSetupPage: React.FC<AuthSetupPageProps> = ({ onSubmit, loading = false
                 <div className="auth-logo-wrapper">
                     <img className="auth-logo" src={logoSrc} alt="CornerStone" />
                 </div>
-                <div className="auth-title">设置账号</div>
-                <div className="auth-subtitle">首次启动，请创建用户名与密码</div>
+                <div className="auth-title">{t('auth.setupAccount')}</div>
+                <div className="auth-subtitle">{t('auth.firstLaunch')}</div>
                 <form className="auth-form" onSubmit={handleSubmit}>
                     <div className="auth-field">
                         <label className="auth-label" htmlFor="auth-setup-username">
-                            用户名
+                            {t('auth.username')}
                         </label>
                         <input
                             id="auth-setup-username"
@@ -60,14 +62,14 @@ const AuthSetupPage: React.FC<AuthSetupPageProps> = ({ onSubmit, loading = false
                                 if (error) setError(null)
                                 setUsername(event.target.value)
                             }}
-                            placeholder="请输入用户名"
+                            placeholder={t('auth.enterUsername')}
                             autoComplete="username"
                             disabled={loading}
                         />
                     </div>
                     <div className="auth-field">
                         <label className="auth-label" htmlFor="auth-setup-password">
-                            密码
+                            {t('auth.password')}
                         </label>
                         <input
                             id="auth-setup-password"
@@ -78,14 +80,14 @@ const AuthSetupPage: React.FC<AuthSetupPageProps> = ({ onSubmit, loading = false
                                 if (error) setError(null)
                                 setPassword(event.target.value)
                             }}
-                            placeholder="请输入密码"
+                            placeholder={t('auth.enterPasswordPlaceholder')}
                             autoComplete="new-password"
                             disabled={loading}
                         />
                     </div>
                     <div className="auth-field">
                         <label className="auth-label" htmlFor="auth-setup-confirm">
-                            确认密码
+                            {t('auth.confirmPassword')}
                         </label>
                         <input
                             id="auth-setup-confirm"
@@ -96,14 +98,14 @@ const AuthSetupPage: React.FC<AuthSetupPageProps> = ({ onSubmit, loading = false
                                 if (error) setError(null)
                                 setConfirmPassword(event.target.value)
                             }}
-                            placeholder="再次输入密码"
+                            placeholder={t('auth.enterPasswordAgain')}
                             autoComplete="new-password"
                             disabled={loading}
                         />
                     </div>
                     {error && <div className="auth-error">{error}</div>}
                     <button className="auth-button" type="submit" disabled={loading}>
-                        {loading ? '创建中...' : '创建账号'}
+                        {loading ? t('auth.creating') : t('auth.createAccount')}
                     </button>
                 </form>
             </div>

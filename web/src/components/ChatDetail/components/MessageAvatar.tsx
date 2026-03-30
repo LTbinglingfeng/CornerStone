@@ -7,13 +7,15 @@ interface MessageAvatarProps {
 }
 
 export const MessageAvatar: React.FC<MessageAvatarProps> = ({ role, avatarSrc, placeholder, onDoubleClick, title }) => {
+    const { t } = useT()
     return (
         <div className="message-avatar" onDoubleClick={onDoubleClick} title={title}>
             {avatarSrc ? (
-                <img src={avatarSrc} alt={role === 'user' ? '用户' : 'AI'} />
+                <img src={avatarSrc} alt={role === 'user' ? t('chat.userAvatar') : t('chat.aiAvatar')} />
             ) : (
                 <div className={`avatar-placeholder ${role}`}>{placeholder}</div>
             )}
         </div>
     )
 }
+import { useT } from '../../../contexts/I18nContext'

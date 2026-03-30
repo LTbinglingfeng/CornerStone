@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { useT } from '../../../contexts/I18nContext'
 import { useToast } from '../../../contexts/ToastContext'
 
 interface SelectTextModalProps {
@@ -8,6 +9,7 @@ interface SelectTextModalProps {
 }
 
 export const SelectTextModal: React.FC<SelectTextModalProps> = ({ text, onClose }) => {
+    const { t } = useT()
     const { showToast } = useToast()
     const textareaRef = useRef<HTMLTextAreaElement>(null)
     const [copied, setCopied] = useState(false)
@@ -54,7 +56,7 @@ export const SelectTextModal: React.FC<SelectTextModalProps> = ({ text, onClose 
         }
 
         if (!copiedOk) {
-            showToast('复制失败，请手动选择文本复制', 'error')
+            showToast(t('chat.copyFailed'), 'error')
             return
         }
 
@@ -72,8 +74,13 @@ export const SelectTextModal: React.FC<SelectTextModalProps> = ({ text, onClose 
         <div className="select-text-overlay" onClick={onClose}>
             <div className="select-text-card" onClick={(e) => e.stopPropagation()}>
                 <div className="select-text-header">
-                    <div className="select-text-title">选择文本</div>
-                    <button type="button" className="select-text-close" onClick={onClose} aria-label="关闭选择文本">
+                    <div className="select-text-title">{t('chat.selectText')}</div>
+                    <button
+                        type="button"
+                        className="select-text-close"
+                        onClick={onClose}
+                        aria-label={t('chat.closeSelectText')}
+                    >
                         ×
                     </button>
                 </div>
@@ -81,12 +88,12 @@ export const SelectTextModal: React.FC<SelectTextModalProps> = ({ text, onClose 
                 <textarea ref={textareaRef} className="select-text-textarea" value={text} readOnly rows={6} />
 
                 <div className="select-text-footer">
-                    {copied && <div className="select-text-hint">已复制</div>}
+                    {copied && <div className="select-text-hint">{t('common.copied')}</div>}
                     <button type="button" className="select-text-btn copy" onClick={handleCopy}>
-                        复制
+                        {t('common.copy')}
                     </button>
                     <button type="button" className="select-text-btn" onClick={onClose}>
-                        关闭
+                        {t('common.close')}
                     </button>
                 </div>
             </div>

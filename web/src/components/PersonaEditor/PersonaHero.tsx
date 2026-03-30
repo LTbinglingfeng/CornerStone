@@ -1,4 +1,5 @@
 import { useRef } from 'react'
+import { useT } from '../../contexts/I18nContext'
 
 interface PersonaHeroProps {
     name: string
@@ -19,6 +20,7 @@ const PersonaHero: React.FC<PersonaHeroProps> = ({
     onAvatarChange,
     onAvatarDelete,
 }) => {
+    const { t } = useT()
     const fileInputRef = useRef<HTMLInputElement>(null)
     const descRef = useRef<HTMLTextAreaElement>(null)
 
@@ -50,7 +52,7 @@ const PersonaHero: React.FC<PersonaHeroProps> = ({
             {/* 头像 */}
             <div className="avatar-container" onClick={handleAvatarClick}>
                 {avatarUrl ? (
-                    <img className="avatar-image" src={avatarUrl} alt={name || '头像'} />
+                    <img className="avatar-image" src={avatarUrl} alt={name || t('profile.uploadAvatar')} />
                 ) : (
                     <div className="avatar-fallback">{initial}</div>
                 )}
@@ -78,7 +80,7 @@ const PersonaHero: React.FC<PersonaHeroProps> = ({
                         onAvatarDelete()
                     }}
                 >
-                    删除头像
+                    {t('persona.deleteAvatar')}
                 </button>
             )}
 
@@ -88,7 +90,7 @@ const PersonaHero: React.FC<PersonaHeroProps> = ({
                 type="text"
                 value={name}
                 onChange={(e) => onNameChange(e.target.value)}
-                placeholder="角色名称"
+                placeholder={t('persona.namePlaceholder')}
                 maxLength={50}
             />
 
@@ -98,7 +100,7 @@ const PersonaHero: React.FC<PersonaHeroProps> = ({
                 className="description-input"
                 value={description}
                 onChange={handleDescriptionInput}
-                placeholder="添加描述..."
+                placeholder={t('persona.descriptionPlaceholder')}
                 rows={1}
                 maxLength={200}
             />

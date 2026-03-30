@@ -1,4 +1,5 @@
 import type { ApiResponse } from '../types/chat'
+import { translate } from '../i18n'
 import type { Memory } from '../types/memory'
 import { apiFetchJson } from './api'
 
@@ -49,7 +50,7 @@ export const memoryService = {
     async getMemories(promptId: string): Promise<Memory[]> {
         const data = await apiFetchJson<ApiResponse<Memory[]>>(`/api/memory/${encodeURIComponent(promptId)}`)
         if (!data.success) {
-            throw new Error(data.error || '获取记忆失败')
+            throw new Error(data.error || translate('service.getMemoryFailed'))
         }
         return data.data || []
     },
@@ -61,7 +62,7 @@ export const memoryService = {
             body: JSON.stringify(memory),
         })
         if (!data.success) {
-            throw new Error(data.error || '添加记忆失败')
+            throw new Error(data.error || translate('service.addMemoryFailed'))
         }
         return data.data || []
     },
@@ -76,7 +77,7 @@ export const memoryService = {
             }
         )
         if (!data.success) {
-            throw new Error(data.error || '更新记忆失败')
+            throw new Error(data.error || translate('service.updateMemoryFailed'))
         }
         return data.data || []
     },
@@ -89,7 +90,7 @@ export const memoryService = {
             }
         )
         if (!data.success) {
-            throw new Error(data.error || '删除记忆失败')
+            throw new Error(data.error || translate('service.deleteMemoryFailed'))
         }
     },
 
@@ -100,7 +101,7 @@ export const memoryService = {
             body: JSON.stringify({ provider_id: providerId }),
         })
         if (!data.success) {
-            throw new Error(data.error || '设置记忆模型失败')
+            throw new Error(data.error || translate('service.setMemoryModelFailed'))
         }
     },
 
@@ -111,14 +112,14 @@ export const memoryService = {
             body: JSON.stringify({ enabled }),
         })
         if (!data.success) {
-            throw new Error(data.error || '设置记忆开关失败')
+            throw new Error(data.error || translate('service.setMemorySwitchFailed'))
         }
     },
 
     async getMemoryExtractionSettings(): Promise<MemoryExtractionSettings> {
         const data = await apiFetchJson<ApiResponse<MemoryExtractionSettings>>('/api/settings/memory-extraction')
         if (!data.success || !data.data) {
-            throw new Error(data.error || '获取记忆提取设置失败')
+            throw new Error(data.error || translate('service.getMemoryExtractionSettingsFailed'))
         }
         return data.data
     },
@@ -130,7 +131,7 @@ export const memoryService = {
             body: JSON.stringify({ rounds }),
         })
         if (!data.success) {
-            throw new Error(data.error || '设置记忆提取轮数失败')
+            throw new Error(data.error || translate('service.setMemoryExtractionRoundsFailed'))
         }
         const next = await memoryService.getMemoryExtractionSettings()
         return next
@@ -143,7 +144,7 @@ export const memoryService = {
             body: JSON.stringify({ refresh_interval }),
         })
         if (!data.success) {
-            throw new Error(data.error || '设置记忆刷新间隔失败')
+            throw new Error(data.error || translate('service.setMemoryRefreshIntervalFailed'))
         }
         const next = await memoryService.getMemoryExtractionSettings()
         return next
@@ -154,7 +155,7 @@ export const memoryService = {
             '/api/settings/memory-extraction-prompt'
         )
         if (!data.success || !data.data) {
-            throw new Error(data.error || '获取记忆提取提示词失败')
+            throw new Error(data.error || translate('service.getMemoryExtractionPromptFailed'))
         }
         return data.data
     },
@@ -166,14 +167,14 @@ export const memoryService = {
             body: JSON.stringify({ template }),
         })
         if (!data.success) {
-            throw new Error(data.error || '保存记忆提取提示词失败')
+            throw new Error(data.error || translate('service.saveMemoryExtractionPromptFailed'))
         }
     },
 
     async getMemoryStats(promptId: string): Promise<MemoryStats> {
         const data = await apiFetchJson<ApiResponse<MemoryStats>>(`/api/memory/${encodeURIComponent(promptId)}/stats`)
         if (!data.success || !data.data) {
-            throw new Error(data.error || '获取记忆统计失败')
+            throw new Error(data.error || translate('service.getMemoryStatsFailed'))
         }
         return data.data
     },
@@ -183,7 +184,7 @@ export const memoryService = {
             `/api/memory/${encodeURIComponent(promptId)}/export`
         )
         if (!data.success) {
-            throw new Error(data.error || '导出记忆失败')
+            throw new Error(data.error || translate('service.exportMemoryFailed'))
         }
         return data.data || []
     },
@@ -198,7 +199,7 @@ export const memoryService = {
             }
         )
         if (!data.success || !data.data) {
-            throw new Error(data.error || '批量删除失败')
+            throw new Error(data.error || translate('service.batchDeleteFailed'))
         }
         return data.data
     },
@@ -211,7 +212,7 @@ export const memoryService = {
             }
         )
         if (!data.success || !data.data) {
-            throw new Error(data.error || '清空归档失败')
+            throw new Error(data.error || translate('service.clearArchivedFailed'))
         }
         return data.data
     },
@@ -230,7 +231,7 @@ export const memoryService = {
             }
         )
         if (!data.success || !data.data) {
-            throw new Error(data.error || '导入记忆失败')
+            throw new Error(data.error || translate('service.importMemoryFailed'))
         }
         return data.data
     },

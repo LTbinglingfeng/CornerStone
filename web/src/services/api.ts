@@ -11,6 +11,7 @@ import type {
     AuthSession,
     ToolCall,
 } from '../types/chat'
+import { translate } from '../i18n'
 
 const API_BASE = '/api'
 const MANAGEMENT_BASE = '/management'
@@ -114,7 +115,7 @@ export async function loginAuth(username: string, password: string): Promise<Aut
 export async function getSessions(): Promise<ChatSession[]> {
     const data = await apiFetchJson<ApiResponse<ChatSession[]>>(`${MANAGEMENT_BASE}/sessions`)
     if (!data.success) {
-        throw new Error(data.error || '加载会话失败')
+        throw new Error(data.error || translate('service.loadSessionFailed'))
     }
     return data.data || []
 }
@@ -138,7 +139,7 @@ export async function createSession(title?: string, promptId?: string): Promise<
 export async function getSession(id: string): Promise<ChatRecord | null> {
     const data = await apiFetchJson<ApiResponse<ChatRecord>>(`${MANAGEMENT_BASE}/sessions/${id}`)
     if (!data.success || !data.data) {
-        throw new Error(data.error || '加载会话失败')
+        throw new Error(data.error || translate('service.loadSessionFailed'))
     }
     return data.data
 }
@@ -504,7 +505,7 @@ export async function updateSystemPrompt(systemPrompt: string): Promise<boolean>
 export async function getPrompts(): Promise<Prompt[]> {
     const data = await apiFetchJson<ApiResponse<Prompt[]>>(`${MANAGEMENT_BASE}/prompts`)
     if (!data.success) {
-        throw new Error(data.error || '加载提示词失败')
+        throw new Error(data.error || translate('service.loadPromptFailed'))
     }
     return data.data || []
 }
@@ -513,7 +514,7 @@ export async function getPrompts(): Promise<Prompt[]> {
 export async function getPrompt(id: string): Promise<Prompt | null> {
     const data = await apiFetchJson<ApiResponse<Prompt>>(`${MANAGEMENT_BASE}/prompts/${id}`)
     if (!data.success || !data.data) {
-        throw new Error(data.error || '加载提示词失败')
+        throw new Error(data.error || translate('service.loadPromptFailed'))
     }
     return data.data
 }
@@ -526,7 +527,7 @@ export async function createPrompt(prompt: Partial<Prompt>): Promise<Prompt> {
         body: JSON.stringify(prompt),
     })
     if (!data.success || !data.data) {
-        throw new Error(data.error || '创建提示词失败')
+        throw new Error(data.error || translate('service.createPromptFailed'))
     }
     return data.data
 }
@@ -539,7 +540,7 @@ export async function updatePrompt(id: string, prompt: Partial<Prompt>): Promise
         body: JSON.stringify(prompt),
     })
     if (!data.success || !data.data) {
-        throw new Error(data.error || '更新提示词失败')
+        throw new Error(data.error || translate('service.updatePromptFailed'))
     }
     return data.data
 }
@@ -548,7 +549,7 @@ export async function updatePrompt(id: string, prompt: Partial<Prompt>): Promise
 export async function deletePrompt(id: string): Promise<void> {
     const data = await apiFetchJson<ApiResponse<string>>(`${MANAGEMENT_BASE}/prompts/${id}`, { method: 'DELETE' })
     if (!data.success) {
-        throw new Error(data.error || '删除提示词失败')
+        throw new Error(data.error || translate('service.deletePromptFailed'))
     }
 }
 
@@ -562,7 +563,7 @@ export async function uploadPromptAvatar(id: string, file: File): Promise<string
         body: formData,
     })
     if (!data.success || !data.data) {
-        throw new Error(data.error || '上传头像失败')
+        throw new Error(data.error || translate('service.uploadAvatarFailed'))
     }
     return data.data
 }
@@ -578,7 +579,7 @@ export async function deletePromptAvatar(id: string): Promise<void> {
         method: 'DELETE',
     })
     if (!data.success) {
-        throw new Error(data.error || '删除头像失败')
+        throw new Error(data.error || translate('service.deleteAvatarFailed'))
     }
 }
 

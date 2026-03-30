@@ -8,6 +8,7 @@ import {
     appendQueryParam,
     deleteSession,
 } from '../services/api'
+import { useT } from '../contexts/I18nContext'
 import { formatTime } from '../utils/time'
 import { bottomSheetVariants, overlayVariants } from '../utils/motion'
 import './ChatSettings.css'
@@ -31,6 +32,7 @@ const ChatSettings: React.FC<ChatSettingsProps> = ({
     onTitleUpdated,
     onExitChat,
 }) => {
+    const { t } = useT()
     const [sessions, setSessions] = useState<ChatSession[]>([])
     const [loading, setLoading] = useState(true)
     const [editingTitle, setEditingTitle] = useState(false)
@@ -153,7 +155,7 @@ const ChatSettings: React.FC<ChatSettingsProps> = ({
     }
 
     const confirmSessionTitle = confirmDeleteId
-        ? sessions.find((session) => session.id === confirmDeleteId)?.title || '未命名'
+        ? sessions.find((session) => session.id === confirmDeleteId)?.title || t('common.unnamed')
         : ''
     const isDeletingConfirm = confirmDeleteId !== null && deletingSessionId === confirmDeleteId
 
@@ -194,10 +196,10 @@ const ChatSettings: React.FC<ChatSettingsProps> = ({
 
                 {/* 当前聊天设置 */}
                 <div className="chat-settings-section">
-                    <div className="section-title">当前聊天</div>
+                    <div className="section-title">{t('chatSettings.currentChat')}</div>
                     <div className="current-chat-card">
                         <div className="setting-row">
-                            <span className="setting-label">聊天标题</span>
+                            <span className="setting-label">{t('chatSettings.chatTitle')}</span>
                             {editingTitle ? (
                                 <div className="title-edit-container">
                                     <input
@@ -207,7 +209,7 @@ const ChatSettings: React.FC<ChatSettingsProps> = ({
                                         value={titleInput}
                                         onChange={(e) => setTitleInput(e.target.value)}
                                         onKeyDown={handleTitleKeyDown}
-                                        placeholder="输入聊天标题"
+                                        placeholder={t('chatSettings.chatTitlePlaceholder')}
                                         disabled={savingTitle}
                                     />
                                     <div className="title-edit-actions">
@@ -216,20 +218,20 @@ const ChatSettings: React.FC<ChatSettingsProps> = ({
                                             onClick={handleCancelEdit}
                                             disabled={savingTitle}
                                         >
-                                            取消
+                                            {t('common.cancel')}
                                         </button>
                                         <button
                                             className="title-btn save"
                                             onClick={handleSaveTitle}
                                             disabled={!titleInput.trim() || savingTitle}
                                         >
-                                            {savingTitle ? '保存中...' : '保存'}
+                                            {savingTitle ? t('common.saving') : t('common.save')}
                                         </button>
                                     </div>
                                 </div>
                             ) : (
                                 <div className="setting-value-row" onClick={() => setEditingTitle(true)}>
-                                    <span className="setting-value">{currentSessionTitle || '未命名'}</span>
+                                    <span className="setting-value">{currentSessionTitle || t('common.unnamed')}</span>
                                     <svg className="edit-icon" viewBox="0 0 24 24">
                                         <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
                                     </svg>
@@ -241,12 +243,12 @@ const ChatSettings: React.FC<ChatSettingsProps> = ({
 
                 {/* 聊天记录列表 */}
                 <div className="chat-settings-section">
-                    <div className="section-title">聊天记录</div>
+                    <div className="section-title">{t('chatSettings.chatHistory')}</div>
                     <div className="sessions-card">
                         {loading ? (
-                            <div className="sessions-loading">加载中...</div>
+                            <div className="sessions-loading">{t('common.loading')}</div>
                         ) : sessions.length === 0 ? (
-                            <div className="sessions-empty">暂无聊天记录</div>
+                            <div className="sessions-empty">{t('chatSettings.noChatHistory')}</div>
                         ) : (
                             <div className="sessions-list">
                                 {sessions.map((session) => (
@@ -261,7 +263,7 @@ const ChatSettings: React.FC<ChatSettingsProps> = ({
                                         </div>
                                         <div className="session-actions">
                                             {session.id === currentSessionId && (
-                                                <div className="session-current-badge">当前</div>
+                                                <div className="session-current-badge">{t('common.current')}</div>
                                             )}
                                             <button
                                                 type="button"
@@ -271,7 +273,7 @@ const ChatSettings: React.FC<ChatSettingsProps> = ({
                                                     handleDeleteConfirm(session.id)
                                                 }}
                                                 disabled={deletingSessionId === session.id}
-                                                title="删除会话"
+                                                title={t('chatSettings.deleteSession')}
                                             >
                                                 <svg viewBox="0 0 24 24" aria-hidden="true">
                                                     <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
@@ -295,9 +297,9 @@ const ChatSettings: React.FC<ChatSettingsProps> = ({
                     }}
                 >
                     <div className="chat-settings-confirm-card" onClick={(event) => event.stopPropagation()}>
-                        <div className="chat-settings-confirm-title">删除会话？</div>
+                        <div className="chat-settings-confirm-title">{t('chatSettings.deleteSession')}</div>
                         <div className="chat-settings-confirm-desc">
-                            将永久删除 "{confirmSessionTitle}" 的聊天记录，无法恢复。
+                            {t('chatSettings.deleteSessionConfirm', { title: confirmSessionTitle })}
                         </div>
                         <div className="chat-settings-confirm-actions">
                             <button
@@ -306,7 +308,7 @@ const ChatSettings: React.FC<ChatSettingsProps> = ({
                                 onClick={handleCloseDeleteConfirm}
                                 disabled={isDeletingConfirm}
                             >
-                                取消
+                                {t('common.cancel')}
                             </button>
                             <button
                                 type="button"
@@ -314,7 +316,7 @@ const ChatSettings: React.FC<ChatSettingsProps> = ({
                                 onClick={handleDeleteSession}
                                 disabled={isDeletingConfirm}
                             >
-                                {isDeletingConfirm ? '删除中...' : '删除'}
+                                {isDeletingConfirm ? t('common.deleting') : t('common.delete')}
                             </button>
                         </div>
                     </div>

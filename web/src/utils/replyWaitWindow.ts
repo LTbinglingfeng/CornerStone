@@ -1,3 +1,5 @@
+import { getLocale, translations, type Locale } from '../i18n'
+
 export type ReplyWaitWindowMode = 'fixed' | 'sliding'
 
 export type ReplyWaitWindowConfig = {
@@ -45,12 +47,13 @@ export function setReplyWaitWindowConfig(config: ReplyWaitWindowConfig): void {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized))
 }
 
-export function formatReplyWaitWindowConfig(config: ReplyWaitWindowConfig): string {
+export function formatReplyWaitWindowConfig(config: ReplyWaitWindowConfig, locale: Locale = getLocale()): string {
+    const t = translations[locale].replyWait
     const normalized = {
         mode: isValidMode(config.mode) ? config.mode : DEFAULT_CONFIG.mode,
         seconds: normalizeSeconds(config.seconds),
     }
-    if (normalized.seconds <= 0) return '立即发送'
-    if (normalized.mode === 'fixed') return `固定 ${normalized.seconds}s`
-    return `滑动 ${normalized.seconds}s`
+    if (normalized.seconds <= 0) return t.sendImmediately
+    if (normalized.mode === 'fixed') return `${t.fixed} ${normalized.seconds}s`
+    return `${t.sliding} ${normalized.seconds}s`
 }
