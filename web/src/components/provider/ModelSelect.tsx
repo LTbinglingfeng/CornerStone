@@ -14,6 +14,9 @@ interface ModelSelectProps {
     onError?: (message: string) => void
 }
 
+const buildModelFetchConfigKey = (providerType: string, baseUrl: string, apiKey: string): string =>
+    `${providerType.trim()}|${baseUrl.trim()}|${apiKey.trim()}`
+
 const ModelSelect: React.FC<ModelSelectProps> = ({
     value,
     providerId,
@@ -55,17 +58,17 @@ const ModelSelect: React.FC<ModelSelectProps> = ({
         }
     }, [open])
 
-    // 当 type/url 变化时，清除已缓存的模型列表
-    const configKeyRef = useRef(`${providerType}|${baseUrl}`)
+    // 当 type/url/key 变化时，清除已缓存的模型列表
+    const configKeyRef = useRef(buildModelFetchConfigKey(providerType, baseUrl, apiKey))
     useEffect(() => {
-        const key = `${providerType}|${baseUrl}`
+        const key = buildModelFetchConfigKey(providerType, baseUrl, apiKey)
         if (key !== configKeyRef.current) {
             configKeyRef.current = key
             setModels([])
             setHasFetched(false)
             setOpen(false)
         }
-    }, [providerType, baseUrl])
+    }, [providerType, baseUrl, apiKey])
 
     const canFetch = !!providerType && !!baseUrl && (!isNewProvider || !!apiKey)
 
