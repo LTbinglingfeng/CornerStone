@@ -348,6 +348,12 @@ func (h *Handler) handleProviderByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 检查是否是 /management/providers/{id}/models 路径
+	if strings.HasSuffix(r.URL.Path, "/models") {
+		h.handleProviderModels(w, r)
+		return
+	}
+
 	id := strings.TrimPrefix(r.URL.Path, "/management/providers/")
 	if id == "" {
 		h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Provider ID required"})

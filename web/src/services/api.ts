@@ -444,6 +444,25 @@ export async function deleteProvider(id: string): Promise<boolean> {
     }
 }
 
+// 获取供应商可用模型列表（使用当前表单值）
+export async function fetchProviderModels(
+    providerId: string,
+    current: { type: string; base_url: string; api_key: string }
+): Promise<string[]> {
+    const data = await apiFetchJson<ApiResponse<{ models: string[] }>>(
+        `${MANAGEMENT_BASE}/providers/${providerId}/models`,
+        {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(current),
+        }
+    )
+    if (!data.success || !data.data) {
+        throw new Error(data.error || 'Failed to fetch models')
+    }
+    return data.data.models || []
+}
+
 // 设置激活的供应商
 export async function setActiveProvider(providerId: string): Promise<boolean> {
     try {

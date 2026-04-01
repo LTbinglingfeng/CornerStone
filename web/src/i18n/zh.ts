@@ -279,6 +279,11 @@ const zh = {
         noThinking: '不思考',
         thinkingLevelGemini3: 'thinkingLevel (Gemini 3 系列)',
         thinkingBudgetGemini25: 'thinkingBudget (Gemini 2.5 系列)',
+        fetchModels: '获取模型列表',
+        fetchModelsFailed: '获取模型列表失败',
+        fetchingModels: '获取中...',
+        noModelsFound: '未找到可用模型',
+        modelSearch: '搜索模型...',
     },
     imageProvider: {
         title: '生图供应商',

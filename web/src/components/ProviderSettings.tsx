@@ -15,6 +15,7 @@ import {
     clampGeminiImageNumberOfImages,
     maskApiKey,
     CustomSelect,
+    ModelSelect,
 } from './provider'
 import { NumericInput } from './NumericInput'
 import { useT } from '../contexts/I18nContext'
@@ -498,16 +499,20 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
 
                                 <div className="modal-group">
                                     <label className="modal-label">{t('provider.model')}</label>
-                                    <input
-                                        type="text"
-                                        className="modal-input"
+                                    <ModelSelect
                                         value={editingProvider.model}
-                                        onChange={(e) => handleProviderChange('model', e.target.value)}
+                                        providerId={editingProvider.id}
+                                        providerType={editingProvider.type}
+                                        baseUrl={editingProvider.base_url}
+                                        apiKey={editingProvider.api_key}
+                                        isNewProvider={isAddingNew}
                                         placeholder={
                                             editingProvider.type === 'gemini_image'
                                                 ? 'nano banana / nanobanana Pro'
                                                 : 'gpt-4'
                                         }
+                                        onChange={(value) => handleProviderChange('model', value)}
+                                        onError={(message) => showToast(message, 'error')}
                                     />
                                 </div>
 

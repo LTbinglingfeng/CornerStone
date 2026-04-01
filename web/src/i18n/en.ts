@@ -283,6 +283,11 @@ const en = {
         noThinking: 'No thinking',
         thinkingLevelGemini3: 'thinkingLevel (Gemini 3 series)',
         thinkingBudgetGemini25: 'thinkingBudget (Gemini 2.5 series)',
+        fetchModels: 'Fetch Models',
+        fetchModelsFailed: 'Failed to fetch models',
+        fetchingModels: 'Fetching...',
+        noModelsFound: 'No models found',
+        modelSearch: 'Search models...',
     },
     imageProvider: {
         title: 'Image Provider',
