@@ -19,6 +19,20 @@ type modelsRequest struct {
 	APIKey  string `json:"api_key"`
 }
 
+func normalizeModelFetchBaseURL(baseURL string) string {
+	return strings.TrimRight(strings.TrimSpace(baseURL), "/")
+}
+
+func canReuseSavedModelFetchAPIKey(saved *config.Provider, req modelsRequest) bool {
+	if saved == nil || strings.TrimSpace(saved.APIKey) == "" {
+		return false
+	}
+	if saved.Type != config.ProviderType(req.Type) {
+		return false
+	}
+	return normalizeModelFetchBaseURL(saved.BaseURL) == normalizeModelFetchBaseURL(req.BaseURL)
+}
+
 // handleProviderModels 获取供应商可用模型列表
 func (h *Handler) handleProviderModels(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -42,18 +56,22 @@ func (h *Handler) handleProviderModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 如果前端未提供 api_key，回退到已保存的 key
-	apiKey := req.APIKey
-	if apiKey == "" {
-		saved := h.configManager.GetProvider(id)
-		if saved != nil {
-			apiKey = saved.APIKey
-		}
-	}
+	req.Type = strings.TrimSpace(req.Type)
+	req.BaseURL = strings.TrimSpace(req.BaseURL)
+	req.APIKey = strings.TrimSpace(req.APIKey)
 
 	if req.BaseURL == "" || req.Type == "" {
 		h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "type and base_url are required"})
 		return
+	}
+
+	// 仅当当前表单配置仍与已保存配置一致时，才允许复用已保存的 key。
+	apiKey := req.APIKey
+	if apiKey == "" {
+		saved := h.configManager.GetProvider(id)
+		if canReuseSavedModelFetchAPIKey(saved, req) {
+			apiKey = saved.APIKey
+		}
 	}
 	if apiKey == "" {
 		h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "api_key is required"})
@@ -61,7 +79,7 @@ func (h *Handler) handleProviderModels(w http.ResponseWriter, r *http.Request) {
 	}
 
 	provider := &config.Provider{
-		Type:   config.ProviderType(req.Type),
+		Type:    config.ProviderType(req.Type),
 		BaseURL: req.BaseURL,
 		APIKey:  apiKey,
 	}
