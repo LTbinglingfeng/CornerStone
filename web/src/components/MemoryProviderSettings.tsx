@@ -111,6 +111,7 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                   gemini_thinking_level: memoryProvider.gemini_thinking_level || 'low',
                   gemini_thinking_budget: memoryProvider.gemini_thinking_budget || 128,
                   temperature: memoryProvider.type === 'anthropic' ? 1 : memoryProvider.temperature,
+                  top_p: memoryProvider.type === 'anthropic' ? 0 : memoryProvider.top_p,
               }
             : { ...emptyProvider }
 
@@ -143,6 +144,7 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                 ...editingProvider,
                 type: nextType,
                 temperature: nextType === 'anthropic' ? 1 : editingProvider.temperature,
+                top_p: nextType === 'anthropic' ? 0 : editingProvider.top_p,
             }
             setEditingProvider(nextProvider)
             return
@@ -447,6 +449,7 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                                         parseAs="float"
                                         onValueChange={(value) => handleProviderChange('top_p', value)}
                                         placeholder="1"
+                                        disabled={editingProvider.type === 'anthropic'}
                                     />
                                 </div>
 

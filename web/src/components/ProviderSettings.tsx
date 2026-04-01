@@ -116,6 +116,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
             gemini_image_number_of_images: provider.gemini_image_number_of_images ?? 1,
             gemini_image_output_mime_type: provider.gemini_image_output_mime_type || 'image/jpeg',
             temperature: provider.type === 'anthropic' ? 1 : provider.temperature,
+            top_p: provider.type === 'anthropic' ? 0 : provider.top_p,
         })
         setIsAddingNew(false)
         setShowModal(true)
@@ -219,6 +220,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                 ...editingProvider,
                 type: nextType,
                 temperature: nextType === 'anthropic' ? 1 : editingProvider.temperature,
+                top_p: nextType === 'anthropic' ? 0 : editingProvider.top_p,
             }
             if (nextType === 'gemini_image') {
                 nextProvider.gemini_image_aspect_ratio = nextProvider.gemini_image_aspect_ratio || '1:1'
@@ -619,6 +621,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                             parseAs="float"
                                             onValueChange={(value) => handleProviderChange('top_p', value)}
                                             placeholder="1"
+                                            disabled={editingProvider.type === 'anthropic'}
                                         />
                                     </div>
                                 )}

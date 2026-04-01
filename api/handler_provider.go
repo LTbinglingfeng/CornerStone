@@ -158,6 +158,7 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 		for i := range providers {
 			if providers[i].Type == config.ProviderTypeAnthropic {
 				providers[i].Temperature = 1
+				providers[i].TopP = 0
 			}
 			if len(providers[i].APIKey) > 8 {
 				providers[i].APIKey = providers[i].APIKey[:4] + "****" + providers[i].APIKey[len(providers[i].APIKey)-4:]
@@ -171,6 +172,7 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 			clone := *cfg.MemoryProvider
 			if clone.Type == config.ProviderTypeAnthropic {
 				clone.Temperature = 1
+				clone.TopP = 0
 			}
 			if len(clone.APIKey) > 8 {
 				clone.APIKey = clone.APIKey[:4] + "****" + clone.APIKey[len(clone.APIKey)-4:]
@@ -238,6 +240,7 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 		}
 		if providerType == config.ProviderTypeAnthropic {
 			temperature = 1
+			topP = 0
 		}
 
 		baseURL := normalizeProviderBaseURL(providerType, req.BaseURL)
@@ -490,6 +493,7 @@ func (h *Handler) handleProviderByID(w http.ResponseWriter, r *http.Request) {
 		}
 		if providerType == config.ProviderTypeAnthropic {
 			temperature = 1
+			topP = 0
 		}
 
 		var geminiThinkingMode *string
@@ -763,6 +767,7 @@ func (h *Handler) handleMemoryProvider(w http.ResponseWriter, r *http.Request) {
 		}
 		if providerType == config.ProviderTypeAnthropic {
 			temperature = 1
+			topP = 0
 		}
 
 		var geminiThinkingMode *string
@@ -827,6 +832,7 @@ func (h *Handler) handleMemoryProvider(w http.ResponseWriter, r *http.Request) {
 		clone := provider
 		if clone.Type == config.ProviderTypeAnthropic {
 			clone.Temperature = 1
+			clone.TopP = 0
 		}
 		if len(clone.APIKey) > 8 {
 			clone.APIKey = clone.APIKey[:4] + "****" + clone.APIKey[len(clone.APIKey)-4:]

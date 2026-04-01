@@ -454,10 +454,10 @@ func buildAnthropicRequest(req ChatRequest) (AnthropicRequest, error) {
 			BudgetTokens: thinkingBudget,
 		}
 	}
+	// Anthropic rejects temperature and top_p when both are provided.
 	if req.Temperature > 0 {
 		anthropicReq.Temperature = req.Temperature
-	}
-	if req.TopP > 0 {
+	} else if req.TopP > 0 {
 		anthropicReq.TopP = req.TopP
 	}
 
