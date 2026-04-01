@@ -230,6 +230,7 @@ const zh = {
         hasBotToken: '已保存 Bot Token',
         noBotToken: '未保存 Bot Token',
         language: '语言 / Language',
+        currentVersion: '当前版本',
     },
     provider: {
         title: '供应商管理',

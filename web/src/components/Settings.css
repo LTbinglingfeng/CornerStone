@@ -86,6 +86,28 @@
   padding: 16px;
 }
 
+.settings-footer {
+  padding: 8px 4px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.settings-footer-label {
+  color: var(--text-secondary);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.settings-footer-value {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: 'SFMono-Regular', 'Consolas', 'Liberation Mono', monospace;
+}
+
 .settings-section {
   background-color: var(--bg-secondary);
   border-radius: 12px;

@@ -1,7 +1,29 @@
 import fs from 'node:fs'
+import { execSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
+
+const resolveBuildVersion = () => {
+  const injected = process.env.VERSION?.trim()
+  if (injected) {
+    return injected
+  }
+
+  try {
+    const exactTag = execSync('git describe --tags --exact-match', {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim()
+    if (exactTag) {
+      return exactTag
+    }
+  } catch {
+    // ignore missing exact tag and fall back to dev
+  }
+
+  return 'dev'
+}
 
 const readJpegDataUrl = (filePath: string) => {
   const base64 = fs.readFileSync(filePath).toString('base64')
@@ -125,6 +147,9 @@ const cornerstoneSingleFileBuild = (): Plugin => {
 }
 
 export default defineConfig({
+  define: {
+    __CORNERSTONE_VERSION__: JSON.stringify(resolveBuildVersion()),
+  },
   plugins: [cornerstoneInlineLogos(), react(), cornerstoneSingleFileBuild()],
   build: {
     copyPublicDir: true,

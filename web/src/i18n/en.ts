@@ -234,6 +234,7 @@ const en = {
         hasBotToken: 'Bot Token saved',
         noBotToken: 'Bot Token not saved',
         language: 'Language',
+        currentVersion: 'Current Version',
     },
     provider: {
         title: 'Provider Management',

@@ -1,0 +1,124 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - '**'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: web
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: npm run build
+
+      - name: Build and package release assets
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          set -euo pipefail
+
+          tag="${GITHUB_REF_NAME}"
+          rm -rf release-assets
+          mkdir -p release-assets/staging
+
+          (
+            cd web
+            zip -qr "../release-assets/cornerstone-web-dist-${tag}.zip" dist
+          )
+
+          while read -r goos goarch archive; do
+            asset_name="cornerstone-${goos}-${goarch}-${tag}"
+            stage_dir="release-assets/staging/${asset_name}"
+            binary_name="cornerstone"
+
+            if [ "${goos}" = "windows" ]; then
+              binary_name="${binary_name}.exe"
+            fi
+
+            mkdir -p "${stage_dir}/web"
+
+            GOOS="${goos}" GOARCH="${goarch}" go build -trimpath -ldflags="-s -w -X main.version=${tag}" -o "${stage_dir}/${binary_name}" .
+            cp -R web/dist "${stage_dir}/web/dist"
+
+            if [ "${archive}" = "zip" ]; then
+              (
+                cd release-assets/staging
+                zip -qr "../${asset_name}.zip" "${asset_name}"
+              )
+            else
+              tar -C release-assets/staging -czf "release-assets/${asset_name}.tar.gz" "${asset_name}"
+            fi
+          done <<'TARGETS'
+          linux amd64 tar.gz
+          linux arm64 tar.gz
+          windows amd64 zip
+          windows arm64 zip
+          TARGETS
+
+          rm -rf release-assets/staging
+
+      - name: Generate release notes
+        run: |
+          set -euo pipefail
+
+          current_tag="${GITHUB_REF_NAME}"
+          previous_tag="$(git describe --tags --abbrev=0 "${current_tag}^" 2>/dev/null || true)"
+
+          {
+            printf '## 更新提交\n\n'
+
+            if [ -n "${previous_tag}" ]; then
+              printf '范围：`%s..%s`\n\n' "${previous_tag}" "${current_tag}"
+              git log --pretty=format:'- `%h` %s (%an)' "${previous_tag}..${current_tag}"
+            else
+              printf '首次 tag 发布：`%s`\n\n' "${current_tag}"
+              git log --pretty=format:'- `%h` %s (%an)' "${current_tag}"
+            fi
+
+            printf '\n'
+          } > release-notes.md
+
+      - name: Create release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: ${{ github.ref_name }}
+          body_path: release-notes.md
+          draft: false
+          prerelease: false
+          files: |
+            release-assets/cornerstone-web-dist-*.zip
+            release-assets/cornerstone-linux-*.tar.gz
+            release-assets/cornerstone-windows-*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

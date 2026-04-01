@@ -196,11 +196,9 @@ func (m *Manager) Load() error {
 	data, err := os.ReadFile(m.configPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			logging.Infof("config file not found, using defaults: path=%s", m.configPath)
 			if errSave := m.saveUnsafe(); errSave != nil {
 				return errSave
 			}
-			logging.Infof("config loaded: path=%s providers=%d active=%s", m.configPath, len(m.config.Providers), m.config.ActiveProviderID)
 			return nil
 		}
 		logging.Errorf("config load failed: path=%s err=%v", m.configPath, err)
@@ -259,7 +257,6 @@ func (m *Manager) Load() error {
 			if errSave := m.saveUnsafe(); errSave != nil {
 				return errSave
 			}
-			logging.Infof("config loaded: path=%s providers=%d active=%s", m.configPath, len(m.config.Providers), m.config.ActiveProviderID)
 			return nil
 		}
 	}
@@ -279,8 +276,6 @@ func (m *Manager) Load() error {
 			return errSave
 		}
 	}
-
-	logging.Infof("config loaded: path=%s providers=%d active=%s", m.configPath, len(m.config.Providers), m.config.ActiveProviderID)
 	return nil
 }
 
@@ -616,7 +611,6 @@ func (m *Manager) saveUnsafe() error {
 		return err
 	}
 	_ = os.Chmod(m.configPath, 0600)
-	logging.Infof("config saved: path=%s", m.configPath)
 	return nil
 }
 
