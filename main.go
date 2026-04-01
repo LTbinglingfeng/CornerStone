@@ -56,25 +56,49 @@ func resolveVersion(exeDir string) string {
 }
 
 func printStartupBanner(appVersion string) {
-	fmt.Println("CornerStone")
-	fmt.Printf("Version %s\n", appVersion)
+	const (
+		cyan  = "\033[36m"
+		bold  = "\033[1m"
+		dim   = "\033[2m"
+		reset = "\033[0m"
+	)
+
+	fmt.Println()
+	fmt.Print(bold + cyan)
+	fmt.Println(`    ____                          ____  _                   `)
+	fmt.Println(`   / ___|___  _ __ _ __   ___ _ _/ ___|| |_ ___  _ __   ___ `)
+	fmt.Println(`  | |   / _ \| '__| '_ \ / _ \ '_\___ \| __/ _ \| '_ \ / _ \`)
+	fmt.Println(`  | |__| (_) | |  | | | |  __/ |  ___) | || (_) | | | |  __/`)
+	fmt.Println(`   \____\___/|_|  |_| |_|\___|_| |____/ \__\___/|_| |_|\___|`)
+	fmt.Print(reset)
+	fmt.Println()
+	fmt.Printf("    %sv%s%s\n", dim, appVersion, reset)
 	fmt.Println()
 }
 
 func printStartupSummary(scheme string, port int, distDir, baseDir, logPath string, tlsEnabled bool, tlsSource string) {
-	fmt.Printf("Listen: %s://localhost:%d\n", scheme, port)
+	const (
+		cyan   = "\033[36m"
+		green  = "\033[32m"
+		yellow = "\033[33m"
+		bold   = "\033[1m"
+		dim    = "\033[2m"
+		reset  = "\033[0m"
+	)
+
+	fmt.Printf("    %s▸%s Listen  %s%s://localhost:%d%s\n", cyan, reset, bold, scheme, port, reset)
 	if distDir != "" {
-		fmt.Printf("Web UI: %s://localhost:%d/\n", scheme, port)
-		fmt.Printf("Assets: %s\n", distDir)
+		fmt.Printf("    %s▸%s Web UI  %s%s://localhost:%d/%s\n", cyan, reset, bold, scheme, port, reset)
+		fmt.Printf("    %s▸%s Assets  %s\n", cyan, reset, distDir)
 	} else {
-		fmt.Println("Web UI: not available (run: cd web && npm run build)")
+		fmt.Printf("    %s▸%s Web UI  %snot available%s (run: cd web && npm run build)\n", yellow, reset, dim, reset)
 	}
-	fmt.Printf("Data:   %s\n", baseDir)
-	fmt.Printf("Logs:   %s\n", logPath)
+	fmt.Printf("    %s▸%s Data    %s\n", cyan, reset, baseDir)
+	fmt.Printf("    %s▸%s Logs    %s\n", cyan, reset, logPath)
 	if tlsEnabled {
-		fmt.Printf("TLS:    enabled (%s)\n", tlsSource)
+		fmt.Printf("    %s▸%s TLS     %senabled%s (%s)\n", green, reset, green, reset, tlsSource)
 	} else {
-		fmt.Println("TLS:    disabled")
+		fmt.Printf("    %s▸%s TLS     %sdisabled%s\n", cyan, reset, dim, reset)
 	}
 	fmt.Println()
 }
