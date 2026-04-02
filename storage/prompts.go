@@ -187,18 +187,10 @@ func (pm *PromptManager) Update(id, name, content, description, fileName string)
 		return nil, os.ErrNotExist
 	}
 
-	if name != "" {
-		prompt.Name = name
-	}
-	if content != "" {
-		prompt.Content = content
-	}
-	if description != "" {
-		prompt.Description = description
-	}
-	if fileName != "" {
-		prompt.FileName = fileName
-	}
+	prompt.Name = name
+	prompt.Content = content
+	prompt.Description = description
+	prompt.FileName = fileName
 	prompt.UpdatedAt = time.Now()
 
 	if err := pm.savePrompt(&prompt); err != nil {

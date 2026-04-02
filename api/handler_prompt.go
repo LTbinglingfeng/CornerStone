@@ -9,13 +9,21 @@ import (
 	"strings"
 )
 
-// PromptRequest 提示词请求
+// PromptRequest 提示词创建请求
 type PromptRequest struct {
-	ID          string `json:"id,omitempty"`
-	Name        string `json:"name"`
-	Content     string `json:"content"`
-	Description string `json:"description,omitempty"`
-	FileName    string `json:"file_name,omitempty"`
+	ID          string  `json:"id,omitempty"`
+	Name        string  `json:"name"`
+	Content     string  `json:"content"`
+	Description *string `json:"description,omitempty"`
+	FileName    *string `json:"file_name,omitempty"`
+}
+
+// PromptUpdateRequest 提示词更新请求
+type PromptUpdateRequest struct {
+	Name        *string `json:"name"`
+	Content     *string `json:"content"`
+	Description *string `json:"description"`
+	FileName    *string `json:"file_name"`
 }
 
 func (h *Handler) handlePrompts(w http.ResponseWriter, r *http.Request) {
@@ -40,7 +48,7 @@ func (h *Handler) handlePrompts(w http.ResponseWriter, r *http.Request) {
 			id = generatePromptID()
 		}
 
-		prompt, err := h.promptManager.Create(id, req.Name, req.Content, req.Description, req.FileName)
+		prompt, err := h.promptManager.Create(id, req.Name, req.Content, stringValue(req.Description), stringValue(req.FileName))
 		if err != nil {
 			h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: err.Error()})
 			return
@@ -71,12 +79,44 @@ func (h *Handler) handlePromptByID(w http.ResponseWriter, r *http.Request) {
 		h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: prompt})
 
 	case "PUT":
-		var req PromptRequest
+		var req PromptUpdateRequest
 		if !h.decodeJSON(w, r, &req) {
 			return
 		}
 
-		prompt, err := h.promptManager.Update(id, req.Name, req.Content, req.Description, req.FileName)
+		existing, ok := h.promptManager.Get(id)
+		if !ok {
+			h.jsonResponse(w, http.StatusNotFound, Response{Success: false, Error: "Prompt not found"})
+			return
+		}
+
+		name := existing.Name
+		content := existing.Content
+		description := existing.Description
+		fileName := existing.FileName
+
+		if req.Name != nil {
+			if strings.TrimSpace(*req.Name) == "" {
+				h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Name is required"})
+				return
+			}
+			name = *req.Name
+		}
+		if req.Content != nil {
+			if strings.TrimSpace(*req.Content) == "" {
+				h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Content is required"})
+				return
+			}
+			content = *req.Content
+		}
+		if req.Description != nil {
+			description = *req.Description
+		}
+		if req.FileName != nil {
+			fileName = *req.FileName
+		}
+
+		prompt, err := h.promptManager.Update(id, name, content, description, fileName)
 		if err != nil {
 			h.jsonResponse(w, http.StatusNotFound, Response{Success: false, Error: "Prompt not found"})
 			return
@@ -93,6 +133,13 @@ func (h *Handler) handlePromptByID(w http.ResponseWriter, r *http.Request) {
 	default:
 		h.jsonResponse(w, http.StatusMethodNotAllowed, Response{Success: false, Error: "Method not allowed"})
 	}
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 // handlePromptSessions 处理获取指定 Prompt 的所有聊天记录请求

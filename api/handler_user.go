@@ -11,8 +11,8 @@ import (
 
 // UserInfoRequest 用户信息请求
 type UserInfoRequest struct {
-	Username    string `json:"username,omitempty"`
-	Description string `json:"description,omitempty"`
+	Username    *string `json:"username,omitempty"`
+	Description *string `json:"description"`
 }
 
 func (h *Handler) handleUser(w http.ResponseWriter, r *http.Request) {
@@ -27,13 +27,28 @@ func (h *Handler) handleUser(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		userInfo, err := h.userManager.Update(req.Username, req.Description)
+		existing := h.userManager.Get()
+		username := existing.Username
+		description := existing.Description
+
+		if req.Username != nil {
+			if strings.TrimSpace(*req.Username) == "" {
+				h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Username is required"})
+				return
+			}
+			username = *req.Username
+		}
+		if req.Description != nil {
+			description = *req.Description
+		}
+
+		userInfo, err := h.userManager.Update(username, description)
 		if err != nil {
 			h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: err.Error()})
 			return
 		}
-		if req.Username != "" && h.authManager != nil {
-			if err := h.authManager.UpdateUsername(req.Username); err != nil && !errors.Is(err, storage.ErrAuthNotSetup) {
+		if req.Username != nil && h.authManager != nil {
+			if err := h.authManager.UpdateUsername(username); err != nil && !errors.Is(err, storage.ErrAuthNotSetup) {
 				logging.Errorf("sync auth username failed: %v", err)
 			}
 		}

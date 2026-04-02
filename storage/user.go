@@ -100,12 +100,8 @@ func (um *UserManager) Update(username, description string) (*UserInfo, error) {
 	um.mu.Lock()
 	defer um.mu.Unlock()
 
-	if username != "" {
-		um.userInfo.Username = username
-	}
-	if description != "" {
-		um.userInfo.Description = description
-	}
+	um.userInfo.Username = username
+	um.userInfo.Description = description
 	um.userInfo.UpdatedAt = time.Now()
 
 	if err := um.save(); err != nil {
