@@ -48,8 +48,8 @@ type ProviderRequest struct {
 	Temperature               *float64 `json:"temperature,omitempty"`
 	TopP                      *float64 `json:"top_p,omitempty"`
 	ThinkingBudget            *int     `json:"thinking_budget,omitempty"`
-	PromptCaching             bool     `json:"prompt_caching"`
-	PromptCacheTTL            string   `json:"prompt_cache_ttl,omitempty"`
+	PromptCaching             *bool    `json:"prompt_caching,omitempty"`
+	PromptCacheTTL            *string  `json:"prompt_cache_ttl,omitempty"`
 	ReasoningEffort           *string  `json:"reasoning_effort,omitempty"`
 	GeminiThinkingMode        *string  `json:"gemini_thinking_mode,omitempty"`
 	GeminiThinkingLevel       *string  `json:"gemini_thinking_level,omitempty"`
@@ -236,8 +236,12 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 		if req.ThinkingBudget != nil {
 			thinkingBudget = *req.ThinkingBudget
 		}
-		promptCaching = req.PromptCaching
-		promptCacheTTL = normalizeAnthropicPromptCacheTTL(req.PromptCacheTTL)
+		if req.PromptCaching != nil {
+			promptCaching = *req.PromptCaching
+		}
+		if req.PromptCacheTTL != nil {
+			promptCacheTTL = normalizeAnthropicPromptCacheTTL(*req.PromptCacheTTL)
+		}
 		if req.ReasoningEffort != nil {
 			reasoningEffort = *req.ReasoningEffort
 		}
@@ -497,8 +501,12 @@ func (h *Handler) handleProviderByID(w http.ResponseWriter, r *http.Request) {
 		if req.ThinkingBudget != nil {
 			thinkingBudget = *req.ThinkingBudget
 		}
-		promptCaching = req.PromptCaching
-		promptCacheTTL = normalizeAnthropicPromptCacheTTL(req.PromptCacheTTL)
+		if req.PromptCaching != nil {
+			promptCaching = *req.PromptCaching
+		}
+		if req.PromptCacheTTL != nil {
+			promptCacheTTL = normalizeAnthropicPromptCacheTTL(*req.PromptCacheTTL)
+		}
 		if req.ReasoningEffort != nil {
 			reasoningEffort = *req.ReasoningEffort
 		}
@@ -779,8 +787,12 @@ func (h *Handler) handleMemoryProvider(w http.ResponseWriter, r *http.Request) {
 		if req.Provider.ThinkingBudget != nil {
 			thinkingBudget = *req.Provider.ThinkingBudget
 		}
-		promptCaching = req.Provider.PromptCaching
-		promptCacheTTL = normalizeAnthropicPromptCacheTTL(req.Provider.PromptCacheTTL)
+		if req.Provider.PromptCaching != nil {
+			promptCaching = *req.Provider.PromptCaching
+		}
+		if req.Provider.PromptCacheTTL != nil {
+			promptCacheTTL = normalizeAnthropicPromptCacheTTL(*req.Provider.PromptCacheTTL)
+		}
 		if req.Provider.ReasoningEffort != nil {
 			reasoningEffort = *req.Provider.ReasoningEffort
 		}

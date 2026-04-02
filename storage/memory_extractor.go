@@ -513,6 +513,8 @@ func (e *MemoryExtractor) ExtractAndSave(promptID, sessionID string) error {
 	switch provider.Type {
 	case config.ProviderTypeAnthropic:
 		chatReq.ThinkingBudget = provider.ThinkingBudget
+		chatReq.PromptCaching = provider.PromptCaching
+		chatReq.PromptCacheTTL = provider.PromptCacheTTL
 	case config.ProviderTypeGemini:
 		geminiMode := "none"
 		geminiLevel := "low"
