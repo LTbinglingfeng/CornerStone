@@ -48,6 +48,8 @@ type ProviderRequest struct {
 	Temperature               *float64 `json:"temperature,omitempty"`
 	TopP                      *float64 `json:"top_p,omitempty"`
 	ThinkingBudget            *int     `json:"thinking_budget,omitempty"`
+	PromptCaching             bool     `json:"prompt_caching"`
+	PromptCacheTTL            string   `json:"prompt_cache_ttl,omitempty"`
 	ReasoningEffort           *string  `json:"reasoning_effort,omitempty"`
 	GeminiThinkingMode        *string  `json:"gemini_thinking_mode,omitempty"`
 	GeminiThinkingLevel       *string  `json:"gemini_thinking_level,omitempty"`
@@ -221,6 +223,8 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 		temperature := defaultProvider.Temperature
 		topP := defaultProvider.TopP
 		thinkingBudget := defaultProvider.ThinkingBudget
+		promptCaching := defaultProvider.PromptCaching
+		promptCacheTTL := defaultProvider.PromptCacheTTL
 		reasoningEffort := defaultProvider.ReasoningEffort
 		contextMessages := defaultProvider.ContextMessages
 		if req.Temperature != nil {
@@ -232,6 +236,8 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 		if req.ThinkingBudget != nil {
 			thinkingBudget = *req.ThinkingBudget
 		}
+		promptCaching = req.PromptCaching
+		promptCacheTTL = normalizeAnthropicPromptCacheTTL(req.PromptCacheTTL)
 		if req.ReasoningEffort != nil {
 			reasoningEffort = *req.ReasoningEffort
 		}
@@ -314,6 +320,8 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 			Temperature:               temperature,
 			TopP:                      topP,
 			ThinkingBudget:            thinkingBudget,
+			PromptCaching:             promptCaching,
+			PromptCacheTTL:            promptCacheTTL,
 			ReasoningEffort:           reasoningEffort,
 			GeminiThinkingMode:        geminiThinkingMode,
 			GeminiThinkingLevel:       geminiThinkingLevel,
@@ -434,6 +442,8 @@ func (h *Handler) handleProviderByID(w http.ResponseWriter, r *http.Request) {
 		temperature := defaultProvider.Temperature
 		topP := defaultProvider.TopP
 		thinkingBudget := defaultProvider.ThinkingBudget
+		promptCaching := defaultProvider.PromptCaching
+		promptCacheTTL := defaultProvider.PromptCacheTTL
 		reasoningEffort := defaultProvider.ReasoningEffort
 		contextMessages := defaultProvider.ContextMessages
 
@@ -448,6 +458,8 @@ func (h *Handler) handleProviderByID(w http.ResponseWriter, r *http.Request) {
 			temperature = existingProvider.Temperature
 			topP = existingProvider.TopP
 			thinkingBudget = existingProvider.ThinkingBudget
+			promptCaching = existingProvider.PromptCaching
+			promptCacheTTL = normalizeAnthropicPromptCacheTTL(existingProvider.PromptCacheTTL)
 			reasoningEffort = existingProvider.ReasoningEffort
 			if existingProvider.Type == config.ProviderTypeGemini {
 				if existingProvider.GeminiThinkingMode != nil {
@@ -485,6 +497,8 @@ func (h *Handler) handleProviderByID(w http.ResponseWriter, r *http.Request) {
 		if req.ThinkingBudget != nil {
 			thinkingBudget = *req.ThinkingBudget
 		}
+		promptCaching = req.PromptCaching
+		promptCacheTTL = normalizeAnthropicPromptCacheTTL(req.PromptCacheTTL)
 		if req.ReasoningEffort != nil {
 			reasoningEffort = *req.ReasoningEffort
 		}
@@ -556,6 +570,8 @@ func (h *Handler) handleProviderByID(w http.ResponseWriter, r *http.Request) {
 			Temperature:               temperature,
 			TopP:                      topP,
 			ThinkingBudget:            thinkingBudget,
+			PromptCaching:             promptCaching,
+			PromptCacheTTL:            promptCacheTTL,
 			ReasoningEffort:           reasoningEffort,
 			GeminiThinkingMode:        geminiThinkingMode,
 			GeminiThinkingLevel:       geminiThinkingLevel,
@@ -723,6 +739,8 @@ func (h *Handler) handleMemoryProvider(w http.ResponseWriter, r *http.Request) {
 		temperature := defaultProvider.Temperature
 		topP := defaultProvider.TopP
 		thinkingBudget := defaultProvider.ThinkingBudget
+		promptCaching := defaultProvider.PromptCaching
+		promptCacheTTL := defaultProvider.PromptCacheTTL
 		reasoningEffort := defaultProvider.ReasoningEffort
 		contextMessages := defaultProvider.ContextMessages
 
@@ -734,6 +752,8 @@ func (h *Handler) handleMemoryProvider(w http.ResponseWriter, r *http.Request) {
 			temperature = existingProvider.Temperature
 			topP = existingProvider.TopP
 			thinkingBudget = existingProvider.ThinkingBudget
+			promptCaching = existingProvider.PromptCaching
+			promptCacheTTL = normalizeAnthropicPromptCacheTTL(existingProvider.PromptCacheTTL)
 			reasoningEffort = existingProvider.ReasoningEffort
 			contextMessages = existingProvider.ContextMessages
 
@@ -759,6 +779,8 @@ func (h *Handler) handleMemoryProvider(w http.ResponseWriter, r *http.Request) {
 		if req.Provider.ThinkingBudget != nil {
 			thinkingBudget = *req.Provider.ThinkingBudget
 		}
+		promptCaching = req.Provider.PromptCaching
+		promptCacheTTL = normalizeAnthropicPromptCacheTTL(req.Provider.PromptCacheTTL)
 		if req.Provider.ReasoningEffort != nil {
 			reasoningEffort = *req.Provider.ReasoningEffort
 		}
@@ -813,6 +835,8 @@ func (h *Handler) handleMemoryProvider(w http.ResponseWriter, r *http.Request) {
 			Temperature:          temperature,
 			TopP:                 topP,
 			ThinkingBudget:       thinkingBudget,
+			PromptCaching:        promptCaching,
+			PromptCacheTTL:       promptCacheTTL,
 			ReasoningEffort:      reasoningEffort,
 			GeminiThinkingMode:   geminiThinkingMode,
 			GeminiThinkingLevel:  geminiThinkingLevel,
@@ -895,5 +919,16 @@ func normalizeGeminiImageOutputMIMEType(outputMIMEType string) string {
 		return outputMIMEType
 	default:
 		return "image/jpeg"
+	}
+}
+
+func normalizeAnthropicPromptCacheTTL(ttl string) string {
+	switch strings.ToLower(strings.TrimSpace(ttl)) {
+	case "1h":
+		return "1h"
+	case "5m", "":
+		return "5m"
+	default:
+		return "5m"
 	}
 }

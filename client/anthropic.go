@@ -23,15 +23,16 @@ type AnthropicClient struct {
 
 // AnthropicRequest Anthropic 消息请求
 type AnthropicRequest struct {
-	Model       string                  `json:"model"`
-	Messages    []AnthropicMessage      `json:"messages"`
-	System      []AnthropicContentBlock `json:"system,omitempty"`
-	Stream      bool                    `json:"stream,omitempty"`
-	MaxTokens   int                     `json:"max_tokens"`
-	Temperature float64                 `json:"temperature,omitempty"`
-	TopP        float64                 `json:"top_p,omitempty"`
-	Thinking    *AnthropicThinking      `json:"thinking,omitempty"`
-	Tools       []AnthropicTool         `json:"tools,omitempty"`
+	Model        string                  `json:"model"`
+	Messages     []AnthropicMessage      `json:"messages"`
+	System       []AnthropicContentBlock `json:"system,omitempty"`
+	Stream       bool                    `json:"stream,omitempty"`
+	MaxTokens    int                     `json:"max_tokens"`
+	Temperature  float64                 `json:"temperature,omitempty"`
+	TopP         float64                 `json:"top_p,omitempty"`
+	Thinking     *AnthropicThinking      `json:"thinking,omitempty"`
+	CacheControl *AnthropicCacheControl  `json:"cache_control,omitempty"`
+	Tools        []AnthropicTool         `json:"tools,omitempty"`
 }
 
 type AnthropicMessage struct {
@@ -40,17 +41,18 @@ type AnthropicMessage struct {
 }
 
 type AnthropicContentBlock struct {
-	Type      string                  `json:"type"`
-	Text      string                  `json:"text,omitempty"`
-	Signature string                  `json:"signature,omitempty"`
-	Thinking  string                  `json:"thinking,omitempty"`
-	Source    *AnthropicImageSource   `json:"source,omitempty"`
-	ID        string                  `json:"id,omitempty"`
-	Name      string                  `json:"name,omitempty"`
-	Input     json.RawMessage         `json:"input,omitempty"`
-	ToolUseID string                  `json:"tool_use_id,omitempty"`
-	IsError   bool                    `json:"is_error,omitempty"`
-	Content   []AnthropicContentBlock `json:"content,omitempty"`
+	Type         string                  `json:"type"`
+	Text         string                  `json:"text,omitempty"`
+	Signature    string                  `json:"signature,omitempty"`
+	Thinking     string                  `json:"thinking,omitempty"`
+	CacheControl *AnthropicCacheControl  `json:"cache_control,omitempty"`
+	Source       *AnthropicImageSource   `json:"source,omitempty"`
+	ID           string                  `json:"id,omitempty"`
+	Name         string                  `json:"name,omitempty"`
+	Input        json.RawMessage         `json:"input,omitempty"`
+	ToolUseID    string                  `json:"tool_use_id,omitempty"`
+	IsError      bool                    `json:"is_error,omitempty"`
+	Content      []AnthropicContentBlock `json:"content,omitempty"`
 }
 
 type AnthropicImageSource struct {
@@ -60,14 +62,20 @@ type AnthropicImageSource struct {
 }
 
 type AnthropicTool struct {
-	Name        string                 `json:"name"`
-	Description string                 `json:"description,omitempty"`
-	InputSchema map[string]interface{} `json:"input_schema"`
+	Name         string                 `json:"name"`
+	Description  string                 `json:"description,omitempty"`
+	InputSchema  map[string]interface{} `json:"input_schema"`
+	CacheControl *AnthropicCacheControl `json:"cache_control,omitempty"`
 }
 
 type AnthropicThinking struct {
 	Type         string `json:"type"`
 	BudgetTokens int    `json:"budget_tokens"`
+}
+
+type AnthropicCacheControl struct {
+	Type string `json:"type"`
+	TTL  string `json:"ttl,omitempty"`
 }
 
 type AnthropicResponse struct {
@@ -82,8 +90,10 @@ type AnthropicResponse struct {
 }
 
 type AnthropicUsage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
+	InputTokens              int `json:"input_tokens"`
+	OutputTokens             int `json:"output_tokens"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens,omitempty"`
+	CacheReadInputTokens     int `json:"cache_read_input_tokens,omitempty"`
 }
 
 type anthropicStreamEvent struct {
@@ -460,8 +470,59 @@ func buildAnthropicRequest(req ChatRequest) (AnthropicRequest, error) {
 	} else if req.TopP > 0 {
 		anthropicReq.TopP = req.TopP
 	}
+	if req.PromptCaching {
+		cacheControl := &AnthropicCacheControl{
+			Type: "ephemeral",
+			TTL:  normalizeAnthropicPromptCacheTTL(req.PromptCacheTTL),
+		}
+		breakpointCount := 0
+		if len(anthropicReq.System) > 0 {
+			anthropicReq.System[len(anthropicReq.System)-1].CacheControl = cloneAnthropicCacheControl(cacheControl)
+			breakpointCount++
+		}
+		if len(anthropicReq.Tools) > 0 {
+			anthropicReq.Tools[len(anthropicReq.Tools)-1].CacheControl = cloneAnthropicCacheControl(cacheControl)
+			breakpointCount++
+		}
+		if applyAnthropicMessageCacheControl(anthropicReq.Messages, cacheControl) {
+			breakpointCount++
+		}
+		if breakpointCount == 0 {
+			anthropicReq.CacheControl = cacheControl
+		}
+	}
 
 	return anthropicReq, nil
+}
+
+func normalizeAnthropicPromptCacheTTL(ttl string) string {
+	switch strings.ToLower(strings.TrimSpace(ttl)) {
+	case "1h":
+		return "1h"
+	case "5m", "":
+		return "5m"
+	default:
+		return "5m"
+	}
+}
+
+func cloneAnthropicCacheControl(cacheControl *AnthropicCacheControl) *AnthropicCacheControl {
+	if cacheControl == nil {
+		return nil
+	}
+	clone := *cacheControl
+	return &clone
+}
+
+func applyAnthropicMessageCacheControl(messages []AnthropicMessage, cacheControl *AnthropicCacheControl) bool {
+	for messageIndex := len(messages) - 1; messageIndex >= 0; messageIndex-- {
+		if len(messages[messageIndex].Content) == 0 {
+			continue
+		}
+		messages[messageIndex].Content[len(messages[messageIndex].Content)-1].CacheControl = cloneAnthropicCacheControl(cacheControl)
+		return true
+	}
+	return false
 }
 
 func buildAnthropicMessages(messages []Message) ([]AnthropicMessage, []AnthropicContentBlock, error) {
@@ -669,9 +730,11 @@ func convertAnthropicResponse(resp AnthropicResponse, fallbackModel string) *Cha
 	var usage Usage
 	if resp.Usage != nil {
 		usage = Usage{
-			PromptTokens:     resp.Usage.InputTokens,
-			CompletionTokens: resp.Usage.OutputTokens,
-			TotalTokens:      resp.Usage.InputTokens + resp.Usage.OutputTokens,
+			PromptTokens:             resp.Usage.InputTokens,
+			CompletionTokens:         resp.Usage.OutputTokens,
+			TotalTokens:              resp.Usage.InputTokens + resp.Usage.OutputTokens,
+			CacheCreationInputTokens: resp.Usage.CacheCreationInputTokens,
+			CacheReadInputTokens:     resp.Usage.CacheReadInputTokens,
 		}
 	}
 

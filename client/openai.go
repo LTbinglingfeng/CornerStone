@@ -58,6 +58,8 @@ type ChatRequest struct {
 	TopP                 float64   `json:"top_p,omitempty"`
 	MaxTokens            int       `json:"max_tokens,omitempty"`
 	ThinkingBudget       int       `json:"thinking_budget,omitempty"`        // Anthropic思考预算
+	PromptCaching        bool      `json:"prompt_caching,omitempty"`         // Anthropic Prompt Caching
+	PromptCacheTTL       string    `json:"prompt_cache_ttl,omitempty"`       // Anthropic Prompt Cache TTL (5m/1h)
 	ReasoningEffort      string    `json:"reasoning_effort,omitempty"`       // OpenAI兼容思考强度
 	GeminiThinkingMode   string    `json:"gemini_thinking_mode,omitempty"`   // Gemini思考模式
 	GeminiThinkingLevel  string    `json:"gemini_thinking_level,omitempty"`  // Gemini思考级别
@@ -129,9 +131,11 @@ type DeltaToolCall struct {
 
 // Usage token使用情况
 type Usage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
+	PromptTokens             int `json:"prompt_tokens"`
+	CompletionTokens         int `json:"completion_tokens"`
+	TotalTokens              int `json:"total_tokens"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens,omitempty"`
+	CacheReadInputTokens     int `json:"cache_read_input_tokens,omitempty"`
 }
 
 // StreamChunk 流式响应块

@@ -645,6 +645,8 @@ func (s *ClawBotService) generateReply(ctx context.Context, sessionID, configure
 	switch provider.Type {
 	case config.ProviderTypeAnthropic:
 		req.ThinkingBudget = provider.ThinkingBudget
+		req.PromptCaching = provider.PromptCaching
+		req.PromptCacheTTL = provider.PromptCacheTTL
 	case config.ProviderTypeGemini:
 		geminiMode := "none"
 		geminiLevel := "low"

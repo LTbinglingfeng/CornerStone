@@ -88,6 +88,8 @@ export interface Provider {
     temperature: number
     top_p: number
     thinking_budget: number
+    prompt_caching: boolean
+    prompt_cache_ttl?: string
     reasoning_effort: string
     gemini_thinking_mode?: string
     gemini_thinking_level?: string

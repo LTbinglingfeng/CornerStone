@@ -25,6 +25,11 @@ export const getOpenAIReasoningEffortOptions = (): SelectOption[] => [
     { value: 'high', label: translate('provider.highEffort') },
 ]
 
+export const getAnthropicPromptCacheTTLOptions = (): SelectOption[] => [
+    { value: '5m', label: translate('provider.promptCacheTTL5m') },
+    { value: '1h', label: translate('provider.promptCacheTTL1h') },
+]
+
 export const getGeminiThinkingModes = (): SelectOption[] => [
     { value: 'none', label: translate('provider.noThinking') },
     { value: 'thinking_level', label: translate('provider.thinkingLevelGemini3') },

@@ -4,6 +4,7 @@ import type { Provider, ProviderType } from '../types/chat'
 import { getProviders, addProvider, updateProvider, deleteProvider, setActiveProvider } from '../services/api'
 import {
     getProviderTypesAll,
+    getAnthropicPromptCacheTTLOptions,
     getOpenAIReasoningEffortOptions,
     getGeminiThinkingModes,
     getGeminiThinkingLevels,
@@ -40,6 +41,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
     const [editingProvider, setEditingProvider] = useState<Provider | null>(null)
     const [isAddingNew, setIsAddingNew] = useState(false)
     const providerTypesAll = getProviderTypesAll()
+    const anthropicPromptCacheTTLOptions = getAnthropicPromptCacheTTLOptions()
     const openAIReasoningEffortOptions = getOpenAIReasoningEffortOptions()
     const geminiThinkingModes = getGeminiThinkingModes()
     const geminiThinkingLevels = getGeminiThinkingLevels()
@@ -55,6 +57,8 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
         temperature: 0.8,
         top_p: 1,
         thinking_budget: 0,
+        prompt_caching: false,
+        prompt_cache_ttl: '5m',
         reasoning_effort: '',
         gemini_thinking_mode: 'none',
         gemini_thinking_level: 'low',
@@ -107,6 +111,8 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
             ...provider,
             api_key: '',
             thinking_budget: provider.thinking_budget ?? 0,
+            prompt_caching: provider.prompt_caching ?? false,
+            prompt_cache_ttl: provider.prompt_cache_ttl || '5m',
             reasoning_effort: provider.reasoning_effort ?? '',
             gemini_thinking_mode: provider.gemini_thinking_mode || 'none',
             gemini_thinking_level: provider.gemini_thinking_level || 'low',
@@ -221,6 +227,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                 type: nextType,
                 temperature: nextType === 'anthropic' ? 1 : editingProvider.temperature,
                 top_p: nextType === 'anthropic' ? 0 : editingProvider.top_p,
+                prompt_cache_ttl: editingProvider.prompt_cache_ttl || '5m',
             }
             if (nextType === 'gemini_image') {
                 nextProvider.gemini_image_aspect_ratio = nextProvider.gemini_image_aspect_ratio || '1:1'
@@ -696,18 +703,57 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                 )}
 
                                 {editingProvider.type === 'anthropic' && (
-                                    <div className="modal-group">
-                                        <label className="modal-label">{t('memoryProvider.thinkingBudget')}</label>
-                                        <NumericInput
-                                            className="modal-input"
-                                            min={0}
-                                            step={1}
-                                            value={editingProvider.thinking_budget}
-                                            parseAs="int"
-                                            onValueChange={(value) => handleProviderChange('thinking_budget', value)}
-                                            placeholder="0"
-                                        />
-                                    </div>
+                                    <>
+                                        <div className="modal-group">
+                                            <label className="modal-label">{t('memoryProvider.thinkingBudget')}</label>
+                                            <NumericInput
+                                                className="modal-input"
+                                                min={0}
+                                                step={1}
+                                                value={editingProvider.thinking_budget}
+                                                parseAs="int"
+                                                onValueChange={(value) =>
+                                                    handleProviderChange('thinking_budget', value)
+                                                }
+                                                placeholder="0"
+                                            />
+                                        </div>
+
+                                        <div className="modal-group">
+                                            <label className="modal-label">{t('provider.promptCaching')}</label>
+                                            <div className="modal-toggle-wrapper">
+                                                <label className="toggle-switch">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={editingProvider.prompt_caching}
+                                                        onChange={(e) =>
+                                                            handleProviderChange('prompt_caching', e.target.checked)
+                                                        }
+                                                    />
+                                                    <span className="toggle-slider"></span>
+                                                </label>
+                                                <span className="toggle-label">
+                                                    {editingProvider.prompt_caching
+                                                        ? t('common.enable')
+                                                        : t('common.disable')}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        {editingProvider.prompt_caching && (
+                                            <div className="modal-group">
+                                                <label className="modal-label">{t('provider.promptCacheTTL')}</label>
+                                                <CustomSelect
+                                                    value={editingProvider.prompt_cache_ttl || '5m'}
+                                                    options={anthropicPromptCacheTTLOptions}
+                                                    ariaLabel={t('provider.promptCacheTTL')}
+                                                    onChange={(value) =>
+                                                        handleProviderChange('prompt_cache_ttl', value)
+                                                    }
+                                                />
+                                            </div>
+                                        )}
+                                    </>
                                 )}
 
                                 {editingProvider.type !== 'gemini_image' && (

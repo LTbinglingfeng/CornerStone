@@ -4,6 +4,7 @@ import type { Provider, ProviderType } from '../types/chat'
 import { getProviders, updateMemoryProvider } from '../services/api'
 import {
     getProviderTypesChat,
+    getAnthropicPromptCacheTTLOptions,
     getOpenAIReasoningEffortOptions,
     getGeminiThinkingModes,
     getGeminiThinkingLevels,
@@ -32,6 +33,7 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
     const [showModal, setShowModal] = useState(false)
     const [editingProvider, setEditingProvider] = useState<Provider | null>(null)
     const providerTypesChat = getProviderTypesChat()
+    const anthropicPromptCacheTTLOptions = getAnthropicPromptCacheTTLOptions()
     const openAIReasoningEffortOptions = getOpenAIReasoningEffortOptions()
     const geminiThinkingModes = getGeminiThinkingModes()
     const geminiThinkingLevels = getGeminiThinkingLevels()
@@ -46,6 +48,8 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
         temperature: 0.8,
         top_p: 1,
         thinking_budget: 0,
+        prompt_caching: false,
+        prompt_cache_ttl: '5m',
         reasoning_effort: '',
         gemini_thinking_mode: 'none',
         gemini_thinking_level: 'low',
@@ -106,6 +110,8 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                   ...memoryProvider,
                   api_key: '',
                   thinking_budget: memoryProvider.thinking_budget ?? 0,
+                  prompt_caching: memoryProvider.prompt_caching ?? false,
+                  prompt_cache_ttl: memoryProvider.prompt_cache_ttl || '5m',
                   reasoning_effort: memoryProvider.reasoning_effort ?? '',
                   gemini_thinking_mode: memoryProvider.gemini_thinking_mode || 'none',
                   gemini_thinking_level: memoryProvider.gemini_thinking_level || 'low',
@@ -145,6 +151,7 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                 type: nextType,
                 temperature: nextType === 'anthropic' ? 1 : editingProvider.temperature,
                 top_p: nextType === 'anthropic' ? 0 : editingProvider.top_p,
+                prompt_cache_ttl: editingProvider.prompt_cache_ttl || '5m',
             }
             setEditingProvider(nextProvider)
             return
@@ -522,18 +529,57 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                                 )}
 
                                 {editingProvider.type === 'anthropic' && (
-                                    <div className="modal-group">
-                                        <label className="modal-label">{t('memoryProvider.thinkingBudget')}</label>
-                                        <NumericInput
-                                            className="modal-input"
-                                            min={0}
-                                            step={1}
-                                            value={editingProvider.thinking_budget}
-                                            parseAs="int"
-                                            onValueChange={(value) => handleProviderChange('thinking_budget', value)}
-                                            placeholder="0"
-                                        />
-                                    </div>
+                                    <>
+                                        <div className="modal-group">
+                                            <label className="modal-label">{t('memoryProvider.thinkingBudget')}</label>
+                                            <NumericInput
+                                                className="modal-input"
+                                                min={0}
+                                                step={1}
+                                                value={editingProvider.thinking_budget}
+                                                parseAs="int"
+                                                onValueChange={(value) =>
+                                                    handleProviderChange('thinking_budget', value)
+                                                }
+                                                placeholder="0"
+                                            />
+                                        </div>
+
+                                        <div className="modal-group">
+                                            <label className="modal-label">{t('provider.promptCaching')}</label>
+                                            <div className="modal-toggle-wrapper">
+                                                <label className="toggle-switch">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={editingProvider.prompt_caching}
+                                                        onChange={(e) =>
+                                                            handleProviderChange('prompt_caching', e.target.checked)
+                                                        }
+                                                    />
+                                                    <span className="toggle-slider"></span>
+                                                </label>
+                                                <span className="toggle-label">
+                                                    {editingProvider.prompt_caching
+                                                        ? t('common.enable')
+                                                        : t('common.disable')}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        {editingProvider.prompt_caching && (
+                                            <div className="modal-group">
+                                                <label className="modal-label">{t('provider.promptCacheTTL')}</label>
+                                                <CustomSelect
+                                                    value={editingProvider.prompt_cache_ttl || '5m'}
+                                                    options={anthropicPromptCacheTTLOptions}
+                                                    ariaLabel={t('provider.promptCacheTTL')}
+                                                    onChange={(value) =>
+                                                        handleProviderChange('prompt_cache_ttl', value)
+                                                    }
+                                                />
+                                            </div>
+                                        )}
+                                    </>
                                 )}
 
                                 {/* 记忆提取不需要上下文轮数、流式输出和识图能力配置 */}

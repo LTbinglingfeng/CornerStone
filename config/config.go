@@ -97,6 +97,8 @@ type Provider struct {
 	Temperature               float64      `json:"temperature"`                             // 温度
 	TopP                      float64      `json:"top_p"`                                   // Top P
 	ThinkingBudget            int          `json:"thinking_budget"`                         // 思考预算（Anthropic）
+	PromptCaching             bool         `json:"prompt_caching"`                          // 是否启用 Anthropic Prompt Caching
+	PromptCacheTTL            string       `json:"prompt_cache_ttl,omitempty"`              // Anthropic Prompt Caching TTL (5m/1h)
 	ReasoningEffort           string       `json:"reasoning_effort"`                        // 思考强度（OpenAI兼容）
 	GeminiThinkingMode        *string      `json:"gemini_thinking_mode,omitempty"`          // Gemini思考模式 (none/thinking_level/thinking_budget)
 	GeminiThinkingLevel       *string      `json:"gemini_thinking_level,omitempty"`         // Gemini思考级别 (model-dependent, e.g. low/high/minimal/medium)
@@ -149,6 +151,8 @@ func DefaultProvider() Provider {
 		Temperature:     DefaultProviderTemperature,
 		TopP:            DefaultProviderTopP,
 		ThinkingBudget:  0,
+		PromptCaching:   false,
+		PromptCacheTTL:  "5m",
 		ReasoningEffort: "",
 		ContextMessages: DefaultProviderContextMessages,
 		Stream:          true,
@@ -241,6 +245,8 @@ func (m *Manager) Load() error {
 						Model:           oldConfig.Model,
 						Temperature:     DefaultProviderTemperature,
 						TopP:            DefaultProviderTopP,
+						PromptCaching:   false,
+						PromptCacheTTL:  "5m",
 						ContextMessages: DefaultProviderContextMessages,
 					},
 				},
@@ -371,6 +377,13 @@ func (m *Manager) applyProviderDefaults(rawProviders []map[string]json.RawMessag
 		if raw == nil || raw["context_messages"] == nil {
 			if provider.ContextMessages == 0 {
 				provider.ContextMessages = DefaultProviderContextMessages
+				changed = true
+			}
+		}
+		if provider.Type == ProviderTypeAnthropic || provider.PromptCaching || (raw != nil && raw["prompt_cache_ttl"] != nil) {
+			promptCacheTTL := normalizeAnthropicPromptCacheTTL(provider.PromptCacheTTL)
+			if provider.PromptCacheTTL != promptCacheTTL {
+				provider.PromptCacheTTL = promptCacheTTL
 				changed = true
 			}
 		}
@@ -522,6 +535,17 @@ func normalizeGeminiThinkingLevel(model, level string) string {
 		return "high"
 	}
 	return "low"
+}
+
+func normalizeAnthropicPromptCacheTTL(ttl string) string {
+	switch strings.ToLower(strings.TrimSpace(ttl)) {
+	case "1h":
+		return "1h"
+	case "5m", "":
+		return "5m"
+	default:
+		return "5m"
+	}
 }
 
 func geminiThinkingBudgetRange(model string) (minBudget, maxBudget int) {
