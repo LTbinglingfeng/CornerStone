@@ -412,49 +412,55 @@ function App() {
         }
     }, [authMode, t])
 
-    const handleSetup = useCallback(async (username: string, password: string) => {
-        setAuthLoading(true)
-        try {
-            const session = await setupAuth(username, password)
-            setAuthToken(session.token)
-            setAuthUsername(session.username)
-            setAuthMode('ready')
-            return null
-        } catch (error) {
-            const status = getErrorStatus(error)
-            if (status === 409) {
-                return t('auth.accountExists')
+    const handleSetup = useCallback(
+        async (username: string, password: string) => {
+            setAuthLoading(true)
+            try {
+                const session = await setupAuth(username, password)
+                setAuthToken(session.token)
+                setAuthUsername(session.username)
+                setAuthMode('ready')
+                return null
+            } catch (error) {
+                const status = getErrorStatus(error)
+                if (status === 409) {
+                    return t('auth.accountExists')
+                }
+                if (status === 400) {
+                    return t('auth.invalidCredentials')
+                }
+                return t('auth.createFailed')
+            } finally {
+                setAuthLoading(false)
             }
-            if (status === 400) {
-                return t('auth.invalidCredentials')
-            }
-            return t('auth.createFailed')
-        } finally {
-            setAuthLoading(false)
-        }
-    }, [t])
+        },
+        [t]
+    )
 
-    const handleLogin = useCallback(async (username: string, password: string) => {
-        setAuthLoading(true)
-        try {
-            const session = await loginAuth(username, password)
-            setAuthToken(session.token)
-            setAuthUsername(session.username)
-            setAuthMode('ready')
-            return null
-        } catch (error) {
-            const status = getErrorStatus(error)
-            if (status === 401) {
-                return t('auth.wrongPassword')
+    const handleLogin = useCallback(
+        async (username: string, password: string) => {
+            setAuthLoading(true)
+            try {
+                const session = await loginAuth(username, password)
+                setAuthToken(session.token)
+                setAuthUsername(session.username)
+                setAuthMode('ready')
+                return null
+            } catch (error) {
+                const status = getErrorStatus(error)
+                if (status === 401) {
+                    return t('auth.wrongPassword')
+                }
+                if (status === 409) {
+                    return t('auth.setupFirst')
+                }
+                return t('auth.loginFailed')
+            } finally {
+                setAuthLoading(false)
             }
-            if (status === 409) {
-                return t('auth.setupFirst')
-            }
-            return t('auth.loginFailed')
-        } finally {
-            setAuthLoading(false)
-        }
-    }, [t])
+        },
+        [t]
+    )
 
     if (authMode !== 'ready') {
         return (

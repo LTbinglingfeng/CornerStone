@@ -107,9 +107,7 @@ const ModelSelect: React.FC<ModelSelectProps> = ({
         setSearch('')
     }
 
-    const filteredModels = search
-        ? models.filter((m) => m.toLowerCase().includes(search.toLowerCase()))
-        : models
+    const filteredModels = search ? models.filter((m) => m.toLowerCase().includes(search.toLowerCase())) : models
 
     return (
         <div className="model-select-wrapper" ref={wrapperRef}>
@@ -124,13 +122,28 @@ const ModelSelect: React.FC<ModelSelectProps> = ({
                 <button
                     type="button"
                     className="model-select-fetch-btn"
-                    onClick={hasFetched && models.length > 0 ? () => { setOpen(!open); setSearch('') } : handleFetch}
+                    onClick={
+                        hasFetched && models.length > 0
+                            ? () => {
+                                  setOpen(!open)
+                                  setSearch('')
+                              }
+                            : handleFetch
+                    }
                     disabled={loading || !canFetch}
                     title={t('provider.fetchModels')}
                 >
                     {loading ? (
                         <svg className="model-select-spinner" viewBox="0 0 24 24">
-                            <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="2.5" strokeDasharray="50 20" />
+                            <circle
+                                cx="12"
+                                cy="12"
+                                r="10"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2.5"
+                                strokeDasharray="50 20"
+                            />
                         </svg>
                     ) : (
                         <svg viewBox="0 0 24 24">
