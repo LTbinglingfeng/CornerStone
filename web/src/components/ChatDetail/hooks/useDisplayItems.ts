@@ -18,6 +18,8 @@ export function useDisplayItems(options: UseDisplayItemsOptions): DisplayItem[] 
     return useMemo(() => {
         const items: DisplayItem[] = []
         messages.forEach((message, index) => {
+            if (message.role === 'tool') return
+
             const hasImages = !!(message.image_paths && message.image_paths.length > 0)
             const toolCalls = message.tool_calls || []
             const supportedCalls = toolCalls.filter(
@@ -28,11 +30,14 @@ export function useDisplayItems(options: UseDisplayItemsOptions): DisplayItem[] 
             )
 
             const isAssistant = message.role === 'assistant'
+            const isAssistantToolCallMessage = isAssistant && toolCalls.length > 0
             const isStreamingAssistantMessage =
                 isAssistant && sending && streamingTimestamp !== null && message.timestamp === streamingTimestamp
 
-            let assistantSegments = isAssistant ? splitAssistantMessageContent(message.content) : []
-            const normalizedContent = isAssistant ? normalizeAssistantContent(message.content) : ''
+            let assistantSegments =
+                isAssistant && !isAssistantToolCallMessage ? splitAssistantMessageContent(message.content) : []
+            const normalizedContent =
+                isAssistant && !isAssistantToolCallMessage ? normalizeAssistantContent(message.content) : ''
             const hasSplitToken = isAssistant && normalizedContent.includes(ASSISTANT_MESSAGE_SPLIT_TOKEN)
             const endsWithSplitToken =
                 isAssistant && normalizedContent.trimEnd().endsWith(ASSISTANT_MESSAGE_SPLIT_TOKEN)

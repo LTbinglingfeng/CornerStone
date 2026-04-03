@@ -21,6 +21,7 @@ type ChatMessage struct {
 	Content          string            `json:"content"`
 	ReasoningContent string            `json:"reasoning_content,omitempty"` // 思考模型的推理内容
 	ToolCalls        []client.ToolCall `json:"tool_calls,omitempty"`        // 工具调用
+	ToolCallID       string            `json:"tool_call_id,omitempty"`      // 工具调用ID (用于tool角色消息)
 	ImagePaths       []string          `json:"image_paths,omitempty"`       // 图片路径
 	TTSAudioPaths    []string          `json:"tts_audio_paths,omitempty"`   // TTS音频路径
 	Timestamp        time.Time         `json:"timestamp"`

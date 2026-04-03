@@ -273,7 +273,13 @@ export interface SendMessageOptions {
 
 export async function sendMessage(
     sessionId: string,
-    messages: { role: string; content: string; image_paths?: string[]; tool_calls?: ToolCall[] }[],
+    messages: {
+        role: string
+        content: string
+        tool_call_id?: string
+        image_paths?: string[]
+        tool_calls?: ToolCall[]
+    }[],
     options: SendMessageOptions = {}
 ): Promise<Response> {
     const payload: Record<string, unknown> = {
@@ -306,7 +312,13 @@ export async function sendMessage(
 
 export function sendMessageBeacon(
     sessionId: string,
-    messages: { role: string; content: string; image_paths?: string[]; tool_calls?: ToolCall[] }[],
+    messages: {
+        role: string
+        content: string
+        tool_call_id?: string
+        image_paths?: string[]
+        tool_calls?: ToolCall[]
+    }[],
     options: Omit<SendMessageOptions, 'signal'> = {}
 ): boolean {
     const payload: Record<string, unknown> = {

@@ -2,6 +2,7 @@ export interface ChatMessage {
     role: string
     content: string
     reasoning_content?: string
+    tool_call_id?: string
     timestamp: string
     tool_calls?: ToolCall[]
     image_paths?: string[]

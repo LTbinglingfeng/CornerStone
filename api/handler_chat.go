@@ -13,8 +13,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 // ChatMessageRequest 前端发送的聊天请求
@@ -211,6 +209,10 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Legacy compatibility: ensure assistant tool_calls are paired with tool result messages
+	// during provider replay, even if older histories were saved in the previous one-way mode.
+	resolvedMessages = ensureToolResultMessagesForReplay(resolvedMessages)
+
 	// 根据供应商类型创建对应的客户端
 	var aiClient client.AIClient
 	switch provider.Type {
@@ -282,34 +284,69 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiClient client.AIClient, req client.ChatRequest, sessionID string, saveHistory bool, memSession *storage.MemorySession, promptID, promptName string) {
 	ctxAI := context.WithoutCancel(r.Context())
-	resp, err := aiClient.Chat(ctxAI, req)
-	if err != nil {
+
+	toolExecutor := newChatToolExecutor(h.momentManager, h.momentGenerator)
+	loopResult, errLoop := runChatWithToolLoop(
+		ctxAI,
+		aiClient,
+		req,
+		toolExecutor,
+		chatToolContext{
+			SessionID:  sessionID,
+			PromptID:   promptID,
+			PromptName: promptName,
+		},
+		nil,
+	)
+	if errLoop != nil {
 		if r.Context().Err() != nil {
-			logging.Errorf("chat request cancelled (client disconnected): %v", err)
+			logging.Errorf("chat request cancelled (client disconnected): %v", errLoop)
 			return
 		}
-		h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: err.Error()})
+		h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: errLoop.Error()})
 		return
 	}
 
-	// 保存AI回复到历史记录（包含思考内容）
-	if len(resp.Choices) > 0 {
-		message := resp.Choices[0].Message
-		ttsAudioPaths := h.maybeGenerateTTSAudio(ctxAI, message.Content)
+	// Generate TTS only for the final assistant message.
+	ttsAudioPaths := []string(nil)
+	if loopResult != nil && loopResult.FinalResponse != nil && len(loopResult.FinalResponse.Choices) > 0 {
+		finalMessage := loopResult.FinalResponse.Choices[0].Message
+		ttsAudioPaths = h.maybeGenerateTTSAudio(ctxAI, finalMessage.Content)
 		if len(ttsAudioPaths) > 0 {
-			resp.Choices[0].Message.TTSAudioPaths = ttsAudioPaths
-		}
-		if saveHistory {
-			if errSaveHistory := h.chatManager.AddMessageWithDetails(sessionID, "assistant", message.Content, message.ReasoningContent, nil, message.ToolCalls, ttsAudioPaths); errSaveHistory != nil {
-				if errors.Is(errSaveHistory, storage.ErrInvalidID) {
-					h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid session ID"})
-					return
-				}
-				h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: errSaveHistory.Error()})
-				return
+			finalMessage.TTSAudioPaths = ttsAudioPaths
+			loopResult.FinalResponse.Choices[0].Message = finalMessage
+			if n := len(loopResult.NewMessages); n > 0 && loopResult.NewMessages[n-1].Role == "assistant" {
+				loopResult.NewMessages[n-1].TTSAudioPaths = ttsAudioPaths
 			}
 		}
-		h.handleMomentToolCalls(promptID, promptName, message.ToolCalls)
+	}
+
+	// Prepare messages for persistence and frontend rendering.
+	now := time.Now()
+	storageMessages := make([]storage.ChatMessage, 0, len(loopResult.NewMessages))
+	for index, msg := range loopResult.NewMessages {
+		storageMessages = append(storageMessages, storage.ChatMessage{
+			Role:             msg.Role,
+			Content:          msg.Content,
+			ReasoningContent: msg.ReasoningContent,
+			ToolCalls:        msg.ToolCalls,
+			ToolCallID:       msg.ToolCallID,
+			ImagePaths:       msg.ImagePaths,
+			TTSAudioPaths:    msg.TTSAudioPaths,
+			Timestamp:        now.Add(time.Millisecond * time.Duration(index)),
+		})
+	}
+
+	// Save assistant/tool messages as a batch (user messages are saved earlier).
+	if saveHistory && len(storageMessages) > 0 {
+		if errSaveHistory := h.chatManager.AddMessages(sessionID, storageMessages); errSaveHistory != nil {
+			if errors.Is(errSaveHistory, storage.ErrInvalidID) {
+				h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid session ID"})
+				return
+			}
+			h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: errSaveHistory.Error()})
+			return
+		}
 	}
 
 	if r.Context().Err() != nil {
@@ -320,10 +357,10 @@ func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiCli
 		memSession.OnRoundComplete()
 	}
 
-	// 返回响应，包含session_id
 	result := map[string]interface{}{
 		"session_id": sessionID,
-		"response":   resp,
+		"response":   loopResult.FinalResponse,
+		"messages":   storageMessages,
 	}
 	h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: result})
 }
@@ -365,119 +402,123 @@ func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiCli
 		}
 	}
 
-	var fullContent strings.Builder
-	var fullReasoningContent strings.Builder
-	toolCallsMap := make(map[int]*client.ToolCall)
+	toolExecutor := newChatToolExecutor(h.momentManager, h.momentGenerator)
 
-	errChatStream := aiClient.ChatStream(ctxAI, req, func(chunk client.StreamChunk) error {
-		// 收集完整内容
-		if len(chunk.Choices) > 0 {
-			delta := chunk.Choices[0].Delta
-			if delta.Content != "" {
-				fullContent.WriteString(delta.Content)
-			}
-			// 收集思考内容
-			if delta.ReasoningContent != "" {
-				fullReasoningContent.WriteString(delta.ReasoningContent)
-			}
-			if len(delta.ToolCalls) > 0 {
-				for _, toolCall := range delta.ToolCalls {
-					existing, ok := toolCallsMap[toolCall.Index]
-					if !ok {
-						toolCallsMap[toolCall.Index] = &client.ToolCall{
-							ID:   toolCall.ID,
-							Type: toolCall.Type,
-							Function: client.ToolCallFunction{
-								Name:      toolCall.Function.Name,
-								Arguments: toolCall.Function.Arguments,
-							},
-						}
-						continue
-					}
-					if toolCall.ID != "" {
-						existing.ID = toolCall.ID
-					}
-					if toolCall.Type != "" {
-						existing.Type = toolCall.Type
-					}
-					if toolCall.Function.Name != "" {
-						existing.Function.Name = toolCall.Function.Name
-					}
-					if toolCall.Function.Arguments != "" {
-						existing.Function.Arguments += toolCall.Function.Arguments
-					}
-				}
-			}
-		}
+	baseTime := time.Now()
+	messageCounter := 0
+	createdMessages := make([]storage.ChatMessage, 0, 4)
+	finalAssistantTimestamp := ""
 
+	sendEvent := func(payload interface{}) {
 		if isClientDisconnected() {
-			return nil
+			return
 		}
-
-		data, errMarshal := json.Marshal(chunk)
+		data, errMarshal := json.Marshal(payload)
 		if errMarshal != nil {
-			logging.Errorf("marshal stream chunk error: %v", errMarshal)
+			logging.Errorf("marshal stream payload error: %v", errMarshal)
 			clientDisconnected = true
-			return nil
+			return
 		}
 		if _, errWrite := fmt.Fprintf(w, "data: %s\n\n", data); errWrite != nil {
 			clientDisconnected = true
-			return nil
+			return
 		}
 		flusher.Flush()
-		return nil
-	})
+	}
 
-	if errChatStream != nil {
-		logging.Errorf("Stream error: %v", errChatStream)
-		if !isClientDisconnected() {
-			errorPayload, _ := json.Marshal(map[string]string{"error": errChatStream.Error()})
-			if _, errWrite := fmt.Fprintf(w, "data: %s\n\n", errorPayload); errWrite != nil {
-				clientDisconnected = true
-			} else {
-				flusher.Flush()
-			}
+	appendMessage := func(msg client.Message) {
+		ts := baseTime.Add(time.Millisecond * time.Duration(messageCounter))
+		messageCounter++
+
+		stored := storage.ChatMessage{
+			Role:             msg.Role,
+			Content:          msg.Content,
+			ReasoningContent: msg.ReasoningContent,
+			ToolCalls:        msg.ToolCalls,
+			ToolCallID:       msg.ToolCallID,
+			ImagePaths:       msg.ImagePaths,
+			TTSAudioPaths:    msg.TTSAudioPaths,
+			Timestamp:        ts,
 		}
-	}
-
-	// 保存AI回复到历史记录（包含思考内容）
-	toolCalls := collectToolCalls(toolCallsMap)
-	h.handleMomentToolCalls(promptID, promptName, toolCalls)
-	ttsAudioPaths := []string(nil)
-	if errChatStream == nil && fullContent.Len() > 0 {
-		ttsAudioPaths = h.maybeGenerateTTSAudio(ctxAI, fullContent.String())
-	}
-	if saveHistory && (fullContent.Len() > 0 || fullReasoningContent.Len() > 0 || len(toolCalls) > 0) {
-		if errSaveHistory := h.chatManager.AddMessageWithDetails(sessionID, "assistant", fullContent.String(), fullReasoningContent.String(), nil, toolCalls, ttsAudioPaths); errSaveHistory != nil {
-			logging.Errorf("save stream history error: %v", errSaveHistory)
-			errorMessage := errSaveHistory.Error()
-			if errors.Is(errSaveHistory, storage.ErrInvalidID) {
-				errorMessage = "Invalid session ID"
-			}
-			if !isClientDisconnected() {
-				errorPayload, _ := json.Marshal(map[string]string{"error": errorMessage})
-				if _, errWrite := fmt.Fprintf(w, "data: %s\n\n", errorPayload); errWrite != nil {
-					clientDisconnected = true
-				} else {
-					flusher.Flush()
-				}
-			}
-		}
-	}
-
-	if errChatStream == nil && len(ttsAudioPaths) > 0 && !isClientDisconnected() {
-		ttsPayload, _ := json.Marshal(map[string]interface{}{
-			"tts_audio_paths": ttsAudioPaths,
+		createdMessages = append(createdMessages, stored)
+		sendEvent(map[string]interface{}{
+			"type":    "message",
+			"message": stored,
 		})
-		if _, errWrite := fmt.Fprintf(w, "data: %s\n\n", ttsPayload); errWrite != nil {
-			clientDisconnected = true
-		} else {
-			flusher.Flush()
+		if msg.Role == "assistant" && len(msg.ToolCalls) == 0 {
+			finalAssistantTimestamp = ts.Format(time.RFC3339Nano)
 		}
 	}
 
-	if errChatStream == nil && memSession != nil {
-		memSession.OnRoundComplete()
+	loopResult, errLoop := runChatWithToolLoop(
+		ctxAI,
+		aiClient,
+		req,
+		toolExecutor,
+		chatToolContext{
+			SessionID:  sessionID,
+			PromptID:   promptID,
+			PromptName: promptName,
+		},
+		&toolLoopCallbacks{
+			OnToolStep: func(step int, assistant client.Message) {
+				sendEvent(map[string]interface{}{
+					"type": "tool_loop_step",
+					"step": step,
+				})
+				appendMessage(assistant)
+			},
+			OnToolMessage: func(step int, msg client.Message) {
+				appendMessage(msg)
+			},
+			OnFinalAssistant: func(msg client.Message) {
+				appendMessage(msg)
+			},
+		},
+	)
+
+	if errLoop != nil {
+		logging.Errorf("Stream error: %v", errLoop)
+		sendEvent(map[string]string{"error": errLoop.Error()})
+	} else {
+		ttsAudioPaths := []string(nil)
+		if loopResult != nil && loopResult.FinalResponse != nil && len(loopResult.FinalResponse.Choices) > 0 {
+			finalMessage := loopResult.FinalResponse.Choices[0].Message
+			ttsAudioPaths = h.maybeGenerateTTSAudio(ctxAI, finalMessage.Content)
+			if len(ttsAudioPaths) > 0 {
+				finalMessage.TTSAudioPaths = ttsAudioPaths
+				loopResult.FinalResponse.Choices[0].Message = finalMessage
+
+				// Update persisted copy (last assistant message).
+				for i := len(createdMessages) - 1; i >= 0; i-- {
+					if createdMessages[i].Role == "assistant" && len(createdMessages[i].ToolCalls) == 0 {
+						createdMessages[i].TTSAudioPaths = ttsAudioPaths
+						break
+					}
+				}
+
+				sendEvent(map[string]interface{}{
+					"type":            "tts_audio",
+					"timestamp":       finalAssistantTimestamp,
+					"tts_audio_paths": ttsAudioPaths,
+				})
+			}
+		}
+
+		if saveHistory && len(createdMessages) > 0 {
+			if errSaveHistory := h.chatManager.AddMessages(sessionID, createdMessages); errSaveHistory != nil {
+				logging.Errorf("save stream history error: %v", errSaveHistory)
+				errorMessage := errSaveHistory.Error()
+				if errors.Is(errSaveHistory, storage.ErrInvalidID) {
+					errorMessage = "Invalid session ID"
+				}
+				sendEvent(map[string]string{"error": errorMessage})
+			}
+		}
+
+		if memSession != nil {
+			memSession.OnRoundComplete()
+		}
 	}
 
 	if !isClientDisconnected() {
@@ -486,72 +527,6 @@ func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiCli
 		} else {
 			flusher.Flush()
 		}
-	}
-}
-
-type generateMomentToolArgs struct {
-	Content       string `json:"content"`
-	ImagePrompt   string `json:"image_prompt"`
-	Prompt        string `json:"prompt"`
-	ImagePromptV2 string `json:"imagePrompt"`
-}
-
-func (h *Handler) handleMomentToolCalls(promptID, promptName string, toolCalls []client.ToolCall) {
-	if h.momentManager == nil || h.momentGenerator == nil {
-		return
-	}
-	promptID = strings.TrimSpace(promptID)
-	promptName = strings.TrimSpace(promptName)
-	if promptID == "" || promptName == "" || len(toolCalls) == 0 {
-		return
-	}
-
-	for _, tc := range toolCalls {
-		if tc.Function.Name != "generate_moment" {
-			continue
-		}
-
-		var args generateMomentToolArgs
-		if errUnmarshal := json.Unmarshal([]byte(tc.Function.Arguments), &args); errUnmarshal != nil {
-			logging.Warnf("invalid generate_moment args: %v", errUnmarshal)
-			continue
-		}
-
-		args.Content = strings.TrimSpace(args.Content)
-		imagePrompt := strings.TrimSpace(args.ImagePrompt)
-		if imagePrompt == "" {
-			imagePrompt = strings.TrimSpace(args.Prompt)
-		}
-		if imagePrompt == "" {
-			imagePrompt = strings.TrimSpace(args.ImagePromptV2)
-		}
-		if args.Content == "" || imagePrompt == "" {
-			logging.Warnf("generate_moment missing fields: prompt_id=%s args=%s", promptID, logging.Truncate(tc.Function.Arguments, 200))
-			continue
-		}
-
-		now := time.Now()
-		moment := storage.Moment{
-			ID:          uuid.NewString(),
-			PromptID:    promptID,
-			PromptName:  promptName,
-			Content:     args.Content,
-			ImagePrompt: imagePrompt,
-			Status:      storage.MomentStatusPending,
-			CreatedAt:   now,
-			UpdatedAt:   now,
-			Likes:       []storage.Like{},
-			Comments:    []storage.Comment{},
-		}
-
-		created, errCreate := h.momentManager.Create(moment)
-		if errCreate != nil {
-			logging.Errorf("failed to create moment: %v", errCreate)
-			continue
-		}
-
-		h.momentGenerator.StartGeneration(created.ID)
-		logging.Infof("moment created via tool call: id=%s prompt_id=%s", created.ID, promptID)
 	}
 }
 
@@ -566,6 +541,7 @@ func convertChatMessages(messages []storage.ChatMessage) []client.Message {
 			Content:          msg.Content,
 			ReasoningContent: msg.ReasoningContent,
 			ToolCalls:        msg.ToolCalls,
+			ToolCallID:       msg.ToolCallID,
 			ImagePaths:       msg.ImagePaths,
 		})
 	}

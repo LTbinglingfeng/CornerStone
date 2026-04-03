@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ChatMessage, ToolCall } from '../../../types/chat'
+import type { ChatMessage } from '../../../types/chat'
 import { translate } from '../../../i18n'
 import { sendMessage as sendMessageApi, sendMessageBeacon as sendMessageBeaconApi } from '../../../services/api'
 import { getReplyWaitWindowConfig } from '../../../utils/replyWaitWindow'
@@ -69,9 +69,10 @@ export function useMessageStream(options: UseMessageStreamOptions): UseMessageSt
 
     const buildSendPayloadMessages = useCallback(
         (outgoingMessages: ChatMessage[]) =>
-            outgoingMessages.map(({ role, content, image_paths, tool_calls }) => ({
+            outgoingMessages.map(({ role, content, tool_call_id, image_paths, tool_calls }) => ({
                 role,
                 content,
+                ...(tool_call_id ? { tool_call_id } : {}),
                 ...(image_paths ? { image_paths } : {}),
                 ...(tool_calls ? { tool_calls } : {}),
             })),
@@ -152,52 +153,9 @@ export function useMessageStream(options: UseMessageStreamOptions): UseMessageSt
                         throw new Error('No response body')
                     }
 
-                    let assistantContent = ''
-                    let reasoningContent = ''
-                    const toolCallsMap: Map<number, { id: string; type: string; name: string; arguments: string }> =
-                        new Map()
-                    const assistantTimestamp = new Date().toISOString()
-                    setStreamingTimestampState(assistantTimestamp)
-                    setRevealingTimestamp(assistantTimestamp)
-
-                    const assistantMessage: ChatMessage = {
-                        role: 'assistant',
-                        content: '',
-                        timestamp: assistantTimestamp,
-                    }
-
-                    setMessages((prev) => [...prev, assistantMessage])
-
+                    let finalAssistantTimestamp: string | null = null
                     let buffer = ''
                     let sseDone = false
-
-                    const applyStreamUpdate = () => {
-                        const toolCalls: ToolCall[] = Array.from(toolCallsMap.values()).map((tc) => ({
-                            id: tc.id,
-                            type: tc.type,
-                            function: {
-                                name: tc.name,
-                                arguments: tc.arguments,
-                            },
-                        }))
-
-                        setMessages((prev) => {
-                            const next = [...prev]
-                            for (let i = next.length - 1; i >= 0; i--) {
-                                const msg = next[i]
-                                if (msg.role === 'assistant' && msg.timestamp === assistantTimestamp) {
-                                    next[i] = {
-                                        ...msg,
-                                        content: assistantContent,
-                                        ...(reasoningContent ? { reasoning_content: reasoningContent } : {}),
-                                        ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
-                                    }
-                                    break
-                                }
-                            }
-                            return next
-                        })
-                    }
 
                     while (!sseDone) {
                         const { done, value } = await reader.read()
@@ -224,31 +182,48 @@ export function useMessageStream(options: UseMessageStreamOptions): UseMessageSt
                             const parsed = JSON.parse(data) as {
                                 session_id?: string
                                 error?: string
+                                type?: string
+                                timestamp?: string
                                 tts_audio_paths?: string[]
-                                choices?: Array<{
-                                    delta?: {
-                                        content?: string
-                                        reasoning_content?: string
-                                        tool_calls?: Array<{
-                                            index: number
-                                            id?: string
-                                            type?: string
-                                            function?: { name?: string; arguments?: string }
-                                        }>
-                                    }
-                                }>
+                                message?: ChatMessage
+                                choices?: Array<{ delta?: unknown }>
                             }
 
-                            if (parsed.session_id && !parsed.choices && !parsed.tts_audio_paths) continue
+                            if (
+                                parsed.session_id &&
+                                !parsed.type &&
+                                !parsed.message &&
+                                !parsed.choices &&
+                                !parsed.tts_audio_paths
+                            )
+                                continue
                             if (parsed.error) throw new Error(parsed.error)
 
-                            if (parsed.tts_audio_paths) {
+                            if (parsed.type === 'message' && parsed.message) {
+                                const message = parsed.message
+                                setMessages((prev) => [...prev, message])
+                                if (
+                                    message.role === 'assistant' &&
+                                    (!message.tool_calls || message.tool_calls.length === 0)
+                                ) {
+                                    finalAssistantTimestamp = message.timestamp
+                                    setRevealingTimestamp(message.timestamp)
+                                }
+                                continue
+                            }
+
+                            if (parsed.type === 'tts_audio' && parsed.tts_audio_paths) {
                                 const ttsPaths = parsed.tts_audio_paths
+                                const timestamp =
+                                    typeof parsed.timestamp === 'string' && parsed.timestamp.trim() !== ''
+                                        ? parsed.timestamp
+                                        : finalAssistantTimestamp
+                                if (!timestamp) continue
                                 setMessages((prev) => {
                                     const next = [...prev]
                                     for (let i = next.length - 1; i >= 0; i--) {
                                         const msg = next[i]
-                                        if (msg.role === 'assistant' && msg.timestamp === assistantTimestamp) {
+                                        if (msg.role === 'assistant' && msg.timestamp === timestamp) {
                                             next[i] = { ...msg, tts_audio_paths: ttsPaths }
                                             break
                                         }
@@ -258,40 +233,23 @@ export function useMessageStream(options: UseMessageStreamOptions): UseMessageSt
                                 continue
                             }
 
-                            const delta = parsed.choices?.[0]?.delta
-                            if (!delta) continue
-
-                            if (delta.content) assistantContent += delta.content
-                            if (delta.reasoning_content) reasoningContent += delta.reasoning_content
-
-                            if (delta.tool_calls) {
-                                for (const tc of delta.tool_calls) {
-                                    const existing = toolCallsMap.get(tc.index)
-                                    if (existing) {
-                                        if (tc.id) {
-                                            existing.id = tc.id
+                            if (parsed.tts_audio_paths) {
+                                const ttsPaths = parsed.tts_audio_paths
+                                const timestamp = finalAssistantTimestamp
+                                if (!timestamp) continue
+                                setMessages((prev) => {
+                                    const next = [...prev]
+                                    for (let i = next.length - 1; i >= 0; i--) {
+                                        const msg = next[i]
+                                        if (msg.role === 'assistant' && msg.timestamp === timestamp) {
+                                            next[i] = { ...msg, tts_audio_paths: ttsPaths }
+                                            break
                                         }
-                                        if (tc.type) {
-                                            existing.type = tc.type
-                                        }
-                                        if (tc.function?.name) {
-                                            existing.name = tc.function.name
-                                        }
-                                        if (tc.function?.arguments) {
-                                            existing.arguments += tc.function.arguments
-                                        }
-                                    } else {
-                                        toolCallsMap.set(tc.index, {
-                                            id: tc.id || '',
-                                            type: tc.type || 'function',
-                                            name: tc.function?.name || '',
-                                            arguments: tc.function?.arguments || '',
-                                        })
                                     }
-                                }
+                                    return next
+                                })
+                                continue
                             }
-
-                            applyStreamUpdate()
                         }
                     }
 
@@ -300,7 +258,21 @@ export function useMessageStream(options: UseMessageStreamOptions): UseMessageSt
                 } else {
                     const result = await response.json()
 
-                    if (result.success && result.data?.response?.choices?.[0]?.message) {
+                    if (result.success && Array.isArray(result.data?.messages) && result.data.messages.length > 0) {
+                        const newMessages = result.data.messages as ChatMessage[]
+                        setMessages((prev) => [...prev, ...newMessages])
+                        const finalAssistant = [...newMessages]
+                            .reverse()
+                            .find(
+                                (message) =>
+                                    message.role === 'assistant' &&
+                                    (!message.tool_calls || message.tool_calls.length === 0)
+                            )
+                        if (finalAssistant) {
+                            setRevealingTimestamp(finalAssistant.timestamp)
+                        }
+                        setAssistantResponseDone(true)
+                    } else if (result.success && result.data?.response?.choices?.[0]?.message) {
                         const msg = result.data.response.choices[0].message
                         const assistantTimestamp = new Date().toISOString()
                         setRevealingTimestamp(assistantTimestamp)
@@ -436,9 +408,9 @@ export function useMessageStream(options: UseMessageStreamOptions): UseMessageSt
     const regenerateLastMessage = useCallback(async () => {
         if (sending) return
 
-        // Hook 层防御：仅当会话尾部是 assistant 时才允许重生
+        // Hook 层防御：仅当会话尾部存在上一轮 AI 响应（尾部不是 user）时才允许重生
         const tailMessage = messages[messages.length - 1]
-        if (!tailMessage || tailMessage.role !== 'assistant') return
+        if (!tailMessage || tailMessage.role === 'user') return
 
         // 有待发送的用户消息时禁止重生（尾部实际已不是 assistant）
         if (pendingOutgoingMessagesRef.current.length > 0) return
@@ -446,13 +418,13 @@ export function useMessageStream(options: UseMessageStreamOptions): UseMessageSt
         // 清除待发送定时器，防止 regenerate 期间 timeout 触发后 pending 卡住
         clearPendingOutgoingTimeout()
 
-        // 从本地状态移除尾部连续 assistant 批次
+        // 从本地状态移除最后一条 user 之后的整段尾部响应（assistant/tool 批次）
         setMessages((prev) => {
             const n = prev.length
-            if (n === 0 || prev[n - 1].role !== 'assistant') return prev
+            if (n === 0 || prev[n - 1].role === 'user') return prev
 
-            let cutIndex = n - 1
-            while (cutIndex > 0 && prev[cutIndex - 1].role === 'assistant') {
+            let cutIndex = n
+            while (cutIndex > 0 && prev[cutIndex - 1].role !== 'user') {
                 cutIndex--
             }
             return prev.slice(0, cutIndex)

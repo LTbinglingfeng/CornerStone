@@ -68,13 +68,49 @@ func (c *GeminiClient) convertToGenAIContents(messages []Message) ([]*genai.Cont
 			continue
 		}
 
-		role := msg.Role
-		// Gemini 使用 "user" 和 "model" 而不是 "assistant"
-		if role == "assistant" {
-			role = "model"
+		if msg.Role == "tool" {
+			callID := strings.TrimSpace(msg.ToolCallID)
+			if callID == "" {
+				// Legacy/fallback: treat as user text if tool_call_id is missing.
+				contents = append(contents, genai.NewContentFromText(msg.Content, genai.RoleUser))
+				continue
+			}
+
+			toolName := ""
+			var parsed struct {
+				Tool string `json:"tool"`
+			}
+			if errUnmarshal := json.Unmarshal([]byte(msg.Content), &parsed); errUnmarshal == nil {
+				toolName = strings.TrimSpace(parsed.Tool)
+			}
+			if toolName == "" {
+				toolName = "unknown_tool"
+			}
+
+			response := make(map[string]any)
+			if errUnmarshal := json.Unmarshal([]byte(msg.Content), &response); errUnmarshal != nil {
+				response = map[string]any{
+					"ok":    false,
+					"tool":  toolName,
+					"data":  nil,
+					"error": "invalid tool result payload",
+				}
+			}
+
+			part := genai.NewPartFromFunctionResponse(toolName, response)
+			part.FunctionResponse.ID = callID
+			contents = append(contents, genai.NewContentFromParts([]*genai.Part{part}, genai.RoleUser))
+			continue
 		}
 
-		parts := make([]*genai.Part, 0, len(msg.ImagePaths)+1)
+		role := msg.Role
+		if role == "assistant" {
+			role = string(genai.RoleModel)
+		} else {
+			role = string(genai.RoleUser)
+		}
+
+		parts := make([]*genai.Part, 0, len(msg.ImagePaths)+1+len(msg.ToolCalls))
 		if strings.TrimSpace(msg.Content) != "" {
 			parts = append(parts, genai.NewPartFromText(msg.Content))
 		}
@@ -89,6 +125,28 @@ func (c *GeminiClient) convertToGenAIContents(messages []Message) ([]*genai.Cont
 			}
 			parts = append(parts, genai.NewPartFromBytes(raw, payload.MimeType))
 		}
+
+		if msg.Role == "assistant" && len(msg.ToolCalls) > 0 {
+			for _, toolCall := range msg.ToolCalls {
+				toolName := strings.TrimSpace(toolCall.Function.Name)
+				if toolName == "" {
+					continue
+				}
+
+				args := make(map[string]any)
+				trimmed := strings.TrimSpace(toolCall.Function.Arguments)
+				if trimmed != "" {
+					_ = json.Unmarshal([]byte(trimmed), &args)
+				}
+
+				part := genai.NewPartFromFunctionCall(toolName, args)
+				if strings.TrimSpace(toolCall.ID) != "" {
+					part.FunctionCall.ID = strings.TrimSpace(toolCall.ID)
+				}
+				parts = append(parts, part)
+			}
+		}
+
 		if len(parts) == 0 {
 			parts = append(parts, genai.NewPartFromText(""))
 		}
@@ -214,8 +272,12 @@ func (c *GeminiClient) convertToOpenAIResponse(resp *genai.GenerateContentRespon
 				}
 				if part.FunctionCall != nil {
 					argsJSON, _ := json.Marshal(part.FunctionCall.Args)
+					callID := strings.TrimSpace(part.FunctionCall.ID)
+					if callID == "" {
+						callID = fmt.Sprintf("call_%d_%d", i, j)
+					}
 					toolCalls = append(toolCalls, ToolCall{
-						ID:   fmt.Sprintf("call_%d_%d", i, j),
+						ID:   callID,
 						Type: "function",
 						Function: ToolCallFunction{
 							Name:      part.FunctionCall.Name,
@@ -285,10 +347,15 @@ func (c *GeminiClient) convertToStreamChunk(resp *genai.GenerateContentResponse,
 				if part.FunctionCall != nil {
 					argsJSON, _ := json.Marshal(part.FunctionCall.Args)
 					callIndex := j
-					callID := fmt.Sprintf("call_%d_%d", i, j)
+					callID := strings.TrimSpace(part.FunctionCall.ID)
+					if callID == "" {
+						callID = fmt.Sprintf("call_%d_%d", i, j)
+					}
 					if nextToolCallIndex != nil {
 						callIndex = *nextToolCallIndex
-						callID = fmt.Sprintf("call_%d", callIndex)
+						if strings.TrimSpace(part.FunctionCall.ID) == "" {
+							callID = fmt.Sprintf("call_%d", callIndex)
+						}
 						*nextToolCallIndex++
 					}
 					deltaToolCalls = append(deltaToolCalls, DeltaToolCall{
