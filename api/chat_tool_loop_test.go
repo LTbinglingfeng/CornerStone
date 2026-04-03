@@ -140,6 +140,33 @@ func TestRunChatWithToolLoop_SuccessMultipleTools(t *testing.T) {
 	}
 }
 
+func TestRunChatWithToolLoop_SyncNormalizedAssistantIntoFinalResponse(t *testing.T) {
+	ai := &fakeAIClient{
+		t: t,
+		responses: []*client.ChatResponse{
+			chatResp(client.Message{Role: "", Content: "done"}),
+		},
+	}
+
+	executor := newChatToolExecutor(nil, nil)
+	got, err := runChatWithToolLoop(context.Background(), ai, client.ChatRequest{Messages: []client.Message{{Role: "user", Content: "hi"}}}, executor, chatToolContext{}, nil)
+	if err != nil {
+		t.Fatalf("runChatWithToolLoop err: %v", err)
+	}
+	if got == nil || got.FinalResponse == nil || len(got.FinalResponse.Choices) == 0 {
+		t.Fatalf("expected final response")
+	}
+	if got.FinalResponse.Choices[0].Message.Role != "assistant" {
+		t.Fatalf("FinalResponse role=%q, want assistant", got.FinalResponse.Choices[0].Message.Role)
+	}
+	if len(got.NewMessages) != 1 {
+		t.Fatalf("NewMessages len=%d, want 1", len(got.NewMessages))
+	}
+	if got.NewMessages[0].Role != "assistant" {
+		t.Fatalf("NewMessages[0] role=%q, want assistant", got.NewMessages[0].Role)
+	}
+}
+
 func TestRunChatWithToolLoop_ToolFailureFedBack(t *testing.T) {
 	ai := &fakeAIClient{
 		t: t,
