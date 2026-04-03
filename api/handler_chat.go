@@ -299,6 +299,40 @@ func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiCli
 		nil,
 	)
 	if errLoop != nil {
+		// Persist any assistant/tool messages already produced before returning error.
+		// This closes the "side effects happened but history missing" gap when tool execution succeeded
+		// but a later model hop failed.
+		if saveHistory && loopResult != nil && len(loopResult.NewMessages) > 0 {
+			now := time.Now()
+			storageMessages := make([]storage.ChatMessage, 0, len(loopResult.NewMessages))
+			for index, msg := range loopResult.NewMessages {
+				storageMessages = append(storageMessages, storage.ChatMessage{
+					Role:             msg.Role,
+					Content:          msg.Content,
+					ReasoningContent: msg.ReasoningContent,
+					ToolCalls:        msg.ToolCalls,
+					ToolCallID:       msg.ToolCallID,
+					ImagePaths:       msg.ImagePaths,
+					TTSAudioPaths:    msg.TTSAudioPaths,
+					Timestamp:        now.Add(time.Millisecond * time.Duration(index)),
+				})
+			}
+
+			if errSaveHistory := h.chatManager.AddMessages(sessionID, storageMessages); errSaveHistory != nil {
+				logging.Errorf("save tool-loop partial history error: %v", errSaveHistory)
+				// If the client is already gone, there's nothing to reply with; we still tried to persist.
+				if r.Context().Err() != nil {
+					return
+				}
+				if errors.Is(errSaveHistory, storage.ErrInvalidID) {
+					h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid session ID"})
+					return
+				}
+				h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: errSaveHistory.Error()})
+				return
+			}
+		}
+
 		if r.Context().Err() != nil {
 			logging.Errorf("chat request cancelled (client disconnected): %v", errLoop)
 			return
@@ -480,6 +514,16 @@ func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiCli
 	if errLoop != nil {
 		logging.Errorf("Stream error: %v", errLoop)
 		sendEvent(map[string]string{"error": errLoop.Error()})
+		if saveHistory && len(createdMessages) > 0 {
+			if errSaveHistory := h.chatManager.AddMessages(sessionID, createdMessages); errSaveHistory != nil {
+				logging.Errorf("save stream partial history error: %v", errSaveHistory)
+				errorMessage := errSaveHistory.Error()
+				if errors.Is(errSaveHistory, storage.ErrInvalidID) {
+					errorMessage = "Invalid session ID"
+				}
+				sendEvent(map[string]string{"error": errorMessage})
+			}
+		}
 	} else {
 		ttsAudioPaths := []string(nil)
 		if loopResult != nil && loopResult.FinalResponse != nil && len(loopResult.FinalResponse.Choices) > 0 {

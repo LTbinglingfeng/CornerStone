@@ -56,10 +56,18 @@ func runChatWithToolLoop(
 
 		resp, errChat := aiClient.Chat(ctx, req)
 		if errChat != nil {
-			return nil, errChat
+			return &toolLoopResult{
+				FinalResponse: nil,
+				NewMessages:   newMessages,
+				ToolStepsUsed: toolStepsUsed,
+			}, errChat
 		}
 		if resp == nil || len(resp.Choices) == 0 {
-			return nil, fmt.Errorf("empty response")
+			return &toolLoopResult{
+				FinalResponse: nil,
+				NewMessages:   newMessages,
+				ToolStepsUsed: toolStepsUsed,
+			}, fmt.Errorf("empty response")
 		}
 
 		assistant := resp.Choices[0].Message
@@ -97,7 +105,11 @@ func runChatWithToolLoop(
 		toolStepsUsed++
 		if toolStepsUsed > maxToolSteps {
 			logging.Errorf("tool loop exceeded max steps: max=%d used=%d", maxToolSteps, toolStepsUsed)
-			return nil, fmt.Errorf("%w: max=%d", ErrToolLoopExceededMaxSteps, maxToolSteps)
+			return &toolLoopResult{
+				FinalResponse: nil,
+				NewMessages:   newMessages,
+				ToolStepsUsed: toolStepsUsed,
+			}, fmt.Errorf("%w: max=%d", ErrToolLoopExceededMaxSteps, maxToolSteps)
 		}
 
 		if callbacks != nil && callbacks.OnToolStep != nil {
