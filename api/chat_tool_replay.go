@@ -66,10 +66,10 @@ func ensureToolResultMessagesForReplay(messages []client.Message) []client.Messa
 					Role:       "tool",
 					ToolCallID: exp.id,
 					Content: marshalChatToolResult(chatToolResult{
-						OK:    true,
+						OK:    false,
 						Tool:  exp.tool,
-						Data:  map[string]interface{}{"replayed": true},
-						Error: "",
+						Data:  map[string]interface{}{"replayed": true, "synthetic": true},
+						Error: "missing tool result (synthetic replay)",
 					}),
 				})
 			}
