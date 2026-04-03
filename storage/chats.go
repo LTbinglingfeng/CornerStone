@@ -379,6 +379,35 @@ func (cm *ChatManager) GetSession(sessionID string) (*ChatRecord, bool) {
 	return cloneChatRecord(record), ok
 }
 
+func cloneChatMessages(messages []ChatMessage) []ChatMessage {
+	if messages == nil {
+		return nil
+	}
+
+	copied := make([]ChatMessage, len(messages))
+	for i := range messages {
+		copied[i] = messages[i]
+		if len(messages[i].ToolCalls) > 0 {
+			copied[i].ToolCalls = append([]client.ToolCall(nil), messages[i].ToolCalls...)
+		}
+		if len(messages[i].ImagePaths) > 0 {
+			copied[i].ImagePaths = append([]string(nil), messages[i].ImagePaths...)
+		}
+		if len(messages[i].TTSAudioPaths) > 0 {
+			copied[i].TTSAudioPaths = append([]string(nil), messages[i].TTSAudioPaths...)
+		}
+	}
+
+	return copied
+}
+
+func isUserTurnStart(messages []ChatMessage, index int) bool {
+	if index < 0 || index >= len(messages) || messages[index].Role != "user" {
+		return false
+	}
+	return index == 0 || messages[index-1].Role != "user"
+}
+
 // GetRecentMessages 获取最近 N 条消息（按时间顺序）
 func (cm *ChatManager) GetRecentMessages(sessionID string, limit int) []ChatMessage {
 	if limit <= 0 {
@@ -401,22 +430,47 @@ func (cm *ChatManager) GetRecentMessages(sessionID string, limit int) []ChatMess
 		start = len(record.Messages) - limit
 	}
 
-	selected := record.Messages[start:]
-	copied := make([]ChatMessage, len(selected))
-	for i := range selected {
-		copied[i] = selected[i]
-		if len(selected[i].ToolCalls) > 0 {
-			copied[i].ToolCalls = append([]client.ToolCall(nil), selected[i].ToolCalls...)
+	return cloneChatMessages(record.Messages[start:])
+}
+
+// GetRecentTurns 获取最近 N 轮消息（按时间顺序）。
+// 一轮从一组连续的 user 消息开始，直到下一组 user 消息出现前结束。
+// 如果历史中的轮数少于 N，则返回全部消息。
+func (cm *ChatManager) GetRecentTurns(sessionID string, turnLimit int) []ChatMessage {
+	if turnLimit <= 0 {
+		return nil
+	}
+	if errValidateID := ValidateID(sessionID); errValidateID != nil {
+		return nil
+	}
+
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	record, ok := cm.sessions[sessionID]
+	if !ok || len(record.Messages) == 0 {
+		return nil
+	}
+
+	turnCount := 0
+	start := 0
+	for i := len(record.Messages) - 1; i >= 0; i-- {
+		if !isUserTurnStart(record.Messages, i) {
+			continue
 		}
-		if len(selected[i].ImagePaths) > 0 {
-			copied[i].ImagePaths = append([]string(nil), selected[i].ImagePaths...)
-		}
-		if len(selected[i].TTSAudioPaths) > 0 {
-			copied[i].TTSAudioPaths = append([]string(nil), selected[i].TTSAudioPaths...)
+
+		turnCount++
+		start = i
+		if turnCount == turnLimit {
+			break
 		}
 	}
 
-	return copied
+	if turnCount == 0 || turnCount < turnLimit {
+		return cloneChatMessages(record.Messages)
+	}
+
+	return cloneChatMessages(record.Messages[start:])
 }
 
 // GetSessionMessagesPage returns a slice of messages for a session.
@@ -459,23 +513,8 @@ func (cm *ChatManager) GetSessionMessagesPage(sessionID string, limit int, befor
 		start = 0
 	}
 
-	selected := record.Messages[start:end]
-	copied := make([]ChatMessage, len(selected))
-	for i := range selected {
-		copied[i] = selected[i]
-		if len(selected[i].ToolCalls) > 0 {
-			copied[i].ToolCalls = append([]client.ToolCall(nil), selected[i].ToolCalls...)
-		}
-		if len(selected[i].ImagePaths) > 0 {
-			copied[i].ImagePaths = append([]string(nil), selected[i].ImagePaths...)
-		}
-		if len(selected[i].TTSAudioPaths) > 0 {
-			copied[i].TTSAudioPaths = append([]string(nil), selected[i].TTSAudioPaths...)
-		}
-	}
-
 	page := *record
-	page.Messages = copied
+	page.Messages = cloneChatMessages(record.Messages[start:end])
 
 	return &page, start, total, nil
 }

@@ -192,8 +192,10 @@ const zh = {
         memoryProviderHint: '用于提取和处理长期记忆，建议选择快速便宜的模型',
         memoryExtractionRounds: '记忆提取轮数',
         memoryExtractionRoundsSaved: '记忆提取轮数已保存',
-        memoryExtractionRoundsHint: '每轮包含用户与 AI 各一条消息，数值越大提取越完整，但也更耗时',
-        memoryExtractionRoundsModalHint: '用于控制发送给记忆提取模型的最近对话轮数（每轮 = 用户 + AI）',
+        memoryExtractionRoundsHint:
+            '每轮从用户发言开始，包含直到下一轮用户发言前的所有消息，数值越大提取越完整，但也更耗时',
+        memoryExtractionRoundsModalHint:
+            '用于控制发送给记忆提取模型的最近对话轮数（每轮从用户发言开始，直到下一轮用户发言前结束）',
         rounds: '轮数',
         roundsUnit: '轮',
         roundsPreview: '{{count}}轮',
@@ -202,7 +204,8 @@ const zh = {
         memoryRefreshInterval: '记忆刷新间隔',
         memoryRefreshIntervalSaved: '记忆刷新间隔已保存',
         memoryRefreshIntervalHint: '每隔多少轮对话触发一次记忆提取',
-        memoryRefreshIntervalModalHint: '每隔多少轮对话触发一次记忆提取（每轮 = 用户 + AI）',
+        memoryRefreshIntervalModalHint:
+            '每隔多少轮对话触发一次记忆提取（每轮从用户发言开始，直到下一轮用户发言前结束）',
         intervalRounds: '间隔轮数',
         memoryExtractionPrompt: '记忆提取提示词',
         memoryExtractionPromptSaved: '记忆提取提示词已保存',

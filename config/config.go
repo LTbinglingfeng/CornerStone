@@ -107,7 +107,7 @@ type Provider struct {
 	GeminiImageSize           *string      `json:"gemini_image_size,omitempty"`             // Gemini生图分辨率 (最大边: 1K/2K，留空使用默认)
 	GeminiImageNumberOfImages *int         `json:"gemini_image_number_of_images,omitempty"` // Gemini生图张数 (1-8)
 	GeminiImageOutputMIMEType *string      `json:"gemini_image_output_mime_type,omitempty"` // Gemini生图输出格式 (image/jpeg/image/png)
-	ContextMessages           int          `json:"context_messages"`                        // 上下文消息轮数
+	ContextMessages           int          `json:"context_messages"`                        // 上下文轮数
 	Stream                    bool         `json:"stream"`                                  // 是否启用流式输出
 	ImageCapable              bool         `json:"image_capable"`                           // 是否支持识图
 }
@@ -120,8 +120,8 @@ type Config struct {
 	MemoryProviderID       string        `json:"memory_provider_id"`        // 记忆提取模型（供应商ID）
 	MemoryProvider         *Provider     `json:"memory_provider"`           // 记忆提取模型（独立配置）
 	MemoryEnabled          bool          `json:"memory_enabled"`            // 记忆功能开关
-	MemoryExtractionRounds int           `json:"memory_extraction_rounds"`  // 记忆提取上传的对话轮数（每轮=用户+AI）
-	MemoryRefreshInterval  int           `json:"memory_refresh_interval"`   // 记忆刷新间隔（对话轮数）
+	MemoryExtractionRounds int           `json:"memory_extraction_rounds"`  // 记忆提取上传的对话轮数（每轮从用户发言开始，直到下一轮用户发言前结束）
+	MemoryRefreshInterval  int           `json:"memory_refresh_interval"`   // 记忆刷新间隔（按对话轮数）
 	TTSEnabled             bool          `json:"tts_enabled"`               // TTS开关
 	TTSProvider            *TTSProvider  `json:"tts_provider,omitempty"`    // TTS提供商（仅支持 MiniMax）
 	SystemPrompt           string        `json:"system_prompt"`             // 全局系统提示词

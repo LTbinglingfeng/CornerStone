@@ -194,9 +194,9 @@ const en = {
         memoryExtractionRounds: 'Memory Extraction Rounds',
         memoryExtractionRoundsSaved: 'Memory extraction rounds saved',
         memoryExtractionRoundsHint:
-            'Each round includes one user and one AI message. Larger values extract more completely but take longer',
+            'Each round starts with user input and includes all messages until the next user input. Larger values extract more completely but take longer',
         memoryExtractionRoundsModalHint:
-            'Controls how many recent conversation rounds are sent to the memory extraction model (1 round = user + AI)',
+            'Controls how many recent conversation rounds are sent to the memory extraction model (each round runs from user input to before the next user input)',
         rounds: 'Rounds',
         roundsUnit: 'rounds',
         roundsPreview: '{{count}} rounds',
@@ -206,7 +206,7 @@ const en = {
         memoryRefreshIntervalSaved: 'Memory refresh interval saved',
         memoryRefreshIntervalHint: 'How many conversation rounds between each memory extraction',
         memoryRefreshIntervalModalHint:
-            'How many conversation rounds between each memory extraction (1 round = user + AI)',
+            'How many conversation rounds between each memory extraction (each round runs from user input to before the next user input)',
         intervalRounds: 'Interval Rounds',
         memoryExtractionPrompt: 'Memory Extraction Prompt',
         memoryExtractionPromptSaved: 'Memory extraction prompt saved',

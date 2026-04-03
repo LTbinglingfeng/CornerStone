@@ -401,8 +401,11 @@ func (e *MemoryExtractor) buildExtractionMessages(promptID string, messages []Ch
 		}
 
 		role := "用户"
-		if msg.Role == "assistant" {
+		switch msg.Role {
+		case "assistant":
 			role = "AI"
+		case "tool":
+			role = "工具"
 		}
 
 		// 清理消息内容，防止 prompt injection
@@ -466,7 +469,7 @@ func (e *MemoryExtractor) ExtractAndSave(promptID, sessionID string) error {
 		contextRounds = provider.ContextMessages
 	}
 
-	messages := e.chatMgr.GetRecentMessages(sessionID, contextRounds*2)
+	messages := e.chatMgr.GetRecentTurns(sessionID, contextRounds)
 	if len(messages) == 0 {
 		return nil
 	}
