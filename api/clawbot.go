@@ -27,6 +27,8 @@ const (
 	clawBotCommandList       = "ls"
 	clawBotCommandCheckout   = "checkout"
 	clawBotCommandRegenerate = "re"
+
+	clawBotExclusiveOpRegenerate = "regenerate"
 )
 
 type ClawBotSettingsResponse struct {
@@ -79,6 +81,7 @@ type clawBotPendingReply struct {
 	Timer           *time.Timer
 	Processing      bool
 	Ready           bool
+	BlockingReason  string
 }
 
 type ClawBotService struct {
@@ -369,6 +372,14 @@ func (s *ClawBotService) handleIncomingMessage(ctx context.Context, cfg config.C
 	s.setContextToken(userID, msg.ContextToken)
 	if len(imageItems) == 0 {
 		if command, ok := parseClawBotCommand(text); ok {
+			if command.Name == clawBotCommandRegenerate {
+				s.handleRegenerateCommand(ctx, cfg, userID, command.Args)
+				return
+			}
+			if s.hasExclusiveOperation(userID) {
+				s.sendExclusiveBusyReply(ctx, cfg, userID)
+				return
+			}
 			switch command.Name {
 			case clawBotCommandNew:
 				if command.Args == "" {
@@ -384,11 +395,12 @@ func (s *ClawBotService) handleIncomingMessage(ctx context.Context, cfg config.C
 				s.clearPendingReply(userID)
 				s.handleCheckoutCommand(ctx, cfg, userID, command.Args)
 				return
-			case clawBotCommandRegenerate:
-				s.handleRegenerateCommand(ctx, cfg, userID, command.Args)
-				return
 			}
 		}
+	}
+	if s.hasExclusiveOperation(userID) {
+		s.sendExclusiveBusyReply(ctx, cfg, userID)
+		return
 	}
 
 	imagePaths := s.downloadIncomingImagePaths(ctx, userID, imageItems)
@@ -399,10 +411,14 @@ func (s *ClawBotService) handleIncomingMessage(ctx context.Context, cfg config.C
 		return
 	}
 
-	batch := s.enqueuePendingMessage(userID, clawBotPendingMessage{
+	batch, accepted := s.enqueuePendingMessage(userID, clawBotPendingMessage{
 		Text:       text,
 		ImagePaths: imagePaths,
 	})
+	if !accepted {
+		s.sendExclusiveBusyReply(ctx, cfg, userID)
+		return
+	}
 	if len(batch) == 0 {
 		return
 	}
@@ -510,11 +526,27 @@ func (s *ClawBotService) handleRegenerateCommand(ctx context.Context, cfg config
 		return
 	}
 
-	if s.hasPendingReplyActivity(userID) {
-		s.sendCommandReply(ctx, cfg, userID, "当前还有待处理消息，请等待回复完成后再使用 /re。", "regenerate busy")
+	if ok, busyReply := s.beginExclusiveOperation(userID, clawBotExclusiveOpRegenerate); !ok {
+		s.sendCommandReply(ctx, cfg, userID, busyReply, "regenerate busy")
 		return
 	}
 
+	go func() {
+		defer s.finishExclusiveOperation(userID, clawBotExclusiveOpRegenerate)
+
+		latestCfg := s.handler.configManager.GetClawBotConfig()
+		if !latestCfg.Enabled || strings.TrimSpace(latestCfg.BotToken) == "" {
+			return
+		}
+
+		runCtx, cancel := context.WithTimeout(context.Background(), clawBotProcessTimeout)
+		defer cancel()
+
+		s.processRegenerateCommand(runCtx, latestCfg, userID)
+	}()
+}
+
+func (s *ClawBotService) processRegenerateCommand(ctx context.Context, cfg config.ClawBotConfig, userID string) {
 	session, ok := s.getCurrentSessionForUser(userID, cfg.PromptID)
 	if !ok {
 		reply := "当前没有可重新生成的会话，可先发送消息或使用 /new 开始新会话。"
@@ -522,30 +554,33 @@ func (s *ClawBotService) handleRegenerateCommand(ctx context.Context, cfg config
 		return
 	}
 
-	deleted, err := s.handler.chatManager.DeleteTrailingResponseBatch(session.SessionID)
+	snapshot, err := s.handler.chatManager.SnapshotTrailingResponseBatch(session.SessionID)
 	if err != nil {
-		logging.Errorf("clawbot regenerate delete trailing response batch failed: user=%s session=%s err=%v", userID, session.SessionID, err)
+		logging.Errorf("clawbot regenerate snapshot trailing response batch failed: user=%s session=%s err=%v", userID, session.SessionID, err)
 		s.setLastError(err)
-		s.sendCommandReply(ctx, cfg, userID, "暂时无法重新生成，请稍后再试。", "regenerate delete failure")
+		s.sendCommandReply(ctx, cfg, userID, "暂时无法重新生成，请稍后再试。", "regenerate snapshot failure")
 		return
 	}
-	if deleted == 0 {
+	if snapshot == nil || snapshot.Session == nil || len(snapshot.TailMessages) == 0 {
 		s.sendCommandReply(ctx, cfg, userID, "当前没有可重新生成的上一轮回复。", "regenerate empty")
 		return
 	}
 
-	logging.Infof("clawbot regenerate deleted %d trailing response messages: user=%s session=%s", deleted, userID, session.SessionID)
+	logging.Infof("clawbot regenerate prepared trailing response replacement with %d messages: user=%s session=%s", len(snapshot.TailMessages), userID, session.SessionID)
 
-	reply, memSession, err := s.generateReply(ctx, session.SessionID, cfg.PromptID)
+	reply, memSession, err := s.generateReplyForSession(ctx, snapshot.Session, cfg.PromptID)
 	if err != nil {
 		logging.Errorf("clawbot regenerate reply failed: user=%s session=%s err=%v", userID, session.SessionID, err)
 		s.setLastError(err)
-		reply = "暂时无法重新生成，请稍后再试。"
-	} else if strings.TrimSpace(reply) == "" {
-		reply = "暂时无法重新生成，请稍后再试。"
+		s.sendCommandReply(ctx, cfg, userID, "暂时无法重新生成，请稍后再试。", "regenerate reply failure")
+		return
+	}
+	if strings.TrimSpace(reply) == "" {
+		s.sendCommandReply(ctx, cfg, userID, "暂时无法重新生成，请稍后再试。", "regenerate empty reply")
+		return
 	}
 
-	s.sendAndPersistReply(ctx, cfg, userID, session.SessionID, reply, memSession, "regenerate reply")
+	s.sendAndReplaceTrailingReply(ctx, cfg, userID, session.SessionID, reply, snapshot.TailMessages, memSession, "regenerate reply")
 }
 
 func (s *ClawBotService) processIncomingBatch(ctx context.Context, cfg config.ClawBotConfig, userID string, messages []clawBotPendingMessage) {
@@ -596,6 +631,14 @@ func (s *ClawBotService) processIncomingBatch(ctx context.Context, cfg config.Cl
 }
 
 func (s *ClawBotService) generateReply(ctx context.Context, sessionID, configuredPromptID string) (string, *storage.MemorySession, error) {
+	session, ok := s.handler.chatManager.GetSession(sessionID)
+	if !ok {
+		return "", nil, fmt.Errorf("session not found: %s", sessionID)
+	}
+	return s.generateReplyForSession(ctx, session, configuredPromptID)
+}
+
+func (s *ClawBotService) generateReplyForSession(ctx context.Context, session *storage.ChatRecord, configuredPromptID string) (string, *storage.MemorySession, error) {
 	provider := s.handler.configManager.GetActiveProvider()
 	if provider == nil {
 		return "", nil, fmt.Errorf("no active provider configured")
@@ -606,10 +649,8 @@ func (s *ClawBotService) generateReply(ctx context.Context, sessionID, configure
 	if strings.TrimSpace(provider.APIKey) == "" {
 		return "", nil, fmt.Errorf("api key not configured")
 	}
-
-	session, ok := s.handler.chatManager.GetSession(sessionID)
-	if !ok {
-		return "", nil, fmt.Errorf("session not found: %s", sessionID)
+	if session == nil {
+		return "", nil, fmt.Errorf("session is nil")
 	}
 
 	systemPrompt := s.handler.configManager.GetSystemPrompt()
@@ -627,7 +668,7 @@ func (s *ClawBotService) generateReply(ctx context.Context, sessionID, configure
 		}
 	}
 
-	memSession := s.handler.getOrCreateMemorySession(validPromptID, sessionID)
+	memSession := s.handler.getOrCreateMemorySession(validPromptID, session.SessionID)
 	if memSession != nil {
 		persona = storage.BuildPromptWithMemory(persona, memSession.GetActiveMemories())
 	}
@@ -727,7 +768,7 @@ func (s *ClawBotService) processPendingBatchAsync(userID string, batch []clawBot
 	}()
 }
 
-func (s *ClawBotService) enqueuePendingMessage(userID string, message clawBotPendingMessage) []clawBotPendingMessage {
+func (s *ClawBotService) enqueuePendingMessage(userID string, message clawBotPendingMessage) ([]clawBotPendingMessage, bool) {
 	mode, delay := s.getReplyWaitWindow()
 	now := time.Now()
 
@@ -738,6 +779,10 @@ func (s *ClawBotService) enqueuePendingMessage(userID string, message clawBotPen
 	if state == nil {
 		state = &clawBotPendingReply{}
 		s.pendingReplies[userID] = state
+	}
+	if state.BlockingReason != "" {
+		state.LastActive = now
+		return nil, false
 	}
 	if len(state.Messages) == 0 {
 		state.WindowStartedAt = now
@@ -752,13 +797,13 @@ func (s *ClawBotService) enqueuePendingMessage(userID string, message clawBotPen
 				state.Timer.Stop()
 				state.Timer = nil
 			}
-			return nil
+			return nil, true
 		}
-		return s.beginPendingProcessingLocked(state)
+		return s.beginPendingProcessingLocked(state), true
 	}
 
 	s.schedulePendingReplyLocked(userID, state, mode, delay, now)
-	return nil
+	return nil, true
 }
 
 func (s *ClawBotService) schedulePendingReplyLocked(userID string, state *clawBotPendingReply, mode string, delay time.Duration, now time.Time) {
@@ -928,6 +973,10 @@ func (s *ClawBotService) sendCommandReply(ctx context.Context, cfg config.ClawBo
 	}
 }
 
+func (s *ClawBotService) sendExclusiveBusyReply(ctx context.Context, cfg config.ClawBotConfig, userID string) {
+	s.sendCommandReply(ctx, cfg, userID, "当前正在重新生成上一轮回复，请等待完成后再发送新消息。", "exclusive busy")
+}
+
 func (s *ClawBotService) sendAndPersistReply(ctx context.Context, cfg config.ClawBotConfig, userID, sessionID, reply string, memSession *storage.MemorySession, action string) {
 	reply = strings.TrimSpace(reply)
 	if reply == "" {
@@ -951,6 +1000,36 @@ func (s *ClawBotService) sendAndPersistReply(ctx context.Context, cfg config.Cla
 	}
 }
 
+func (s *ClawBotService) sendAndReplaceTrailingReply(ctx context.Context, cfg config.ClawBotConfig, userID, sessionID, reply string, expectedTail []storage.ChatMessage, memSession *storage.MemorySession, action string) {
+	reply = strings.TrimSpace(reply)
+	if reply == "" {
+		return
+	}
+
+	if err := s.sendTextReply(ctx, cfg, userID, reply); err != nil {
+		s.setLastError(err)
+		logging.Errorf("clawbot send %s failed: user=%s session=%s err=%v", action, userID, sessionID, err)
+		return
+	}
+
+	replacement := []storage.ChatMessage{
+		{
+			Role:      "assistant",
+			Content:   reply,
+			Timestamp: time.Now(),
+		},
+	}
+	if err := s.handler.chatManager.ReplaceTrailingResponseBatch(sessionID, expectedTail, replacement); err != nil {
+		logging.Errorf("clawbot replace trailing response batch failed: user=%s session=%s err=%v", userID, sessionID, err)
+		s.setLastError(err)
+		return
+	}
+
+	if memSession != nil {
+		memSession.OnRoundComplete()
+	}
+}
+
 func (s *ClawBotService) hasPendingReplyActivity(userID string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -959,7 +1038,7 @@ func (s *ClawBotService) hasPendingReplyActivity(userID string) bool {
 	if state == nil {
 		return false
 	}
-	return state.Processing || state.Ready || len(state.Messages) > 0
+	return state.BlockingReason != "" || state.Processing || state.Ready || len(state.Messages) > 0
 }
 
 func (s *ClawBotService) getCurrentSessionForUser(userID, promptID string) (*storage.ChatRecord, bool) {
@@ -1145,6 +1224,52 @@ func (s *ClawBotService) getContextToken(userID string) string {
 	return s.contextTokens[userID]
 }
 
+func (s *ClawBotService) hasExclusiveOperation(userID string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	state := s.pendingReplies[userID]
+	return state != nil && state.BlockingReason != ""
+}
+
+func (s *ClawBotService) beginExclusiveOperation(userID, reason string) (bool, string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	state := s.pendingReplies[userID]
+	if state == nil {
+		state = &clawBotPendingReply{}
+		s.pendingReplies[userID] = state
+	}
+
+	switch {
+	case state.BlockingReason != "":
+		return false, "当前正在重新生成上一轮回复，请等待完成后再使用 /re。"
+	case state.Processing || state.Ready || len(state.Messages) > 0:
+		return false, "当前还有待处理消息，请等待回复完成后再使用 /re。"
+	}
+
+	state.BlockingReason = reason
+	state.LastActive = time.Now()
+	return true, ""
+}
+
+func (s *ClawBotService) finishExclusiveOperation(userID, reason string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	state := s.pendingReplies[userID]
+	if state == nil || state.BlockingReason != reason {
+		return
+	}
+
+	state.BlockingReason = ""
+	state.LastActive = time.Now()
+	if !state.Processing && !state.Ready && len(state.Messages) == 0 && state.Timer == nil {
+		delete(s.pendingReplies, userID)
+	}
+}
+
 func (s *ClawBotService) setLastError(err error) {
 	if err == nil {
 		return
@@ -1192,7 +1317,7 @@ func (s *ClawBotService) cleanupState() {
 			delete(s.pendingReplies, userID)
 			continue
 		}
-		if state.Processing {
+		if state.Processing || state.BlockingReason != "" {
 			continue
 		}
 		if now.Sub(state.LastActive) <= clawBotConversationIdle {

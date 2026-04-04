@@ -220,6 +220,142 @@ func TestDeleteTrailingResponseBatch_NoUserDeletesEntireTail(t *testing.T) {
 	}
 }
 
+func TestSnapshotTrailingResponseBatch_TrimmedSessionAndTail(t *testing.T) {
+	cm := newTestChatManager(t)
+	sid := "test-snapshot-tail"
+	if _, err := cm.CreateSession(sid, "t", "", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now()
+	if err := cm.AddMessages(sid, []ChatMessage{
+		{Role: "user", Content: "hello", Timestamp: now},
+		{Role: "assistant", Content: "old reply", Timestamp: now.Add(time.Millisecond)},
+		{Role: "tool", Content: `{"ok":true}`, ToolCallID: "call-1", Timestamp: now.Add(2 * time.Millisecond)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot, err := cm.SnapshotTrailingResponseBatch(sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot == nil || snapshot.Session == nil {
+		t.Fatal("snapshot session should not be nil")
+	}
+	if len(snapshot.Session.Messages) != 1 {
+		t.Fatalf("trimmed session message count = %d, want 1", len(snapshot.Session.Messages))
+	}
+	if snapshot.Session.Messages[0].Role != "user" || snapshot.Session.Messages[0].Content != "hello" {
+		t.Fatalf("trimmed session first message = %#v, want user hello", snapshot.Session.Messages[0])
+	}
+	if len(snapshot.TailMessages) != 2 {
+		t.Fatalf("tail message count = %d, want 2", len(snapshot.TailMessages))
+	}
+	if snapshot.TailMessages[0].Role != "assistant" || snapshot.TailMessages[1].Role != "tool" {
+		t.Fatalf("tail roles = [%s %s], want [assistant tool]", snapshot.TailMessages[0].Role, snapshot.TailMessages[1].Role)
+	}
+}
+
+func TestReplaceTrailingResponseBatch_ReplacesTailAtomically(t *testing.T) {
+	dir := t.TempDir()
+	cm := NewChatManager(dir)
+	sid := "test-replace-tail"
+	if _, err := cm.CreateSession(sid, "t", "", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now()
+	if err := cm.AddMessages(sid, []ChatMessage{
+		{Role: "user", Content: "hello", Timestamp: now},
+		{Role: "assistant", Content: "old reply", Timestamp: now.Add(time.Millisecond)},
+		{Role: "tool", Content: `{"ok":true}`, ToolCallID: "call-1", Timestamp: now.Add(2 * time.Millisecond)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot, err := cm.SnapshotTrailingResponseBatch(sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	replacement := []ChatMessage{
+		{Role: "assistant", Content: "fresh reply", Timestamp: now.Add(3 * time.Millisecond)},
+	}
+	if err := cm.ReplaceTrailingResponseBatch(sid, snapshot.TailMessages, replacement); err != nil {
+		t.Fatal(err)
+	}
+
+	record, ok := cm.GetSession(sid)
+	if !ok {
+		t.Fatal("session not found")
+	}
+	if len(record.Messages) != 2 {
+		t.Fatalf("message count = %d, want 2", len(record.Messages))
+	}
+	if record.Messages[0].Role != "user" || record.Messages[0].Content != "hello" {
+		t.Fatalf("first message = %#v, want user hello", record.Messages[0])
+	}
+	if record.Messages[1].Role != "assistant" || record.Messages[1].Content != "fresh reply" {
+		t.Fatalf("second message = %#v, want assistant fresh reply", record.Messages[1])
+	}
+
+	cm2 := NewChatManager(dir)
+	record, ok = cm2.GetSession(sid)
+	if !ok {
+		t.Fatal("session not found after reload")
+	}
+	if len(record.Messages) != 2 || record.Messages[1].Content != "fresh reply" {
+		t.Fatalf("reloaded messages = %#v, want fresh reply persisted", record.Messages)
+	}
+}
+
+func TestReplaceTrailingResponseBatch_ConflictKeepsHistory(t *testing.T) {
+	cm := newTestChatManager(t)
+	sid := "test-replace-tail-conflict"
+	if _, err := cm.CreateSession(sid, "t", "", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now()
+	if err := cm.AddMessages(sid, []ChatMessage{
+		{Role: "user", Content: "hello", Timestamp: now},
+		{Role: "assistant", Content: "old reply", Timestamp: now.Add(time.Millisecond)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot, err := cm.SnapshotTrailingResponseBatch(sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := cm.AddMessage(sid, "user", "later"); err != nil {
+		t.Fatal(err)
+	}
+
+	err = cm.ReplaceTrailingResponseBatch(sid, snapshot.TailMessages, []ChatMessage{
+		{Role: "assistant", Content: "fresh reply", Timestamp: now.Add(2 * time.Millisecond)},
+	})
+	if err != ErrTrailingResponseBatchChanged {
+		t.Fatalf("replace err = %v, want %v", err, ErrTrailingResponseBatchChanged)
+	}
+
+	record, ok := cm.GetSession(sid)
+	if !ok {
+		t.Fatal("session not found")
+	}
+	if len(record.Messages) != 3 {
+		t.Fatalf("message count = %d, want 3", len(record.Messages))
+	}
+	if record.Messages[1].Content != "old reply" {
+		t.Fatalf("assistant content = %q, want old reply", record.Messages[1].Content)
+	}
+	if record.Messages[2].Role != "user" || record.Messages[2].Content != "later" {
+		t.Fatalf("last message = %#v, want user later", record.Messages[2])
+	}
+}
+
 func TestDeleteTrailingAssistantBatch_NonExistentSession(t *testing.T) {
 	cm := newTestChatManager(t)
 	_, err := cm.DeleteTrailingAssistantBatch("nonexistent")

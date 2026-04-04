@@ -228,6 +228,7 @@ type clawBotTestServerState struct {
 		} `json:"messages"`
 	}
 	sendTexts []string
+	sendUsers []string
 }
 
 func newTestClawBotService(t *testing.T, baseURL string) *ClawBotService {
@@ -244,6 +245,7 @@ func newTestClawBotService(t *testing.T, baseURL string) *ClawBotService {
 		BaseURL:  baseURL,
 		BotToken: "bot-token",
 	}
+	cfg.ReplyWaitWindowSeconds = 0
 	if err := configManager.Update(cfg); err != nil {
 		t.Fatalf("Update clawbot config failed: %v", err)
 	}
@@ -316,6 +318,7 @@ func newClawBotTestServer(t *testing.T, replyText string) (*httptest.Server, *cl
 
 			state.mu.Lock()
 			state.sendTexts = append(state.sendTexts, text)
+			state.sendUsers = append(state.sendUsers, req.Msg.ToUserID)
 			state.mu.Unlock()
 
 			w.Header().Set("Content-Type", "application/json")
@@ -328,7 +331,41 @@ func newClawBotTestServer(t *testing.T, replyText string) (*httptest.Server, *cl
 	return server, state
 }
 
-func TestHandleRegenerateCommand_DeletesTailAndSendsFreshReply(t *testing.T) {
+func newClawBotTextIncomingMessage(userID, text string) client.ClawBotIncomingMessage {
+	return client.ClawBotIncomingMessage{
+		MessageType: 1,
+		FromUserID:  userID,
+		ItemList: []client.ClawBotIncomingMessageItem{
+			{
+				Type: 1,
+				TextItem: &client.ClawBotItemText{
+					Text: text,
+				},
+			},
+		},
+	}
+}
+
+func waitForAssistantMessageContent(t *testing.T, chatManager *storage.ChatManager, sessionID, want string) {
+	t.Helper()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		record, ok := chatManager.GetSession(sessionID)
+		if ok && len(record.Messages) >= 2 {
+			last := record.Messages[len(record.Messages)-1]
+			if last.Role == "assistant" && last.Content == want {
+				return
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	record, _ := chatManager.GetSession(sessionID)
+	t.Fatalf("assistant message did not become %q in time, got %#v", want, record.Messages)
+}
+
+func TestProcessRegenerateCommand_ReplacesTailAndSendsFreshReply(t *testing.T) {
 	server, state := newClawBotTestServer(t, "fresh reply")
 	defer server.Close()
 
@@ -355,7 +392,7 @@ func TestHandleRegenerateCommand_DeletesTailAndSendsFreshReply(t *testing.T) {
 	service.touchActiveSession(userID, session.SessionID)
 	service.setContextToken(userID, "ctx-token")
 
-	service.handleRegenerateCommand(context.Background(), cfg, userID, "")
+	service.processRegenerateCommand(context.Background(), cfg, userID)
 
 	state.mu.Lock()
 	defer state.mu.Unlock()
@@ -397,6 +434,86 @@ func TestHandleRegenerateCommand_DeletesTailAndSendsFreshReply(t *testing.T) {
 	}
 	if record.Messages[1].Role != "assistant" || record.Messages[1].Content != "fresh reply" {
 		t.Fatalf("second message = %#v, want assistant fresh reply", record.Messages[1])
+	}
+}
+
+func TestProcessRegenerateCommand_SendFailureKeepsOldAssistantReply(t *testing.T) {
+	var (
+		mu           sync.Mutex
+		chatRequests int
+		sendAttempts int
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/chat/completions":
+			mu.Lock()
+			chatRequests++
+			mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(client.ChatResponse{
+				ID:      "chatcmpl-test",
+				Object:  "chat.completion",
+				Created: time.Now().Unix(),
+				Model:   "gpt-test",
+				Choices: []client.Choice{
+					{
+						Index: 0,
+						Message: client.Message{
+							Role:    "assistant",
+							Content: "fresh reply",
+						},
+						FinishReason: "stop",
+					},
+				},
+			})
+		case "/ilink/bot/sendmessage":
+			mu.Lock()
+			sendAttempts++
+			mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(client.ClawBotSendMessageResponse{Ret: 1})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	service := newTestClawBotService(t, server.URL)
+	cfg := service.handler.configManager.GetClawBotConfig()
+
+	userID := "wx-user"
+	sessionID := generateClawBotSessionID(userID)
+	session, err := service.handler.chatManager.CreateSession(sessionID, "Session", "", "")
+	if err != nil {
+		t.Fatalf("CreateSession err = %v", err)
+	}
+	if err := service.handler.chatManager.AddMessages(session.SessionID, []storage.ChatMessage{
+		{Role: "user", Content: "hello", Timestamp: time.Now()},
+		{Role: "assistant", Content: "old reply", Timestamp: time.Now().Add(time.Millisecond)},
+	}); err != nil {
+		t.Fatalf("AddMessages err = %v", err)
+	}
+
+	service.touchActiveSession(userID, session.SessionID)
+	service.processRegenerateCommand(context.Background(), cfg, userID)
+
+	record, ok := service.handler.chatManager.GetSession(session.SessionID)
+	if !ok {
+		t.Fatal("session not found after regenerate send failure")
+	}
+	if len(record.Messages) != 2 {
+		t.Fatalf("message count = %d, want 2", len(record.Messages))
+	}
+	if record.Messages[1].Role != "assistant" || record.Messages[1].Content != "old reply" {
+		t.Fatalf("assistant message = %#v, want old reply preserved", record.Messages[1])
+	}
+	if chatRequests != 1 {
+		t.Fatalf("chat request count = %d, want 1", chatRequests)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if sendAttempts != 1 {
+		t.Fatalf("send attempts = %d, want 1", sendAttempts)
 	}
 }
 
@@ -451,4 +568,275 @@ func TestHandleRegenerateCommand_RejectsWhenPendingReplyBusy(t *testing.T) {
 	if record.Messages[1].Content != "old reply" {
 		t.Fatalf("assistant content = %q, want %q", record.Messages[1].Content, "old reply")
 	}
+}
+
+func TestHandleIncomingMessage_RegenerateBusyRejectsSameUserNewMessage(t *testing.T) {
+	chatStarted := make(chan struct{}, 1)
+	releaseChat := make(chan struct{})
+	replySent := make(chan struct{}, 1)
+	busySent := make(chan string, 1)
+
+	var state struct {
+		mu           sync.Mutex
+		chatRequests int
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/chat/completions":
+			state.mu.Lock()
+			state.chatRequests++
+			state.mu.Unlock()
+
+			select {
+			case chatStarted <- struct{}{}:
+			default:
+			}
+
+			<-releaseChat
+
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(client.ChatResponse{
+				ID:      "chatcmpl-test",
+				Object:  "chat.completion",
+				Created: time.Now().Unix(),
+				Model:   "gpt-test",
+				Choices: []client.Choice{
+					{
+						Index: 0,
+						Message: client.Message{
+							Role:    "assistant",
+							Content: "fresh reply",
+						},
+						FinishReason: "stop",
+					},
+				},
+			})
+		case "/ilink/bot/sendmessage":
+			var req client.ClawBotSendMessageRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode sendmessage request failed: %v", err)
+			}
+
+			text := ""
+			if len(req.Msg.ItemList) > 0 && req.Msg.ItemList[0].TextItem != nil {
+				text = req.Msg.ItemList[0].TextItem.Text
+			}
+			if strings.Contains(text, "重新生成上一轮回复") {
+				select {
+				case busySent <- text:
+				default:
+				}
+			}
+			if text == "fresh reply" {
+				select {
+				case replySent <- struct{}{}:
+				default:
+				}
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(client.ClawBotSendMessageResponse{Ret: 0})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	service := newTestClawBotService(t, server.URL)
+	cfg := service.handler.configManager.GetClawBotConfig()
+
+	userID := "wx-user"
+	sessionID := generateClawBotSessionID(userID)
+	session, err := service.handler.chatManager.CreateSession(sessionID, "Session", "", "")
+	if err != nil {
+		t.Fatalf("CreateSession err = %v", err)
+	}
+	if err := service.handler.chatManager.AddMessages(session.SessionID, []storage.ChatMessage{
+		{Role: "user", Content: "hello", Timestamp: time.Now()},
+		{Role: "assistant", Content: "old reply", Timestamp: time.Now().Add(time.Millisecond)},
+	}); err != nil {
+		t.Fatalf("AddMessages err = %v", err)
+	}
+	service.touchActiveSession(userID, session.SessionID)
+
+	service.handleIncomingMessage(context.Background(), cfg, newClawBotTextIncomingMessage(userID, "/re"))
+
+	select {
+	case <-chatStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for regenerate chat request")
+	}
+
+	service.handleIncomingMessage(context.Background(), cfg, newClawBotTextIncomingMessage(userID, "later message"))
+
+	select {
+	case text := <-busySent:
+		if !strings.Contains(text, "重新生成上一轮回复") {
+			t.Fatalf("busy text = %q, want regenerate busy hint", text)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for busy hint")
+	}
+
+	close(releaseChat)
+
+	select {
+	case <-replySent:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for regenerate reply")
+	}
+
+	waitForAssistantMessageContent(t, service.handler.chatManager, session.SessionID, "fresh reply")
+
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if state.chatRequests != 1 {
+		t.Fatalf("chat request count = %d, want 1", state.chatRequests)
+	}
+}
+
+func TestPollLoop_RegenerateDoesNotBlockOtherUsers(t *testing.T) {
+	regenStarted := make(chan struct{}, 1)
+	releaseRegen := make(chan struct{})
+	user1Sent := make(chan struct{}, 1)
+	user2Sent := make(chan struct{}, 1)
+
+	var (
+		mu           sync.Mutex
+		updatesCalls int
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/ilink/bot/getupdates":
+			mu.Lock()
+			updatesCalls++
+			call := updatesCalls
+			mu.Unlock()
+
+			resp := client.ClawBotGetUpdatesResponse{ErrCode: 0, GetUpdatesBuf: "cursor-1"}
+			if call == 1 {
+				resp.Msgs = []client.ClawBotIncomingMessage{
+					newClawBotTextIncomingMessage("user-1", "/re"),
+					newClawBotTextIncomingMessage("user-2", "hello user2"),
+				}
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(resp)
+		case "/chat/completions":
+			var req struct {
+				Messages []struct {
+					Role    string      `json:"role"`
+					Content interface{} `json:"content"`
+				} `json:"messages"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode chat request failed: %v", err)
+			}
+
+			lastUserText := ""
+			for i := len(req.Messages) - 1; i >= 0; i-- {
+				if req.Messages[i].Role == "user" {
+					if content, ok := req.Messages[i].Content.(string); ok {
+						lastUserText = content
+					}
+					break
+				}
+			}
+
+			switch lastUserText {
+			case "needs regen":
+				select {
+				case regenStarted <- struct{}{}:
+				default:
+				}
+				<-releaseRegen
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(client.ChatResponse{
+					ID:      "chatcmpl-regen",
+					Object:  "chat.completion",
+					Created: time.Now().Unix(),
+					Model:   "gpt-test",
+					Choices: []client.Choice{{Message: client.Message{Role: "assistant", Content: "fresh reply user1"}}},
+				})
+			case "hello user2":
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(client.ChatResponse{
+					ID:      "chatcmpl-user2",
+					Object:  "chat.completion",
+					Created: time.Now().Unix(),
+					Model:   "gpt-test",
+					Choices: []client.Choice{{Message: client.Message{Role: "assistant", Content: "reply user2"}}},
+				})
+			default:
+				t.Fatalf("unexpected last user text in chat request: %q", lastUserText)
+			}
+		case "/ilink/bot/sendmessage":
+			var req client.ClawBotSendMessageRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode sendmessage request failed: %v", err)
+			}
+
+			switch req.Msg.ToUserID {
+			case "user-1":
+				select {
+				case user1Sent <- struct{}{}:
+				default:
+				}
+			case "user-2":
+				select {
+				case user2Sent <- struct{}{}:
+				default:
+				}
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(client.ClawBotSendMessageResponse{Ret: 0})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	service := newTestClawBotService(t, server.URL)
+	cfg := service.handler.configManager.GetClawBotConfig()
+
+	sessionID := generateClawBotSessionID("user-1")
+	session, err := service.handler.chatManager.CreateSession(sessionID, "Session", "", "")
+	if err != nil {
+		t.Fatalf("CreateSession err = %v", err)
+	}
+	if err := service.handler.chatManager.AddMessages(session.SessionID, []storage.ChatMessage{
+		{Role: "user", Content: "needs regen", Timestamp: time.Now()},
+		{Role: "assistant", Content: "old reply", Timestamp: time.Now().Add(time.Millisecond)},
+	}); err != nil {
+		t.Fatalf("AddMessages err = %v", err)
+	}
+	service.touchActiveSession("user-1", session.SessionID)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go service.pollLoop(ctx, cfg)
+
+	select {
+	case <-regenStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for regenerate request to start")
+	}
+
+	select {
+	case <-user2Sent:
+	case <-time.After(2 * time.Second):
+		t.Fatal("user-2 reply was blocked by user-1 regenerate")
+	}
+
+	close(releaseRegen)
+
+	select {
+	case <-user1Sent:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for user-1 regenerate reply")
+	}
+
+	cancel()
 }

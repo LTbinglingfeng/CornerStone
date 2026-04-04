@@ -6,9 +6,11 @@ import (
 	"cornerstone/client"
 	"cornerstone/logging"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"sync"
@@ -49,6 +51,13 @@ type ChatSession struct {
 	PromptName string    `json:"prompt_name,omitempty"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+var ErrTrailingResponseBatchChanged = errors.New("trailing response batch changed")
+
+type TrailingResponseBatchSnapshot struct {
+	Session      *ChatRecord
+	TailMessages []ChatMessage
 }
 
 // ChatManager 聊天记录管理器
@@ -399,6 +408,26 @@ func cloneChatMessages(messages []ChatMessage) []ChatMessage {
 	}
 
 	return copied
+}
+
+func splitTrailingResponseBatchMessages(messages []ChatMessage) (int, bool) {
+	n := len(messages)
+	if n == 0 || messages[n-1].Role == "user" {
+		return n, false
+	}
+
+	cutIndex := n
+	for cutIndex > 0 && messages[cutIndex-1].Role != "user" {
+		cutIndex--
+	}
+	return cutIndex, cutIndex < n
+}
+
+func equalChatMessages(a, b []ChatMessage) bool {
+	if len(a) == 0 && len(b) == 0 {
+		return true
+	}
+	return reflect.DeepEqual(a, b)
 }
 
 func isUserTurnStart(messages []ChatMessage, index int) bool {
@@ -802,6 +831,32 @@ func (cm *ChatManager) RecallMessageByIndex(sessionID string, index int) error {
 	return cm.saveSession(record)
 }
 
+func (cm *ChatManager) SnapshotTrailingResponseBatch(sessionID string) (*TrailingResponseBatchSnapshot, error) {
+	if err := ValidateID(sessionID); err != nil {
+		return nil, err
+	}
+
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	record, ok := cm.sessions[sessionID]
+	if !ok {
+		return nil, os.ErrNotExist
+	}
+
+	cutIndex, hasTail := splitTrailingResponseBatchMessages(record.Messages)
+	session := cloneChatRecord(record)
+	session.Messages = cloneChatMessages(record.Messages[:cutIndex])
+
+	snapshot := &TrailingResponseBatchSnapshot{
+		Session: session,
+	}
+	if hasTail {
+		snapshot.TailMessages = cloneChatMessages(record.Messages[cutIndex:])
+	}
+	return snapshot, nil
+}
+
 // DeleteTrailingResponseBatch 删除最后一条 user 之后的整段尾部响应（用于重新生成）。
 // 仅当会话末尾不是 user 时才删除；尾部是 user 时不删除任何消息。
 // 返回被删除的消息条数。
@@ -818,24 +873,58 @@ func (cm *ChatManager) DeleteTrailingResponseBatch(sessionID string) (int, error
 		return 0, os.ErrNotExist
 	}
 
-	n := len(record.Messages)
-	if n == 0 || record.Messages[n-1].Role == "user" {
+	cutIndex, hasTail := splitTrailingResponseBatchMessages(record.Messages)
+	if !hasTail {
 		return 0, nil
 	}
 
-	// 从尾部向前扫描，删除最后一条 user 之后的整段响应消息。
-	cutIndex := n
-	for cutIndex > 0 && record.Messages[cutIndex-1].Role != "user" {
-		cutIndex--
-	}
-
-	deleted := n - cutIndex
+	deleted := len(record.Messages) - cutIndex
 	record.Messages = record.Messages[:cutIndex]
 	record.UpdatedAt = time.Now()
 	if err := cm.saveSession(record); err != nil {
 		return 0, err
 	}
 	return deleted, nil
+}
+
+// ReplaceTrailingResponseBatch 以 compare-and-swap 的方式原子替换尾部响应批次。
+// 仅当当前尾部响应与 expectedTail 完全一致时才执行替换，避免覆盖并发修改。
+func (cm *ChatManager) ReplaceTrailingResponseBatch(sessionID string, expectedTail, newMessages []ChatMessage) error {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	if err := ValidateID(sessionID); err != nil {
+		return err
+	}
+
+	record, ok := cm.sessions[sessionID]
+	if !ok {
+		return os.ErrNotExist
+	}
+
+	cutIndex, hasTail := splitTrailingResponseBatchMessages(record.Messages)
+	currentTail := record.Messages[cutIndex:]
+	if !hasTail {
+		currentTail = nil
+	}
+	if !equalChatMessages(currentTail, expectedTail) {
+		return ErrTrailingResponseBatchChanged
+	}
+
+	nextMessages := make([]ChatMessage, 0, cutIndex+len(newMessages))
+	nextMessages = append(nextMessages, cloneChatMessages(record.Messages[:cutIndex])...)
+	nextMessages = append(nextMessages, cloneChatMessages(newMessages)...)
+	record.Messages = nextMessages
+
+	updatedAt := time.Now()
+	if len(newMessages) > 0 {
+		lastTimestamp := newMessages[len(newMessages)-1].Timestamp
+		if !lastTimestamp.IsZero() {
+			updatedAt = lastTimestamp
+		}
+	}
+	record.UpdatedAt = updatedAt
+	return cm.saveSession(record)
 }
 
 // DeleteTrailingAssistantBatch 兼容旧调用，语义上等价于删除最后一轮尾部响应。
