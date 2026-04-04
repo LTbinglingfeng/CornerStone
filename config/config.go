@@ -5,6 +5,8 @@ import (
 	"cornerstone/logging"
 	"encoding/json"
 	"errors"
+	"net"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -69,6 +71,22 @@ type ClawBotConfig struct {
 	CommandPermissions map[string]bool `json:"command_permissions,omitempty"`
 }
 
+type WebSearchProvider struct {
+	APIKey            string `json:"api_key,omitempty"`
+	APIHost           string `json:"api_host,omitempty"`
+	BasicAuthUsername string `json:"basic_auth_username,omitempty"`
+	BasicAuthPassword string `json:"basic_auth_password,omitempty"`
+}
+
+type WebSearchConfig struct {
+	ActiveProviderID string                       `json:"active_provider_id,omitempty"`
+	Providers        map[string]WebSearchProvider `json:"providers,omitempty"`
+	MaxResults       int                          `json:"max_results,omitempty"`
+	ExcludeDomains   []string                     `json:"exclude_domains,omitempty"`
+	SearchWithTime   bool                         `json:"search_with_time,omitempty"`
+	TimeoutSeconds   int                          `json:"timeout_seconds,omitempty"`
+}
+
 type ReplyWaitWindowMode string
 
 const (
@@ -95,6 +113,10 @@ const (
 	DefaultReplyWaitWindowSeconds  = 2
 	MaxReplyWaitWindowSeconds      = 120
 	DefaultTimeZone                = "Asia/Shanghai"
+	DefaultWebSearchMaxResults     = 5
+	MaxWebSearchMaxResults         = 50
+	DefaultWebSearchTimeoutSeconds = 20
+	MaxWebSearchTimeoutSeconds     = 120
 )
 
 var defaultClawBotCommandPermissionKeys = []string{
@@ -209,24 +231,25 @@ type Provider struct {
 
 // Config 存储应用配置信息
 type Config struct {
-	Providers              []Provider    `json:"providers"`                 // 供应商列表
-	ActiveProviderID       string        `json:"active_provider_id"`        // 当前激活的供应商ID
-	ImageProviderID        string        `json:"image_provider_id"`         // 生图供应商ID（gemini_image）
-	MemoryProviderID       string        `json:"memory_provider_id"`        // 记忆提取模型（供应商ID）
-	MemoryProvider         *Provider     `json:"memory_provider"`           // 记忆提取模型（独立配置）
-	MemoryEnabled          bool          `json:"memory_enabled"`            // 记忆功能开关
-	MemoryExtractionRounds int           `json:"memory_extraction_rounds"`  // 记忆提取上传的对话轮数（每轮从用户发言开始，直到下一轮用户发言前结束）
-	MemoryRefreshInterval  int           `json:"memory_refresh_interval"`   // 记忆刷新间隔（按对话轮数）
-	TTSEnabled             bool          `json:"tts_enabled"`               // TTS开关
-	TTSProvider            *TTSProvider  `json:"tts_provider,omitempty"`    // TTS提供商（仅支持 MiniMax）
-	SystemPrompt           string        `json:"system_prompt"`             // 全局系统提示词
-	ReplyWaitWindowMode    string        `json:"reply_wait_window_mode"`    // 回复等候窗口模式 (fixed/sliding)
-	ReplyWaitWindowSeconds int           `json:"reply_wait_window_seconds"` // 回复等候窗口秒数
-	TimeZone               string        `json:"time_zone"`                 // Agent 时间工具使用的时区
-	WeatherDefaultCity     *WeatherCity  `json:"weather_default_city,omitempty"`
-	TLSCertPath            string        `json:"tls_cert_path,omitempty"` // TLS证书路径(PEM)，留空禁用HTTPS
-	TLSKeyPath             string        `json:"tls_key_path,omitempty"`  // TLS私钥路径(PEM)，留空禁用HTTPS
-	ClawBot                ClawBotConfig `json:"clawbot"`                 // 微信 iLink ClawBot 配置
+	Providers              []Provider      `json:"providers"`                 // 供应商列表
+	ActiveProviderID       string          `json:"active_provider_id"`        // 当前激活的供应商ID
+	ImageProviderID        string          `json:"image_provider_id"`         // 生图供应商ID（gemini_image）
+	MemoryProviderID       string          `json:"memory_provider_id"`        // 记忆提取模型（供应商ID）
+	MemoryProvider         *Provider       `json:"memory_provider"`           // 记忆提取模型（独立配置）
+	MemoryEnabled          bool            `json:"memory_enabled"`            // 记忆功能开关
+	MemoryExtractionRounds int             `json:"memory_extraction_rounds"`  // 记忆提取上传的对话轮数（每轮从用户发言开始，直到下一轮用户发言前结束）
+	MemoryRefreshInterval  int             `json:"memory_refresh_interval"`   // 记忆刷新间隔（按对话轮数）
+	TTSEnabled             bool            `json:"tts_enabled"`               // TTS开关
+	TTSProvider            *TTSProvider    `json:"tts_provider,omitempty"`    // TTS提供商（仅支持 MiniMax）
+	SystemPrompt           string          `json:"system_prompt"`             // 全局系统提示词
+	ReplyWaitWindowMode    string          `json:"reply_wait_window_mode"`    // 回复等候窗口模式 (fixed/sliding)
+	ReplyWaitWindowSeconds int             `json:"reply_wait_window_seconds"` // 回复等候窗口秒数
+	TimeZone               string          `json:"time_zone"`                 // Agent 时间工具使用的时区
+	WeatherDefaultCity     *WeatherCity    `json:"weather_default_city,omitempty"`
+	WebSearch              WebSearchConfig `json:"web_search,omitempty"`
+	TLSCertPath            string          `json:"tls_cert_path,omitempty"` // TLS证书路径(PEM)，留空禁用HTTPS
+	TLSKeyPath             string          `json:"tls_key_path,omitempty"`  // TLS私钥路径(PEM)，留空禁用HTTPS
+	ClawBot                ClawBotConfig   `json:"clawbot"`                 // 微信 iLink ClawBot 配置
 }
 
 // Manager 配置管理器
@@ -275,6 +298,14 @@ func DefaultConfig() Config {
 		ReplyWaitWindowSeconds: DefaultReplyWaitWindowSeconds,
 		TimeZone:               DefaultTimeZone,
 		WeatherDefaultCity:     nil,
+		WebSearch: WebSearchConfig{
+			ActiveProviderID: "",
+			Providers:        map[string]WebSearchProvider{},
+			MaxResults:       DefaultWebSearchMaxResults,
+			ExcludeDomains:   nil,
+			SearchWithTime:   false,
+			TimeoutSeconds:   DefaultWebSearchTimeoutSeconds,
+		},
 		ClawBot: ClawBotConfig{
 			BaseURL:            DefaultClawBotBaseURL,
 			CommandPermissions: DefaultClawBotCommandPermissions(),
@@ -464,6 +495,39 @@ func (m *Manager) applyConfigDefaults() bool {
 	normalizedCommandPermissions := NormalizeClawBotCommandPermissions(m.config.ClawBot.CommandPermissions)
 	if !clawBotCommandPermissionsEqual(m.config.ClawBot.CommandPermissions, normalizedCommandPermissions) {
 		m.config.ClawBot.CommandPermissions = normalizedCommandPermissions
+		changed = true
+	}
+
+	if m.config.WebSearch.MaxResults <= 0 {
+		m.config.WebSearch.MaxResults = DefaultWebSearchMaxResults
+		changed = true
+	}
+	if m.config.WebSearch.MaxResults > MaxWebSearchMaxResults {
+		m.config.WebSearch.MaxResults = MaxWebSearchMaxResults
+		changed = true
+	}
+	if m.config.WebSearch.TimeoutSeconds <= 0 {
+		m.config.WebSearch.TimeoutSeconds = DefaultWebSearchTimeoutSeconds
+		changed = true
+	}
+	if m.config.WebSearch.TimeoutSeconds > MaxWebSearchTimeoutSeconds {
+		m.config.WebSearch.TimeoutSeconds = MaxWebSearchTimeoutSeconds
+		changed = true
+	}
+
+	webSearchProviderID := normalizeWebSearchProviderID(m.config.WebSearch.ActiveProviderID)
+	if webSearchProviderID != m.config.WebSearch.ActiveProviderID {
+		m.config.WebSearch.ActiveProviderID = webSearchProviderID
+		changed = true
+	}
+	excludeDomains := normalizeWebSearchExcludeDomains(m.config.WebSearch.ExcludeDomains)
+	if !stringSliceEqual(m.config.WebSearch.ExcludeDomains, excludeDomains) {
+		m.config.WebSearch.ExcludeDomains = excludeDomains
+		changed = true
+	}
+	providers, providersChanged := normalizeWebSearchProviders(m.config.WebSearch.Providers)
+	if providersChanged {
+		m.config.WebSearch.Providers = providers
 		changed = true
 	}
 	return changed
@@ -833,6 +897,101 @@ func normalizeTimeZone(value string) string {
 		return DefaultTimeZone
 	}
 	return value
+}
+
+func normalizeWebSearchProviderID(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func normalizeWebSearchProviders(providers map[string]WebSearchProvider) (map[string]WebSearchProvider, bool) {
+	if providers == nil {
+		return providers, false
+	}
+	changed := false
+	normalized := make(map[string]WebSearchProvider, len(providers))
+	for rawID, cfg := range providers {
+		id := normalizeWebSearchProviderID(rawID)
+		if id == "" {
+			changed = true
+			continue
+		}
+		next := WebSearchProvider{
+			APIKey:            strings.TrimSpace(cfg.APIKey),
+			APIHost:           strings.TrimSpace(cfg.APIHost),
+			BasicAuthUsername: strings.TrimSpace(cfg.BasicAuthUsername),
+			BasicAuthPassword: strings.TrimSpace(cfg.BasicAuthPassword),
+		}
+		if rawID != id || next != cfg {
+			changed = true
+		}
+		normalized[id] = next
+	}
+	if !changed {
+		return providers, false
+	}
+	return normalized, true
+}
+
+func normalizeWebSearchExcludeDomains(domains []string) []string {
+	if len(domains) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	normalized := make([]string, 0, len(domains))
+	for _, raw := range domains {
+		domain := normalizeWebSearchDomain(raw)
+		if domain == "" {
+			continue
+		}
+		if _, exists := seen[domain]; exists {
+			continue
+		}
+		seen[domain] = struct{}{}
+		normalized = append(normalized, domain)
+	}
+	if len(normalized) == 0 {
+		return nil
+	}
+	return normalized
+}
+
+func normalizeWebSearchDomain(value string) string {
+	trimmed := strings.TrimSpace(strings.ToLower(value))
+	if trimmed == "" {
+		return ""
+	}
+	trimmed = strings.TrimPrefix(trimmed, ".")
+	if strings.Contains(trimmed, "://") {
+		if u, err := url.Parse(trimmed); err == nil && u != nil {
+			trimmed = strings.TrimSpace(u.Host)
+		}
+	} else if strings.Contains(trimmed, "/") {
+		if u, err := url.Parse("https://" + trimmed); err == nil && u != nil {
+			trimmed = strings.TrimSpace(u.Host)
+		}
+	}
+	if trimmed == "" {
+		return ""
+	}
+	if strings.Contains(trimmed, ":") {
+		if host, _, errSplit := net.SplitHostPort(trimmed); errSplit == nil && strings.TrimSpace(host) != "" {
+			trimmed = strings.TrimSpace(host)
+		}
+	}
+	trimmed = strings.TrimPrefix(trimmed, ".")
+	return strings.TrimSpace(trimmed)
+}
+
+func stringSliceEqual(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // GetActiveProvider 获取当前激活的供应商配置

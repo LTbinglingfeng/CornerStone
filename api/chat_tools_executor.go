@@ -4,6 +4,7 @@ import (
 	"context"
 	"cornerstone/client"
 	"cornerstone/config"
+	"cornerstone/internal/search"
 	"cornerstone/logging"
 	"cornerstone/storage"
 	"encoding/json"
@@ -47,6 +48,8 @@ type chatToolExecutor struct {
 	configManager    *config.Manager
 	weatherService   weatherService
 	exactTimeService exactTimeProvider
+	webSearch        *search.Orchestrator
+	emitEvent        func(payload interface{})
 }
 
 func newChatToolExecutor(momentManager *storage.MomentManager, momentGenerator *MomentGenerator) *chatToolExecutor {
@@ -62,6 +65,7 @@ func newChatToolExecutor(momentManager *storage.MomentManager, momentGenerator *
 	executor.handlers["generate_moment"] = executor.handleGenerateMoment
 	executor.handlers["get_weather"] = executor.handleGetWeather
 	executor.handlers["get_time"] = executor.handleGetTime
+	executor.handlers["web_search"] = executor.handleWebSearch
 
 	return executor
 }

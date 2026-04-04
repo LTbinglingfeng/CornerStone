@@ -293,6 +293,9 @@ func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiCli
 	toolExecutor.configManager = h.configManager
 	toolExecutor.weatherService = h.getWeatherService()
 	toolExecutor.exactTimeService = h.exactTimeService
+	if h.configManager != nil {
+		toolExecutor.webSearch = newWebSearchOrchestrator(h.configManager.Get())
+	}
 	loopResult, errLoop := runChatWithToolLoop(
 		ctxAI,
 		aiClient,
@@ -447,6 +450,9 @@ func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiCli
 	toolExecutor.configManager = h.configManager
 	toolExecutor.weatherService = h.getWeatherService()
 	toolExecutor.exactTimeService = h.exactTimeService
+	if h.configManager != nil {
+		toolExecutor.webSearch = newWebSearchOrchestrator(h.configManager.Get())
+	}
 
 	baseTime := time.Now()
 	messageCounter := 0
@@ -469,6 +475,8 @@ func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiCli
 		}
 		flusher.Flush()
 	}
+
+	toolExecutor.emitEvent = sendEvent
 
 	appendMessage := func(msg client.Message) {
 		ts := baseTime.Add(time.Millisecond * time.Duration(messageCounter))
@@ -970,6 +978,24 @@ func getChatTools(options ...chatToolOptions) []client.Tool {
 							"maxLength":   60,
 						},
 					},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: client.ToolFunction{
+				Name:        "web_search",
+				Description: "使用外部搜索 API 查询网络信息。当需要查事实、资料、百科、新闻等外部信息时使用此工具。",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"query": map[string]interface{}{
+							"type":        "string",
+							"description": "搜索关键词或问题",
+							"maxLength":   400,
+						},
+					},
+					"required": []string{"query"},
 				},
 			},
 		},

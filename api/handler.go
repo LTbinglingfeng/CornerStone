@@ -112,6 +112,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	h.registerProtectedRoute(mux, "/api/settings/clawbot", h.handleClawBotSettings)
 	h.registerProtectedRoute(mux, "/api/settings/clawbot/qr-start", h.handleClawBotQRCodeStart)
 	h.registerProtectedRoute(mux, "/api/settings/clawbot/qr-poll", h.handleClawBotQRCodePoll)
+	h.registerProtectedRoute(mux, "/api/settings/web-search", h.handleWebSearchSettings)
 
 	// 配置接口 (使用 /management 前缀)
 	h.registerProtectedRoute(mux, "/management/config", h.handleConfig)

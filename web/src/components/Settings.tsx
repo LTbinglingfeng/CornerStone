@@ -8,6 +8,7 @@ import {
 } from '../services/memoryService'
 import { ttsService, type TTSProviderConfig } from '../services/ttsService'
 import { clawBotService, type ClawBotSettings } from '../services/clawbotService'
+import { webSearchService, type WebSearchSettings } from '../services/webSearchService'
 import { localeNames, type Locale } from '../i18n'
 import type { Provider, WeatherCity } from '../types/chat'
 import {
@@ -21,6 +22,7 @@ import ProviderSettings from './ProviderSettings'
 import MemoryProviderSettings from './MemoryProviderSettings'
 import ImageProviderSettings from './ImageProviderSettings'
 import ClawBotSettingsPanel from './ClawBotSettings'
+import WebSearchSettingsPanel from './WebSearchSettings'
 import { useT } from '../contexts/I18nContext'
 import { useToast } from '../contexts/ToastContext'
 import {
@@ -86,6 +88,8 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     const [showImageProviderSettings, setShowImageProviderSettings] = useState(false)
     const [showMemoryProviderSettings, setShowMemoryProviderSettings] = useState(false)
     const [showClawBotSettings, setShowClawBotSettings] = useState(false)
+    const [webSearchSettings, setWebSearchSettings] = useState<WebSearchSettings | null>(null)
+    const [showWebSearchSettings, setShowWebSearchSettings] = useState(false)
     const [showPromptModal, setShowPromptModal] = useState(false)
     const [replyWaitConfig, setReplyWaitConfigState] = useState<ReplyWaitWindowConfig>(() => getReplyWaitWindowConfig())
     const [editingReplyWaitConfig, setEditingReplyWaitConfig] = useState<ReplyWaitWindowConfig>(() =>
@@ -247,6 +251,12 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
             setClawBotSettings(settings)
         } catch {
             setClawBotSettings(null)
+        }
+        try {
+            const settings = await webSearchService.getSettings()
+            setWebSearchSettings(settings)
+        } catch {
+            setWebSearchSettings(null)
         }
         if (showLoading) setLoading(false)
     }
@@ -631,6 +641,10 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         setShowClawBotSettings(false)
     }
 
+    const handleWebSearchSettingsBack = () => {
+        setShowWebSearchSettings(false)
+    }
+
     const getPromptPreview = () => {
         if (!systemPrompt) return t('common.notSet')
         if (systemPrompt.length <= 20) return systemPrompt
@@ -739,9 +753,22 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         return { title, detail }
     }
 
+    const getWebSearchPreview = () => {
+        if (!webSearchSettings) return { title: t('common.notConfigured'), detail: '' }
+        const activeId = (webSearchSettings.active_provider_id || '').trim()
+        if (!activeId) return { title: t('common.notConfigured'), detail: '' }
+        const info = (webSearchSettings.available_providers || []).find((p) => p.id === activeId)
+        const title = info?.name || activeId
+        const detail = webSearchSettings.max_results
+            ? `${t('settings.webSearchMaxResults')}: ${webSearchSettings.max_results}`
+            : ''
+        return { title, detail }
+    }
+
     const memoryProviderPreview = getMemoryProviderPreview()
     const ttsProviderPreview = getTTSProviderPreview()
     const clawBotPreview = getClawBotPreview()
+    const webSearchPreview = getWebSearchPreview()
     const timeZonePreview = getTimeZonePreview()
     const defaultWeatherCityPreview = getDefaultWeatherCityPreview()
     const localeOptions = Object.entries(localeNames) as [Locale, string][]
@@ -785,6 +812,23 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                                 <span className="settings-entry-value">{imageProviderPreview.title}</span>
                                 {imageProviderPreview.detail && (
                                     <span className="settings-entry-subvalue">{imageProviderPreview.detail}</span>
+                                )}
+                            </div>
+                            <svg className="settings-entry-arrow" viewBox="0 0 24 24">
+                                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                            </svg>
+                        </button>
+
+                        <button
+                            className="settings-entry-btn"
+                            onClick={() => setShowWebSearchSettings(true)}
+                            style={{ marginTop: 12 }}
+                        >
+                            <div className="settings-entry-info">
+                                <span className="settings-entry-label">{t('settings.webSearch')}</span>
+                                <span className="settings-entry-value">{webSearchPreview.title}</span>
+                                {webSearchPreview.detail && (
+                                    <span className="settings-entry-subvalue">{webSearchPreview.detail}</span>
                                 )}
                             </div>
                             <svg className="settings-entry-arrow" viewBox="0 0 24 24">
@@ -1070,6 +1114,10 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
 
             <AnimatePresence onExitComplete={() => void loadData({ showLoading: false })}>
                 {showClawBotSettings && <ClawBotSettingsPanel onBack={handleClawBotSettingsBack} />}
+            </AnimatePresence>
+
+            <AnimatePresence onExitComplete={() => void loadData({ showLoading: false })}>
+                {showWebSearchSettings && <WebSearchSettingsPanel onBack={handleWebSearchSettingsBack} />}
             </AnimatePresence>
 
             <AnimatePresence>

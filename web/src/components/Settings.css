@@ -245,6 +245,28 @@
   color: white;
 }
 
+.settings-save-btn {
+  width: 100%;
+  padding: 12px 20px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: var(--accent-color);
+  border: none;
+  color: white;
+}
+
+.settings-save-btn:hover {
+  opacity: 0.9;
+}
+
+.settings-save-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* 供应商列表样式 */
 .provider-list {
   display: flex;

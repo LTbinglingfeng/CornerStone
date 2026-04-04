@@ -34,3 +34,9 @@ func newHTTPClient() *http.Client {
 		Timeout:   streamRequestTimeout,
 	}
 }
+
+// NewHTTPClient returns the shared HTTP client configuration used by CornerStone clients.
+// It is safe to reuse across requests.
+func NewHTTPClient() *http.Client {
+	return newHTTPClient()
+}
