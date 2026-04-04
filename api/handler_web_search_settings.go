@@ -106,9 +106,13 @@ func (h *Handler) handleWebSearchSettings(w http.ResponseWriter, r *http.Request
 			settings.TimeoutSeconds = *req.TimeoutSeconds
 		}
 		if req.Providers != nil {
-			if settings.Providers == nil {
-				settings.Providers = make(map[string]config.WebSearchProvider)
+			// Clone the providers map before mutating it to avoid concurrent map read/write panics.
+			clonedProviders := make(map[string]config.WebSearchProvider, len(settings.Providers))
+			for id, providerCfg := range settings.Providers {
+				clonedProviders[id] = providerCfg
 			}
+			settings.Providers = clonedProviders
+
 			for rawID, patch := range req.Providers {
 				id := strings.ToLower(strings.TrimSpace(rawID))
 				if id == "" {
