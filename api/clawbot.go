@@ -8,6 +8,7 @@ import (
 	"cornerstone/storage"
 	"crypto/sha1"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -33,6 +34,11 @@ const (
 	clawBotCommandRegenerate = "re"
 
 	clawBotExclusiveOpRegenerate = "regenerate"
+)
+
+var (
+	errClawBotSelectorAmbiguous       = errors.New("clawbot selector ambiguous")
+	errClawBotSelectorIndexOutOfRange = errors.New("clawbot selector index out of range")
 )
 
 type ClawBotSettingsResponse struct {
@@ -1950,11 +1956,11 @@ func isClawBotListSelector(selector string) bool {
 }
 
 func isClawBotSelectorIndexOutOfRange(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "index out of range")
+	return errors.Is(err, errClawBotSelectorIndexOutOfRange)
 }
 
 func isClawBotSelectorAmbiguous(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "ambiguous")
+	return errors.Is(err, errClawBotSelectorAmbiguous)
 }
 
 func resolveClawBotSessionSelector(sessions []storage.ChatSession, selector string) (storage.ChatSession, int, error) {
@@ -1965,7 +1971,7 @@ func resolveClawBotSessionSelector(sessions []storage.ChatSession, selector stri
 
 	if index, err := strconv.Atoi(selector); err == nil {
 		if index < 1 || index > len(sessions) {
-			return storage.ChatSession{}, -1, fmt.Errorf("index out of range")
+			return storage.ChatSession{}, -1, fmt.Errorf("index out of range: %w", errClawBotSelectorIndexOutOfRange)
 		}
 		return sessions[index-1], index - 1, nil
 	}
@@ -1980,7 +1986,7 @@ func resolveClawBotSessionSelector(sessions []storage.ChatSession, selector stri
 	for index, session := range sessions {
 		if strings.HasSuffix(session.ID, selector) {
 			if matchIndex >= 0 {
-				return storage.ChatSession{}, -1, fmt.Errorf("ambiguous session selector")
+				return storage.ChatSession{}, -1, fmt.Errorf("ambiguous session selector: %w", errClawBotSelectorAmbiguous)
 			}
 			matchIndex = index
 		}
@@ -2009,7 +2015,7 @@ func resolveClawBotPromptSelector(prompts []storage.Prompt, selector string) (st
 
 	if index, err := strconv.Atoi(selector); err == nil {
 		if index < 1 || index > len(prompts) {
-			return storage.Prompt{}, -1, false, fmt.Errorf("index out of range")
+			return storage.Prompt{}, -1, false, fmt.Errorf("index out of range: %w", errClawBotSelectorIndexOutOfRange)
 		}
 		return prompts[index-1], index - 1, false, nil
 	}
@@ -2024,7 +2030,7 @@ func resolveClawBotPromptSelector(prompts []storage.Prompt, selector string) (st
 	for index, prompt := range prompts {
 		if strings.EqualFold(strings.TrimSpace(prompt.Name), selector) {
 			if matchIndex >= 0 {
-				return storage.Prompt{}, -1, false, fmt.Errorf("ambiguous prompt selector")
+				return storage.Prompt{}, -1, false, fmt.Errorf("ambiguous prompt selector: %w", errClawBotSelectorAmbiguous)
 			}
 			matchIndex = index
 		}
