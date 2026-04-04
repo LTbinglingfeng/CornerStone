@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 )
 
 // 错误定义
@@ -93,6 +94,7 @@ const (
 	DefaultClawBotBaseURL          = "https://ilinkai.weixin.qq.com"
 	DefaultReplyWaitWindowSeconds  = 2
 	MaxReplyWaitWindowSeconds      = 120
+	DefaultTimeZone                = "Asia/Shanghai"
 )
 
 var defaultClawBotCommandPermissionKeys = []string{
@@ -220,6 +222,7 @@ type Config struct {
 	SystemPrompt           string        `json:"system_prompt"`             // 全局系统提示词
 	ReplyWaitWindowMode    string        `json:"reply_wait_window_mode"`    // 回复等候窗口模式 (fixed/sliding)
 	ReplyWaitWindowSeconds int           `json:"reply_wait_window_seconds"` // 回复等候窗口秒数
+	TimeZone               string        `json:"time_zone"`                 // Agent 时间工具使用的时区
 	WeatherDefaultCity     *WeatherCity  `json:"weather_default_city,omitempty"`
 	TLSCertPath            string        `json:"tls_cert_path,omitempty"` // TLS证书路径(PEM)，留空禁用HTTPS
 	TLSKeyPath             string        `json:"tls_key_path,omitempty"`  // TLS私钥路径(PEM)，留空禁用HTTPS
@@ -270,6 +273,7 @@ func DefaultConfig() Config {
 		SystemPrompt:           "You are a helpful assistant.",
 		ReplyWaitWindowMode:    string(ReplyWaitWindowModeSliding),
 		ReplyWaitWindowSeconds: DefaultReplyWaitWindowSeconds,
+		TimeZone:               DefaultTimeZone,
 		WeatherDefaultCity:     nil,
 		ClawBot: ClawBotConfig{
 			BaseURL:            DefaultClawBotBaseURL,
@@ -391,6 +395,11 @@ func (m *Manager) applyConfigDefaults() bool {
 	replyWaitSeconds := normalizeReplyWaitWindowSeconds(m.config.ReplyWaitWindowSeconds)
 	if replyWaitSeconds != m.config.ReplyWaitWindowSeconds {
 		m.config.ReplyWaitWindowSeconds = replyWaitSeconds
+		changed = true
+	}
+	timeZone := normalizeTimeZone(m.config.TimeZone)
+	if timeZone != m.config.TimeZone {
+		m.config.TimeZone = timeZone
 		changed = true
 	}
 	normalizedWeatherCity := normalizeWeatherCity(m.config.WeatherDefaultCity)
@@ -813,6 +822,17 @@ func normalizeReplyWaitWindowSeconds(seconds int) int {
 		return 0
 	}
 	return seconds
+}
+
+func normalizeTimeZone(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return DefaultTimeZone
+	}
+	if _, err := time.LoadLocation(value); err != nil {
+		return DefaultTimeZone
+	}
+	return value
 }
 
 // GetActiveProvider 获取当前激活的供应商配置

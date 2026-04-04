@@ -36,6 +36,8 @@ interface SettingsProps {
     onBack: () => void
 }
 
+const DEFAULT_TIME_ZONE = 'Asia/Shanghai'
+
 const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     const { t, locale, setLocale } = useT()
     const { showToast } = useToast()
@@ -91,6 +93,10 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     )
     const [showReplyWaitModal, setShowReplyWaitModal] = useState(false)
     const [savingReplyWaitConfig, setSavingReplyWaitConfig] = useState(false)
+    const [timeZone, setTimeZone] = useState(DEFAULT_TIME_ZONE)
+    const [editingTimeZone, setEditingTimeZone] = useState(DEFAULT_TIME_ZONE)
+    const [showTimeZoneModal, setShowTimeZoneModal] = useState(false)
+    const [savingTimeZone, setSavingTimeZone] = useState(false)
     const [defaultWeatherCity, setDefaultWeatherCity] = useState<WeatherCity | null>(null)
     const [showWeatherCityModal, setShowWeatherCityModal] = useState(false)
     const [weatherCityQuery, setWeatherCityQuery] = useState('')
@@ -149,8 +155,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                     setWeatherCitySearched(true)
                 } catch (error) {
                     if (cancelled) return
-                    const message =
-                        error instanceof Error ? error.message : t('service.searchWeatherCitiesFailed')
+                    const message = error instanceof Error ? error.message : t('service.searchWeatherCitiesFailed')
                     setWeatherCityResults([])
                     setWeatherCitySearchError(message)
                     setWeatherCitySearched(true)
@@ -173,6 +178,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         const providersData = await getProviders()
         if (providersData) {
             setSystemPrompt(providersData.system_prompt)
+            setTimeZone((providersData.time_zone || DEFAULT_TIME_ZONE).trim() || DEFAULT_TIME_ZONE)
             setDefaultWeatherCity(providersData.weather_default_city || null)
             if (
                 typeof providersData.reply_wait_window_mode === 'string' ||
@@ -265,6 +271,16 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
 
     const handleCloseReplyWaitModal = () => {
         setShowReplyWaitModal(false)
+    }
+
+    const handleOpenTimeZoneModal = () => {
+        setEditingTimeZone(timeZone || DEFAULT_TIME_ZONE)
+        setSavingTimeZone(false)
+        setShowTimeZoneModal(true)
+    }
+
+    const handleCloseTimeZoneModal = () => {
+        setShowTimeZoneModal(false)
     }
 
     const handleOpenWeatherCityModal = () => {
@@ -417,6 +433,26 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
             handleCloseWeatherCityModal()
         } finally {
             setWeatherCitySaving(false)
+        }
+    }
+
+    const handleSaveTimeZone = async () => {
+        if (savingTimeZone) return
+
+        setSavingTimeZone(true)
+        try {
+            const nextTimeZone = editingTimeZone.trim() || DEFAULT_TIME_ZONE
+            const success = await updateConfig({ time_zone: nextTimeZone })
+            if (!success) {
+                showToast(t('common.saveFailed'), 'error')
+                return
+            }
+
+            setTimeZone(nextTimeZone)
+            showToast(t('settings.timeZoneSaved'), 'success')
+            handleCloseTimeZoneModal()
+        } finally {
+            setSavingTimeZone(false)
         }
     }
 
@@ -609,6 +645,33 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         return formatReplyWaitWindowConfig(replyWaitConfig)
     }
 
+    const getTimeZonePreview = () => {
+        const resolvedTimeZone = (timeZone || DEFAULT_TIME_ZONE).trim() || DEFAULT_TIME_ZONE
+
+        try {
+            const formatter = new Intl.DateTimeFormat(locale === 'zh' ? 'zh-CN' : 'en-US', {
+                timeZone: resolvedTimeZone,
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false,
+            })
+
+            return {
+                title: resolvedTimeZone,
+                detail: formatter.format(new Date()),
+            }
+        } catch {
+            return {
+                title: resolvedTimeZone,
+                detail: t('settings.timeZoneHint'),
+            }
+        }
+    }
+
     const getDefaultWeatherCityPreview = () => {
         if (!defaultWeatherCity) {
             return { title: t('common.notSet'), detail: t('settings.defaultWeatherCityHint') }
@@ -665,6 +728,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     const memoryProviderPreview = getMemoryProviderPreview()
     const ttsProviderPreview = getTTSProviderPreview()
     const clawBotPreview = getClawBotPreview()
+    const timeZonePreview = getTimeZonePreview()
     const defaultWeatherCityPreview = getDefaultWeatherCityPreview()
 
     return (
@@ -751,6 +815,23 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                             <div className="settings-entry-info">
                                 <span className="settings-entry-label">{t('settings.replyWaitWindow')}</span>
                                 <span className="settings-entry-value">{getReplyWaitPreview()}</span>
+                            </div>
+                            <svg className="settings-entry-arrow" viewBox="0 0 24 24">
+                                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                            </svg>
+                        </button>
+
+                        <button
+                            className="settings-entry-btn"
+                            onClick={handleOpenTimeZoneModal}
+                            style={{ marginTop: 12 }}
+                        >
+                            <div className="settings-entry-info">
+                                <span className="settings-entry-label">{t('settings.timeZone')}</span>
+                                <span className="settings-entry-value">{timeZonePreview.title}</span>
+                                {timeZonePreview.detail && (
+                                    <span className="settings-entry-subvalue">{timeZonePreview.detail}</span>
+                                )}
                             </div>
                             <svg className="settings-entry-arrow" viewBox="0 0 24 24">
                                 <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
@@ -1117,6 +1198,63 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
             </AnimatePresence>
 
             <AnimatePresence>
+                {showTimeZoneModal && (
+                    <motion.div
+                        className="prompt-modal-overlay"
+                        initial="hidden"
+                        animate="visible"
+                        exit="hidden"
+                        variants={overlayVariants}
+                        onClick={handleCloseTimeZoneModal}
+                    >
+                        <motion.div
+                            className="prompt-modal-card"
+                            initial="hidden"
+                            animate="visible"
+                            exit="hidden"
+                            variants={centerModalVariants}
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="prompt-modal-header">
+                                <h3>{t('settings.timeZone')}</h3>
+                                <button className="prompt-modal-close" onClick={handleCloseTimeZoneModal}>
+                                    <svg viewBox="0 0 24 24">
+                                        <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                                    </svg>
+                                </button>
+                            </div>
+
+                            <div className="prompt-modal-body">
+                                <p className="prompt-modal-hint">{t('settings.timeZoneHint')}</p>
+                                <div className="settings-group">
+                                    <input
+                                        className="settings-input"
+                                        value={editingTimeZone}
+                                        onChange={(e) => setEditingTimeZone(e.target.value)}
+                                        placeholder={t('settings.timeZonePlaceholder')}
+                                    />
+                                </div>
+                                <p className="prompt-modal-hint">{t('settings.timeZoneExample')}</p>
+                            </div>
+
+                            <div className="prompt-modal-footer">
+                                <button className="prompt-modal-btn cancel" onClick={handleCloseTimeZoneModal}>
+                                    {t('common.cancel')}
+                                </button>
+                                <button
+                                    className="prompt-modal-btn save"
+                                    onClick={() => void handleSaveTimeZone()}
+                                    disabled={savingTimeZone}
+                                >
+                                    {savingTimeZone ? t('common.saving') : t('common.save')}
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            <AnimatePresence>
                 {showWeatherCityModal && (
                     <motion.div
                         className="prompt-modal-overlay"
@@ -1179,8 +1317,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                                 ) : (
                                     <div className="weather-city-results">
                                         {weatherCityResults.map((city) => {
-                                            const isSelected =
-                                                selectedWeatherCity?.location_key === city.location_key
+                                            const isSelected = selectedWeatherCity?.location_key === city.location_key
                                             return (
                                                 <button
                                                     key={city.location_key}

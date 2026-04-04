@@ -193,7 +193,11 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 当消息中出现 [用户发红包] 时，表示用户给你发了红包，并会提供 packet_key/amount/message。
 如果你决定领取，请调用工具 red_packet_received 并传入 packet_key。`)
 
-	fullSystemPrompt := buildChatSystemPrompt(systemPrompt, userContext, persona, redPacketGuide)
+	timeToolGuide := strings.TrimSpace(`[时间工具]
+当需要回答当前时间、当前日期、今天/明天/昨天、星期几、时区、是否已到某个时刻等实时问题时，必须先调用 get_time。
+不要凭模型记忆猜测当前时间。`)
+
+	fullSystemPrompt := buildChatSystemPrompt(systemPrompt, userContext, persona, timeToolGuide, redPacketGuide)
 
 	if fullSystemPrompt != "" {
 		messages = append(messages, client.Message{
@@ -288,6 +292,7 @@ func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiCli
 	toolExecutor := newChatToolExecutor(h.momentManager, h.momentGenerator)
 	toolExecutor.configManager = h.configManager
 	toolExecutor.weatherService = h.getWeatherService()
+	toolExecutor.exactTimeService = h.exactTimeService
 	loopResult, errLoop := runChatWithToolLoop(
 		ctxAI,
 		aiClient,
@@ -441,6 +446,7 @@ func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiCli
 	toolExecutor := newChatToolExecutor(h.momentManager, h.momentGenerator)
 	toolExecutor.configManager = h.configManager
 	toolExecutor.weatherService = h.getWeatherService()
+	toolExecutor.exactTimeService = h.exactTimeService
 
 	baseTime := time.Now()
 	messageCounter := 0
@@ -939,6 +945,17 @@ func getChatTools(options ...chatToolOptions) []client.Tool {
 						},
 					},
 					"required": []string{"name", "target"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: client.ToolFunction{
+				Name:        "get_time",
+				Description: "获取当前时间、日期、星期和时区信息。时间来自应用内 NTP 同步时间服务，并按设置中的时区返回。",
+				Parameters: map[string]interface{}{
+					"type":       "object",
+					"properties": map[string]interface{}{},
 				},
 			},
 		},

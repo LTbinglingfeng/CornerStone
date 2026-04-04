@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 )
 
 func defaultProviderBaseURL(providerType config.ProviderType) string {
@@ -36,6 +37,7 @@ type ConfigUpdateRequest struct {
 	SystemPrompt           *string         `json:"system_prompt,omitempty"`
 	ReplyWaitWindowMode    *string         `json:"reply_wait_window_mode,omitempty"`
 	ReplyWaitWindowSeconds *int            `json:"reply_wait_window_seconds,omitempty"`
+	TimeZone               *string         `json:"time_zone,omitempty"`
 	WeatherDefaultCity     json.RawMessage `json:"weather_default_city,omitempty"`
 }
 
@@ -91,6 +93,7 @@ func (h *Handler) handleConfig(w http.ResponseWriter, r *http.Request) {
 			SystemPrompt           string              `json:"system_prompt"`
 			ReplyWaitWindowMode    string              `json:"reply_wait_window_mode"`
 			ReplyWaitWindowSeconds int                 `json:"reply_wait_window_seconds"`
+			TimeZone               string              `json:"time_zone"`
 			WeatherDefaultCity     *config.WeatherCity `json:"weather_default_city,omitempty"`
 		}{
 			BaseURL:                provider.BaseURL,
@@ -99,6 +102,7 @@ func (h *Handler) handleConfig(w http.ResponseWriter, r *http.Request) {
 			SystemPrompt:           h.configManager.GetSystemPrompt(),
 			ReplyWaitWindowMode:    h.configManager.Get().ReplyWaitWindowMode,
 			ReplyWaitWindowSeconds: h.configManager.Get().ReplyWaitWindowSeconds,
+			TimeZone:               h.configManager.Get().TimeZone,
 			WeatherDefaultCity:     h.configManager.GetWeatherDefaultCity(),
 		}
 		// 隐藏完整API密钥
@@ -132,8 +136,18 @@ func (h *Handler) handleConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if req.ReplyWaitWindowMode != nil || req.ReplyWaitWindowSeconds != nil || req.WeatherDefaultCity != nil {
+		if req.TimeZone != nil || req.ReplyWaitWindowMode != nil || req.ReplyWaitWindowSeconds != nil || req.WeatherDefaultCity != nil {
 			cfg := h.configManager.Get()
+			if req.TimeZone != nil {
+				trimmedTimeZone := strings.TrimSpace(*req.TimeZone)
+				if trimmedTimeZone != "" {
+					if _, err := time.LoadLocation(trimmedTimeZone); err != nil {
+						h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid time_zone"})
+						return
+					}
+				}
+				cfg.TimeZone = *req.TimeZone
+			}
 			if req.ReplyWaitWindowMode != nil {
 				cfg.ReplyWaitWindowMode = *req.ReplyWaitWindowMode
 			}
@@ -210,6 +224,7 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 			"system_prompt":             h.configManager.GetSystemPrompt(),
 			"reply_wait_window_mode":    cfg.ReplyWaitWindowMode,
 			"reply_wait_window_seconds": cfg.ReplyWaitWindowSeconds,
+			"time_zone":                 cfg.TimeZone,
 			"weather_default_city":      h.configManager.GetWeatherDefaultCity(),
 			"image_provider_id":         cfg.ImageProviderID,
 			"memory_provider_id":        cfg.MemoryProviderID,

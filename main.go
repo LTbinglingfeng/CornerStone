@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"cornerstone/api"
 	"cornerstone/config"
+	"cornerstone/exacttime"
 	"cornerstone/logging"
 	"cornerstone/storage"
 	"crypto/tls"
@@ -251,6 +253,11 @@ func main() {
 
 	// 注册API处理器
 	handler := api.NewHandler(configManager, promptManager, chatManager, userManager, authManager, cachePhotoDir, ttsAudioDir, memoryManager, memoryExtractor, momentManager, momentGenerator)
+	exactTimeService := exacttime.New(exacttime.DefaultConfig())
+	exactTimeCtx, exactTimeCancel := context.WithCancel(context.Background())
+	defer exactTimeCancel()
+	go exactTimeService.Run(exactTimeCtx)
+	handler.SetExactTimeService(exactTimeService)
 	appVersion := resolveVersion(exeDir)
 	clawBotService := api.NewClawBotService(handler)
 	handler.SetClawBotService(clawBotService)

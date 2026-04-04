@@ -42,10 +42,11 @@ type chatToolHandler func(ctx context.Context, toolCall client.ToolCall, toolCtx
 type chatToolExecutor struct {
 	handlers map[string]chatToolHandler
 
-	momentManager   *storage.MomentManager
-	momentGenerator *MomentGenerator
-	configManager   *config.Manager
-	weatherService  weatherService
+	momentManager    *storage.MomentManager
+	momentGenerator  *MomentGenerator
+	configManager    *config.Manager
+	weatherService   weatherService
+	exactTimeService exactTimeProvider
 }
 
 func newChatToolExecutor(momentManager *storage.MomentManager, momentGenerator *MomentGenerator) *chatToolExecutor {
@@ -60,6 +61,7 @@ func newChatToolExecutor(momentManager *storage.MomentManager, momentGenerator *
 	executor.handlers["send_pat"] = executor.handleSendPat
 	executor.handlers["generate_moment"] = executor.handleGenerateMoment
 	executor.handlers["get_weather"] = executor.handleGetWeather
+	executor.handlers["get_time"] = executor.handleGetTime
 
 	return executor
 }
@@ -94,6 +96,14 @@ func (e *chatToolExecutor) Execute(ctx context.Context, toolCall client.ToolCall
 	return marshalChatToolResult(result)
 }
 
+func decodeToolArguments(arguments string, dst interface{}) error {
+	trimmed := strings.TrimSpace(arguments)
+	if trimmed == "" {
+		trimmed = `{}`
+	}
+	return json.Unmarshal([]byte(trimmed), dst)
+}
+
 type chatToolSendRedPacketArgs struct {
 	Amount  float64 `json:"amount"`
 	Message string  `json:"message"`
@@ -101,7 +111,7 @@ type chatToolSendRedPacketArgs struct {
 
 func (e *chatToolExecutor) handleSendRedPacket(ctx context.Context, toolCall client.ToolCall, toolCtx chatToolContext) chatToolResult {
 	var args chatToolSendRedPacketArgs
-	if errUnmarshal := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); errUnmarshal != nil {
+	if errUnmarshal := decodeToolArguments(toolCall.Function.Arguments, &args); errUnmarshal != nil {
 		return chatToolResult{OK: false, Data: nil, Error: "invalid arguments"}
 	}
 	if args.Amount <= 0 {
@@ -131,7 +141,7 @@ type chatToolSendPatArgs struct {
 
 func (e *chatToolExecutor) handleSendPat(ctx context.Context, toolCall client.ToolCall, toolCtx chatToolContext) chatToolResult {
 	var args chatToolSendPatArgs
-	if errUnmarshal := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); errUnmarshal != nil {
+	if errUnmarshal := decodeToolArguments(toolCall.Function.Arguments, &args); errUnmarshal != nil {
 		return chatToolResult{OK: false, Data: nil, Error: "invalid arguments"}
 	}
 	name := strings.TrimSpace(args.Name)
@@ -159,7 +169,7 @@ type chatToolRedPacketReceivedArgs struct {
 
 func (e *chatToolExecutor) handleRedPacketReceived(ctx context.Context, toolCall client.ToolCall, toolCtx chatToolContext) chatToolResult {
 	var args chatToolRedPacketReceivedArgs
-	if errUnmarshal := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); errUnmarshal != nil {
+	if errUnmarshal := decodeToolArguments(toolCall.Function.Arguments, &args); errUnmarshal != nil {
 		return chatToolResult{OK: false, Data: nil, Error: "invalid arguments"}
 	}
 	packetKey := strings.TrimSpace(args.PacketKey)
@@ -199,7 +209,7 @@ func (e *chatToolExecutor) handleGenerateMoment(ctx context.Context, toolCall cl
 	}
 
 	var args chatToolGenerateMomentArgs
-	if errUnmarshal := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); errUnmarshal != nil {
+	if errUnmarshal := decodeToolArguments(toolCall.Function.Arguments, &args); errUnmarshal != nil {
 		return chatToolResult{OK: false, Data: nil, Error: "invalid arguments"}
 	}
 

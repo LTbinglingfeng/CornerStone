@@ -119,6 +119,7 @@ export interface ProvidersResponse {
     system_prompt: string
     reply_wait_window_mode?: 'fixed' | 'sliding' | string
     reply_wait_window_seconds?: number
+    time_zone?: string
     weather_default_city?: WeatherCity | null
     image_provider_id?: string
     memory_provider_id?: string
@@ -134,6 +135,7 @@ export interface AppConfig {
     system_prompt: string
     reply_wait_window_mode?: 'fixed' | 'sliding' | string
     reply_wait_window_seconds?: number
+    time_zone?: string
     weather_default_city?: WeatherCity | null
 }
 

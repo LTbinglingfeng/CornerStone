@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"cornerstone/config"
+	"cornerstone/exacttime"
 	"cornerstone/logging"
 	"cornerstone/storage"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Handler HTTP请求处理器
@@ -28,13 +30,19 @@ type Handler struct {
 	memorySessions  map[string]*storage.MemorySession
 	sessionsMu      sync.RWMutex
 
-	momentManager   *storage.MomentManager
-	momentGenerator *MomentGenerator
-	clawBotService  *ClawBotService
-	weatherService  weatherService
+	momentManager    *storage.MomentManager
+	momentGenerator  *MomentGenerator
+	clawBotService   *ClawBotService
+	weatherService   weatherService
+	exactTimeService exactTimeProvider
 
 	cleanupOnce sync.Once
 	cleanupDone chan struct{}
+}
+
+type exactTimeProvider interface {
+	Now() time.Time
+	Status() exacttime.Status
 }
 
 // NewHandler 创建处理器
@@ -261,4 +269,8 @@ func (h *Handler) jsonResponse(w http.ResponseWriter, status int, data interface
 
 func (h *Handler) SetClawBotService(service *ClawBotService) {
 	h.clawBotService = service
+}
+
+func (h *Handler) SetExactTimeService(service exactTimeProvider) {
+	h.exactTimeService = service
 }

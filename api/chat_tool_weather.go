@@ -4,7 +4,6 @@ import (
 	"context"
 	"cornerstone/client"
 	"cornerstone/config"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -216,7 +215,7 @@ func (e *chatToolExecutor) handleGetWeather(ctx context.Context, toolCall client
 	}
 
 	var args chatToolGetWeatherArgs
-	if errUnmarshal := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); errUnmarshal != nil {
+	if errUnmarshal := decodeToolArguments(toolCall.Function.Arguments, &args); errUnmarshal != nil {
 		return chatToolResult{OK: false, Data: nil, Error: "invalid arguments"}
 	}
 
