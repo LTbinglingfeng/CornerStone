@@ -1212,7 +1212,15 @@ func (s *ClawBotService) sendCommandReply(ctx context.Context, cfg config.ClawBo
 }
 
 func (s *ClawBotService) sendExclusiveBusyReply(ctx context.Context, cfg config.ClawBotConfig, userID string) {
-	s.sendCommandReply(ctx, cfg, userID, "当前正在重新生成上一轮回复，请等待完成后再发送新消息。", "exclusive busy")
+	s.mu.RLock()
+	reason := ""
+	if state := s.pendingReplies[userID]; state != nil {
+		reason = state.BlockingReason
+	}
+	s.mu.RUnlock()
+
+	desc, _ := describeClawBotExclusiveOperation(reason)
+	s.sendCommandReply(ctx, cfg, userID, fmt.Sprintf("当前正在%s，请等待完成后再发送新消息。", desc), "exclusive busy")
 }
 
 func (s *ClawBotService) sendAndPersistReply(ctx context.Context, cfg config.ClawBotConfig, userID, sessionID, reply string, memSession *storage.MemorySession, action string) {
@@ -1611,6 +1619,29 @@ func (s *ClawBotService) getContextToken(userID string) string {
 	return s.contextTokens[userID]
 }
 
+func describeClawBotExclusiveOperation(reason string) (string, string) {
+	switch strings.TrimSpace(reason) {
+	case clawBotExclusiveOpRegenerate:
+		return "重新生成上一轮回复", "/re"
+	default:
+		reason = strings.TrimSpace(reason)
+		if reason == "" {
+			return "操作", ""
+		}
+		return reason, ""
+	}
+}
+
+func formatClawBotExclusiveOperationBusyReply(blockingReason, attemptedReason string) string {
+	blockingDesc, _ := describeClawBotExclusiveOperation(blockingReason)
+	_, attemptedCmd := describeClawBotExclusiveOperation(attemptedReason)
+	attemptedAction := "执行该操作"
+	if attemptedCmd != "" {
+		attemptedAction = "使用 " + attemptedCmd
+	}
+	return fmt.Sprintf("当前正在%s，请等待完成后再%s。", blockingDesc, attemptedAction)
+}
+
 func (s *ClawBotService) hasExclusiveOperation(userID string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -1631,9 +1662,14 @@ func (s *ClawBotService) beginExclusiveOperation(userID, reason string) (bool, s
 
 	switch {
 	case state.BlockingReason != "":
-		return false, "当前正在重新生成上一轮回复，请等待完成后再使用 /re。"
+		return false, formatClawBotExclusiveOperationBusyReply(state.BlockingReason, reason)
 	case state.Processing || state.Ready || len(state.Messages) > 0:
-		return false, "当前还有待处理消息，请等待回复完成后再使用 /re。"
+		_, attemptedCmd := describeClawBotExclusiveOperation(reason)
+		attemptedAction := "执行该操作"
+		if attemptedCmd != "" {
+			attemptedAction = "使用 " + attemptedCmd
+		}
+		return false, fmt.Sprintf("当前还有待处理消息，请等待回复完成后再%s。", attemptedAction)
 	}
 
 	state.BlockingReason = reason
