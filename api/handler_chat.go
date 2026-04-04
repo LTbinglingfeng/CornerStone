@@ -871,10 +871,7 @@ func getChatTools(options ...chatToolOptions) []client.Tool {
 	if len(options) > 0 && options[0].Channel != "" {
 		channel = options[0].Channel
 	}
-	if channel == chatToolChannelClawBot {
-		return nil
-	}
-	return []client.Tool{
+	tools := []client.Tool{
 		{
 			Type: "function",
 			Function: client.ToolFunction{
@@ -1005,4 +1002,20 @@ func getChatTools(options ...chatToolOptions) []client.Tool {
 			},
 		},
 	}
+
+	if channel == chatToolChannelClawBot {
+		filtered := make([]client.Tool, 0, 2)
+		for _, tool := range tools {
+			switch strings.TrimSpace(tool.Function.Name) {
+			case "get_time", "get_weather":
+				filtered = append(filtered, tool)
+			}
+		}
+		if len(filtered) == 0 {
+			return nil
+		}
+		return filtered
+	}
+
+	return tools
 }

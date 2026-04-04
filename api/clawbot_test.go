@@ -4,6 +4,7 @@ import (
 	"context"
 	"cornerstone/client"
 	"cornerstone/config"
+	"cornerstone/exacttime"
 	"cornerstone/storage"
 	"encoding/json"
 	"net/http"
@@ -909,6 +910,171 @@ func TestProcessRegenerateCommand_ReplacesTailAndSendsFreshReply(t *testing.T) {
 	}
 	if record.Messages[1].Role != "assistant" || record.Messages[1].Content != "fresh reply" {
 		t.Fatalf("second message = %#v, want assistant fresh reply", record.Messages[1])
+	}
+}
+
+func TestProcessIncomingBatch_ClawBotRunsReadOnlyToolLoop(t *testing.T) {
+	var state struct {
+		mu       sync.Mutex
+		chatReqs []struct {
+			Messages []struct {
+				Role       string            `json:"role"`
+				Content    interface{}       `json:"content"`
+				ToolCalls  []client.ToolCall `json:"tool_calls,omitempty"`
+				ToolCallID string            `json:"tool_call_id,omitempty"`
+			} `json:"messages"`
+			Tools []client.Tool `json:"tools"`
+		}
+		sendTexts []string
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/chat/completions":
+			var req struct {
+				Messages []struct {
+					Role       string            `json:"role"`
+					Content    interface{}       `json:"content"`
+					ToolCalls  []client.ToolCall `json:"tool_calls,omitempty"`
+					ToolCallID string            `json:"tool_call_id,omitempty"`
+				} `json:"messages"`
+				Tools []client.Tool `json:"tools"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode chat request failed: %v", err)
+			}
+
+			state.mu.Lock()
+			state.chatReqs = append(state.chatReqs, req)
+			callIndex := len(state.chatReqs)
+			state.mu.Unlock()
+
+			respMessage := client.Message{
+				Role:    "assistant",
+				Content: "现在是 2026-04-04 18:30:45。",
+			}
+			finishReason := "stop"
+			if callIndex == 1 {
+				respMessage = client.Message{
+					Role: "assistant",
+					ToolCalls: []client.ToolCall{
+						{
+							ID:   "call_time_1",
+							Type: "function",
+							Function: client.ToolCallFunction{
+								Name:      "get_time",
+								Arguments: `{}`,
+							},
+						},
+					},
+				}
+				finishReason = "tool_calls"
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(client.ChatResponse{
+				ID:      "chatcmpl-test",
+				Object:  "chat.completion",
+				Created: time.Now().Unix(),
+				Model:   "gpt-test",
+				Choices: []client.Choice{
+					{
+						Index:        0,
+						Message:      respMessage,
+						FinishReason: finishReason,
+					},
+				},
+			})
+		case "/ilink/bot/sendmessage":
+			var req client.ClawBotSendMessageRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode sendmessage request failed: %v", err)
+			}
+
+			text := ""
+			if len(req.Msg.ItemList) > 0 && req.Msg.ItemList[0].TextItem != nil {
+				text = req.Msg.ItemList[0].TextItem.Text
+			}
+
+			state.mu.Lock()
+			state.sendTexts = append(state.sendTexts, text)
+			state.mu.Unlock()
+
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(client.ClawBotSendMessageResponse{Ret: 0})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	service := newTestClawBotService(t, server.URL)
+	service.handler.exactTimeService = &stubExactTimeService{
+		now: time.Date(2026, 4, 4, 10, 30, 45, 0, time.UTC),
+		status: exacttime.Status{
+			Server:      "ntp.aliyun.com",
+			LastSuccess: true,
+			Message:     "ntp sync succeeded",
+		},
+	}
+
+	cfg := service.handler.configManager.GetClawBotConfig()
+	service.processIncomingBatch(context.Background(), cfg, "wx-user", []clawBotPendingMessage{{Text: "现在几点"}})
+
+	state.mu.Lock()
+	defer state.mu.Unlock()
+
+	if len(state.chatReqs) != 2 {
+		t.Fatalf("chat request count = %d, want 2", len(state.chatReqs))
+	}
+	if len(state.sendTexts) != 1 || state.sendTexts[0] != "现在是 2026-04-04 18:30:45。" {
+		t.Fatalf("send texts = %#v, want final assistant reply", state.sendTexts)
+	}
+
+	firstReq := state.chatReqs[0]
+	if len(firstReq.Tools) != 2 {
+		t.Fatalf("first request tools len = %d, want 2", len(firstReq.Tools))
+	}
+	for _, tool := range firstReq.Tools {
+		switch tool.Function.Name {
+		case "get_time", "get_weather":
+		default:
+			t.Fatalf("unexpected clawbot tool %q", tool.Function.Name)
+		}
+	}
+
+	secondReq := state.chatReqs[1]
+	foundToolResult := false
+	for _, msg := range secondReq.Messages {
+		content, _ := msg.Content.(string)
+		if msg.Role == "tool" && msg.ToolCallID == "call_time_1" && strings.Contains(content, `"tool":"get_time"`) {
+			foundToolResult = true
+			break
+		}
+	}
+	if !foundToolResult {
+		t.Fatalf("second request missing get_time tool result: %#v", secondReq.Messages)
+	}
+
+	sessionID, ok := service.getActiveSessionID("wx-user")
+	if !ok {
+		t.Fatal("active session not found")
+	}
+	record, ok := service.handler.chatManager.GetSession(sessionID)
+	if !ok {
+		t.Fatal("session not found")
+	}
+	if len(record.Messages) != 4 {
+		t.Fatalf("message count = %d, want 4", len(record.Messages))
+	}
+	if record.Messages[1].Role != "assistant" || len(record.Messages[1].ToolCalls) != 1 || record.Messages[1].ToolCalls[0].Function.Name != "get_time" {
+		t.Fatalf("assistant tool call message = %#v, want get_time tool call", record.Messages[1])
+	}
+	if record.Messages[2].Role != "tool" || record.Messages[2].ToolCallID != "call_time_1" {
+		t.Fatalf("tool message = %#v, want tool result for call_time_1", record.Messages[2])
+	}
+	if record.Messages[3].Role != "assistant" || record.Messages[3].Content != "现在是 2026-04-04 18:30:45。" {
+		t.Fatalf("final assistant message = %#v, want final reply", record.Messages[3])
 	}
 }
 

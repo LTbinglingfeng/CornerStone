@@ -44,7 +44,7 @@ func decodeTimeToolResult(t *testing.T, raw string) (chatToolResult, timeToolSum
 	return result, summary
 }
 
-func TestGetChatTools_IncludesTimeButKeepsClawBotDisabled(t *testing.T) {
+func TestGetChatTools_IncludesTimeAndClawBotKeepsReadOnlyTools(t *testing.T) {
 	tools := getChatTools()
 	foundTime := false
 	for _, tool := range tools {
@@ -57,8 +57,20 @@ func TestGetChatTools_IncludesTimeButKeepsClawBotDisabled(t *testing.T) {
 		t.Fatal("get_time tool not registered")
 	}
 
-	if tools := getChatTools(chatToolOptions{Channel: chatToolChannelClawBot}); tools != nil {
-		t.Fatalf("clawbot tools = %#v, want nil", tools)
+	clawBotTools := getChatTools(chatToolOptions{Channel: chatToolChannelClawBot})
+	if len(clawBotTools) != 2 {
+		t.Fatalf("clawbot tools len = %d, want 2", len(clawBotTools))
+	}
+
+	names := make(map[string]struct{}, len(clawBotTools))
+	for _, tool := range clawBotTools {
+		names[tool.Function.Name] = struct{}{}
+	}
+	if _, ok := names["get_time"]; !ok {
+		t.Fatalf("clawbot tools = %#v, want get_time", clawBotTools)
+	}
+	if _, ok := names["get_weather"]; !ok {
+		t.Fatalf("clawbot tools = %#v, want get_weather", clawBotTools)
 	}
 }
 

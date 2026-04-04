@@ -193,7 +193,7 @@ func TestBuildWeatherAirQualitySummary(t *testing.T) {
 	}
 }
 
-func TestGetChatTools_IncludesWeatherButKeepsClawBotDisabled(t *testing.T) {
+func TestGetChatTools_IncludesWeatherAndClawBotExcludesInteractiveTools(t *testing.T) {
 	tools := getChatTools()
 	foundWeather := false
 	for _, tool := range tools {
@@ -206,8 +206,13 @@ func TestGetChatTools_IncludesWeatherButKeepsClawBotDisabled(t *testing.T) {
 		t.Fatal("get_weather tool not registered")
 	}
 
-	if tools := getChatTools(chatToolOptions{Channel: chatToolChannelClawBot}); tools != nil {
-		t.Fatalf("clawbot tools = %#v, want nil", tools)
+	clawBotTools := getChatTools(chatToolOptions{Channel: chatToolChannelClawBot})
+	for _, tool := range clawBotTools {
+		switch tool.Function.Name {
+		case "get_time", "get_weather":
+		default:
+			t.Fatalf("unexpected clawbot tool %q", tool.Function.Name)
+		}
 	}
 }
 

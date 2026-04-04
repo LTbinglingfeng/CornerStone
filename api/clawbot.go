@@ -95,6 +95,12 @@ type clawBotPendingReply struct {
 	BlockingReason  string
 }
 
+type clawBotGeneratedReply struct {
+	Text            string
+	StorageMessages []storage.ChatMessage
+	MemSession      *storage.MemorySession
+}
+
 type ClawBotService struct {
 	handler *Handler
 	client  *client.ClawBotClient
@@ -798,19 +804,19 @@ func (s *ClawBotService) processRegenerateCommand(ctx context.Context, cfg confi
 
 	logging.Infof("clawbot regenerate prepared trailing response replacement with %d messages: user=%s session=%s", len(snapshot.TailMessages), userID, session.SessionID)
 
-	reply, memSession, err := s.generateReplyForSession(ctx, snapshot.Session, cfg.PromptID)
+	generatedReply, err := s.generateReplyForSession(ctx, snapshot.Session, cfg.PromptID)
 	if err != nil {
 		logging.Errorf("clawbot regenerate reply failed: user=%s session=%s err=%v", userID, session.SessionID, err)
 		s.setLastError(err)
 		s.sendCommandReply(ctx, cfg, userID, "暂时无法重新生成，请稍后再试。", "regenerate reply failure")
 		return
 	}
-	if strings.TrimSpace(reply) == "" {
+	if generatedReply == nil || strings.TrimSpace(generatedReply.Text) == "" {
 		s.sendCommandReply(ctx, cfg, userID, "暂时无法重新生成，请稍后再试。", "regenerate empty reply")
 		return
 	}
 
-	s.sendAndReplaceTrailingReply(ctx, cfg, userID, session.SessionID, reply, snapshot.TailMessages, memSession, "regenerate reply")
+	s.sendAndReplaceTrailingReply(ctx, cfg, userID, session.SessionID, generatedReply, snapshot.TailMessages, "regenerate reply")
 }
 
 func (s *ClawBotService) processIncomingBatch(ctx context.Context, cfg config.ClawBotConfig, userID string, messages []clawBotPendingMessage) {
@@ -851,36 +857,36 @@ func (s *ClawBotService) processIncomingBatch(ctx context.Context, cfg config.Cl
 		return
 	}
 
-	reply, memSession, err := s.generateReply(ctx, session.SessionID, cfg.PromptID)
+	generatedReply, err := s.generateReply(ctx, session.SessionID, cfg.PromptID)
 	if err != nil {
 		logging.Errorf("clawbot generate reply failed: user=%s session=%s err=%v", userID, session.SessionID, err)
 		s.setLastError(err)
-		reply = "暂时无法处理你的消息，请稍后再试。"
+		generatedReply = &clawBotGeneratedReply{Text: "暂时无法处理你的消息，请稍后再试。"}
 	}
-	s.sendAndPersistReply(ctx, cfg, userID, session.SessionID, reply, memSession, "reply")
+	s.sendAndPersistReply(ctx, cfg, userID, session.SessionID, generatedReply, "reply")
 }
 
-func (s *ClawBotService) generateReply(ctx context.Context, sessionID, configuredPromptID string) (string, *storage.MemorySession, error) {
+func (s *ClawBotService) generateReply(ctx context.Context, sessionID, configuredPromptID string) (*clawBotGeneratedReply, error) {
 	session, ok := s.handler.chatManager.GetSession(sessionID)
 	if !ok {
-		return "", nil, fmt.Errorf("session not found: %s", sessionID)
+		return nil, fmt.Errorf("session not found: %s", sessionID)
 	}
 	return s.generateReplyForSession(ctx, session, configuredPromptID)
 }
 
-func (s *ClawBotService) generateReplyForSession(ctx context.Context, session *storage.ChatRecord, configuredPromptID string) (string, *storage.MemorySession, error) {
+func (s *ClawBotService) generateReplyForSession(ctx context.Context, session *storage.ChatRecord, configuredPromptID string) (*clawBotGeneratedReply, error) {
 	provider := s.handler.configManager.GetActiveProvider()
 	if provider == nil {
-		return "", nil, fmt.Errorf("no active provider configured")
+		return nil, fmt.Errorf("no active provider configured")
 	}
 	if provider.Type == config.ProviderTypeGeminiImage {
-		return "", nil, fmt.Errorf("active provider is not chat-capable")
+		return nil, fmt.Errorf("active provider is not chat-capable")
 	}
 	if strings.TrimSpace(provider.APIKey) == "" {
-		return "", nil, fmt.Errorf("api key not configured")
+		return nil, fmt.Errorf("api key not configured")
 	}
 	if session == nil {
-		return "", nil, fmt.Errorf("session is nil")
+		return nil, fmt.Errorf("session is nil")
 	}
 
 	systemPrompt := s.handler.configManager.GetSystemPrompt()
@@ -891,10 +897,12 @@ func (s *ClawBotService) generateReplyForSession(ctx context.Context, session *s
 	}
 	persona := ""
 	validPromptID := ""
+	promptName := strings.TrimSpace(session.PromptName)
 	if effectivePromptID != "" {
 		if prompt, ok := s.handler.promptManager.Get(effectivePromptID); ok {
 			persona = strings.TrimSpace(prompt.Content)
 			validPromptID = effectivePromptID
+			promptName = strings.TrimSpace(prompt.Name)
 		}
 	}
 
@@ -907,13 +915,22 @@ func (s *ClawBotService) generateReplyForSession(ctx context.Context, session *s
 你正在通过微信 ClawBot 渠道回复用户。
 你只能回复适合微信文本消息的内容。
 请直接输出可以发送给用户的自然语言消息。
-不要调用网页端工具能力，包括红包、拍一拍、朋友圈等。`)
+你可以调用 get_time 和 get_weather 查询实时信息。
+不要调用红包、拍一拍、朋友圈等微信交互工具。`)
+
+	timeToolGuide := strings.TrimSpace(`[时间工具]
+当需要回答当前时间、当前日期、今天/明天/昨天、星期几、时区、是否已到某个时刻等实时问题时，必须先调用 get_time。
+不要凭模型记忆猜测当前时间。`)
+
+	weatherToolGuide := strings.TrimSpace(`[天气工具]
+当需要回答当前天气、气温、降雨、空气质量、天气预警等实时天气问题时，必须先调用 get_weather。
+如果用户没有指定城市，则使用设置中的默认天气城市。`)
 
 	history := convertChatMessages(session.Messages)
 	history = mergeTrailingUserMessages(history)
 	history = limitMessagesByTurns(history, provider.ContextMessages)
 
-	fullSystemPrompt := buildChatSystemPrompt(systemPrompt, userContext, persona, channelGuide)
+	fullSystemPrompt := buildChatSystemPrompt(systemPrompt, userContext, persona, channelGuide, timeToolGuide, weatherToolGuide)
 
 	messages := make([]client.Message, 0, len(history)+1)
 	if strings.TrimSpace(fullSystemPrompt) != "" {
@@ -926,7 +943,7 @@ func (s *ClawBotService) generateReplyForSession(ctx context.Context, session *s
 	messages = normalizeMessagesForProvider(messages)
 	resolvedMessages, err := s.handler.prepareMessagesForProvider(messages, provider.ImageCapable)
 	if err != nil {
-		return "", memSession, err
+		return nil, err
 	}
 
 	aiClient := newAIClientForProvider(provider)
@@ -967,14 +984,50 @@ func (s *ClawBotService) generateReplyForSession(ctx context.Context, session *s
 		req.ReasoningEffort = provider.ReasoningEffort
 	}
 
-	resp, err := aiClient.Chat(ctx, req)
+	toolExecutor := newChatToolExecutor(s.handler.momentManager, s.handler.momentGenerator)
+	toolExecutor.configManager = s.handler.configManager
+	toolExecutor.weatherService = s.handler.getWeatherService()
+	toolExecutor.exactTimeService = s.handler.exactTimeService
+
+	loopResult, err := runChatWithToolLoop(
+		ctx,
+		aiClient,
+		req,
+		toolExecutor,
+		chatToolContext{
+			SessionID:  session.SessionID,
+			PromptID:   validPromptID,
+			PromptName: promptName,
+		},
+		nil,
+	)
 	if err != nil {
-		return "", memSession, err
+		return nil, err
 	}
-	if len(resp.Choices) == 0 {
-		return "", memSession, nil
+	if loopResult == nil || loopResult.FinalResponse == nil || len(loopResult.FinalResponse.Choices) == 0 {
+		return &clawBotGeneratedReply{MemSession: memSession}, nil
 	}
-	return strings.TrimSpace(resp.Choices[0].Message.Content), memSession, nil
+
+	baseTime := time.Now()
+	storageMessages := make([]storage.ChatMessage, 0, len(loopResult.NewMessages))
+	for index, msg := range loopResult.NewMessages {
+		storageMessages = append(storageMessages, storage.ChatMessage{
+			Role:             msg.Role,
+			Content:          msg.Content,
+			ReasoningContent: msg.ReasoningContent,
+			ToolCalls:        msg.ToolCalls,
+			ToolCallID:       msg.ToolCallID,
+			ImagePaths:       msg.ImagePaths,
+			TTSAudioPaths:    msg.TTSAudioPaths,
+			Timestamp:        baseTime.Add(time.Millisecond * time.Duration(index)),
+		})
+	}
+
+	return &clawBotGeneratedReply{
+		Text:            strings.TrimSpace(loopResult.FinalResponse.Choices[0].Message.Content),
+		StorageMessages: storageMessages,
+		MemSession:      memSession,
+	}, nil
 }
 
 func (s *ClawBotService) processPendingBatchAsync(ctx context.Context, userID string, batch []clawBotPendingMessage) {
@@ -1233,8 +1286,12 @@ func (s *ClawBotService) sendExclusiveBusyReply(ctx context.Context, cfg config.
 	s.sendCommandReply(ctx, cfg, userID, fmt.Sprintf("当前正在%s，请等待完成后再发送新消息。", desc), "exclusive busy")
 }
 
-func (s *ClawBotService) sendAndPersistReply(ctx context.Context, cfg config.ClawBotConfig, userID, sessionID, reply string, memSession *storage.MemorySession, action string) {
-	reply = strings.TrimSpace(reply)
+func (s *ClawBotService) sendAndPersistReply(ctx context.Context, cfg config.ClawBotConfig, userID, sessionID string, generatedReply *clawBotGeneratedReply, action string) {
+	if generatedReply == nil {
+		return
+	}
+
+	reply := strings.TrimSpace(generatedReply.Text)
 	if reply == "" {
 		return
 	}
@@ -1245,19 +1302,34 @@ func (s *ClawBotService) sendAndPersistReply(ctx context.Context, cfg config.Cla
 		return
 	}
 
-	if err := s.handler.chatManager.AddMessage(sessionID, "assistant", reply); err != nil {
-		logging.Errorf("clawbot save assistant message failed: user=%s session=%s err=%v", userID, sessionID, err)
+	messages := generatedReply.StorageMessages
+	if len(messages) == 0 {
+		messages = []storage.ChatMessage{
+			{
+				Role:      "assistant",
+				Content:   reply,
+				Timestamp: time.Now(),
+			},
+		}
+	}
+
+	if err := s.handler.chatManager.AddMessages(sessionID, messages); err != nil {
+		logging.Errorf("clawbot save reply batch failed: user=%s session=%s err=%v", userID, sessionID, err)
 		s.setLastError(err)
 		return
 	}
 
-	if memSession != nil {
-		memSession.OnRoundComplete()
+	if generatedReply.MemSession != nil {
+		generatedReply.MemSession.OnRoundComplete()
 	}
 }
 
-func (s *ClawBotService) sendAndReplaceTrailingReply(ctx context.Context, cfg config.ClawBotConfig, userID, sessionID, reply string, expectedTail []storage.ChatMessage, memSession *storage.MemorySession, action string) {
-	reply = strings.TrimSpace(reply)
+func (s *ClawBotService) sendAndReplaceTrailingReply(ctx context.Context, cfg config.ClawBotConfig, userID, sessionID string, generatedReply *clawBotGeneratedReply, expectedTail []storage.ChatMessage, action string) {
+	if generatedReply == nil {
+		return
+	}
+
+	reply := strings.TrimSpace(generatedReply.Text)
 	if reply == "" {
 		return
 	}
@@ -1268,12 +1340,15 @@ func (s *ClawBotService) sendAndReplaceTrailingReply(ctx context.Context, cfg co
 		return
 	}
 
-	replacement := []storage.ChatMessage{
-		{
-			Role:      "assistant",
-			Content:   reply,
-			Timestamp: time.Now(),
-		},
+	replacement := generatedReply.StorageMessages
+	if len(replacement) == 0 {
+		replacement = []storage.ChatMessage{
+			{
+				Role:      "assistant",
+				Content:   reply,
+				Timestamp: time.Now(),
+			},
+		}
 	}
 	if err := s.handler.chatManager.ReplaceTrailingResponseBatch(sessionID, expectedTail, replacement); err != nil {
 		logging.Errorf("clawbot replace trailing response batch failed: user=%s session=%s err=%v", userID, sessionID, err)
@@ -1281,8 +1356,8 @@ func (s *ClawBotService) sendAndReplaceTrailingReply(ctx context.Context, cfg co
 		return
 	}
 
-	if memSession != nil {
-		memSession.OnRoundComplete()
+	if generatedReply.MemSession != nil {
+		generatedReply.MemSession.OnRoundComplete()
 	}
 }
 
