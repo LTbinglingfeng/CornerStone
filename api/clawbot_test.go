@@ -432,6 +432,26 @@ func waitForAssistantMessageContent(t *testing.T, chatManager *storage.ChatManag
 	t.Fatalf("assistant message did not become %q in time, got %#v", want, record.Messages)
 }
 
+func waitForClawBotChatRequestCount(t *testing.T, state *clawBotTestServerState, want int) {
+	t.Helper()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		state.mu.Lock()
+		got := len(state.chatRequests)
+		state.mu.Unlock()
+		if got == want {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	state.mu.Lock()
+	got := len(state.chatRequests)
+	state.mu.Unlock()
+	t.Fatalf("chat request count = %d, want %d", got, want)
+}
+
 func TestHandleMenuCommand_IncludesNewCommands(t *testing.T) {
 	server, state := newClawBotTestServer(t, "unused")
 	defer server.Close()
@@ -575,6 +595,136 @@ func TestHandlePromptCommand_SwitchesPromptAndActivatesLatestPromptSession(t *te
 	}
 	if currentID, ok := service.getActiveSessionID(userID); !ok || currentID != session.SessionID {
 		t.Fatalf("active session id = (%v, %s), want (true, %s)", ok, currentID, session.SessionID)
+	}
+}
+
+func TestHandleIncomingMessage_UnknownCommandDoesNotReachModel(t *testing.T) {
+	server, state := newClawBotTestServer(t, "unused")
+	defer server.Close()
+
+	service := newTestClawBotService(t, server.URL)
+	cfg := service.handler.configManager.GetClawBotConfig()
+
+	service.handleIncomingMessage(context.Background(), cfg, newClawBotTextIncomingMessage("wx-user", "/men"))
+
+	state.mu.Lock()
+	defer state.mu.Unlock()
+
+	if len(state.chatRequests) != 0 {
+		t.Fatalf("chat request count = %d, want 0", len(state.chatRequests))
+	}
+	if len(state.sendTexts) != 1 {
+		t.Fatalf("send text count = %d, want 1", len(state.sendTexts))
+	}
+	reply := state.sendTexts[0]
+	if !strings.Contains(reply, "未知命令") || !strings.Contains(reply, "/menu") || !strings.Contains(reply, "//menu") {
+		t.Fatalf("unknown command reply = %q, want unknown-command guidance", reply)
+	}
+	if sessions := service.handler.chatManager.ListSessions(); len(sessions) != 0 {
+		t.Fatalf("session count = %d, want 0", len(sessions))
+	}
+}
+
+func TestHandleIncomingMessage_KnownCommandWithInvalidArgsReturnsUsage(t *testing.T) {
+	server, state := newClawBotTestServer(t, "unused")
+	defer server.Close()
+
+	service := newTestClawBotService(t, server.URL)
+	cfg := service.handler.configManager.GetClawBotConfig()
+
+	service.handleIncomingMessage(context.Background(), cfg, newClawBotTextIncomingMessage("wx-user", "/new hello"))
+
+	state.mu.Lock()
+	defer state.mu.Unlock()
+
+	if len(state.chatRequests) != 0 {
+		t.Fatalf("chat request count = %d, want 0", len(state.chatRequests))
+	}
+	if len(state.sendTexts) != 1 {
+		t.Fatalf("send text count = %d, want 1", len(state.sendTexts))
+	}
+	if !strings.Contains(state.sendTexts[0], "用法：/new") {
+		t.Fatalf("usage reply = %q, want /new usage", state.sendTexts[0])
+	}
+}
+
+func TestHandleIncomingMessage_DoubleSlashEscapesCommandText(t *testing.T) {
+	server, state := newClawBotTestServer(t, "assistant reply")
+	defer server.Close()
+
+	service := newTestClawBotService(t, server.URL)
+	cfg := service.handler.configManager.GetClawBotConfig()
+
+	service.handleIncomingMessage(context.Background(), cfg, newClawBotTextIncomingMessage("wx-user", "//menu"))
+
+	waitForClawBotChatRequestCount(t, state, 1)
+
+	state.mu.Lock()
+	defer state.mu.Unlock()
+
+	if len(state.sendTexts) != 1 || state.sendTexts[0] != "assistant reply" {
+		t.Fatalf("send texts = %#v, want assistant reply", state.sendTexts)
+	}
+	lastMessage := state.chatRequests[0].Messages[len(state.chatRequests[0].Messages)-1]
+	content, _ := lastMessage.Content.(string)
+	if lastMessage.Role != "user" || content != "/menu" {
+		t.Fatalf("last request message = (%s, %v), want user /menu", lastMessage.Role, lastMessage.Content)
+	}
+}
+
+func TestHandlePromptCommand_AmbiguousPromptSelectorReturnsHint(t *testing.T) {
+	server, state := newClawBotTestServer(t, "unused")
+	defer server.Close()
+
+	service := newTestClawBotService(t, server.URL)
+	if _, err := service.handler.promptManager.Create("prompt-2", "Alex", "prompt two", "", ""); err != nil {
+		t.Fatalf("Create prompt-2 err = %v", err)
+	}
+	if _, err := service.handler.promptManager.Create("prompt-3", "Alex", "prompt three", "", ""); err != nil {
+		t.Fatalf("Create prompt-3 err = %v", err)
+	}
+
+	cfg := service.handler.configManager.GetClawBotConfig()
+	service.handlePromptCommand(context.Background(), cfg, "wx-user", "Alex")
+
+	state.mu.Lock()
+	defer state.mu.Unlock()
+
+	if len(state.sendTexts) != 1 {
+		t.Fatalf("send text count = %d, want 1", len(state.sendTexts))
+	}
+	if !strings.Contains(state.sendTexts[0], "匹配到多个同名人设") {
+		t.Fatalf("prompt ambiguous reply = %q, want ambiguous hint", state.sendTexts[0])
+	}
+}
+
+func TestHandleCheckoutCommand_AmbiguousSessionSelectorReturnsHint(t *testing.T) {
+	server, state := newClawBotTestServer(t, "unused")
+	defer server.Close()
+
+	service := newTestClawBotService(t, server.URL)
+	cfg := service.handler.configManager.GetClawBotConfig()
+
+	userID := "wx-user"
+	prefix := clawBotSessionPrefix(userID)
+	if _, err := service.handler.chatManager.CreateSession(prefix+"alpha_sharedtail", "Session Alpha", "", ""); err != nil {
+		t.Fatalf("CreateSession alpha err = %v", err)
+	}
+	time.Sleep(10 * time.Millisecond)
+	if _, err := service.handler.chatManager.CreateSession(prefix+"beta_sharedtail", "Session Beta", "", ""); err != nil {
+		t.Fatalf("CreateSession beta err = %v", err)
+	}
+
+	service.handleCheckoutCommand(context.Background(), cfg, userID, "sharedtail")
+
+	state.mu.Lock()
+	defer state.mu.Unlock()
+
+	if len(state.sendTexts) != 1 {
+		t.Fatalf("send text count = %d, want 1", len(state.sendTexts))
+	}
+	if !strings.Contains(state.sendTexts[0], "匹配到多个会话") {
+		t.Fatalf("checkout ambiguous reply = %q, want ambiguous hint", state.sendTexts[0])
 	}
 }
 

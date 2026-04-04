@@ -376,7 +376,9 @@ func (s *ClawBotService) handleIncomingMessage(ctx context.Context, cfg config.C
 
 	s.setContextToken(userID, msg.ContextToken)
 	if len(imageItems) == 0 {
-		if command, ok := parseClawBotCommand(text); ok {
+		if escapedText, ok := unescapeClawBotLiteralCommandText(text); ok {
+			text = escapedText
+		} else if command, ok := parseClawBotCommand(text); ok {
 			if command.Name == clawBotCommandRegenerate {
 				s.handleRegenerateCommand(ctx, cfg, userID, command.Args)
 				return
@@ -391,11 +393,9 @@ func (s *ClawBotService) handleIncomingMessage(ctx context.Context, cfg config.C
 				s.handleMenuCommand(ctx, cfg, userID, command.Args)
 				return
 			case clawBotCommandNew:
-				if command.Args == "" {
-					s.clearPendingReply(userID)
-					s.handleNewCommand(ctx, cfg, userID)
-					return
-				}
+				s.clearPendingReply(userID)
+				s.handleNewCommand(ctx, cfg, userID, command.Args)
+				return
 			case clawBotCommandList:
 				s.clearPendingReply(userID)
 				s.handleListCommand(ctx, cfg, userID, command.Args)
@@ -417,6 +417,8 @@ func (s *ClawBotService) handleIncomingMessage(ctx context.Context, cfg config.C
 				s.handlePromptCommand(ctx, cfg, userID, command.Args)
 				return
 			}
+			s.sendCommandReply(ctx, cfg, userID, formatUnknownClawBotCommandReply(command.Name), "unknown command")
+			return
 		}
 	}
 	if s.hasExclusiveOperation(userID) {
@@ -471,7 +473,12 @@ func (s *ClawBotService) downloadIncomingImagePaths(ctx context.Context, userID 
 	return imagePaths
 }
 
-func (s *ClawBotService) handleNewCommand(ctx context.Context, cfg config.ClawBotConfig, userID string) {
+func (s *ClawBotService) handleNewCommand(ctx context.Context, cfg config.ClawBotConfig, userID, args string) {
+	if strings.TrimSpace(args) != "" {
+		s.sendCommandReply(ctx, cfg, userID, "命令格式不对：/new\n用法：/new", "new usage")
+		return
+	}
+
 	if _, err := s.createAndActivateSession(userID, cfg.PromptID); err != nil {
 		logging.Errorf("clawbot create new session failed: user=%s err=%v", userID, err)
 		s.setLastError(err)
@@ -522,7 +529,9 @@ func (s *ClawBotService) handleCheckoutCommand(ctx context.Context, cfg config.C
 	session, index, err := resolveClawBotSessionSelector(sessions, selector)
 	if err != nil {
 		reply := "未找到对应会话，可先发送 /ls 查看当前人设下的会话列表。"
-		if _, convErr := strconv.Atoi(selector); convErr == nil {
+		if isClawBotSelectorAmbiguous(err) {
+			reply = "匹配到多个会话，请改用更完整的会话 ID 后缀，或先发送 /ls 查看当前列表。"
+		} else if isClawBotSelectorIndexOutOfRange(err) {
 			reply = fmt.Sprintf("会话序号超出范围，当前共 %d 个会话。可先发送 /ls 查看列表。", len(sessions))
 		}
 		s.sendCommandReply(ctx, cfg, userID, reply, "checkout not found")
@@ -606,7 +615,9 @@ func (s *ClawBotService) handleDeleteCommand(ctx context.Context, cfg config.Cla
 		session, _, err := resolveClawBotSessionSelector(sessions, selector)
 		if err != nil {
 			reply := "未找到对应会话，可先发送 /ls 查看当前人设下的会话列表。"
-			if _, convErr := strconv.Atoi(selector); convErr == nil {
+			if isClawBotSelectorAmbiguous(err) {
+				reply = "匹配到多个会话，请改用更完整的会话 ID 后缀，或先发送 /ls 查看当前列表。"
+			} else if isClawBotSelectorIndexOutOfRange(err) {
 				reply = fmt.Sprintf("会话序号超出范围，当前共 %d 个会话。可先发送 /ls 查看列表。", len(sessions))
 			}
 			s.sendCommandReply(ctx, cfg, userID, reply, "delete not found")
@@ -654,7 +665,9 @@ func (s *ClawBotService) handlePromptCommand(ctx context.Context, cfg config.Cla
 	prompt, _, useDefault, err := resolveClawBotPromptSelector(prompts, selector)
 	if err != nil {
 		reply := "未找到对应人设，可先发送 /prompt ls 查看列表。"
-		if _, convErr := strconv.Atoi(selector); convErr == nil {
+		if isClawBotSelectorAmbiguous(err) {
+			reply = "匹配到多个同名人设，请改用人设序号或 ID。可先发送 /prompt ls 查看列表。"
+		} else if isClawBotSelectorIndexOutOfRange(err) {
 			reply = fmt.Sprintf("人设序号超出范围，当前共 %d 个自定义人设。可先发送 /prompt ls 查看列表。", len(prompts))
 		}
 		s.sendCommandReply(ctx, cfg, userID, reply, "prompt not found")
@@ -1642,6 +1655,118 @@ func isClawBotNewCommand(text string) bool {
 	return ok && command.Name == clawBotCommandNew && command.Args == ""
 }
 
+func unescapeClawBotLiteralCommandText(text string) (string, bool) {
+	normalized := strings.Trim(text, clawBotCommandTrimChars)
+	switch {
+	case strings.HasPrefix(normalized, "//"):
+		return normalized[1:], true
+	case strings.HasPrefix(normalized, "／／"):
+		return "/" + strings.TrimPrefix(normalized, "／／"), true
+	case strings.HasPrefix(normalized, "/／"):
+		return "/" + strings.TrimPrefix(normalized, "/／"), true
+	case strings.HasPrefix(normalized, "／/"):
+		return "/" + strings.TrimPrefix(normalized, "／/"), true
+	default:
+		return "", false
+	}
+}
+
+func listClawBotKnownCommands() []string {
+	return []string{
+		clawBotCommandMenu,
+		clawBotCommandNew,
+		clawBotCommandList,
+		clawBotCommandCheckout,
+		clawBotCommandRename,
+		clawBotCommandDelete,
+		clawBotCommandPrompt,
+		clawBotCommandRegenerate,
+	}
+}
+
+func formatUnknownClawBotCommandReply(name string) string {
+	normalized := strings.TrimPrefix(strings.TrimSpace(name), "/")
+	commandText := "/" + normalized
+	var builder strings.Builder
+	fmt.Fprintf(&builder, "未知命令：%s", commandText)
+	if suggestion := suggestClawBotCommand(normalized); suggestion != "" {
+		fmt.Fprintf(&builder, "\n你是不是想输入 /%s ？", suggestion)
+	}
+	builder.WriteString("\n发送 /menu 查看可用命令")
+	builder.WriteString("\n如果你想发送以 / 开头的普通内容，请用 // 开头，例如 //menu")
+	return builder.String()
+}
+
+func suggestClawBotCommand(name string) string {
+	name = strings.ToLower(strings.TrimPrefix(strings.TrimSpace(name), "/"))
+	if name == "" {
+		return ""
+	}
+
+	best := ""
+	bestDistance := -1
+	for _, candidate := range listClawBotKnownCommands() {
+		if strings.HasPrefix(candidate, name) || strings.HasPrefix(name, candidate) {
+			return candidate
+		}
+		distance := levenshteinDistance(name, candidate)
+		if bestDistance < 0 || distance < bestDistance {
+			best = candidate
+			bestDistance = distance
+		}
+	}
+
+	if bestDistance >= 0 && bestDistance <= 2 {
+		return best
+	}
+	return ""
+}
+
+func levenshteinDistance(left, right string) int {
+	leftRunes := []rune(left)
+	rightRunes := []rune(right)
+	if len(leftRunes) == 0 {
+		return len(rightRunes)
+	}
+	if len(rightRunes) == 0 {
+		return len(leftRunes)
+	}
+
+	prev := make([]int, len(rightRunes)+1)
+	curr := make([]int, len(rightRunes)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+
+	for i := 1; i <= len(leftRunes); i++ {
+		curr[0] = i
+		for j := 1; j <= len(rightRunes); j++ {
+			cost := 0
+			if leftRunes[i-1] != rightRunes[j-1] {
+				cost = 1
+			}
+			curr[j] = minClawBotInt(
+				prev[j]+1,
+				curr[j-1]+1,
+				prev[j-1]+cost,
+			)
+		}
+		prev, curr = curr, prev
+	}
+
+	return prev[len(rightRunes)]
+}
+
+func minClawBotInt(values ...int) int {
+	best := values[0]
+	for _, value := range values[1:] {
+		if value < best {
+			best = value
+		}
+	}
+	return best
+}
+
 func normalizeClawBotCommandSelector(selector string) string {
 	selector = strings.Trim(selector, clawBotCommandTrimChars)
 	selector = strings.Trim(selector, clawBotCommandTrailingPunctuation)
@@ -1666,6 +1791,14 @@ func isClawBotListSelector(selector string) bool {
 		return true
 	}
 	return false
+}
+
+func isClawBotSelectorIndexOutOfRange(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "index out of range")
+}
+
+func isClawBotSelectorAmbiguous(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "ambiguous")
 }
 
 func resolveClawBotSessionSelector(sessions []storage.ChatSession, selector string) (storage.ChatSession, int, error) {
