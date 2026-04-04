@@ -97,6 +97,12 @@ func (h *Handler) handleWebSearchSettings(w http.ResponseWriter, r *http.Request
 		}
 		if req.MaxResults != nil {
 			settings.MaxResults = *req.MaxResults
+			// Backwards compatibility: older clients only update max_results. Before fetch_results
+			// existed, the upstream fetch count effectively followed max_results. Preserve that
+			// behavior unless the caller explicitly sets fetch_results.
+			if req.FetchResults == nil {
+				settings.FetchResults = settings.MaxResults
+			}
 		}
 		if req.FetchResults != nil {
 			settings.FetchResults = *req.FetchResults

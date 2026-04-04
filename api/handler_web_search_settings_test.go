@@ -70,3 +70,38 @@ func TestHandleWebSearchSettings_CanClearSecretsWithExplicitEmptyStrings(t *test
 		t.Fatalf("FetchResults = %d, want 12", updated.WebSearch.FetchResults)
 	}
 }
+
+func TestHandleWebSearchSettings_MaxResultsOnlyUpdateAlignsFetchResults(t *testing.T) {
+	cm := config.NewManager(filepath.Join(t.TempDir(), "config.json"))
+	cfg := config.DefaultConfig()
+	cfg.WebSearch.MaxResults = 5
+	cfg.WebSearch.FetchResults = 12
+	if err := cm.Update(cfg); err != nil {
+		t.Fatalf("Update config failed: %v", err)
+	}
+
+	handler := &Handler{configManager: cm}
+	body, err := json.Marshal(map[string]interface{}{
+		"max_results": 1,
+	})
+	if err != nil {
+		t.Fatalf("Marshal request failed: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPut, "/api/settings/web-search", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	handler.handleWebSearchSettings(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	updated := cm.Get()
+	if updated.WebSearch.MaxResults != 1 {
+		t.Fatalf("MaxResults = %d, want 1", updated.WebSearch.MaxResults)
+	}
+	if updated.WebSearch.FetchResults != 1 {
+		t.Fatalf("FetchResults = %d, want 1", updated.WebSearch.FetchResults)
+	}
+}
