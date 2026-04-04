@@ -100,6 +100,7 @@ type ClawBotService struct {
 	contextTokens  map[string]string
 	wechatUIN      string
 
+	workerCtx     context.Context
 	workerCancel  context.CancelFunc
 	workerRunning bool
 	lastError     string
@@ -134,15 +135,16 @@ func NewClawBotService(handler *Handler) *ClawBotService {
 func (s *ClawBotService) Close() {
 	s.mu.Lock()
 	cancel := s.workerCancel
+	s.workerCtx = nil
 	s.workerCancel = nil
 	s.workerRunning = false
 	s.mu.Unlock()
 
-	s.clearAllPendingReplies()
-
 	if cancel != nil {
 		cancel()
 	}
+
+	s.clearAllPendingReplies()
 }
 
 func (s *ClawBotService) ApplyCurrentConfig() {
@@ -153,6 +155,7 @@ func (s *ClawBotService) ApplyCurrentConfig() {
 func (s *ClawBotService) applyConfig(cfg config.ClawBotConfig) {
 	s.mu.Lock()
 	cancel := s.workerCancel
+	s.workerCtx = nil
 	s.workerCancel = nil
 	s.workerRunning = false
 	s.mu.Unlock()
@@ -167,11 +170,19 @@ func (s *ClawBotService) applyConfig(cfg config.ClawBotConfig) {
 
 	ctx, workerCancel := context.WithCancel(context.Background())
 	s.mu.Lock()
+	s.workerCtx = ctx
 	s.workerCancel = workerCancel
 	s.workerRunning = true
 	s.mu.Unlock()
 
 	go s.pollLoop(ctx, cfg)
+}
+
+func (s *ClawBotService) getWorkerCtx() (context.Context, bool) {
+	s.mu.RLock()
+	ctx := s.workerCtx
+	s.mu.RUnlock()
+	return ctx, ctx != nil
 }
 
 func (s *ClawBotService) StartQRCode(ctx context.Context, baseURL string) (*ClawBotQRCodeStartResponse, error) {
@@ -453,7 +464,7 @@ func (s *ClawBotService) handleIncomingMessage(ctx context.Context, cfg config.C
 	if len(batch) == 0 {
 		return
 	}
-	s.processPendingBatchAsync(userID, batch)
+	s.processPendingBatchAsync(ctx, userID, batch)
 }
 
 func (s *ClawBotService) downloadIncomingImagePaths(ctx context.Context, userID string, imageItems []*client.ClawBotImageItem) []string {
@@ -739,7 +750,16 @@ func (s *ClawBotService) handleRegenerateCommand(ctx context.Context, cfg config
 			return
 		}
 
-		runCtx, cancel := context.WithTimeout(context.Background(), clawBotProcessTimeout)
+		baseCtx := ctx
+		if baseCtx == nil {
+			if workerCtx, ok := s.getWorkerCtx(); ok {
+				baseCtx = workerCtx
+			} else {
+				baseCtx = context.Background()
+			}
+		}
+
+		runCtx, cancel := context.WithTimeout(baseCtx, clawBotProcessTimeout)
 		defer cancel()
 
 		s.processRegenerateCommand(runCtx, latestCfg, userID)
@@ -947,24 +967,33 @@ func (s *ClawBotService) generateReplyForSession(ctx context.Context, session *s
 	return strings.TrimSpace(resp.Choices[0].Message.Content), memSession, nil
 }
 
-func (s *ClawBotService) processPendingBatchAsync(userID string, batch []clawBotPendingMessage) {
+func (s *ClawBotService) processPendingBatchAsync(ctx context.Context, userID string, batch []clawBotPendingMessage) {
 	if len(batch) == 0 {
-		s.finishPendingReplyProcessing(userID)
+		s.finishPendingReplyProcessing(ctx, userID)
 		return
 	}
 
 	go func() {
-		defer s.finishPendingReplyProcessing(userID)
+		defer s.finishPendingReplyProcessing(ctx, userID)
 
 		cfg := s.handler.configManager.GetClawBotConfig()
 		if !cfg.Enabled || strings.TrimSpace(cfg.BotToken) == "" {
 			return
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), clawBotProcessTimeout)
+		baseCtx := ctx
+		if baseCtx == nil {
+			if workerCtx, ok := s.getWorkerCtx(); ok {
+				baseCtx = workerCtx
+			} else {
+				baseCtx = context.Background()
+			}
+		}
+
+		runCtx, cancel := context.WithTimeout(baseCtx, clawBotProcessTimeout)
 		defer cancel()
 
-		s.processIncomingBatch(ctx, cfg, userID, batch)
+		s.processIncomingBatch(runCtx, cfg, userID, batch)
 	}()
 }
 
@@ -1031,7 +1060,7 @@ func (s *ClawBotService) schedulePendingReplyLocked(userID string, state *clawBo
 		state.Timer = nil
 	}
 	state.Timer = time.AfterFunc(waitFor, func() {
-		s.flushPendingReply(userID)
+		s.flushPendingReply(nil, userID)
 	})
 }
 
@@ -1051,7 +1080,16 @@ func (s *ClawBotService) beginPendingProcessingLocked(state *clawBotPendingReply
 	return batch
 }
 
-func (s *ClawBotService) flushPendingReply(userID string) {
+func (s *ClawBotService) flushPendingReply(ctx context.Context, userID string) {
+	if ctx == nil {
+		workerCtx, ok := s.getWorkerCtx()
+		if !ok {
+			s.clearPendingReply(userID)
+			return
+		}
+		ctx = workerCtx
+	}
+
 	s.mu.Lock()
 	state := s.pendingReplies[userID]
 	if state == nil {
@@ -1070,10 +1108,10 @@ func (s *ClawBotService) flushPendingReply(userID string) {
 	if len(batch) == 0 {
 		return
 	}
-	s.processPendingBatchAsync(userID, batch)
+	s.processPendingBatchAsync(ctx, userID, batch)
 }
 
-func (s *ClawBotService) finishPendingReplyProcessing(userID string) {
+func (s *ClawBotService) finishPendingReplyProcessing(ctx context.Context, userID string) {
 	mode, delay := s.getReplyWaitWindow()
 
 	s.mu.Lock()
@@ -1096,7 +1134,7 @@ func (s *ClawBotService) finishPendingReplyProcessing(userID string) {
 		return
 	}
 	if shouldFlushNow || delay <= 0 {
-		s.flushPendingReply(userID)
+		s.flushPendingReply(ctx, userID)
 		return
 	}
 	if hasTimer {
