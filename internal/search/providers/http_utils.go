@@ -3,6 +3,7 @@ package providers
 import (
 	"bytes"
 	"context"
+	"cornerstone/internal/search"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -57,6 +58,17 @@ func basicAuthHeader(username, password string) string {
 	}
 	token := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
 	return "Basic " + token
+}
+
+func providerFetchResults(cfg search.SearchConfig) int {
+	count := cfg.FetchResults
+	if count <= 0 {
+		count = cfg.MaxResults
+	}
+	if count <= 0 {
+		count = 1
+	}
+	return count
 }
 
 func doJSON(ctx context.Context, httpClient *http.Client, method, endpoint string, headers map[string]string, body any, out any) (*http.Response, []byte, error) {

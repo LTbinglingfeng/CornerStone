@@ -163,6 +163,7 @@ const en = {
         webSearch: 'Web Search',
         webSearchProvider: 'Search Provider',
         webSearchMaxResults: 'Max Results',
+        webSearchFetchResults: 'Fetch Results',
         webSearchTimeoutSeconds: 'Timeout (s)',
         webSearchExcludeDomains: 'Exclude Domains',
         webSearchExcludeDomainsHint: 'One domain per line, e.g. example.com',

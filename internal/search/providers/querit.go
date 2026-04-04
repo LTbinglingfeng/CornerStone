@@ -77,10 +77,7 @@ func (p *Querit) Search(ctx context.Context, query string, cfg search.SearchConf
 
 	reqBody := queritSearchRequest{
 		Query: strings.TrimSpace(query),
-		Count: cfg.MaxResults,
-	}
-	if reqBody.Count <= 0 {
-		reqBody.Count = 1
+		Count: providerFetchResults(cfg),
 	}
 
 	var filters *struct {

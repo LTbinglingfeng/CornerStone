@@ -163,6 +163,7 @@ const zh = {
         webSearch: '网络搜索',
         webSearchProvider: '搜索 Provider',
         webSearchMaxResults: '最大结果数',
+        webSearchFetchResults: '获取结果数',
         webSearchTimeoutSeconds: '超时（秒）',
         webSearchExcludeDomains: '排除域名',
         webSearchExcludeDomainsHint: '每行一个域名，例如 example.com',

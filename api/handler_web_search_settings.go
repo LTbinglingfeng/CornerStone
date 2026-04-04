@@ -18,6 +18,7 @@ type webSearchProviderPatch struct {
 type webSearchSettingsPatch struct {
 	ActiveProviderID *string                           `json:"active_provider_id,omitempty"`
 	MaxResults       *int                              `json:"max_results,omitempty"`
+	FetchResults     *int                              `json:"fetch_results,omitempty"`
 	ExcludeDomains   *[]string                         `json:"exclude_domains,omitempty"`
 	SearchWithTime   *bool                             `json:"search_with_time,omitempty"`
 	TimeoutSeconds   *int                              `json:"timeout_seconds,omitempty"`
@@ -67,6 +68,7 @@ func (h *Handler) handleWebSearchSettings(w http.ResponseWriter, r *http.Request
 			"active_provider_id":  settings.ActiveProviderID,
 			"providers":           maskedProviders,
 			"max_results":         settings.MaxResults,
+			"fetch_results":       settings.FetchResults,
 			"exclude_domains":     settings.ExcludeDomains,
 			"search_with_time":    settings.SearchWithTime,
 			"timeout_seconds":     settings.TimeoutSeconds,
@@ -95,6 +97,9 @@ func (h *Handler) handleWebSearchSettings(w http.ResponseWriter, r *http.Request
 		}
 		if req.MaxResults != nil {
 			settings.MaxResults = *req.MaxResults
+		}
+		if req.FetchResults != nil {
+			settings.FetchResults = *req.FetchResults
 		}
 		if req.ExcludeDomains != nil {
 			settings.ExcludeDomains = *req.ExcludeDomains

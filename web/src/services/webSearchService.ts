@@ -24,6 +24,7 @@ export interface WebSearchSettings {
     active_provider_id: string
     providers: Record<string, WebSearchProviderConfig>
     max_results: number
+    fetch_results: number
     exclude_domains: string[]
     search_with_time: boolean
     timeout_seconds: number

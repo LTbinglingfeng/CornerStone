@@ -36,7 +36,8 @@ func TestTavily_Search_RequestAndResponseMapping(t *testing.T) {
 
 	provider := NewTavily(srv.Client())
 	resp, err := provider.Search(context.Background(), "hello", search.SearchConfig{
-		MaxResults: 2,
+		MaxResults:   2,
+		FetchResults: 4,
 	}, search.ProviderConfig{
 		APIKey:  "test_key",
 		APIHost: srv.URL,
@@ -51,8 +52,8 @@ func TestTavily_Search_RequestAndResponseMapping(t *testing.T) {
 	if gotReq.Query != "hello" {
 		t.Fatalf("req.query=%q want hello", gotReq.Query)
 	}
-	if gotReq.MaxResults != 2 {
-		t.Fatalf("req.max_results=%d want 2", gotReq.MaxResults)
+	if gotReq.MaxResults != 4 {
+		t.Fatalf("req.max_results=%d want 4", gotReq.MaxResults)
 	}
 
 	if resp == nil {

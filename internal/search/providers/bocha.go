@@ -78,12 +78,9 @@ func (p *Bocha) Search(ctx context.Context, query string, cfg search.SearchConfi
 
 	reqBody := bochaSearchRequest{
 		Query:   strings.TrimSpace(query),
-		Count:   cfg.MaxResults,
+		Count:   providerFetchResults(cfg),
 		Summary: true,
 		Page:    1,
-	}
-	if reqBody.Count <= 0 {
-		reqBody.Count = 1
 	}
 	if len(cfg.ExcludeDomains) > 0 {
 		reqBody.Exclude = strings.Join(cfg.ExcludeDomains, ",")

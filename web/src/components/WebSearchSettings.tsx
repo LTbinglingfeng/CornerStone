@@ -35,6 +35,7 @@ const WebSearchSettingsPanel: React.FC<WebSearchSettingsProps> = ({ onBack }) =>
 
     const [activeProviderId, setActiveProviderId] = useState('')
     const [maxResults, setMaxResults] = useState(5)
+    const [fetchResults, setFetchResults] = useState(5)
     const [excludeDomainsText, setExcludeDomainsText] = useState('')
     const [searchWithTime, setSearchWithTime] = useState(false)
     const [timeoutSeconds, setTimeoutSeconds] = useState(20)
@@ -89,6 +90,7 @@ const WebSearchSettingsPanel: React.FC<WebSearchSettingsProps> = ({ onBack }) =>
             setProviders(settings.providers || {})
             setActiveProviderId(settings.active_provider_id || '')
             setMaxResults(settings.max_results || 5)
+            setFetchResults(settings.fetch_results || settings.max_results || 5)
             setExcludeDomainsText((settings.exclude_domains || []).join('\n'))
             setSearchWithTime(!!settings.search_with_time)
             setTimeoutSeconds(settings.timeout_seconds || 20)
@@ -105,11 +107,16 @@ const WebSearchSettingsPanel: React.FC<WebSearchSettingsProps> = ({ onBack }) =>
         loadData()
     }, [])
 
+    useEffect(() => {
+        setFetchResults((current) => Math.max(current, maxResults))
+    }, [maxResults])
+
     const handleSave = async () => {
         if (saving) return
         setSaving(true)
         try {
             const providersPatch: Record<string, WebSearchProviderConfig> = {}
+            const nextFetchResults = Math.max(fetchResults, maxResults)
             if (activeProviderId.trim() !== '') {
                 providersPatch[activeProviderId] = {
                     api_host: apiHost,
@@ -122,6 +129,7 @@ const WebSearchSettingsPanel: React.FC<WebSearchSettingsProps> = ({ onBack }) =>
             const updated = await webSearchService.updateSettings({
                 active_provider_id: activeProviderId,
                 max_results: maxResults,
+                fetch_results: nextFetchResults,
                 exclude_domains: splitExcludeDomains(excludeDomainsText),
                 search_with_time: searchWithTime,
                 timeout_seconds: timeoutSeconds,
@@ -130,6 +138,7 @@ const WebSearchSettingsPanel: React.FC<WebSearchSettingsProps> = ({ onBack }) =>
 
             setAvailableProviders(updated.available_providers || [])
             setProviders(updated.providers || {})
+            setFetchResults(updated.fetch_results || updated.max_results || 5)
             showMessageToast(t('settings.webSearchSaved'))
             syncActiveProviderFields(updated.active_provider_id || '', updated.providers || {})
         } catch (error) {
@@ -187,6 +196,19 @@ const WebSearchSettingsPanel: React.FC<WebSearchSettingsProps> = ({ onBack }) =>
                             onValueChange={setMaxResults}
                             parseAs="int"
                             min={1}
+                            max={50}
+                            disabled={saving}
+                        />
+                    </div>
+
+                    <div className="settings-group">
+                        <label className="settings-label">{t('settings.webSearchFetchResults')}</label>
+                        <NumericInput
+                            className="settings-input"
+                            value={fetchResults}
+                            onValueChange={setFetchResults}
+                            parseAs="int"
+                            min={maxResults}
                             max={50}
                             disabled={saving}
                         />

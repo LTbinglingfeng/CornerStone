@@ -50,10 +50,11 @@ func (e *chatToolExecutor) handleWebSearch(ctx context.Context, toolCall client.
 
 	if e.emitEvent != nil {
 		e.emitEvent(map[string]interface{}{
-			"type":        "web_search_started",
-			"provider_id": providerID,
-			"query":       query,
-			"max_results": settings.MaxResults,
+			"type":          "web_search_started",
+			"provider_id":   providerID,
+			"query":         query,
+			"max_results":   settings.MaxResults,
+			"fetch_results": settings.FetchResults,
 		})
 	}
 
@@ -70,6 +71,7 @@ func (e *chatToolExecutor) handleWebSearch(ctx context.Context, toolCall client.
 		query,
 		search.SearchConfig{
 			MaxResults:     settings.MaxResults,
+			FetchResults:   settings.FetchResults,
 			ExcludeDomains: settings.ExcludeDomains,
 			SearchWithTime: settings.SearchWithTime,
 		},

@@ -759,9 +759,14 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         if (!activeId) return { title: t('common.notConfigured'), detail: '' }
         const info = (webSearchSettings.available_providers || []).find((p) => p.id === activeId)
         const title = info?.name || activeId
-        const detail = webSearchSettings.max_results
-            ? `${t('settings.webSearchMaxResults')}: ${webSearchSettings.max_results}`
-            : ''
+        const detailParts = []
+        if (webSearchSettings.max_results) {
+            detailParts.push(`${t('settings.webSearchMaxResults')}: ${webSearchSettings.max_results}`)
+        }
+        if (webSearchSettings.fetch_results && webSearchSettings.fetch_results !== webSearchSettings.max_results) {
+            detailParts.push(`${t('settings.webSearchFetchResults')}: ${webSearchSettings.fetch_results}`)
+        }
+        const detail = detailParts.join(' · ')
         return { title, detail }
     }
 

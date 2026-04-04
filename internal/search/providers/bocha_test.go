@@ -50,6 +50,7 @@ func TestBocha_Search_RequestAndResponseMapping(t *testing.T) {
 	provider := NewBocha(srv.Client())
 	resp, err := provider.Search(context.Background(), "hello", search.SearchConfig{
 		MaxResults:     2,
+		FetchResults:   4,
 		ExcludeDomains: []string{"x.com", "y.com"},
 		SearchWithTime: true,
 	}, search.ProviderConfig{
@@ -63,8 +64,8 @@ func TestBocha_Search_RequestAndResponseMapping(t *testing.T) {
 	if gotReq.Query != "hello" {
 		t.Fatalf("req.query=%q want hello", gotReq.Query)
 	}
-	if gotReq.Count != 2 {
-		t.Fatalf("req.count=%d want 2", gotReq.Count)
+	if gotReq.Count != 4 {
+		t.Fatalf("req.count=%d want 4", gotReq.Count)
 	}
 	if gotReq.Exclude != "x.com,y.com" {
 		t.Fatalf("req.exclude=%q want x.com,y.com", gotReq.Exclude)

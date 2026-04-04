@@ -87,10 +87,11 @@ func (o *Orchestrator) Search(ctx context.Context, providerID string, providerCf
 	}
 
 	logging.Infof(
-		"web_search start: provider=%s query=%q max_results=%d exclude_domains=%d with_time=%v",
+		"web_search start: provider=%s query=%q max_results=%d fetch_results=%d exclude_domains=%d with_time=%v",
 		strings.TrimSpace(provider.Info().ID),
 		logging.Truncate(trimmedQuery, 160),
 		normalizedCfg.MaxResults,
+		normalizedCfg.FetchResults,
 		len(normalizedCfg.ExcludeDomains),
 		normalizedCfg.SearchWithTime,
 	)
@@ -138,6 +139,7 @@ func (o *Orchestrator) Search(ctx context.Context, providerID string, providerCf
 func normalizeSearchConfig(cfg SearchConfig) SearchConfig {
 	normalized := SearchConfig{
 		MaxResults:     cfg.MaxResults,
+		FetchResults:   cfg.FetchResults,
 		ExcludeDomains: nil,
 		SearchWithTime: cfg.SearchWithTime,
 	}
@@ -146,6 +148,15 @@ func normalizeSearchConfig(cfg SearchConfig) SearchConfig {
 	}
 	if normalized.MaxResults > MaxResultsLimit {
 		normalized.MaxResults = MaxResultsLimit
+	}
+	if normalized.FetchResults <= 0 {
+		normalized.FetchResults = normalized.MaxResults
+	}
+	if normalized.FetchResults > MaxResultsLimit {
+		normalized.FetchResults = MaxResultsLimit
+	}
+	if normalized.FetchResults < normalized.MaxResults {
+		normalized.FetchResults = normalized.MaxResults
 	}
 
 	excludeSet := make(map[string]struct{})

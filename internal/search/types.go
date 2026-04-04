@@ -4,6 +4,7 @@ package search
 // The model only supplies `query`; everything else comes from user/system settings.
 type SearchConfig struct {
 	MaxResults     int      `json:"max_results"`
+	FetchResults   int      `json:"fetch_results,omitempty"`
 	ExcludeDomains []string `json:"exclude_domains,omitempty"`
 	SearchWithTime bool     `json:"search_with_time,omitempty"`
 }

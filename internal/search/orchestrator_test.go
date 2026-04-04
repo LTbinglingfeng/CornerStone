@@ -8,10 +8,11 @@ import (
 )
 
 type programmableProvider struct {
-	info  ProviderInfo
-	delay time.Duration
-	resp  *SearchResponse
-	err   error
+	info    ProviderInfo
+	delay   time.Duration
+	resp    *SearchResponse
+	err     error
+	lastCfg SearchConfig
 }
 
 func (p *programmableProvider) Info() ProviderInfo {
@@ -19,6 +20,7 @@ func (p *programmableProvider) Info() ProviderInfo {
 }
 
 func (p *programmableProvider) Search(ctx context.Context, query string, cfg SearchConfig, providerCfg ProviderConfig) (*SearchResponse, error) {
+	p.lastCfg = cfg
 	if p.delay > 0 {
 		timer := time.NewTimer(p.delay)
 		defer timer.Stop()
@@ -95,6 +97,45 @@ func TestOrchestrator_ExcludeDomainsFilterAndMaxResultsTrim(t *testing.T) {
 	}
 	if resp.Results[0].URL != "https://other.com/c" {
 		t.Fatalf("url=%q want other.com result", resp.Results[0].URL)
+	}
+}
+
+func TestOrchestrator_SeparatesFetchResultsFromFinalResults(t *testing.T) {
+	reg := NewRegistry()
+	provider := &programmableProvider{
+		info: ProviderInfo{ID: "static", Name: "static"},
+		resp: &SearchResponse{
+			Query: "hello",
+			Results: []SearchResult{
+				{Title: "a", URL: "https://a.com/1", Content: "1"},
+				{Title: "b", URL: "https://a.com/2", Content: "2"},
+				{Title: "c", URL: "https://a.com/3", Content: "3"},
+			},
+		},
+	}
+	_ = reg.Register("static", func(httpClient *http.Client) Provider {
+		return provider
+	})
+	o := NewOrchestrator(reg, http.DefaultClient, WithTimeout(2*time.Second))
+
+	resp, err := o.Search(context.Background(), "static", ProviderConfig{}, "hello", SearchConfig{
+		MaxResults:   2,
+		FetchResults: 4,
+	})
+	if err != nil {
+		t.Fatalf("Search error: %v", err)
+	}
+	if provider.lastCfg.MaxResults != 2 {
+		t.Fatalf("provider max_results=%d want 2", provider.lastCfg.MaxResults)
+	}
+	if provider.lastCfg.FetchResults != 4 {
+		t.Fatalf("provider fetch_results=%d want 4", provider.lastCfg.FetchResults)
+	}
+	if resp == nil {
+		t.Fatalf("resp=nil")
+	}
+	if len(resp.Results) != 2 {
+		t.Fatalf("len(results)=%d want 2", len(resp.Results))
 	}
 }
 

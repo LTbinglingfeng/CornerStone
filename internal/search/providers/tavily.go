@@ -65,10 +65,7 @@ func (p *Tavily) Search(ctx context.Context, query string, cfg search.SearchConf
 	reqBody := tavilySearchRequest{
 		APIKey:     apiKey,
 		Query:      strings.TrimSpace(query),
-		MaxResults: cfg.MaxResults,
-	}
-	if reqBody.MaxResults <= 0 {
-		reqBody.MaxResults = 1
+		MaxResults: providerFetchResults(cfg),
 	}
 
 	var respBody tavilySearchResponse

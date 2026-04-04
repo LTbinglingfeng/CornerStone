@@ -66,12 +66,9 @@ func (p *Exa) Search(ctx context.Context, query string, cfg search.SearchConfig,
 
 	reqBody := exaSearchRequest{
 		Query:      strings.TrimSpace(query),
-		NumResults: cfg.MaxResults,
+		NumResults: providerFetchResults(cfg),
 	}
 	reqBody.Contents.Text = true
-	if reqBody.NumResults <= 0 {
-		reqBody.NumResults = 1
-	}
 
 	headers := map[string]string{
 		"x-api-key":     apiKey,

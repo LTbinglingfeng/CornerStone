@@ -28,6 +28,7 @@ func TestHandleWebSearchSettings_CanClearSecretsWithExplicitEmptyStrings(t *test
 
 	handler := &Handler{configManager: cm}
 	body, err := json.Marshal(map[string]interface{}{
+		"fetch_results": 12,
 		"providers": map[string]interface{}{
 			"tavily": map[string]string{
 				"api_key":             "",
@@ -64,5 +65,8 @@ func TestHandleWebSearchSettings_CanClearSecretsWithExplicitEmptyStrings(t *test
 	}
 	if providerCfg.BasicAuthUsername != "alice" {
 		t.Fatalf("BasicAuthUsername = %q, want preserved", providerCfg.BasicAuthUsername)
+	}
+	if updated.WebSearch.FetchResults != 12 {
+		t.Fatalf("FetchResults = %d, want 12", updated.WebSearch.FetchResults)
 	}
 }

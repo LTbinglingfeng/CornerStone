@@ -82,6 +82,7 @@ type WebSearchConfig struct {
 	ActiveProviderID string                       `json:"active_provider_id,omitempty"`
 	Providers        map[string]WebSearchProvider `json:"providers,omitempty"`
 	MaxResults       int                          `json:"max_results,omitempty"`
+	FetchResults     int                          `json:"fetch_results,omitempty"`
 	ExcludeDomains   []string                     `json:"exclude_domains,omitempty"`
 	SearchWithTime   bool                         `json:"search_with_time,omitempty"`
 	TimeoutSeconds   int                          `json:"timeout_seconds,omitempty"`
@@ -302,6 +303,7 @@ func DefaultConfig() Config {
 			ActiveProviderID: "",
 			Providers:        map[string]WebSearchProvider{},
 			MaxResults:       DefaultWebSearchMaxResults,
+			FetchResults:     DefaultWebSearchMaxResults,
 			ExcludeDomains:   nil,
 			SearchWithTime:   false,
 			TimeoutSeconds:   DefaultWebSearchTimeoutSeconds,
@@ -504,6 +506,18 @@ func (m *Manager) applyConfigDefaults() bool {
 	}
 	if m.config.WebSearch.MaxResults > MaxWebSearchMaxResults {
 		m.config.WebSearch.MaxResults = MaxWebSearchMaxResults
+		changed = true
+	}
+	if m.config.WebSearch.FetchResults <= 0 {
+		m.config.WebSearch.FetchResults = m.config.WebSearch.MaxResults
+		changed = true
+	}
+	if m.config.WebSearch.FetchResults > MaxWebSearchMaxResults {
+		m.config.WebSearch.FetchResults = MaxWebSearchMaxResults
+		changed = true
+	}
+	if m.config.WebSearch.FetchResults < m.config.WebSearch.MaxResults {
+		m.config.WebSearch.FetchResults = m.config.WebSearch.MaxResults
 		changed = true
 	}
 	if m.config.WebSearch.TimeoutSeconds <= 0 {
