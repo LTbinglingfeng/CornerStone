@@ -11,6 +11,7 @@ import (
 type webSearchProviderPatch struct {
 	APIKey            *string `json:"api_key,omitempty"`
 	APIHost           *string `json:"api_host,omitempty"`
+	SearchEngine      *string `json:"search_engine,omitempty"`
 	BasicAuthUsername *string `json:"basic_auth_username,omitempty"`
 	BasicAuthPassword *string `json:"basic_auth_password,omitempty"`
 }
@@ -139,6 +140,18 @@ func (h *Handler) handleWebSearchSettings(w http.ResponseWriter, r *http.Request
 				}
 				if patch.APIHost != nil {
 					current.APIHost = strings.TrimSpace(*patch.APIHost)
+				}
+				if patch.SearchEngine != nil {
+					if id == providers.ProviderIDZhipu {
+						value := strings.TrimSpace(*patch.SearchEngine)
+						if value != "" && !providers.IsValidZhipuSearchEngine(value) {
+							h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Unsupported Zhipu search engine"})
+							return
+						}
+						current.SearchEngine = providers.NormalizeZhipuSearchEngine(value)
+					} else {
+						current.SearchEngine = ""
+					}
 				}
 				if patch.BasicAuthUsername != nil {
 					current.BasicAuthUsername = strings.TrimSpace(*patch.BasicAuthUsername)

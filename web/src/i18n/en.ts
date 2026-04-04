@@ -168,6 +168,7 @@ const en = {
         webSearchExcludeDomains: 'Exclude Domains',
         webSearchExcludeDomainsHint: 'One domain per line, e.g. example.com',
         webSearchSearchWithTime: 'Time Filter',
+        webSearchSearchEngine: 'Search Engine',
         webSearchApiHost: 'API Host',
         webSearchApiKey: 'API Key',
         webSearchApiKeyHint: 'Leave empty to keep unchanged',

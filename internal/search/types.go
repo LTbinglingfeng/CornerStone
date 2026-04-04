@@ -25,6 +25,7 @@ type SearchResponse struct {
 type ProviderConfig struct {
 	APIKey            string
 	APIHost           string
+	SearchEngine      string
 	BasicAuthUsername string
 	BasicAuthPassword string
 }

@@ -8,6 +8,15 @@ import (
 	"strings"
 )
 
+const defaultZhipuAPIHost = "https://open.bigmodel.cn/api"
+
+const (
+	ZhipuSearchEngineStd      = "search_std"
+	ZhipuSearchEnginePro      = "search_pro"
+	ZhipuSearchEngineProSogou = "search_pro_sogou"
+	ZhipuSearchEngineProQuark = "search_pro_quark"
+)
+
 type Zhipu struct {
 	httpClient *http.Client
 }
@@ -21,18 +30,43 @@ func (p *Zhipu) Info() search.ProviderInfo {
 		ID:                 ProviderIDZhipu,
 		Name:               "Zhipu",
 		RequiresAPIKey:     true,
-		RequiresAPIHost:    true, // Zhipu uses a full endpoint URL in Cherry Studio.
+		RequiresAPIHost:    false,
 		SupportsExclude:    false,
-		SupportsTimeFilter: false,
+		SupportsTimeFilter: true,
 		SupportsBasicAuth:  false,
 		SupportsMaxResults: true,
 	}
 }
 
+func NormalizeZhipuSearchEngine(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case ZhipuSearchEngineStd:
+		return ZhipuSearchEngineStd
+	case ZhipuSearchEnginePro:
+		return ZhipuSearchEnginePro
+	case ZhipuSearchEngineProSogou:
+		return ZhipuSearchEngineProSogou
+	case ZhipuSearchEngineProQuark:
+		return ZhipuSearchEngineProQuark
+	default:
+		return ZhipuSearchEngineStd
+	}
+}
+
+func IsValidZhipuSearchEngine(value string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	return normalized == ZhipuSearchEngineStd ||
+		normalized == ZhipuSearchEnginePro ||
+		normalized == ZhipuSearchEngineProSogou ||
+		normalized == ZhipuSearchEngineProQuark
+}
+
 type zhipuWebSearchRequest struct {
-	SearchQuery  string `json:"search_query"`
-	SearchEngine string `json:"search_engine,omitempty"`
-	SearchIntent bool   `json:"search_intent,omitempty"`
+	SearchQuery         string `json:"search_query"`
+	SearchEngine        string `json:"search_engine"`
+	SearchIntent        bool   `json:"search_intent"`
+	Count               int    `json:"count,omitempty"`
+	SearchRecencyFilter string `json:"search_recency_filter,omitempty"`
 }
 
 type zhipuWebSearchResponse struct {
@@ -51,13 +85,24 @@ func (p *Zhipu) Search(ctx context.Context, query string, cfg search.SearchConfi
 
 	apiHost := strings.TrimSpace(providerCfg.APIHost)
 	if apiHost == "" {
-		return nil, &search.Error{Kind: search.ErrKindProviderNotConfigured, ProviderID: ProviderIDZhipu, Message: "api_host is required"}
+		apiHost = defaultZhipuAPIHost
+	}
+
+	endpoint, errEndpoint := resolveEndpoint(apiHost, "/paas/v4/web_search")
+	if errEndpoint != nil {
+		return nil, &search.Error{Kind: search.ErrKindProviderNotConfigured, ProviderID: ProviderIDZhipu, Message: errEndpoint.Error(), Cause: errEndpoint}
 	}
 
 	reqBody := zhipuWebSearchRequest{
 		SearchQuery:  strings.TrimSpace(query),
-		SearchEngine: "search_std",
+		SearchEngine: NormalizeZhipuSearchEngine(providerCfg.SearchEngine),
 		SearchIntent: false,
+		Count:        providerFetchResults(cfg),
+	}
+	if cfg.SearchWithTime {
+		reqBody.SearchRecencyFilter = "oneWeek"
+	} else {
+		reqBody.SearchRecencyFilter = "noLimit"
 	}
 
 	headers := map[string]string{
@@ -65,7 +110,7 @@ func (p *Zhipu) Search(ctx context.Context, query string, cfg search.SearchConfi
 	}
 
 	var respBody zhipuWebSearchResponse
-	resp, _, errDo := doJSON(ctx, p.httpClient, http.MethodPost, apiHost, headers, reqBody, &respBody)
+	resp, _, errDo := doJSON(ctx, p.httpClient, http.MethodPost, endpoint, headers, reqBody, &respBody)
 	if errDo != nil {
 		return nil, &search.Error{Kind: search.ErrKindUpstream, ProviderID: ProviderIDZhipu, Message: "request failed", Cause: errDo}
 	}

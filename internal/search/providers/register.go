@@ -17,7 +17,6 @@ func RegisterAll(registry *search.Registry) error {
 	}{
 		{id: ProviderIDExa, factory: func(httpClient *http.Client) search.Provider { return NewExa(httpClient) }},
 		{id: ProviderIDTavily, factory: func(httpClient *http.Client) search.Provider { return NewTavily(httpClient) }},
-		{id: ProviderIDBocha, factory: func(httpClient *http.Client) search.Provider { return NewBocha(httpClient) }},
 		{id: ProviderIDQuerit, factory: func(httpClient *http.Client) search.Provider { return NewQuerit(httpClient) }},
 		{id: ProviderIDZhipu, factory: func(httpClient *http.Client) search.Provider { return NewZhipu(httpClient) }},
 		{id: ProviderIDSearxNG, factory: func(httpClient *http.Client) search.Provider { return NewSearxNG(httpClient) }},

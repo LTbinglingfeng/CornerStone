@@ -168,6 +168,7 @@ const zh = {
         webSearchExcludeDomains: '排除域名',
         webSearchExcludeDomainsHint: '每行一个域名，例如 example.com',
         webSearchSearchWithTime: '时间过滤',
+        webSearchSearchEngine: '搜索引擎',
         webSearchApiHost: 'API Host',
         webSearchApiKey: 'API Key',
         webSearchApiKeyHint: '留空表示保持不变',

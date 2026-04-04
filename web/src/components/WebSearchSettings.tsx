@@ -22,6 +22,13 @@ const splitExcludeDomains = (raw: string): string[] =>
         .map((part) => part.trim())
         .filter((part) => part !== '')
 
+const ZHIPU_SEARCH_ENGINE_OPTIONS: SelectOption[] = [
+    { value: 'search_std', label: 'search_std' },
+    { value: 'search_pro', label: 'search_pro' },
+    { value: 'search_pro_sogou', label: 'search_pro_sogou' },
+    { value: 'search_pro_quark', label: 'search_pro_quark' },
+]
+
 const WebSearchSettingsPanel: React.FC<WebSearchSettingsProps> = ({ onBack }) => {
     const { t } = useT()
 
@@ -39,6 +46,7 @@ const WebSearchSettingsPanel: React.FC<WebSearchSettingsProps> = ({ onBack }) =>
     const [excludeDomainsText, setExcludeDomainsText] = useState('')
     const [searchWithTime, setSearchWithTime] = useState(false)
     const [timeoutSeconds, setTimeoutSeconds] = useState(20)
+    const [searchEngine, setSearchEngine] = useState('search_std')
 
     const [apiHost, setApiHost] = useState('')
     const [apiKey, setApiKey] = useState('')
@@ -60,8 +68,20 @@ const WebSearchSettingsPanel: React.FC<WebSearchSettingsProps> = ({ onBack }) =>
         [availableProviders, t]
     )
     const storedProviderConfig = useMemo(() => providers[activeProviderId] || {}, [providers, activeProviderId])
+    const hasStoredApiHost = (storedProviderConfig.api_host || '').trim() !== ''
     const hasStoredApiKey = (storedProviderConfig.api_key || '').trim() !== ''
+    const hasStoredBasicAuthUsername = (storedProviderConfig.basic_auth_username || '').trim() !== ''
     const hasStoredBasicAuthPassword = (storedProviderConfig.basic_auth_password || '').trim() !== ''
+    const supportsFetchResults = activeProviderInfo?.supports_max_results ?? true
+    const supportsTimeFilter = activeProviderInfo?.supports_time_filter ?? false
+    const showSearchEngineField = activeProviderId === 'zhipu'
+    const showApiHostField =
+        activeProviderId.trim() !== '' && (!!activeProviderInfo?.requires_api_host || hasStoredApiHost)
+    const showApiKeyField = activeProviderId.trim() !== '' && (!!activeProviderInfo?.requires_api_key || hasStoredApiKey)
+    const showBasicAuthUsernameField =
+        activeProviderId.trim() !== '' && (!!activeProviderInfo?.supports_basic_auth || hasStoredBasicAuthUsername)
+    const showBasicAuthPasswordField =
+        activeProviderId.trim() !== '' && (!!activeProviderInfo?.supports_basic_auth || hasStoredBasicAuthPassword)
 
     const showMessageToast = (msg: string, type: 'success' | 'error' = 'success') => {
         setMessage(msg)
@@ -75,6 +95,7 @@ const WebSearchSettingsPanel: React.FC<WebSearchSettingsProps> = ({ onBack }) =>
     const syncActiveProviderFields = (id: string, allProviders: Record<string, WebSearchProviderConfig>) => {
         const cfg = allProviders[id] || {}
         setApiHost(cfg.api_host || '')
+        setSearchEngine(id === 'zhipu' ? cfg.search_engine || 'search_std' : 'search_std')
         setBasicAuthUsername(cfg.basic_auth_username || '')
         setApiKey('')
         setApiKeyDirty(false)
@@ -116,25 +137,39 @@ const WebSearchSettingsPanel: React.FC<WebSearchSettingsProps> = ({ onBack }) =>
         setSaving(true)
         try {
             const providersPatch: Record<string, WebSearchProviderConfig> = {}
-            const nextFetchResults = Math.max(fetchResults, maxResults)
             if (activeProviderId.trim() !== '') {
-                providersPatch[activeProviderId] = {
-                    api_host: apiHost,
-                    basic_auth_username: basicAuthUsername,
-                    ...(apiKeyDirty ? { api_key: apiKey.trim() } : {}),
-                    ...(basicAuthPasswordDirty ? { basic_auth_password: basicAuthPassword.trim() } : {}),
+                const providerPatch: WebSearchProviderConfig = {}
+                if (showApiHostField) {
+                    providerPatch.api_host = apiHost.trim()
+                }
+                if (showSearchEngineField) {
+                    providerPatch.search_engine = searchEngine || 'search_std'
+                }
+                if (showBasicAuthUsernameField) {
+                    providerPatch.basic_auth_username = basicAuthUsername.trim()
+                }
+                if (showApiKeyField && apiKeyDirty) {
+                    providerPatch.api_key = apiKey.trim()
+                }
+                if (showBasicAuthPasswordField && basicAuthPasswordDirty) {
+                    providerPatch.basic_auth_password = basicAuthPassword.trim()
+                }
+                if (Object.keys(providerPatch).length > 0) {
+                    providersPatch[activeProviderId] = providerPatch
                 }
             }
 
-            const updated = await webSearchService.updateSettings({
+            const settingsPatch: Partial<WebSearchSettings> = {
                 active_provider_id: activeProviderId,
                 max_results: maxResults,
-                fetch_results: nextFetchResults,
                 exclude_domains: splitExcludeDomains(excludeDomainsText),
-                search_with_time: searchWithTime,
                 timeout_seconds: timeoutSeconds,
+                ...(supportsFetchResults ? { fetch_results: Math.max(fetchResults, maxResults) } : {}),
+                ...(supportsTimeFilter ? { search_with_time: searchWithTime } : {}),
                 ...(Object.keys(providersPatch).length > 0 ? { providers: providersPatch } : {}),
-            } as Partial<WebSearchSettings>)
+            }
+
+            const updated = await webSearchService.updateSettings(settingsPatch)
 
             setAvailableProviders(updated.available_providers || [])
             setProviders(updated.providers || {})
@@ -201,18 +236,20 @@ const WebSearchSettingsPanel: React.FC<WebSearchSettingsProps> = ({ onBack }) =>
                         />
                     </div>
 
-                    <div className="settings-group">
-                        <label className="settings-label">{t('settings.webSearchFetchResults')}</label>
-                        <NumericInput
-                            className="settings-input"
-                            value={fetchResults}
-                            onValueChange={setFetchResults}
-                            parseAs="int"
-                            min={maxResults}
-                            max={50}
-                            disabled={saving}
-                        />
-                    </div>
+                    {supportsFetchResults && (
+                        <div className="settings-group">
+                            <label className="settings-label">{t('settings.webSearchFetchResults')}</label>
+                            <NumericInput
+                                className="settings-input"
+                                value={fetchResults}
+                                onValueChange={setFetchResults}
+                                parseAs="int"
+                                min={maxResults}
+                                max={50}
+                                disabled={saving}
+                            />
+                        </div>
+                    )}
 
                     <div className="settings-group">
                         <label className="settings-label">{t('settings.webSearchTimeoutSeconds')}</label>
@@ -239,81 +276,104 @@ const WebSearchSettingsPanel: React.FC<WebSearchSettingsProps> = ({ onBack }) =>
                         />
                     </div>
 
-                    <div className="settings-group">
-                        <label className="settings-label">{t('settings.webSearchSearchWithTime')}</label>
-                        <div className="modal-toggle-wrapper">
-                            <label className="toggle-switch">
-                                <input
-                                    type="checkbox"
-                                    checked={searchWithTime}
-                                    onChange={(e) => setSearchWithTime(e.target.checked)}
-                                    disabled={saving}
-                                />
-                                <span className="toggle-slider"></span>
-                            </label>
-                            <span className="toggle-label">
-                                {searchWithTime ? t('common.enable') : t('common.disable')}
-                            </span>
+                    {supportsTimeFilter && (
+                        <div className="settings-group">
+                            <label className="settings-label">{t('settings.webSearchSearchWithTime')}</label>
+                            <div className="modal-toggle-wrapper">
+                                <label className="toggle-switch">
+                                    <input
+                                        type="checkbox"
+                                        checked={searchWithTime}
+                                        onChange={(e) => setSearchWithTime(e.target.checked)}
+                                        disabled={saving}
+                                    />
+                                    <span className="toggle-slider"></span>
+                                </label>
+                                <span className="toggle-label">
+                                    {searchWithTime ? t('common.enable') : t('common.disable')}
+                                </span>
+                            </div>
                         </div>
-                    </div>
+                    )}
 
                     {activeProviderId.trim() !== '' && (
                         <>
-                            <div className="settings-group">
-                                <label className="settings-label">{t('settings.webSearchApiHost')}</label>
-                                <input
-                                    className="settings-input"
-                                    value={apiHost}
-                                    onChange={(e) => setApiHost(e.target.value)}
-                                    placeholder="https://..."
-                                    disabled={saving}
-                                />
-                            </div>
+                            {showApiHostField && (
+                                <div className="settings-group">
+                                    <label className="settings-label">{t('settings.webSearchApiHost')}</label>
+                                    <input
+                                        className="settings-input"
+                                        value={apiHost}
+                                        onChange={(e) => setApiHost(e.target.value)}
+                                        placeholder="https://..."
+                                        disabled={saving}
+                                    />
+                                </div>
+                            )}
 
-                            <div className="settings-group">
-                                <label className="settings-label">{t('settings.webSearchApiKey')}</label>
-                                <input
-                                    className="settings-input"
-                                    value={apiKey}
-                                    onChange={(e) => {
-                                        setApiKey(e.target.value)
-                                        setApiKeyDirty(true)
-                                    }}
-                                    placeholder={hasStoredApiKey ? '****' : ''}
-                                    disabled={saving}
-                                />
-                                <p className="prompt-modal-hint memory-toggle-hint">
-                                    {t('settings.webSearchApiKeyHint')}
-                                </p>
-                            </div>
+                            {showSearchEngineField && (
+                                <div className="settings-group">
+                                    <label className="settings-label">{t('settings.webSearchSearchEngine')}</label>
+                                    <CustomSelect
+                                        value={searchEngine}
+                                        options={ZHIPU_SEARCH_ENGINE_OPTIONS}
+                                        ariaLabel={t('settings.webSearchSearchEngine')}
+                                        disabled={saving}
+                                        onChange={setSearchEngine}
+                                    />
+                                </div>
+                            )}
 
-                            <div className="settings-group">
-                                <label className="settings-label">{t('settings.webSearchBasicAuthUsername')}</label>
-                                <input
-                                    className="settings-input"
-                                    value={basicAuthUsername}
-                                    onChange={(e) => setBasicAuthUsername(e.target.value)}
-                                    placeholder=""
-                                    disabled={saving}
-                                />
-                            </div>
+                            {showApiKeyField && (
+                                <div className="settings-group">
+                                    <label className="settings-label">{t('settings.webSearchApiKey')}</label>
+                                    <input
+                                        className="settings-input"
+                                        value={apiKey}
+                                        onChange={(e) => {
+                                            setApiKey(e.target.value)
+                                            setApiKeyDirty(true)
+                                        }}
+                                        placeholder={hasStoredApiKey ? '****' : ''}
+                                        disabled={saving}
+                                    />
+                                    <p className="prompt-modal-hint memory-toggle-hint">
+                                        {t('settings.webSearchApiKeyHint')}
+                                    </p>
+                                </div>
+                            )}
 
-                            <div className="settings-group">
-                                <label className="settings-label">{t('settings.webSearchBasicAuthPassword')}</label>
-                                <input
-                                    className="settings-input"
-                                    value={basicAuthPassword}
-                                    onChange={(e) => {
-                                        setBasicAuthPassword(e.target.value)
-                                        setBasicAuthPasswordDirty(true)
-                                    }}
-                                    placeholder={hasStoredBasicAuthPassword ? '****' : ''}
-                                    disabled={saving}
-                                />
-                                <p className="prompt-modal-hint memory-toggle-hint">
-                                    {t('settings.webSearchBasicAuthHint')}
-                                </p>
-                            </div>
+                            {showBasicAuthUsernameField && (
+                                <div className="settings-group">
+                                    <label className="settings-label">{t('settings.webSearchBasicAuthUsername')}</label>
+                                    <input
+                                        className="settings-input"
+                                        value={basicAuthUsername}
+                                        onChange={(e) => setBasicAuthUsername(e.target.value)}
+                                        placeholder=""
+                                        disabled={saving}
+                                    />
+                                </div>
+                            )}
+
+                            {showBasicAuthPasswordField && (
+                                <div className="settings-group">
+                                    <label className="settings-label">{t('settings.webSearchBasicAuthPassword')}</label>
+                                    <input
+                                        className="settings-input"
+                                        value={basicAuthPassword}
+                                        onChange={(e) => {
+                                            setBasicAuthPassword(e.target.value)
+                                            setBasicAuthPasswordDirty(true)
+                                        }}
+                                        placeholder={hasStoredBasicAuthPassword ? '****' : ''}
+                                        disabled={saving}
+                                    />
+                                    <p className="prompt-modal-hint memory-toggle-hint">
+                                        {t('settings.webSearchBasicAuthHint')}
+                                    </p>
+                                </div>
+                            )}
                         </>
                     )}
 

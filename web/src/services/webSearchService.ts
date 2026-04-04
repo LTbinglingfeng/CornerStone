@@ -16,6 +16,7 @@ export interface WebSearchProviderInfo {
 export interface WebSearchProviderConfig {
     api_key?: string
     api_host?: string
+    search_engine?: string
     basic_auth_username?: string
     basic_auth_password?: string
 }

@@ -105,3 +105,82 @@ func TestHandleWebSearchSettings_MaxResultsOnlyUpdateAlignsFetchResults(t *testi
 		t.Fatalf("FetchResults = %d, want 1", updated.WebSearch.FetchResults)
 	}
 }
+
+func TestHandleWebSearchSettings_ZhipuSearchEngineUpdate(t *testing.T) {
+	cm := config.NewManager(filepath.Join(t.TempDir(), "config.json"))
+	cfg := config.DefaultConfig()
+	cfg.WebSearch.ActiveProviderID = "zhipu"
+	cfg.WebSearch.Providers = map[string]config.WebSearchProvider{
+		"zhipu": {
+			APIKey:       "secret-key",
+			SearchEngine: "search_std",
+		},
+	}
+	if err := cm.Update(cfg); err != nil {
+		t.Fatalf("Update config failed: %v", err)
+	}
+
+	handler := &Handler{configManager: cm}
+	body, err := json.Marshal(map[string]interface{}{
+		"providers": map[string]interface{}{
+			"zhipu": map[string]string{
+				"search_engine": "search_pro_quark",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Marshal request failed: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPut, "/api/settings/web-search", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	handler.handleWebSearchSettings(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	updated := cm.Get()
+	providerCfg, ok := updated.WebSearch.Providers["zhipu"]
+	if !ok {
+		t.Fatalf("provider settings missing after update")
+	}
+	if providerCfg.SearchEngine != "search_pro_quark" {
+		t.Fatalf("SearchEngine = %q, want search_pro_quark", providerCfg.SearchEngine)
+	}
+}
+
+func TestHandleWebSearchSettings_ZhipuSearchEngineRejectsInvalidValue(t *testing.T) {
+	cm := config.NewManager(filepath.Join(t.TempDir(), "config.json"))
+	cfg := config.DefaultConfig()
+	cfg.WebSearch.Providers = map[string]config.WebSearchProvider{
+		"zhipu": {
+			APIKey: "secret-key",
+		},
+	}
+	if err := cm.Update(cfg); err != nil {
+		t.Fatalf("Update config failed: %v", err)
+	}
+
+	handler := &Handler{configManager: cm}
+	body, err := json.Marshal(map[string]interface{}{
+		"providers": map[string]interface{}{
+			"zhipu": map[string]string{
+				"search_engine": "not_real",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Marshal request failed: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPut, "/api/settings/web-search", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	handler.handleWebSearchSettings(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+}

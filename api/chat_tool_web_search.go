@@ -65,6 +65,7 @@ func (e *chatToolExecutor) handleWebSearch(ctx context.Context, toolCall client.
 		search.ProviderConfig{
 			APIKey:            strings.TrimSpace(providerSettings.APIKey),
 			APIHost:           strings.TrimSpace(providerSettings.APIHost),
+			SearchEngine:      strings.TrimSpace(providerSettings.SearchEngine),
 			BasicAuthUsername: strings.TrimSpace(providerSettings.BasicAuthUsername),
 			BasicAuthPassword: strings.TrimSpace(providerSettings.BasicAuthPassword),
 		},

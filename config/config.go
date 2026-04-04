@@ -74,6 +74,7 @@ type ClawBotConfig struct {
 type WebSearchProvider struct {
 	APIKey            string `json:"api_key,omitempty"`
 	APIHost           string `json:"api_host,omitempty"`
+	SearchEngine      string `json:"search_engine,omitempty"`
 	BasicAuthUsername string `json:"basic_auth_username,omitempty"`
 	BasicAuthPassword string `json:"basic_auth_password,omitempty"`
 }
@@ -932,6 +933,7 @@ func normalizeWebSearchProviders(providers map[string]WebSearchProvider) (map[st
 		next := WebSearchProvider{
 			APIKey:            strings.TrimSpace(cfg.APIKey),
 			APIHost:           strings.TrimSpace(cfg.APIHost),
+			SearchEngine:      normalizeWebSearchProviderSearchEngine(id, cfg.SearchEngine),
 			BasicAuthUsername: strings.TrimSpace(cfg.BasicAuthUsername),
 			BasicAuthPassword: strings.TrimSpace(cfg.BasicAuthPassword),
 		}
@@ -944,6 +946,19 @@ func normalizeWebSearchProviders(providers map[string]WebSearchProvider) (map[st
 		return providers, false
 	}
 	return normalized, true
+}
+
+func normalizeWebSearchProviderSearchEngine(providerID string, value string) string {
+	if providerID != "zhipu" {
+		return ""
+	}
+
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "search_std", "search_pro", "search_pro_sogou", "search_pro_quark":
+		return strings.ToLower(strings.TrimSpace(value))
+	default:
+		return "search_std"
+	}
 }
 
 func normalizeWebSearchExcludeDomains(domains []string) []string {
