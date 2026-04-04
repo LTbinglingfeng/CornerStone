@@ -552,6 +552,52 @@
   gap: 10px;
 }
 
+.settings-option-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-option-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
+}
+
+.settings-option-item:hover {
+  border-color: var(--accent-color);
+}
+
+.settings-option-item:active {
+  transform: scale(0.98);
+}
+
+.settings-option-item.selected {
+  border-color: var(--accent-color);
+  background-color: var(--bg-secondary);
+}
+
+.settings-option-title {
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.settings-option-check {
+  width: 18px;
+  height: 18px;
+  fill: var(--accent-color);
+  flex-shrink: 0;
+}
+
 .weather-city-item {
   width: 100%;
   display: flex;

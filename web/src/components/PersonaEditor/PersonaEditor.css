@@ -250,8 +250,10 @@
 .persona-section-header .section-icon {
     width: 20px;
     height: 20px;
-    fill: var(--accent-color);
+    color: var(--accent-color);
+    fill: currentColor;
     flex-shrink: 0;
+    transition: transform 0.2s ease, filter 0.2s ease;
 }
 
 .persona-section-header .section-badge {
@@ -296,6 +298,31 @@
 
 .persona-memory-section .persona-section-header:hover .section-title {
     color: var(--accent-color);
+}
+
+.persona-memory-section .section-icon-memory .memory-icon-back {
+    fill: currentColor;
+    opacity: 0.14;
+}
+
+.persona-memory-section .section-icon-memory .memory-icon-middle {
+    fill: currentColor;
+    opacity: 0.24;
+}
+
+.persona-memory-section .section-icon-memory .memory-icon-front,
+.persona-memory-section .section-icon-memory .memory-icon-spark {
+    fill: currentColor;
+}
+
+.persona-memory-section .section-icon-memory .memory-icon-line {
+    stroke: var(--bg-secondary);
+    opacity: 0.92;
+}
+
+.persona-memory-section .persona-section-header:hover .section-icon-memory {
+    transform: translateY(-1px) scale(1.03);
+    filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.12));
 }
 
 .memory-count-badge {

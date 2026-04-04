@@ -246,6 +246,7 @@ const en = {
         hasBotToken: 'Bot Token saved',
         noBotToken: 'Bot Token not saved',
         language: 'Language',
+        languageHint: 'Switch the Web UI display language',
         currentVersion: 'Current Version',
     },
     provider: {

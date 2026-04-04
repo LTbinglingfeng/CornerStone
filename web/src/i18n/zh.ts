@@ -245,6 +245,7 @@ const zh = {
         hasBotToken: '已保存 Bot Token',
         noBotToken: '未保存 Bot Token',
         language: '语言 / Language',
+        languageHint: '切换 Web UI 的显示语言',
         currentVersion: '当前版本',
     },
     provider: {

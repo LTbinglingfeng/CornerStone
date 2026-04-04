@@ -22,8 +22,21 @@ const PersonaMemorySection: React.FC<PersonaMemorySectionProps> = ({
         <div className="persona-section persona-memory-section">
             <div className="persona-section-header" onClick={onToggle}>
                 <span className="section-title">
-                    <svg className="section-icon" viewBox="0 0 24 24">
-                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-4h2v-2h-2v2zm1-12C9.24 4 7 6.24 7 9h2c0-1.66 1.34-3 3-3s3 1.34 3 3c0 3-4.5 2.62-4.5 7h2c0-3.15 4.5-3.5 4.5-7 0-2.76-2.24-5-5-5z" />
+                    <svg className="section-icon section-icon-memory" viewBox="0 0 24 24" aria-hidden="true">
+                        <rect className="memory-icon-back" x="3.5" y="6" width="10.5" height="8.5" rx="2.5" />
+                        <rect className="memory-icon-middle" x="6.5" y="4" width="11" height="8.75" rx="2.75" />
+                        <rect className="memory-icon-front" x="8.5" y="8.25" width="12" height="9.25" rx="2.75" />
+                        <path className="memory-icon-line" d="M11.5 11.75h6" strokeWidth="1.5" strokeLinecap="round" />
+                        <path
+                            className="memory-icon-line"
+                            d="M11.5 14.75h4.25"
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                        />
+                        <path
+                            className="memory-icon-spark"
+                            d="M18.75 3.3l.58 1.47 1.47.58-1.47.58-.58 1.47-.58-1.47-1.47-.58 1.47-.58z"
+                        />
                     </svg>
                     <span>{t('persona.memoryManagement')}</span>
                 </span>

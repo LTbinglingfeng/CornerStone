@@ -106,6 +106,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     const [weatherCitySearched, setWeatherCitySearched] = useState(false)
     const [selectedWeatherCity, setSelectedWeatherCity] = useState<WeatherCity | null>(null)
     const [weatherCitySaving, setWeatherCitySaving] = useState(false)
+    const [showLanguageModal, setShowLanguageModal] = useState(false)
     const [notificationsEnabled, setNotificationsEnabledState] = useState(() => getNotificationsEnabled())
     const [notificationsSupported, setNotificationsSupported] = useState(() => isNotificationSupported())
     const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | 'unsupported'>(() =>
@@ -296,6 +297,19 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
 
     const handleCloseWeatherCityModal = () => {
         setShowWeatherCityModal(false)
+    }
+
+    const handleOpenLanguageModal = () => {
+        setShowLanguageModal(true)
+    }
+
+    const handleCloseLanguageModal = () => {
+        setShowLanguageModal(false)
+    }
+
+    const handleSelectLocale = (nextLocale: Locale) => {
+        setLocale(nextLocale)
+        handleCloseLanguageModal()
     }
 
     const handleOpenMemoryExtractionRoundsModal = () => {
@@ -730,6 +744,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     const clawBotPreview = getClawBotPreview()
     const timeZonePreview = getTimeZonePreview()
     const defaultWeatherCityPreview = getDefaultWeatherCityPreview()
+    const localeOptions = Object.entries(localeNames) as [Locale, string][]
 
     return (
         <div className="settings">
@@ -880,20 +895,20 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                             <p className="prompt-modal-hint memory-toggle-hint">{t('settings.notifyWhenNotInChat')}</p>
                         </div>
 
-                        <div className="settings-group" style={{ marginTop: 12 }}>
-                            <label className="settings-label">{t('settings.language')}</label>
-                            <select
-                                className="settings-input"
-                                value={locale}
-                                onChange={(event) => setLocale(event.target.value as Locale)}
-                            >
-                                {(Object.entries(localeNames) as [Locale, string][]).map(([value, label]) => (
-                                    <option key={value} value={value}>
-                                        {label}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
+                        <button
+                            className="settings-entry-btn"
+                            onClick={handleOpenLanguageModal}
+                            style={{ marginTop: 12 }}
+                        >
+                            <div className="settings-entry-info">
+                                <span className="settings-entry-label">{t('settings.language')}</span>
+                                <span className="settings-entry-value">{localeNames[locale]}</span>
+                                <span className="settings-entry-subvalue">{t('settings.languageHint')}</span>
+                            </div>
+                            <svg className="settings-entry-arrow" viewBox="0 0 24 24">
+                                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                            </svg>
+                        </button>
                     </div>
 
                     {/* 语音设置 */}
@@ -1347,6 +1362,61 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                                 >
                                     {weatherCitySaving ? t('common.saving') : t('common.save')}
                                 </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+                {showLanguageModal && (
+                    <motion.div
+                        className="prompt-modal-overlay"
+                        initial="hidden"
+                        animate="visible"
+                        exit="hidden"
+                        variants={overlayVariants}
+                        onClick={handleCloseLanguageModal}
+                    >
+                        <motion.div
+                            className="prompt-modal-card"
+                            initial="hidden"
+                            animate="visible"
+                            exit="hidden"
+                            variants={centerModalVariants}
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="prompt-modal-header">
+                                <h3>{t('settings.language')}</h3>
+                                <button className="prompt-modal-close" onClick={handleCloseLanguageModal}>
+                                    <svg viewBox="0 0 24 24">
+                                        <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                                    </svg>
+                                </button>
+                            </div>
+
+                            <div className="prompt-modal-body">
+                                <p className="prompt-modal-hint">{t('settings.languageHint')}</p>
+                                <div className="settings-option-list">
+                                    {localeOptions.map(([value, label]) => {
+                                        const active = value === locale
+                                        return (
+                                            <button
+                                                key={value}
+                                                type="button"
+                                                className={`settings-option-item${active ? ' selected' : ''}`}
+                                                onClick={() => handleSelectLocale(value)}
+                                            >
+                                                <span className="settings-option-title">{label}</span>
+                                                {active && (
+                                                    <svg className="settings-option-check" viewBox="0 0 24 24">
+                                                        <path d="M9 16.17l-3.88-3.88L4 13.41 9 18.41 20 7.41 18.59 6z" />
+                                                    </svg>
+                                                )}
+                                            </button>
+                                        )
+                                    })}
+                                </div>
                             </div>
                         </motion.div>
                     </motion.div>
