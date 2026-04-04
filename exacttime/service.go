@@ -18,16 +18,20 @@ const (
 
 type Config struct {
 	Server       string
-	Enabled      bool
+	Enabled      *bool
 	SyncInterval time.Duration
 	Timeout      time.Duration
 	ManualOffset time.Duration
 }
 
+func BoolPtr(v bool) *bool {
+	return &v
+}
+
 func DefaultConfig() Config {
 	return Config{
 		Server:       DefaultServer,
-		Enabled:      true,
+		Enabled:      BoolPtr(true),
 		SyncInterval: DefaultSyncInterval,
 		Timeout:      DefaultTimeout,
 		ManualOffset: 0,
@@ -71,7 +75,6 @@ func New(cfg Config) *Service {
 }
 
 func newService(cfg Config, query ntpQueryFunc, now nowFunc) *Service {
-	zeroConfig := cfg == (Config{})
 	defaults := DefaultConfig()
 
 	server := strings.TrimSpace(cfg.Server)
@@ -79,9 +82,9 @@ func newService(cfg Config, query ntpQueryFunc, now nowFunc) *Service {
 		server = defaults.Server
 	}
 
-	enabled := cfg.Enabled
-	if zeroConfig {
-		enabled = defaults.Enabled
+	enabled := *defaults.Enabled
+	if cfg.Enabled != nil {
+		enabled = *cfg.Enabled
 	}
 
 	syncInterval := cfg.SyncInterval

@@ -108,8 +108,9 @@ func TestChatToolExecutor_GetTimeUsesConfiguredTimeZone(t *testing.T) {
 	if summary.Timezone != "America/New_York" {
 		t.Fatalf("timezone = %q, want %q", summary.Timezone, "America/New_York")
 	}
-	if summary.TimezoneOffset != "-04:00" {
-		t.Fatalf("timezone_offset = %q, want %q", summary.TimezoneOffset, "-04:00")
+	expectedOffset := formatTimeZoneOffset(expectedLocal)
+	if summary.TimezoneOffset != expectedOffset {
+		t.Fatalf("timezone_offset = %q, want %q", summary.TimezoneOffset, expectedOffset)
 	}
 	if summary.NowRFC3339 != expectedLocal.Format(time.RFC3339) {
 		t.Fatalf("now_rfc3339 = %q, want %q", summary.NowRFC3339, expectedLocal.Format(time.RFC3339))
