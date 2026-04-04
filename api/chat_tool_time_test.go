@@ -88,6 +88,27 @@ func TestGetChatTools_IncludesTimeAndClawBotKeepsReadOnlyTools(t *testing.T) {
 	if _, ok := names["web_search"]; !ok {
 		t.Fatalf("clawbot tools = %#v, want web_search when enabled", clawBotTools)
 	}
+
+	disabledTimeTools := getChatTools(chatToolOptions{
+		ToolToggles: map[string]bool{
+			"get_time": false,
+		},
+	})
+	for _, tool := range disabledTimeTools {
+		if tool.Function.Name == "get_time" {
+			t.Fatalf("get_time unexpectedly registered when disabled: %#v", disabledTimeTools)
+		}
+	}
+
+	clawBotTools = getChatTools(chatToolOptions{
+		Channel: chatToolChannelClawBot,
+		ToolToggles: map[string]bool{
+			"get_weather": false,
+		},
+	})
+	if len(clawBotTools) != 1 || clawBotTools[0].Function.Name != "get_time" {
+		t.Fatalf("clawbot tools with get_weather disabled = %#v, want only get_time", clawBotTools)
+	}
 }
 
 func TestChatToolExecutor_GetTimeUsesConfiguredTimeZone(t *testing.T) {

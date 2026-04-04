@@ -32,6 +32,13 @@ import {
     setNotificationsEnabled,
 } from '../utils/notifications'
 import { centerModalVariants, overlayVariants } from '../utils/motion'
+import {
+    countEnabledToolToggles,
+    createDefaultToolToggles,
+    normalizeToolToggles,
+    TOOL_CONTROL_DEFINITIONS,
+} from '../constants/toolControls'
+import ToolSettingsPanel from './ToolSettings'
 import './Settings.css'
 
 interface SettingsProps {
@@ -90,6 +97,8 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     const [showClawBotSettings, setShowClawBotSettings] = useState(false)
     const [webSearchSettings, setWebSearchSettings] = useState<WebSearchSettings | null>(null)
     const [showWebSearchSettings, setShowWebSearchSettings] = useState(false)
+    const [toolToggles, setToolToggles] = useState<Record<string, boolean>>(() => createDefaultToolToggles())
+    const [showToolSettings, setShowToolSettings] = useState(false)
     const [showPromptModal, setShowPromptModal] = useState(false)
     const [replyWaitConfig, setReplyWaitConfigState] = useState<ReplyWaitWindowConfig>(() => getReplyWaitWindowConfig())
     const [editingReplyWaitConfig, setEditingReplyWaitConfig] = useState<ReplyWaitWindowConfig>(() =>
@@ -185,6 +194,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
             setSystemPrompt(providersData.system_prompt)
             setTimeZone((providersData.time_zone || DEFAULT_TIME_ZONE).trim() || DEFAULT_TIME_ZONE)
             setDefaultWeatherCity(providersData.weather_default_city || null)
+            setToolToggles(normalizeToolToggles(providersData.tool_toggles))
             if (
                 typeof providersData.reply_wait_window_mode === 'string' ||
                 typeof providersData.reply_wait_window_seconds === 'number'
@@ -645,6 +655,10 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         setShowWebSearchSettings(false)
     }
 
+    const handleToolSettingsBack = () => {
+        setShowToolSettings(false)
+    }
+
     const getPromptPreview = () => {
         if (!systemPrompt) return t('common.notSet')
         if (systemPrompt.length <= 20) return systemPrompt
@@ -770,10 +784,22 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         return { title, detail }
     }
 
+    const getToolControlPreview = () => {
+        const enabled = countEnabledToolToggles(toolToggles)
+        return {
+            title: t('settings.toolControlSummary', {
+                enabled,
+                total: TOOL_CONTROL_DEFINITIONS.length,
+            }),
+            detail: t('settings.toolControlHint'),
+        }
+    }
+
     const memoryProviderPreview = getMemoryProviderPreview()
     const ttsProviderPreview = getTTSProviderPreview()
     const clawBotPreview = getClawBotPreview()
     const webSearchPreview = getWebSearchPreview()
+    const toolControlPreview = getToolControlPreview()
     const timeZonePreview = getTimeZonePreview()
     const defaultWeatherCityPreview = getDefaultWeatherCityPreview()
     const localeOptions = Object.entries(localeNames) as [Locale, string][]
@@ -835,6 +861,20 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                                 {webSearchPreview.detail && (
                                     <span className="settings-entry-subvalue">{webSearchPreview.detail}</span>
                                 )}
+                            </div>
+                            <svg className="settings-entry-arrow" viewBox="0 0 24 24">
+                                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                            </svg>
+                        </button>
+                    </div>
+
+                    <div className="settings-section">
+                        <h3>{t('settings.tools')}</h3>
+                        <button className="settings-entry-btn" onClick={() => setShowToolSettings(true)}>
+                            <div className="settings-entry-info">
+                                <span className="settings-entry-label">{t('settings.tools')}</span>
+                                <span className="settings-entry-value">{toolControlPreview.title}</span>
+                                <span className="settings-entry-subvalue">{toolControlPreview.detail}</span>
                             </div>
                             <svg className="settings-entry-arrow" viewBox="0 0 24 24">
                                 <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
@@ -1123,6 +1163,10 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
 
             <AnimatePresence onExitComplete={() => void loadData({ showLoading: false })}>
                 {showWebSearchSettings && <WebSearchSettingsPanel onBack={handleWebSearchSettingsBack} />}
+            </AnimatePresence>
+
+            <AnimatePresence onExitComplete={() => void loadData({ showLoading: false })}>
+                {showToolSettings && <ToolSettingsPanel onBack={handleToolSettingsBack} />}
             </AnimatePresence>
 
             <AnimatePresence>

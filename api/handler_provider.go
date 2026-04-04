@@ -31,14 +31,15 @@ func normalizeProviderBaseURL(providerType config.ProviderType, baseURL string) 
 
 // ConfigUpdateRequest 配置更新请求
 type ConfigUpdateRequest struct {
-	BaseURL                *string         `json:"base_url,omitempty"`
-	APIKey                 *string         `json:"api_key,omitempty"`
-	Model                  *string         `json:"model,omitempty"`
-	SystemPrompt           *string         `json:"system_prompt,omitempty"`
-	ReplyWaitWindowMode    *string         `json:"reply_wait_window_mode,omitempty"`
-	ReplyWaitWindowSeconds *int            `json:"reply_wait_window_seconds,omitempty"`
-	TimeZone               *string         `json:"time_zone,omitempty"`
-	WeatherDefaultCity     json.RawMessage `json:"weather_default_city,omitempty"`
+	BaseURL                *string          `json:"base_url,omitempty"`
+	APIKey                 *string          `json:"api_key,omitempty"`
+	Model                  *string          `json:"model,omitempty"`
+	SystemPrompt           *string          `json:"system_prompt,omitempty"`
+	ReplyWaitWindowMode    *string          `json:"reply_wait_window_mode,omitempty"`
+	ReplyWaitWindowSeconds *int             `json:"reply_wait_window_seconds,omitempty"`
+	TimeZone               *string          `json:"time_zone,omitempty"`
+	WeatherDefaultCity     json.RawMessage  `json:"weather_default_city,omitempty"`
+	ToolToggles            *map[string]bool `json:"tool_toggles,omitempty"`
 }
 
 // ProviderRequest 供应商请求
@@ -95,6 +96,7 @@ func (h *Handler) handleConfig(w http.ResponseWriter, r *http.Request) {
 			ReplyWaitWindowSeconds int                 `json:"reply_wait_window_seconds"`
 			TimeZone               string              `json:"time_zone"`
 			WeatherDefaultCity     *config.WeatherCity `json:"weather_default_city,omitempty"`
+			ToolToggles            map[string]bool     `json:"tool_toggles,omitempty"`
 		}{
 			BaseURL:                provider.BaseURL,
 			APIKey:                 provider.APIKey,
@@ -104,6 +106,7 @@ func (h *Handler) handleConfig(w http.ResponseWriter, r *http.Request) {
 			ReplyWaitWindowSeconds: h.configManager.Get().ReplyWaitWindowSeconds,
 			TimeZone:               h.configManager.Get().TimeZone,
 			WeatherDefaultCity:     h.configManager.GetWeatherDefaultCity(),
+			ToolToggles:            h.configManager.Get().ToolToggles,
 		}
 		// 隐藏完整API密钥
 		if len(cfg.APIKey) > 8 {
@@ -136,7 +139,7 @@ func (h *Handler) handleConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if req.TimeZone != nil || req.ReplyWaitWindowMode != nil || req.ReplyWaitWindowSeconds != nil || req.WeatherDefaultCity != nil {
+		if req.TimeZone != nil || req.ReplyWaitWindowMode != nil || req.ReplyWaitWindowSeconds != nil || req.WeatherDefaultCity != nil || req.ToolToggles != nil {
 			cfg := h.configManager.Get()
 			if req.TimeZone != nil {
 				trimmedTimeZone := strings.TrimSpace(*req.TimeZone)
@@ -170,6 +173,9 @@ func (h *Handler) handleConfig(w http.ResponseWriter, r *http.Request) {
 					}
 					cfg.WeatherDefaultCity = &city
 				}
+			}
+			if req.ToolToggles != nil {
+				cfg.ToolToggles = config.NormalizeToolToggles(*req.ToolToggles)
 			}
 			if err := h.configManager.Update(cfg); err != nil {
 				h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: err.Error()})
@@ -226,6 +232,7 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 			"reply_wait_window_seconds": cfg.ReplyWaitWindowSeconds,
 			"time_zone":                 cfg.TimeZone,
 			"weather_default_city":      h.configManager.GetWeatherDefaultCity(),
+			"tool_toggles":              cfg.ToolToggles,
 			"image_provider_id":         cfg.ImageProviderID,
 			"memory_provider_id":        cfg.MemoryProviderID,
 			"memory_provider":           memoryProvider,

@@ -1,0 +1,106 @@
+export type ToolControlSection = 'interaction' | 'realtime' | 'creation'
+export type ToolControlSectionTitleKey =
+    | 'settings.toolSectionInteraction'
+    | 'settings.toolSectionRealtime'
+    | 'settings.toolSectionCreation'
+export type ToolControlTitleKey =
+    | 'settings.toolSendRedPacket'
+    | 'settings.toolRedPacketReceived'
+    | 'settings.toolSendPat'
+    | 'settings.toolGetTime'
+    | 'settings.toolGetWeather'
+    | 'settings.toolWebSearch'
+    | 'settings.toolGenerateMoment'
+export type ToolControlDescriptionKey =
+    | 'settings.toolSendRedPacketDescription'
+    | 'settings.toolRedPacketReceivedDescription'
+    | 'settings.toolSendPatDescription'
+    | 'settings.toolGetTimeDescription'
+    | 'settings.toolGetWeatherDescription'
+    | 'settings.toolWebSearchDescription'
+    | 'settings.toolGenerateMomentDescription'
+export type ToolControlHintKey = 'settings.toolWebSearchHint'
+
+export interface ToolControlDefinition {
+    key: string
+    section: ToolControlSection
+    titleKey: ToolControlTitleKey
+    descriptionKey: ToolControlDescriptionKey
+    hintKey?: ToolControlHintKey
+}
+
+export const TOOL_CONTROL_SECTION_TITLE_KEYS: Record<ToolControlSection, ToolControlSectionTitleKey> = {
+    interaction: 'settings.toolSectionInteraction',
+    realtime: 'settings.toolSectionRealtime',
+    creation: 'settings.toolSectionCreation',
+}
+
+export const TOOL_CONTROL_DEFINITIONS: ToolControlDefinition[] = [
+    {
+        key: 'send_red_packet',
+        section: 'interaction',
+        titleKey: 'settings.toolSendRedPacket',
+        descriptionKey: 'settings.toolSendRedPacketDescription',
+    },
+    {
+        key: 'red_packet_received',
+        section: 'interaction',
+        titleKey: 'settings.toolRedPacketReceived',
+        descriptionKey: 'settings.toolRedPacketReceivedDescription',
+    },
+    {
+        key: 'send_pat',
+        section: 'interaction',
+        titleKey: 'settings.toolSendPat',
+        descriptionKey: 'settings.toolSendPatDescription',
+    },
+    {
+        key: 'get_time',
+        section: 'realtime',
+        titleKey: 'settings.toolGetTime',
+        descriptionKey: 'settings.toolGetTimeDescription',
+    },
+    {
+        key: 'get_weather',
+        section: 'realtime',
+        titleKey: 'settings.toolGetWeather',
+        descriptionKey: 'settings.toolGetWeatherDescription',
+    },
+    {
+        key: 'web_search',
+        section: 'realtime',
+        titleKey: 'settings.toolWebSearch',
+        descriptionKey: 'settings.toolWebSearchDescription',
+        hintKey: 'settings.toolWebSearchHint',
+    },
+    {
+        key: 'generate_moment',
+        section: 'creation',
+        titleKey: 'settings.toolGenerateMoment',
+        descriptionKey: 'settings.toolGenerateMomentDescription',
+    },
+]
+
+export function createDefaultToolToggles(): Record<string, boolean> {
+    return Object.fromEntries(TOOL_CONTROL_DEFINITIONS.map((tool) => [tool.key, true]))
+}
+
+export function normalizeToolToggles(toolToggles?: Record<string, boolean> | null): Record<string, boolean> {
+    const normalized = createDefaultToolToggles()
+    if (!toolToggles) {
+        return normalized
+    }
+
+    for (const tool of TOOL_CONTROL_DEFINITIONS) {
+        if (typeof toolToggles[tool.key] === 'boolean') {
+            normalized[tool.key] = toolToggles[tool.key]
+        }
+    }
+
+    return normalized
+}
+
+export function countEnabledToolToggles(toolToggles?: Record<string, boolean> | null): number {
+    const normalized = normalizeToolToggles(toolToggles)
+    return TOOL_CONTROL_DEFINITIONS.reduce((count, tool) => count + (normalized[tool.key] ? 1 : 0), 0)
+}

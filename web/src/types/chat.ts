@@ -121,6 +121,7 @@ export interface ProvidersResponse {
     reply_wait_window_seconds?: number
     time_zone?: string
     weather_default_city?: WeatherCity | null
+    tool_toggles?: Record<string, boolean>
     image_provider_id?: string
     memory_provider_id?: string
     memory_provider?: Provider | null
@@ -137,6 +138,7 @@ export interface AppConfig {
     reply_wait_window_seconds?: number
     time_zone?: string
     weather_default_city?: WeatherCity | null
+    tool_toggles?: Record<string, boolean>
 }
 
 // 提示词模板

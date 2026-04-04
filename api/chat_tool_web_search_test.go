@@ -55,6 +55,18 @@ func TestGetChatTools_WebSearchOnlyIncludedWhenEnabled(t *testing.T) {
 	if !found {
 		t.Fatal("web_search tool not registered when enabled")
 	}
+
+	disabledByToggleTools := getChatTools(chatToolOptions{
+		WebSearchEnabled: true,
+		ToolToggles: map[string]bool{
+			"web_search": false,
+		},
+	})
+	for _, tool := range disabledByToggleTools {
+		if tool.Function.Name == "web_search" {
+			t.Fatalf("web_search unexpectedly registered when disabled by toggle: %#v", disabledByToggleTools)
+		}
+	}
 }
 
 func TestIsWebSearchConfigured_RequiresProviderSpecificSettings(t *testing.T) {

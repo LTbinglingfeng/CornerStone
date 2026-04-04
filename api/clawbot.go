@@ -911,27 +911,52 @@ func (s *ClawBotService) generateReplyForSession(ctx context.Context, session *s
 		persona = storage.BuildPromptWithMemory(persona, memSession.GetActiveMemories())
 	}
 
-	channelGuide := strings.TrimSpace(`[渠道说明]
-你正在通过微信 ClawBot 渠道回复用户。
-你只能回复适合微信文本消息的内容。
-请直接输出可以发送给用户的自然语言消息。
-你可以调用 get_time、get_weather 和 web_search 查询实时或外部信息。
-不要调用红包、拍一拍、朋友圈等微信交互工具。`)
+	currentConfig := config.DefaultConfig()
+	if s.handler.configManager != nil {
+		currentConfig = s.handler.configManager.Get()
+	}
+	availableTools := getChatTools(chatToolOptions{
+		Channel:          chatToolChannelClawBot,
+		WebSearchEnabled: isWebSearchConfigured(currentConfig),
+		ToolToggles:      currentConfig.ToolToggles,
+	})
+	availableToolNames := buildToolNameSet(availableTools)
 
-	timeToolGuide := strings.TrimSpace(`[时间工具]
-当需要回答当前时间、当前日期、今天/明天/昨天、星期几、时区、是否已到某个时刻等实时问题时，必须先调用 get_time。
-不要凭模型记忆猜测当前时间。`)
-
-	weatherToolGuide := strings.TrimSpace(`[天气工具]
-当需要回答当前天气、气温、降雨、空气质量、天气预警等实时天气问题时，必须先调用 get_weather。
-如果用户没有指定城市，则使用设置中的默认天气城市。`)
+	channelGuideLines := []string{
+		"[渠道说明]",
+		"你正在通过微信 ClawBot 渠道回复用户。",
+		"你只能回复适合微信文本消息的内容。",
+		"请直接输出可以发送给用户的自然语言消息。",
+	}
+	clawBotToolNames := make([]string, 0, 3)
+	for _, name := range []string{"get_time", "get_weather", "web_search"} {
+		if isToolAvailable(availableToolNames, name) {
+			clawBotToolNames = append(clawBotToolNames, name)
+		}
+	}
+	if len(clawBotToolNames) > 0 {
+		channelGuideLines = append(channelGuideLines, "你可以根据需要调用这些工具："+strings.Join(clawBotToolNames, "、")+"。")
+	}
+	channelGuideLines = append(channelGuideLines, "不要调用红包、拍一拍、朋友圈等微信交互工具。")
+	channelGuide := strings.TrimSpace(strings.Join(channelGuideLines, "\n"))
 
 	history := convertChatMessages(session.Messages)
-	history = mergeTrailingUserMessages(history)
+	history = mergeTrailingUserMessages(history, availableToolNames)
 	history = limitMessagesByTurns(history, provider.ContextMessages)
 
-	fullSystemPrompt := buildChatSystemPrompt(systemPrompt, userContext, persona, channelGuide, timeToolGuide, weatherToolGuide)
-	webSearchEnabled := s.handler.configManager != nil && isWebSearchConfigured(s.handler.configManager.Get())
+	systemGuides := []string{channelGuide}
+	if isToolAvailable(availableToolNames, "get_time") {
+		systemGuides = append(systemGuides, strings.TrimSpace(`[时间工具]
+当需要回答当前时间、当前日期、今天/明天/昨天、星期几、时区、是否已到某个时刻等实时问题时，必须先调用 get_time。
+不要凭模型记忆猜测当前时间。`))
+	}
+	if isToolAvailable(availableToolNames, "get_weather") {
+		systemGuides = append(systemGuides, strings.TrimSpace(`[天气工具]
+当需要回答当前天气、气温、降雨、空气质量、天气预警等实时天气问题时，必须先调用 get_weather。
+如果用户没有指定城市，则使用设置中的默认天气城市。`))
+	}
+
+	fullSystemPrompt := buildChatSystemPrompt(systemPrompt, userContext, persona, systemGuides...)
 
 	messages := make([]client.Message, 0, len(history)+1)
 	if strings.TrimSpace(fullSystemPrompt) != "" {
@@ -941,7 +966,7 @@ func (s *ClawBotService) generateReplyForSession(ctx context.Context, session *s
 		})
 	}
 	messages = append(messages, history...)
-	messages = normalizeMessagesForProvider(messages)
+	messages = normalizeMessagesForProvider(messages, availableToolNames)
 	resolvedMessages, err := s.handler.prepareMessagesForProvider(messages, provider.ImageCapable)
 	if err != nil {
 		return nil, err
@@ -958,10 +983,7 @@ func (s *ClawBotService) generateReplyForSession(ctx context.Context, session *s
 		Stream:      false,
 		Temperature: temperature,
 		TopP:        provider.TopP,
-		Tools: getChatTools(chatToolOptions{
-			Channel:          chatToolChannelClawBot,
-			WebSearchEnabled: webSearchEnabled,
-		}),
+		Tools:       availableTools,
 	}
 	switch provider.Type {
 	case config.ProviderTypeAnthropic:

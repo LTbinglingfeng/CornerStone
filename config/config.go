@@ -131,12 +131,30 @@ var defaultClawBotCommandPermissionKeys = []string{
 	"re",
 }
 
+var defaultToolToggleKeys = []string{
+	"send_red_packet",
+	"red_packet_received",
+	"send_pat",
+	"get_time",
+	"get_weather",
+	"generate_moment",
+	"web_search",
+}
+
 func DefaultClawBotCommandPermissions() map[string]bool {
 	permissions := make(map[string]bool, len(defaultClawBotCommandPermissionKeys))
 	for _, key := range defaultClawBotCommandPermissionKeys {
 		permissions[key] = true
 	}
 	return permissions
+}
+
+func DefaultToolToggles() map[string]bool {
+	toggles := make(map[string]bool, len(defaultToolToggleKeys))
+	for _, key := range defaultToolToggleKeys {
+		toggles[key] = true
+	}
+	return toggles
 }
 
 func NormalizeClawBotCommandPermissions(permissions map[string]bool) map[string]bool {
@@ -149,7 +167,30 @@ func NormalizeClawBotCommandPermissions(permissions map[string]bool) map[string]
 	return normalized
 }
 
+func NormalizeToolToggles(toggles map[string]bool) map[string]bool {
+	normalized := DefaultToolToggles()
+	for _, key := range defaultToolToggleKeys {
+		if value, ok := toggles[key]; ok {
+			normalized[key] = value
+		}
+	}
+	return normalized
+}
+
 func clawBotCommandPermissionsEqual(left, right map[string]bool) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for key, value := range left {
+		otherValue, ok := right[key]
+		if !ok || otherValue != value {
+			return false
+		}
+	}
+	return true
+}
+
+func toolTogglesEqual(left, right map[string]bool) bool {
 	if len(left) != len(right) {
 		return false
 	}
@@ -248,6 +289,7 @@ type Config struct {
 	ReplyWaitWindowSeconds int             `json:"reply_wait_window_seconds"` // 回复等候窗口秒数
 	TimeZone               string          `json:"time_zone"`                 // Agent 时间工具使用的时区
 	WeatherDefaultCity     *WeatherCity    `json:"weather_default_city,omitempty"`
+	ToolToggles            map[string]bool `json:"tool_toggles,omitempty"` // 模型可用工具开关
 	WebSearch              WebSearchConfig `json:"web_search,omitempty"`
 	TLSCertPath            string          `json:"tls_cert_path,omitempty"` // TLS证书路径(PEM)，留空禁用HTTPS
 	TLSKeyPath             string          `json:"tls_key_path,omitempty"`  // TLS私钥路径(PEM)，留空禁用HTTPS
@@ -300,6 +342,7 @@ func DefaultConfig() Config {
 		ReplyWaitWindowSeconds: DefaultReplyWaitWindowSeconds,
 		TimeZone:               DefaultTimeZone,
 		WeatherDefaultCity:     nil,
+		ToolToggles:            DefaultToolToggles(),
 		WebSearch: WebSearchConfig{
 			ActiveProviderID: "",
 			Providers:        map[string]WebSearchProvider{},
@@ -439,6 +482,11 @@ func (m *Manager) applyConfigDefaults() bool {
 	normalizedWeatherCity := normalizeWeatherCity(m.config.WeatherDefaultCity)
 	if !weatherCitiesEqual(m.config.WeatherDefaultCity, normalizedWeatherCity) {
 		m.config.WeatherDefaultCity = normalizedWeatherCity
+		changed = true
+	}
+	normalizedToolToggles := NormalizeToolToggles(m.config.ToolToggles)
+	if !toolTogglesEqual(m.config.ToolToggles, normalizedToolToggles) {
+		m.config.ToolToggles = normalizedToolToggles
 		changed = true
 	}
 	if m.config.MemoryExtractionRounds <= 0 {

@@ -180,26 +180,39 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	historyMessages := req.Messages
+	currentConfig := config.DefaultConfig()
+	if h.configManager != nil {
+		currentConfig = h.configManager.Get()
+	}
+	availableTools := getChatTools(chatToolOptions{
+		WebSearchEnabled: isWebSearchConfigured(currentConfig),
+		ToolToggles:      currentConfig.ToolToggles,
+	})
+	availableToolNames := buildToolNameSet(availableTools)
 	if req.SaveHistory {
 		if session, ok := h.chatManager.GetSession(sessionID); ok && len(session.Messages) > 0 {
 			historyMessages = convertChatMessages(session.Messages)
 		}
 	}
-	historyMessages = mergeTrailingUserMessages(historyMessages)
+	historyMessages = mergeTrailingUserMessages(historyMessages, availableToolNames)
 	historyMessages = limitMessagesByTurns(historyMessages, provider.ContextMessages)
 
 	// 构建消息，顺序: 系统提示词 -> 用户信息 -> 人设
 	messages := make([]client.Message, 0, len(historyMessages)+1)
 
-	redPacketGuide := strings.TrimSpace(`[红包交互]
-当消息中出现 [用户发红包] 时，表示用户给你发了红包，并会提供 packet_key/amount/message。
-如果你决定领取，请调用工具 red_packet_received 并传入 packet_key。`)
-
-	timeToolGuide := strings.TrimSpace(`[时间工具]
+	systemGuides := make([]string, 0, 2)
+	if isToolAvailable(availableToolNames, "get_time") {
+		systemGuides = append(systemGuides, strings.TrimSpace(`[时间工具]
 当需要回答当前时间、当前日期、今天/明天/昨天、星期几、时区、是否已到某个时刻等实时问题时，必须先调用 get_time。
-不要凭模型记忆猜测当前时间。`)
+不要凭模型记忆猜测当前时间。`))
+	}
+	if isToolAvailable(availableToolNames, "red_packet_received") {
+		systemGuides = append(systemGuides, strings.TrimSpace(`[红包交互]
+当消息中出现 [用户发红包] 时，表示用户给你发了红包，并会提供 packet_key/amount/message。
+如果你决定领取，请调用工具 red_packet_received 并传入 packet_key。`))
+	}
 
-	fullSystemPrompt := buildChatSystemPrompt(systemPrompt, userContext, persona, timeToolGuide, redPacketGuide)
+	fullSystemPrompt := buildChatSystemPrompt(systemPrompt, userContext, persona, systemGuides...)
 
 	if fullSystemPrompt != "" {
 		messages = append(messages, client.Message{
@@ -208,7 +221,7 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	messages = append(messages, historyMessages...)
-	messages = normalizeMessagesForProvider(messages)
+	messages = normalizeMessagesForProvider(messages, availableToolNames)
 	resolvedMessages, errResolve := h.prepareMessagesForProvider(messages, provider.ImageCapable)
 	if errResolve != nil {
 		h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: errResolve.Error()})
@@ -254,9 +267,7 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 		Temperature: temperature,
 		TopP:        provider.TopP,
 		MaxTokens:   req.MaxTokens,
-		Tools: getChatTools(chatToolOptions{
-			WebSearchEnabled: h.configManager != nil && isWebSearchConfigured(h.configManager.Get()),
-		}),
+		Tools:       availableTools,
 	}
 	switch provider.Type {
 	case config.ProviderTypeAnthropic:
@@ -635,7 +646,7 @@ func limitMessagesByTurns(messages []client.Message, maxTurns int) []client.Mess
 	return messages[startIndex:]
 }
 
-func mergeTrailingUserMessages(messages []client.Message) []client.Message {
+func mergeTrailingUserMessages(messages []client.Message, availableTools map[string]bool) []client.Message {
 	if len(messages) == 0 {
 		return messages
 	}
@@ -657,7 +668,7 @@ func mergeTrailingUserMessages(messages []client.Message) []client.Message {
 			continue
 		}
 		content := msg.Content
-		notice := strings.TrimSpace(buildUserToolCallNotice(msg.ToolCalls))
+		notice := strings.TrimSpace(buildUserToolCallNotice(msg.ToolCalls, availableTools))
 		if notice != "" {
 			if strings.TrimSpace(content) == "" {
 				content = notice
@@ -719,7 +730,7 @@ func normalizePacketKey(raw string) string {
 	return normalized
 }
 
-func buildUserToolCallNotice(toolCalls []client.ToolCall) string {
+func buildUserToolCallNotice(toolCalls []client.ToolCall, availableTools map[string]bool) string {
 	if len(toolCalls) == 0 {
 		return ""
 	}
@@ -740,7 +751,11 @@ func buildUserToolCallNotice(toolCalls []client.ToolCall) string {
 			if message == "" {
 				message = "恭喜发财，大吉大利"
 			}
-			lines = append(lines, fmt.Sprintf("[用户发红包]\npacket_key: %s\namount: %.2f\nmessage: %s\n你可以调用 red_packet_received 领取此红包。\n", packetKey, args.Amount, message))
+			line := fmt.Sprintf("[用户发红包]\npacket_key: %s\namount: %.2f\nmessage: %s", packetKey, args.Amount, message)
+			if isToolAvailable(availableTools, "red_packet_received") {
+				line += "\n你可以调用 red_packet_received 领取此红包。"
+			}
+			lines = append(lines, line+"\n")
 		case "send_pat":
 			lines = append(lines, "（对方拍了拍你）")
 		}
@@ -748,7 +763,7 @@ func buildUserToolCallNotice(toolCalls []client.ToolCall) string {
 	return strings.Join(lines, "\n")
 }
 
-func normalizeMessagesForProvider(messages []client.Message) []client.Message {
+func normalizeMessagesForProvider(messages []client.Message, availableTools map[string]bool) []client.Message {
 	if len(messages) == 0 {
 		return nil
 	}
@@ -757,7 +772,7 @@ func normalizeMessagesForProvider(messages []client.Message) []client.Message {
 		updated := msg
 
 		if msg.Role == "user" && len(msg.ToolCalls) > 0 {
-			notice := buildUserToolCallNotice(msg.ToolCalls)
+			notice := buildUserToolCallNotice(msg.ToolCalls, availableTools)
 			if strings.TrimSpace(notice) != "" {
 				if strings.TrimSpace(updated.Content) == "" {
 					updated.Content = notice
@@ -877,16 +892,21 @@ const (
 type chatToolOptions struct {
 	Channel          chatToolChannel
 	WebSearchEnabled bool
+	ToolToggles      map[string]bool
 }
 
 func getChatTools(options ...chatToolOptions) []client.Tool {
 	channel := chatToolChannelDefault
 	webSearchEnabled := false
+	toolToggles := config.DefaultToolToggles()
 	if len(options) > 0 && options[0].Channel != "" {
 		channel = options[0].Channel
 	}
 	if len(options) > 0 {
 		webSearchEnabled = options[0].WebSearchEnabled
+		if options[0].ToolToggles != nil {
+			toolToggles = config.NormalizeToolToggles(options[0].ToolToggles)
+		}
 	}
 	tools := []client.Tool{
 		{
@@ -1040,6 +1060,15 @@ func getChatTools(options ...chatToolOptions) []client.Tool {
 		})
 	}
 
+	filteredByToggle := make([]client.Tool, 0, len(tools))
+	for _, tool := range tools {
+		if !isToolEnabledByToggle(toolToggles, tool.Function.Name) {
+			continue
+		}
+		filteredByToggle = append(filteredByToggle, tool)
+	}
+	tools = filteredByToggle
+
 	if channel == chatToolChannelClawBot {
 		filtered := make([]client.Tool, 0, 3)
 		for _, tool := range tools {
@@ -1055,6 +1084,29 @@ func getChatTools(options ...chatToolOptions) []client.Tool {
 	}
 
 	return tools
+}
+
+func buildToolNameSet(tools []client.Tool) map[string]bool {
+	if len(tools) == 0 {
+		return nil
+	}
+	names := make(map[string]bool, len(tools))
+	for _, tool := range tools {
+		name := strings.TrimSpace(tool.Function.Name)
+		if name == "" {
+			continue
+		}
+		names[name] = true
+	}
+	return names
+}
+
+func isToolAvailable(toolNames map[string]bool, name string) bool {
+	return toolNames[strings.TrimSpace(name)]
+}
+
+func isToolEnabledByToggle(toolToggles map[string]bool, name string) bool {
+	return toolToggles[strings.TrimSpace(name)]
 }
 
 func isWebSearchConfigured(cfg config.Config) bool {
