@@ -103,7 +103,7 @@
 .provider-card.active {
   border-color: var(--accent-color);
   background-color: var(--bg-secondary);
-  box-shadow: 0 0 0 1px var(--accent-color), 0 4px 12px rgba(0, 122, 255, 0.15);
+  box-shadow: 0 0 0 1px var(--accent-color), 0 4px 12px rgba(139, 134, 128, 0.15);
 }
 
 .provider-card.inactive {
@@ -233,7 +233,7 @@
 }
 
 .card-action-btn.delete {
-  background-color: rgba(255, 69, 58, 0.1);
+  background-color: rgba(198, 87, 70, 0.1);
   color: var(--danger-color);
 }
 
@@ -242,7 +242,7 @@
 }
 
 .card-action-btn.delete:hover {
-  background-color: rgba(255, 69, 58, 0.2);
+  background-color: rgba(198, 87, 70, 0.2);
 }
 
 /* 悬浮卡片遮罩 */
@@ -443,7 +443,7 @@
 }
 
 .modal-select-option.active {
-  background-color: rgba(7, 193, 96, 0.12);
+  background-color: rgba(139, 134, 128, 0.12);
 }
 
 .modal-select-check {
@@ -527,18 +527,18 @@
 }
 
 .provider-message.success {
-  background-color: rgba(7, 193, 96, 0.9);
+  background-color: rgba(16, 185, 129, 0.9);
   color: white;
 }
 
 .provider-message.error {
-  background-color: rgba(255, 69, 58, 0.9);
+  background-color: rgba(198, 87, 70, 0.9);
   color: white;
 }
 
 /* 流式状态显示 */
 .provider-card-value.stream-on {
-  color: #07c160;
+  color: var(--success-color, #10b981);
   font-weight: 500;
 }
 
@@ -547,7 +547,7 @@
 }
 
 .provider-card-value.vision-on {
-    color: #07c160;
+    color: var(--success-color, #10b981);
     font-weight: 500;
 }
 

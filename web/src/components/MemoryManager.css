@@ -206,7 +206,7 @@
 
 .strength-fill {
     height: 100%;
-    background: linear-gradient(90deg, var(--accent-color), rgba(7, 193, 96, 0.9));
+    background: linear-gradient(90deg, var(--accent-color), rgba(16, 185, 129, 0.9));
     transition: width 0.3s;
 }
 
@@ -269,7 +269,7 @@
 
 .strength-edit-cancel:hover {
     color: var(--danger-color);
-    background: rgba(239, 68, 68, 0.1);
+    background: rgba(198, 87, 70, 0.1);
 }
 
 /* 永久标签 */
@@ -514,7 +514,7 @@
 }
 
 .stat-weak {
-    color: #f59e0b;
+    color: #e0aa14;
 }
 
 .stat-archived {

@@ -104,7 +104,7 @@
 .session-count {
   font-size: 12px;
   color: var(--accent-color);
-  background-color: rgba(0, 122, 255, 0.1);
+  background-color: rgba(139, 134, 128, 0.1);
   padding: 1px 6px;
   border-radius: 8px;
   flex-shrink: 0;

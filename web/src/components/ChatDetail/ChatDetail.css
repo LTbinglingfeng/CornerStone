@@ -208,11 +208,11 @@
 }
 
 .message-avatar .avatar-placeholder.user {
-  background: linear-gradient(135deg, #34C759 0%, #30B350 100%);
+  background: linear-gradient(135deg, #8b8680 0%, #726d67 100%);
 }
 
 .message-avatar .avatar-placeholder.assistant {
-  background: linear-gradient(135deg, var(--accent-color) 0%, #5856D6 100%);
+  background: linear-gradient(135deg, var(--accent-color) 0%, #726d67 100%);
 }
 
 .message-bubble {

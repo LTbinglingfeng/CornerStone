@@ -130,8 +130,8 @@
 }
 
 .moment-detail-image-error {
-  background: rgba(255, 69, 58, 0.12);
-  border: 0.5px solid rgba(255, 69, 58, 0.25);
+  background: rgba(198, 87, 70, 0.12);
+  border: 0.5px solid rgba(198, 87, 70, 0.25);
 }
 
 .moment-detail-meta {
@@ -159,8 +159,8 @@
 }
 
 .moment-detail-like.liked {
-  border-color: rgba(7, 193, 96, 0.35);
-  background: rgba(7, 193, 96, 0.16);
+  border-color: rgba(139, 134, 128, 0.35);
+  background: rgba(139, 134, 128, 0.16);
 }
 
 .moment-detail-like:disabled {
@@ -185,7 +185,7 @@
 }
 
 .moment-detail-like-icon {
-  color: #ff5a5f;
+  color: #c65746;
 }
 
 .moment-detail-comments {

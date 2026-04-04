@@ -130,7 +130,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--accent-color) 0%, #5856D6 100%);
+  background: linear-gradient(135deg, var(--accent-color) 0%, #726d67 100%);
   color: white;
   font-size: 20px;
   font-weight: 600;

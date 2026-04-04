@@ -78,9 +78,9 @@
 }
 
 .moment-image-error {
-  background: rgba(255, 69, 58, 0.12);
+  background: rgba(198, 87, 70, 0.12);
   color: rgba(255, 255, 255, 0.78);
-  border: 0.5px solid rgba(255, 69, 58, 0.25);
+  border: 0.5px solid rgba(198, 87, 70, 0.25);
 }
 
 .moment-footer {
@@ -167,7 +167,7 @@
 }
 
 .moment-like-icon {
-  color: #ff5a5f;
+  color: #c65746;
 }
 
 .moment-like-names {

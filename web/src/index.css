@@ -32,79 +32,88 @@
 }
 
 :root {
-  /* Dark theme (default) */
-  --bg-primary: #000000;
-  --bg-secondary: #1c1c1e;
-  --bg-tertiary: #2c2c2e;
+  /* 羊毛纸暗色主题 (default) — 极简暖灰深色模式 */
+  --bg-primary: #151412;
+  --bg-secondary: #1d1b18;
+  --bg-tertiary: #262320;
   --app-header-height: 56px;
   --app-header-padding-x: 16px;
-  --bg-input: #1c1c1e;
-  --bg-input-focus: #2c2c2e;
-  --text-primary: #ffffff;
-  --text-secondary: #8e8e93;
-  --text-placeholder: #48484a;
-  --border-color: #2c2c2e;
-  --accent-color: #07c160;
-  --danger-color: #ff453a;
-  --message-user-bg: #07c160;
-  --message-assistant-bg: #2c2c2e;
+  --bg-input: #1d1b18;
+  --bg-input-focus: #262320;
+  --text-primary: #f6f4f1;
+  --text-secondary: #9c958d;
+  --text-placeholder: #6f6962;
+  --border-color: #3a3530;
+  --accent-color: #8b8680;
+  --accent-hover: #9a948e;
+  --accent-active: #a6a099;
+  --danger-color: #c65746;
+  --success-color: #10b981;
+  --warning-color: #e0aa14;
+  --message-user-bg: #8b8680;
+  --message-assistant-bg: #262320;
   --red-packet-card-bg: #fa9d3b;
   --red-packet-card-text: #ffffff;
   --red-packet-card-status-text: rgba(255, 255, 255, 0.85);
   --red-packet-card-footer-bg: rgba(255, 255, 255, 0.15);
   --red-packet-card-footer-text: rgba(255, 255, 255, 0.7);
-  --red-packet-card-shadow: 0 6px 16px rgba(0, 0, 0, 0.24);
-  --red-packet-card-border: rgba(0, 0, 0, 0.18);
-  --red-packet-modal-bg: #cf3c32;
+  --red-packet-card-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+  --red-packet-card-border: rgba(0, 0, 0, 0.25);
+  --red-packet-modal-bg: #c65746;
   --red-packet-header-text: #fce5bf;
   --red-packet-header-subtext: rgba(252, 229, 191, 0.9);
   --red-packet-open-btn-bg: #f0cb96;
   --red-packet-open-btn-text: #3b2e1f;
-  --red-packet-result-accent: #cf3c32;
+  --red-packet-result-accent: #c65746;
   --red-packet-result-footer: var(--text-secondary);
-  --pat-banner-bg: rgba(255, 255, 255, 0.08);
-  --pat-banner-text: rgba(255, 255, 255, 0.7);
-  --pat-banner-border: rgba(255, 255, 255, 0.08);
+  --pat-banner-bg: rgba(246, 244, 241, 0.08);
+  --pat-banner-text: rgba(246, 244, 241, 0.6);
+  --pat-banner-border: rgba(246, 244, 241, 0.06);
   --scrollbar-size: 8px;
   --scrollbar-track: transparent;
-  --scrollbar-thumb: rgba(255, 255, 255, 0.22);
-  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.35);
+  --scrollbar-thumb: rgba(246, 244, 241, 0.18);
+  --scrollbar-thumb-hover: rgba(246, 244, 241, 0.3);
 }
 
 [data-theme="light"] {
-  --bg-primary: #ffffff;
-  --bg-secondary: #f2f2f7;
-  --bg-tertiary: #e5e5ea;
-  --bg-input: #e5e5ea;
-  --bg-input-focus: #d1d1d6;
-  --text-primary: #000000;
-  --text-secondary: #6c6c70;
-  --text-placeholder: #aeaeb2;
-  --border-color: #c6c6c8;
-  --accent-color: #07c160;
-  --danger-color: #ff3b30;
-  --message-user-bg: #07c160;
-  --message-assistant-bg: #e5e5ea;
-  --red-packet-card-bg: #f6a246;
+  /* 羊毛纸亮色主题 — 极简暖灰，模拟纸张质感 */
+  --bg-primary: #faf9f5;
+  --bg-secondary: #f0eee8;
+  --bg-tertiary: #e9e6df;
+  --bg-input: #f0eee8;
+  --bg-input-focus: #e9e6df;
+  --text-primary: #2d2a26;
+  --text-secondary: #6d6760;
+  --text-placeholder: #c0bab3;
+  --border-color: #e3e1db;
+  --accent-color: #8b8680;
+  --accent-hover: #7f7a74;
+  --accent-active: #726d67;
+  --danger-color: #c65746;
+  --success-color: #10b981;
+  --warning-color: #e0aa14;
+  --message-user-bg: #8b8680;
+  --message-assistant-bg: #e9e6df;
+  --red-packet-card-bg: #fa9d3b;
   --red-packet-card-text: #ffffff;
   --red-packet-card-status-text: rgba(255, 255, 255, 0.85);
   --red-packet-card-footer-bg: rgba(255, 255, 255, 0.15);
   --red-packet-card-footer-text: rgba(255, 255, 255, 0.7);
-  --red-packet-card-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
-  --red-packet-card-border: rgba(0, 0, 0, 0.12);
-  --red-packet-modal-bg: #d6453b;
-  --red-packet-header-text: #fff3d6;
-  --red-packet-header-subtext: rgba(255, 243, 214, 0.9);
-  --red-packet-open-btn-bg: #f4d3a4;
-  --red-packet-open-btn-text: #2f2418;
-  --red-packet-result-accent: #d6453b;
+  --red-packet-card-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+  --red-packet-card-border: rgba(0, 0, 0, 0.08);
+  --red-packet-modal-bg: #c65746;
+  --red-packet-header-text: #fce5bf;
+  --red-packet-header-subtext: rgba(252, 229, 191, 0.9);
+  --red-packet-open-btn-bg: #f0cb96;
+  --red-packet-open-btn-text: #3b2e1f;
+  --red-packet-result-accent: #c65746;
   --red-packet-result-footer: var(--text-secondary);
-  --pat-banner-bg: rgba(0, 0, 0, 0.06);
-  --pat-banner-text: rgba(0, 0, 0, 0.5);
-  --pat-banner-border: rgba(0, 0, 0, 0.05);
+  --pat-banner-bg: rgba(45, 42, 38, 0.06);
+  --pat-banner-text: rgba(45, 42, 38, 0.5);
+  --pat-banner-border: rgba(45, 42, 38, 0.05);
   --scrollbar-track: transparent;
-  --scrollbar-thumb: rgba(0, 0, 0, 0.25);
-  --scrollbar-thumb-hover: rgba(0, 0, 0, 0.4);
+  --scrollbar-thumb: rgba(45, 42, 38, 0.2);
+  --scrollbar-thumb-hover: rgba(45, 42, 38, 0.35);
 }
 
 html, body {

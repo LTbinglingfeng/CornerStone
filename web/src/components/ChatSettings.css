@@ -68,7 +68,7 @@
   font-size: 32px;
   font-weight: 600;
   color: white;
-  background: linear-gradient(135deg, var(--accent-color) 0%, #5856D6 100%);
+  background: linear-gradient(135deg, var(--accent-color) 0%, #726d67 100%);
 }
 
 .prompt-name {
@@ -151,7 +151,7 @@
 }
 
 .session-item.active {
-  background-color: rgba(0, 122, 255, 0.1);
+  background-color: rgba(139, 134, 128, 0.1);
 }
 
 .session-info {
@@ -179,7 +179,7 @@
   font-size: 11px;
   font-weight: 600;
   color: var(--accent-color);
-  background-color: rgba(0, 122, 255, 0.1);
+  background-color: rgba(139, 134, 128, 0.1);
   padding: 2px 8px;
   border-radius: 10px;
   flex-shrink: 0;
@@ -198,7 +198,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 69, 58, 0.12);
+  background: rgba(198, 87, 70, 0.12);
   border: none;
   border-radius: 50%;
   cursor: pointer;
@@ -212,7 +212,7 @@
 }
 
 .session-delete-btn:hover {
-  background: rgba(255, 69, 58, 0.2);
+  background: rgba(198, 87, 70, 0.2);
 }
 
 .session-delete-btn:disabled {

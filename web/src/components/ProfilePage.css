@@ -161,7 +161,7 @@
 }
 
 .menu-icon.settings-icon {
-  background: linear-gradient(135deg, #4F8EF7 0%, #2662D9 100%);
+  background: linear-gradient(135deg, #8b8680 0%, #726d67 100%);
 }
 
 .menu-label {
@@ -202,12 +202,12 @@
 }
 
 .profile-message.success {
-  background-color: rgba(7, 193, 96, 0.9);
+  background-color: rgba(16, 185, 129, 0.9);
   color: white;
 }
 
 .profile-message.error {
-  background-color: rgba(255, 69, 58, 0.9);
+  background-color: rgba(198, 87, 70, 0.9);
   color: white;
 }
 
