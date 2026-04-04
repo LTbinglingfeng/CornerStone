@@ -1041,10 +1041,10 @@ func getChatTools(options ...chatToolOptions) []client.Tool {
 	}
 
 	if channel == chatToolChannelClawBot {
-		filtered := make([]client.Tool, 0, 2)
+		filtered := make([]client.Tool, 0, 3)
 		for _, tool := range tools {
 			switch strings.TrimSpace(tool.Function.Name) {
-			case "get_time", "get_weather":
+			case "get_time", "get_weather", "web_search":
 				filtered = append(filtered, tool)
 			}
 		}

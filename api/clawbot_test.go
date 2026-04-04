@@ -1078,6 +1078,198 @@ func TestProcessIncomingBatch_ClawBotRunsReadOnlyToolLoop(t *testing.T) {
 	}
 }
 
+func TestProcessIncomingBatch_ClawBotRunsWebSearchToolLoopWhenConfigured(t *testing.T) {
+	var state struct {
+		mu       sync.Mutex
+		chatReqs []struct {
+			Messages []struct {
+				Role       string            `json:"role"`
+				Content    interface{}       `json:"content"`
+				ToolCalls  []client.ToolCall `json:"tool_calls,omitempty"`
+				ToolCallID string            `json:"tool_call_id,omitempty"`
+			} `json:"messages"`
+			Tools []client.Tool `json:"tools"`
+		}
+		sendTexts []string
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/chat/completions":
+			var req struct {
+				Messages []struct {
+					Role       string            `json:"role"`
+					Content    interface{}       `json:"content"`
+					ToolCalls  []client.ToolCall `json:"tool_calls,omitempty"`
+					ToolCallID string            `json:"tool_call_id,omitempty"`
+				} `json:"messages"`
+				Tools []client.Tool `json:"tools"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode chat request failed: %v", err)
+			}
+
+			state.mu.Lock()
+			state.chatReqs = append(state.chatReqs, req)
+			callIndex := len(state.chatReqs)
+			state.mu.Unlock()
+
+			respMessage := client.Message{
+				Role:    "assistant",
+				Content: "我查到 CornerStone 是一个多模型聊天应用。",
+			}
+			finishReason := "stop"
+			if callIndex == 1 {
+				respMessage = client.Message{
+					Role: "assistant",
+					ToolCalls: []client.ToolCall{
+						{
+							ID:   "call_search_1",
+							Type: "function",
+							Function: client.ToolCallFunction{
+								Name:      "web_search",
+								Arguments: `{"query":"CornerStone app 是什么"}`,
+							},
+						},
+					},
+				}
+				finishReason = "tool_calls"
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(client.ChatResponse{
+				ID:      "chatcmpl-test",
+				Object:  "chat.completion",
+				Created: time.Now().Unix(),
+				Model:   "gpt-test",
+				Choices: []client.Choice{
+					{
+						Index:        0,
+						Message:      respMessage,
+						FinishReason: finishReason,
+					},
+				},
+			})
+		case "/search":
+			if auth := r.Header.Get("Authorization"); auth != "Bearer test-search-key" {
+				t.Fatalf("Authorization = %q, want %q", auth, "Bearer test-search-key")
+			}
+
+			var req map[string]interface{}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode search request failed: %v", err)
+			}
+			if req["query"] != "CornerStone app 是什么" {
+				t.Fatalf("search query = %v, want %q", req["query"], "CornerStone app 是什么")
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"query":"CornerStone app 是什么","results":[{"title":"CornerStone","url":"https://example.com","content":"A chat app"}]}`))
+		case "/ilink/bot/sendmessage":
+			var req client.ClawBotSendMessageRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode sendmessage request failed: %v", err)
+			}
+
+			text := ""
+			if len(req.Msg.ItemList) > 0 && req.Msg.ItemList[0].TextItem != nil {
+				text = req.Msg.ItemList[0].TextItem.Text
+			}
+
+			state.mu.Lock()
+			state.sendTexts = append(state.sendTexts, text)
+			state.mu.Unlock()
+
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(client.ClawBotSendMessageResponse{Ret: 0})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	service := newTestClawBotService(t, server.URL)
+	cfgAll := service.handler.configManager.Get()
+	cfgAll.WebSearch.ActiveProviderID = "tavily"
+	cfgAll.WebSearch.MaxResults = 3
+	cfgAll.WebSearch.FetchResults = 3
+	cfgAll.WebSearch.TimeoutSeconds = 5
+	cfgAll.WebSearch.Providers = map[string]config.WebSearchProvider{
+		"tavily": {
+			APIKey:  "test-search-key",
+			APIHost: server.URL,
+		},
+	}
+	if err := service.handler.configManager.Update(cfgAll); err != nil {
+		t.Fatalf("Update web search config failed: %v", err)
+	}
+
+	cfg := service.handler.configManager.GetClawBotConfig()
+	service.processIncomingBatch(context.Background(), cfg, "wx-user", []clawBotPendingMessage{{Text: "帮我查一下 CornerStone 是什么"}})
+
+	state.mu.Lock()
+	defer state.mu.Unlock()
+
+	if len(state.chatReqs) != 2 {
+		t.Fatalf("chat request count = %d, want 2", len(state.chatReqs))
+	}
+	if len(state.sendTexts) != 1 || state.sendTexts[0] != "我查到 CornerStone 是一个多模型聊天应用。" {
+		t.Fatalf("send texts = %#v, want final assistant reply", state.sendTexts)
+	}
+
+	firstReq := state.chatReqs[0]
+	if len(firstReq.Tools) != 3 {
+		t.Fatalf("first request tools len = %d, want 3", len(firstReq.Tools))
+	}
+	names := make(map[string]struct{}, len(firstReq.Tools))
+	for _, tool := range firstReq.Tools {
+		names[tool.Function.Name] = struct{}{}
+	}
+	if _, ok := names["get_time"]; !ok {
+		t.Fatalf("first request tools = %#v, want get_time", firstReq.Tools)
+	}
+	if _, ok := names["get_weather"]; !ok {
+		t.Fatalf("first request tools = %#v, want get_weather", firstReq.Tools)
+	}
+	if _, ok := names["web_search"]; !ok {
+		t.Fatalf("first request tools = %#v, want web_search", firstReq.Tools)
+	}
+
+	secondReq := state.chatReqs[1]
+	foundToolResult := false
+	for _, msg := range secondReq.Messages {
+		content, _ := msg.Content.(string)
+		if msg.Role == "tool" && msg.ToolCallID == "call_search_1" && strings.Contains(content, `"tool":"web_search"`) {
+			foundToolResult = true
+			break
+		}
+	}
+	if !foundToolResult {
+		t.Fatalf("second request missing web_search tool result: %#v", secondReq.Messages)
+	}
+
+	sessionID, ok := service.getActiveSessionID("wx-user")
+	if !ok {
+		t.Fatal("active session not found")
+	}
+	record, ok := service.handler.chatManager.GetSession(sessionID)
+	if !ok {
+		t.Fatal("session not found")
+	}
+	if len(record.Messages) != 4 {
+		t.Fatalf("message count = %d, want 4", len(record.Messages))
+	}
+	if record.Messages[1].Role != "assistant" || len(record.Messages[1].ToolCalls) != 1 || record.Messages[1].ToolCalls[0].Function.Name != "web_search" {
+		t.Fatalf("assistant tool call message = %#v, want web_search tool call", record.Messages[1])
+	}
+	if record.Messages[2].Role != "tool" || record.Messages[2].ToolCallID != "call_search_1" {
+		t.Fatalf("tool message = %#v, want tool result for call_search_1", record.Messages[2])
+	}
+	if record.Messages[3].Role != "assistant" || record.Messages[3].Content != "我查到 CornerStone 是一个多模型聊天应用。" {
+		t.Fatalf("final assistant message = %#v, want final reply", record.Messages[3])
+	}
+}
+
 func TestProcessRegenerateCommand_SendFailureKeepsOldAssistantReply(t *testing.T) {
 	var (
 		mu           sync.Mutex

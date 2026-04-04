@@ -915,7 +915,7 @@ func (s *ClawBotService) generateReplyForSession(ctx context.Context, session *s
 你正在通过微信 ClawBot 渠道回复用户。
 你只能回复适合微信文本消息的内容。
 请直接输出可以发送给用户的自然语言消息。
-你可以调用 get_time 和 get_weather 查询实时信息。
+你可以调用 get_time、get_weather 和 web_search 查询实时或外部信息。
 不要调用红包、拍一拍、朋友圈等微信交互工具。`)
 
 	timeToolGuide := strings.TrimSpace(`[时间工具]
@@ -931,6 +931,7 @@ func (s *ClawBotService) generateReplyForSession(ctx context.Context, session *s
 	history = limitMessagesByTurns(history, provider.ContextMessages)
 
 	fullSystemPrompt := buildChatSystemPrompt(systemPrompt, userContext, persona, channelGuide, timeToolGuide, weatherToolGuide)
+	webSearchEnabled := s.handler.configManager != nil && isWebSearchConfigured(s.handler.configManager.Get())
 
 	messages := make([]client.Message, 0, len(history)+1)
 	if strings.TrimSpace(fullSystemPrompt) != "" {
@@ -957,7 +958,10 @@ func (s *ClawBotService) generateReplyForSession(ctx context.Context, session *s
 		Stream:      false,
 		Temperature: temperature,
 		TopP:        provider.TopP,
-		Tools:       getChatTools(chatToolOptions{Channel: chatToolChannelClawBot}),
+		Tools: getChatTools(chatToolOptions{
+			Channel:          chatToolChannelClawBot,
+			WebSearchEnabled: webSearchEnabled,
+		}),
 	}
 	switch provider.Type {
 	case config.ProviderTypeAnthropic:
@@ -988,6 +992,9 @@ func (s *ClawBotService) generateReplyForSession(ctx context.Context, session *s
 	toolExecutor.configManager = s.handler.configManager
 	toolExecutor.weatherService = s.handler.getWeatherService()
 	toolExecutor.exactTimeService = s.handler.exactTimeService
+	if s.handler.configManager != nil {
+		toolExecutor.webSearch = newWebSearchOrchestrator(s.handler.configManager.Get())
+	}
 
 	loopResult, err := runChatWithToolLoop(
 		ctx,
