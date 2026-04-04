@@ -23,9 +23,10 @@ const (
 	clawBotReplyChunkMaxRune = 2000
 	clawBotProcessTimeout    = 2 * time.Minute
 
-	clawBotCommandNew      = "new"
-	clawBotCommandList     = "ls"
-	clawBotCommandCheckout = "checkout"
+	clawBotCommandNew        = "new"
+	clawBotCommandList       = "ls"
+	clawBotCommandCheckout   = "checkout"
+	clawBotCommandRegenerate = "re"
 )
 
 type ClawBotSettingsResponse struct {
@@ -383,6 +384,9 @@ func (s *ClawBotService) handleIncomingMessage(ctx context.Context, cfg config.C
 				s.clearPendingReply(userID)
 				s.handleCheckoutCommand(ctx, cfg, userID, command.Args)
 				return
+			case clawBotCommandRegenerate:
+				s.handleRegenerateCommand(ctx, cfg, userID, command.Args)
+				return
 			}
 		}
 	}
@@ -500,6 +504,50 @@ func (s *ClawBotService) handleCheckoutCommand(ctx context.Context, cfg config.C
 	s.sendCommandReply(ctx, cfg, userID, reply, "checkout reply")
 }
 
+func (s *ClawBotService) handleRegenerateCommand(ctx context.Context, cfg config.ClawBotConfig, userID, args string) {
+	if strings.TrimSpace(args) != "" {
+		s.sendCommandReply(ctx, cfg, userID, "用法：/re", "regenerate usage")
+		return
+	}
+
+	if s.hasPendingReplyActivity(userID) {
+		s.sendCommandReply(ctx, cfg, userID, "当前还有待处理消息，请等待回复完成后再使用 /re。", "regenerate busy")
+		return
+	}
+
+	session, ok := s.getCurrentSessionForUser(userID, cfg.PromptID)
+	if !ok {
+		reply := "当前没有可重新生成的会话，可先发送消息或使用 /new 开始新会话。"
+		s.sendCommandReply(ctx, cfg, userID, reply, "regenerate missing session")
+		return
+	}
+
+	deleted, err := s.handler.chatManager.DeleteTrailingResponseBatch(session.SessionID)
+	if err != nil {
+		logging.Errorf("clawbot regenerate delete trailing response batch failed: user=%s session=%s err=%v", userID, session.SessionID, err)
+		s.setLastError(err)
+		s.sendCommandReply(ctx, cfg, userID, "暂时无法重新生成，请稍后再试。", "regenerate delete failure")
+		return
+	}
+	if deleted == 0 {
+		s.sendCommandReply(ctx, cfg, userID, "当前没有可重新生成的上一轮回复。", "regenerate empty")
+		return
+	}
+
+	logging.Infof("clawbot regenerate deleted %d trailing response messages: user=%s session=%s", deleted, userID, session.SessionID)
+
+	reply, memSession, err := s.generateReply(ctx, session.SessionID, cfg.PromptID)
+	if err != nil {
+		logging.Errorf("clawbot regenerate reply failed: user=%s session=%s err=%v", userID, session.SessionID, err)
+		s.setLastError(err)
+		reply = "暂时无法重新生成，请稍后再试。"
+	} else if strings.TrimSpace(reply) == "" {
+		reply = "暂时无法重新生成，请稍后再试。"
+	}
+
+	s.sendAndPersistReply(ctx, cfg, userID, session.SessionID, reply, memSession, "regenerate reply")
+}
+
 func (s *ClawBotService) processIncomingBatch(ctx context.Context, cfg config.ClawBotConfig, userID string, messages []clawBotPendingMessage) {
 	if len(messages) == 0 {
 		return
@@ -544,26 +592,7 @@ func (s *ClawBotService) processIncomingBatch(ctx context.Context, cfg config.Cl
 		s.setLastError(err)
 		reply = "暂时无法处理你的消息，请稍后再试。"
 	}
-	reply = strings.TrimSpace(reply)
-	if reply == "" {
-		return
-	}
-
-	if err := s.sendTextReply(ctx, cfg, userID, reply); err != nil {
-		s.setLastError(err)
-		logging.Errorf("clawbot send reply failed: user=%s session=%s err=%v", userID, session.SessionID, err)
-		return
-	}
-
-	if err := s.handler.chatManager.AddMessage(session.SessionID, "assistant", reply); err != nil {
-		logging.Errorf("clawbot save assistant message failed: user=%s session=%s err=%v", userID, session.SessionID, err)
-		s.setLastError(err)
-		return
-	}
-
-	if memSession != nil {
-		memSession.OnRoundComplete()
-	}
+	s.sendAndPersistReply(ctx, cfg, userID, session.SessionID, reply, memSession, "reply")
 }
 
 func (s *ClawBotService) generateReply(ctx context.Context, sessionID, configuredPromptID string) (string, *storage.MemorySession, error) {
@@ -899,18 +928,60 @@ func (s *ClawBotService) sendCommandReply(ctx context.Context, cfg config.ClawBo
 	}
 }
 
-func (s *ClawBotService) getOrCreateActiveSession(userID, promptID string) (*storage.ChatRecord, error) {
+func (s *ClawBotService) sendAndPersistReply(ctx context.Context, cfg config.ClawBotConfig, userID, sessionID, reply string, memSession *storage.MemorySession, action string) {
+	reply = strings.TrimSpace(reply)
+	if reply == "" {
+		return
+	}
+
+	if err := s.sendTextReply(ctx, cfg, userID, reply); err != nil {
+		s.setLastError(err)
+		logging.Errorf("clawbot send %s failed: user=%s session=%s err=%v", action, userID, sessionID, err)
+		return
+	}
+
+	if err := s.handler.chatManager.AddMessage(sessionID, "assistant", reply); err != nil {
+		logging.Errorf("clawbot save assistant message failed: user=%s session=%s err=%v", userID, sessionID, err)
+		s.setLastError(err)
+		return
+	}
+
+	if memSession != nil {
+		memSession.OnRoundComplete()
+	}
+}
+
+func (s *ClawBotService) hasPendingReplyActivity(userID string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	state := s.pendingReplies[userID]
+	if state == nil {
+		return false
+	}
+	return state.Processing || state.Ready || len(state.Messages) > 0
+}
+
+func (s *ClawBotService) getCurrentSessionForUser(userID, promptID string) (*storage.ChatRecord, bool) {
 	if sessionID, ok := s.getActiveSessionID(userID); ok {
 		if session, exists := s.handler.chatManager.GetSession(sessionID); exists {
 			if s.sessionMatchesUserAndPrompt(session, userID, promptID) {
 				s.touchActiveSession(userID, sessionID)
-				return session, nil
+				return session, true
 			}
 		}
 	}
 
 	if session, ok := s.findLatestSessionForUser(userID, promptID); ok {
 		s.touchActiveSession(userID, session.SessionID)
+		return session, true
+	}
+
+	return nil, false
+}
+
+func (s *ClawBotService) getOrCreateActiveSession(userID, promptID string) (*storage.ChatRecord, error) {
+	if session, ok := s.getCurrentSessionForUser(userID, promptID); ok {
 		return session, nil
 	}
 
@@ -1013,6 +1084,7 @@ func (s *ClawBotService) formatSessionListReply(userID, promptID string, session
 		fmt.Fprintf(&builder, "\n   更新于 %s | ID %s", formatClawBotSessionTime(session.UpdatedAt), shortClawBotSessionID(session.ID))
 	}
 	builder.WriteString("\n发送 /checkout <序号> 切换会话，例如 /checkout 2")
+	builder.WriteString("\n发送 /re 重新生成当前会话的上一轮回复")
 	return builder.String()
 }
 
