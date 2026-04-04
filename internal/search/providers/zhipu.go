@@ -65,7 +65,7 @@ func (p *Zhipu) Search(ctx context.Context, query string, cfg search.SearchConfi
 	}
 
 	var respBody zhipuWebSearchResponse
-	resp, raw, errDo := doJSON(ctx, p.httpClient, http.MethodPost, apiHost, headers, reqBody, &respBody)
+	resp, _, errDo := doJSON(ctx, p.httpClient, http.MethodPost, apiHost, headers, reqBody, &respBody)
 	if errDo != nil {
 		return nil, &search.Error{Kind: search.ErrKindUpstream, ProviderID: ProviderIDZhipu, Message: "request failed", Cause: errDo}
 	}
@@ -77,7 +77,7 @@ func (p *Zhipu) Search(ctx context.Context, query string, cfg search.SearchConfi
 			Kind:       search.ErrKindUpstream,
 			ProviderID: ProviderIDZhipu,
 			StatusCode: resp.StatusCode,
-			Message:    fmt.Sprintf("http %d: %s", resp.StatusCode, strings.TrimSpace(string(raw))),
+			Message:    fmt.Sprintf("upstream returned http %d", resp.StatusCode),
 		}
 	}
 

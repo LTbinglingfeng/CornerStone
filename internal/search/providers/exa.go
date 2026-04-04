@@ -79,7 +79,7 @@ func (p *Exa) Search(ctx context.Context, query string, cfg search.SearchConfig,
 	}
 
 	var respBody exaSearchResponse
-	resp, raw, errDo := doJSON(ctx, p.httpClient, http.MethodPost, endpoint, headers, reqBody, &respBody)
+	resp, _, errDo := doJSON(ctx, p.httpClient, http.MethodPost, endpoint, headers, reqBody, &respBody)
 	if errDo != nil {
 		return nil, &search.Error{Kind: search.ErrKindUpstream, ProviderID: ProviderIDExa, Message: "request failed", Cause: errDo}
 	}
@@ -91,7 +91,7 @@ func (p *Exa) Search(ctx context.Context, query string, cfg search.SearchConfig,
 			Kind:       search.ErrKindUpstream,
 			ProviderID: ProviderIDExa,
 			StatusCode: resp.StatusCode,
-			Message:    fmt.Sprintf("http %d: %s", resp.StatusCode, strings.TrimSpace(string(raw))),
+			Message:    fmt.Sprintf("upstream returned http %d", resp.StatusCode),
 		}
 	}
 

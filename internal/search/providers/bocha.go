@@ -100,7 +100,7 @@ func (p *Bocha) Search(ctx context.Context, query string, cfg search.SearchConfi
 	}
 
 	var respBody bochaSearchResponse
-	resp, raw, errDo := doJSON(ctx, p.httpClient, http.MethodPost, endpoint, headers, reqBody, &respBody)
+	resp, _, errDo := doJSON(ctx, p.httpClient, http.MethodPost, endpoint, headers, reqBody, &respBody)
 	if errDo != nil {
 		return nil, &search.Error{Kind: search.ErrKindUpstream, ProviderID: ProviderIDBocha, Message: "request failed", Cause: errDo}
 	}
@@ -112,7 +112,7 @@ func (p *Bocha) Search(ctx context.Context, query string, cfg search.SearchConfi
 			Kind:       search.ErrKindUpstream,
 			ProviderID: ProviderIDBocha,
 			StatusCode: resp.StatusCode,
-			Message:    fmt.Sprintf("http %d: %s", resp.StatusCode, strings.TrimSpace(string(raw))),
+			Message:    fmt.Sprintf("upstream returned http %d", resp.StatusCode),
 		}
 	}
 	if respBody.Code != 200 {

@@ -13,7 +13,7 @@ import (
 	"strings"
 )
 
-const maxErrorBodyBytes = 1 << 20 // 1MB
+const maxResponseBodyBytes = 2 << 20 // 2MB
 
 func resolveEndpoint(apiHost string, relativePath string) (string, error) {
 	raw := strings.TrimSpace(apiHost)
@@ -55,7 +55,7 @@ func readErrorBody(resp *http.Response) string {
 	if resp == nil || resp.Body == nil {
 		return ""
 	}
-	data, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodyBytes))
 	return strings.TrimSpace(string(data))
 }
 
@@ -102,9 +102,12 @@ func doJSON(ctx context.Context, httpClient *http.Client, method, endpoint strin
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	data, errRead := io.ReadAll(resp.Body)
+	data, errRead := io.ReadAll(io.LimitReader(resp.Body, int64(maxResponseBodyBytes)+1))
 	if errRead != nil {
 		return resp, nil, errRead
+	}
+	if len(data) > maxResponseBodyBytes {
+		return resp, data[:maxResponseBodyBytes], fmt.Errorf("response body too large")
 	}
 	if out != nil {
 		if errUnmarshal := json.Unmarshal(data, out); errUnmarshal != nil {

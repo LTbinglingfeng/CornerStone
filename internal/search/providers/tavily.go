@@ -72,7 +72,7 @@ func (p *Tavily) Search(ctx context.Context, query string, cfg search.SearchConf
 	}
 
 	var respBody tavilySearchResponse
-	resp, raw, errDo := doJSON(ctx, p.httpClient, http.MethodPost, endpoint, nil, reqBody, &respBody)
+	resp, _, errDo := doJSON(ctx, p.httpClient, http.MethodPost, endpoint, nil, reqBody, &respBody)
 	if errDo != nil {
 		return nil, &search.Error{Kind: search.ErrKindUpstream, ProviderID: ProviderIDTavily, Message: "request failed", Cause: errDo}
 	}
@@ -84,7 +84,7 @@ func (p *Tavily) Search(ctx context.Context, query string, cfg search.SearchConf
 			Kind:       search.ErrKindUpstream,
 			ProviderID: ProviderIDTavily,
 			StatusCode: resp.StatusCode,
-			Message:    fmt.Sprintf("http %d: %s", resp.StatusCode, strings.TrimSpace(string(raw))),
+			Message:    fmt.Sprintf("upstream returned http %d", resp.StatusCode),
 		}
 	}
 

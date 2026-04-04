@@ -66,7 +66,7 @@ func (p *SearxNG) Search(ctx context.Context, query string, cfg search.SearchCon
 	}
 
 	var respBody searxngSearchResponse
-	resp, raw, errDo := doJSON(ctx, p.httpClient, http.MethodGet, parsed.String(), headers, nil, &respBody)
+	resp, _, errDo := doJSON(ctx, p.httpClient, http.MethodGet, parsed.String(), headers, nil, &respBody)
 	if errDo != nil {
 		return nil, &search.Error{Kind: search.ErrKindUpstream, ProviderID: ProviderIDSearxNG, Message: "request failed", Cause: errDo}
 	}
@@ -78,7 +78,7 @@ func (p *SearxNG) Search(ctx context.Context, query string, cfg search.SearchCon
 			Kind:       search.ErrKindUpstream,
 			ProviderID: ProviderIDSearxNG,
 			StatusCode: resp.StatusCode,
-			Message:    fmt.Sprintf("http %d: %s", resp.StatusCode, strings.TrimSpace(string(raw))),
+			Message:    fmt.Sprintf("upstream returned http %d", resp.StatusCode),
 		}
 	}
 
