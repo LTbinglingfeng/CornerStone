@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -101,7 +102,7 @@ func newTestWeatherInfo() *client.WeatherInfo {
 	}
 }
 
-func decodeWeatherToolResult(t *testing.T, raw string) (chatToolResult, weatherToolSummary, string) {
+func decodeWeatherToolResult(t *testing.T, raw string) (chatToolResult, weatherToolData, string) {
 	t.Helper()
 
 	var result chatToolResult
@@ -114,14 +115,37 @@ func decodeWeatherToolResult(t *testing.T, raw string) (chatToolResult, weatherT
 		t.Fatalf("Marshal result.Data failed: %v", err)
 	}
 
-	var summary weatherToolSummary
+	var summary weatherToolData
 	if len(dataBytes) > 0 && string(dataBytes) != "null" {
 		if err := json.Unmarshal(dataBytes, &summary); err != nil {
-			t.Fatalf("Unmarshal weatherToolSummary failed: %v", err)
+			t.Fatalf("Unmarshal weatherToolData failed: %v", err)
 		}
 	}
 
 	return result, summary, string(dataBytes)
+}
+
+func assertWeatherToolDataMinimal(t *testing.T, dataJSON string) {
+	t.Helper()
+
+	forbiddenKeys := []string{
+		"forecastDaily",
+		"updateTime",
+		"humidity",
+		"pressure",
+		"visibility",
+		"wind",
+		"weather_code",
+		"day_code",
+		"night_code",
+		"precipitation",
+	}
+
+	for _, key := range forbiddenKeys {
+		if strings.Contains(dataJSON, `"`+key+`"`) {
+			t.Fatalf("tool data contains forbidden key %q: %s", key, dataJSON)
+		}
+	}
 }
 
 func TestTranslateWeatherCode(t *testing.T) {
@@ -151,21 +175,20 @@ func TestTranslateWeatherCodeUnknownFallback(t *testing.T) {
 func TestBuildWeatherAirQualitySummary(t *testing.T) {
 	cases := []struct {
 		value string
-		level int
 		label string
 	}{
-		{value: "50", level: 1, label: "优"},
-		{value: "85", level: 2, label: "良"},
-		{value: "120", level: 3, label: "轻度污染"},
-		{value: "180", level: 4, label: "中度污染"},
-		{value: "220", level: 5, label: "重度污染"},
-		{value: "320", level: 6, label: "严重污染"},
+		{value: "50", label: "优"},
+		{value: "85", label: "良"},
+		{value: "120", label: "轻度污染"},
+		{value: "180", label: "中度污染"},
+		{value: "220", label: "重度污染"},
+		{value: "320", label: "严重污染"},
 	}
 
 	for _, tc := range cases {
 		got := buildWeatherAirQualitySummary(tc.value)
-		if got.Level != tc.level || got.Label != tc.label {
-			t.Fatalf("buildWeatherAirQualitySummary(%q) = (%d, %q), want (%d, %q)", tc.value, got.Level, got.Label, tc.level, tc.label)
+		if got == nil || got.Label != tc.label || got.Value != tc.value {
+			t.Fatalf("buildWeatherAirQualitySummary(%q) = %#v, want value=%q label=%q", tc.value, got, tc.value, tc.label)
 		}
 	}
 }
@@ -231,24 +254,31 @@ func TestChatToolExecutor_GetWeatherWithExplicitCity(t *testing.T) {
 	if len(service.weatherRequests) != 1 {
 		t.Fatalf("weatherRequests len = %d, want 1", len(service.weatherRequests))
 	}
-	if summary.SourceCity.Mode != "explicit" || summary.SourceCity.Query != "北京" {
-		t.Fatalf("source_city = %#v, want explicit query 北京", summary.SourceCity)
+	if summary.SourceMode != "explicit" || summary.Query != "北京" {
+		t.Fatalf("summary = %#v, want source_mode=explicit query=北京", summary)
 	}
-	if summary.Current.WeatherText != "多云" {
-		t.Fatalf("current.weather_text = %q, want %q", summary.Current.WeatherText, "多云")
+	if summary.Location != "北京, 中国" {
+		t.Fatalf("location = %q, want %q", summary.Location, "北京, 中国")
 	}
-	if summary.Today == nil || summary.Today.Weather.DayText != "多云" || summary.Today.Weather.NightText != "小雨" {
-		t.Fatalf("today summary = %#v, want translated daily weather", summary.Today)
+	if summary.Current.Text != "多云" {
+		t.Fatalf("current.text = %q, want %q", summary.Current.Text, "多云")
 	}
-	if len(summary.Hourly) != 2 || summary.Hourly[1].WeatherText != "小雨" {
-		t.Fatalf("hourly summary = %#v, want translated hourly weather", summary.Hourly)
+	if summary.Current.Temperature != "20°" || summary.Current.FeelsLike != "18°" {
+		t.Fatalf("current = %#v, want formatted temperatures", summary.Current)
 	}
-	if summary.AirQuality.Level != 2 || summary.AirQuality.Label != "良" {
-		t.Fatalf("air quality = %#v, want level 2 label 良", summary.AirQuality)
+	if summary.Today == nil || summary.Today.Day != "多云" || summary.Today.Night != "小雨" {
+		t.Fatalf("today = %#v, want translated daily weather", summary.Today)
 	}
-	if strings.Contains(dataJSON, "forecastDaily") || strings.Contains(dataJSON, "updateTime") || strings.Contains(dataJSON, `"aqi":{"aqi"`) {
-		t.Fatalf("tool data contains raw weather payload: %s", dataJSON)
+	if summary.Today.TempLow != "12°" || summary.Today.TempHigh != "23°" {
+		t.Fatalf("today = %#v, want temp_low=12° temp_high=23°", summary.Today)
 	}
+	if len(summary.Hourly) != 2 || summary.Hourly[1].Text != "小雨" {
+		t.Fatalf("hourly = %#v, want translated hourly weather", summary.Hourly)
+	}
+	if summary.AirQuality == nil || summary.AirQuality.Label != "良" || summary.AirQuality.Value != "85" {
+		t.Fatalf("air_quality = %#v, want value 85 label 良", summary.AirQuality)
+	}
+	assertWeatherToolDataMinimal(t, dataJSON)
 }
 
 func TestChatToolExecutor_GetWeatherUsesDefaultCity(t *testing.T) {
@@ -292,11 +322,68 @@ func TestChatToolExecutor_GetWeatherUsesDefaultCity(t *testing.T) {
 	if len(service.weatherRequests) != 1 {
 		t.Fatalf("weatherRequests len = %d, want 1", len(service.weatherRequests))
 	}
-	if summary.SourceCity.Mode != "default" || summary.City != "上海" {
+	if summary.SourceMode != "default" || summary.Location != "上海, 中国" {
 		t.Fatalf("summary = %#v, want default Shanghai", summary)
 	}
-	if summary.Minutely.NextRainInMinutes == nil || *summary.Minutely.NextRainInMinutes != 1 {
-		t.Fatalf("minutely = %#v, want next_rain_in_minutes=1", summary.Minutely)
+	if summary.Rain.NextRainInMinutes == nil || *summary.Rain.NextRainInMinutes != 1 {
+		t.Fatalf("rain = %#v, want next_rain_in_minutes=1", summary.Rain)
+	}
+}
+
+func TestChatToolExecutor_GetWeatherTruncatesHourlyAndAlerts(t *testing.T) {
+	weatherInfo := newTestWeatherInfo()
+	weatherInfo.ForecastHourly.Temperature.Value = make([]float64, 30)
+	weatherInfo.ForecastHourly.Weather.Value = make([]int, 30)
+	for index := 0; index < 30; index++ {
+		weatherInfo.ForecastHourly.Temperature.Value[index] = float64(index)
+		weatherInfo.ForecastHourly.Weather.Value[index] = 1
+	}
+	weatherInfo.Alerts = make([]client.WeatherAlert, 5)
+	for index := 0; index < 5; index++ {
+		weatherInfo.Alerts[index] = client.WeatherAlert{
+			Title:   "预警-" + strconv.Itoa(index),
+			Level:   "yellow",
+			PubTime: "2026-04-04T09:30:00+08:00",
+		}
+	}
+
+	service := &stubWeatherService{weatherResult: weatherInfo}
+
+	configManager := newTestProviderConfigManager(t, newTestProvider("provider-1"))
+	cfg := configManager.Get()
+	cfg.WeatherDefaultCity = &config.WeatherCity{
+		Name:        "上海",
+		Affiliation: "上海, 中国",
+		LocationKey: "weathercn:101020100",
+		Latitude:    "31.2304",
+		Longitude:   "121.4737",
+	}
+	if err := configManager.Update(cfg); err != nil {
+		t.Fatalf("Update config failed: %v", err)
+	}
+
+	executor := newChatToolExecutor(nil, nil)
+	executor.configManager = configManager
+	executor.weatherService = service
+
+	raw := executor.Execute(context.Background(), client.ToolCall{
+		ID:   "call-weather-4",
+		Type: "function",
+		Function: client.ToolCallFunction{
+			Name:      "get_weather",
+			Arguments: `{}`,
+		},
+	}, chatToolContext{})
+
+	result, summary, _ := decodeWeatherToolResult(t, raw)
+	if !result.OK {
+		t.Fatalf("result.OK = false, error=%q", result.Error)
+	}
+	if len(summary.Hourly) > weatherMaxHourlyItems {
+		t.Fatalf("hourly len = %d, want <= %d", len(summary.Hourly), weatherMaxHourlyItems)
+	}
+	if len(summary.Alerts) > weatherMaxAlerts {
+		t.Fatalf("alerts len = %d, want <= %d", len(summary.Alerts), weatherMaxAlerts)
 	}
 }
 

@@ -11,6 +11,11 @@ import (
 	"time"
 )
 
+const (
+	weatherMaxHourlyItems = 24
+	weatherMaxAlerts      = 3
+)
+
 type weatherService interface {
 	SearchCities(ctx context.Context, keyword string) ([]client.WeatherCity, error)
 	GetCityInfo(ctx context.Context, locationKey string) (*client.WeatherCity, error)
@@ -21,95 +26,57 @@ type chatToolGetWeatherArgs struct {
 	City string `json:"city,omitempty"`
 }
 
-type weatherToolSummary struct {
-	City        string                   `json:"city"`
-	Affiliation string                   `json:"affiliation,omitempty"`
-	SourceCity  weatherToolSourceCity    `json:"source_city"`
-	UpdatedAt   string                   `json:"updated_at,omitempty"`
-	Current     weatherCurrentSummary    `json:"current"`
-	AirQuality  weatherAirQualitySummary `json:"air_quality"`
-	Alerts      []weatherAlertSummary    `json:"alerts"`
-	Today       *weatherTodaySummary     `json:"today,omitempty"`
-	Hourly      []weatherHourlySummary   `json:"hourly"`
-	Minutely    weatherMinutelySummary   `json:"minutely"`
+type weatherToolData struct {
+	Location   string                 `json:"location"`
+	SourceMode string                 `json:"source_mode"`
+	Query      string                 `json:"query,omitempty"`
+	UpdatedAt  string                 `json:"updated_at"`
+	Current    weatherCurrentData     `json:"current"`
+	AirQuality *weatherAirQualityData `json:"air_quality,omitempty"`
+	Alerts     []weatherAlertData     `json:"alerts,omitempty"`
+	Today      *weatherTodayData      `json:"today,omitempty"`
+	Hourly     []weatherHourlyData    `json:"hourly,omitempty"`
+	Rain       weatherRainData        `json:"rain"`
 }
 
-type weatherToolSourceCity struct {
-	Mode        string `json:"mode"`
-	Query       string `json:"query,omitempty"`
-	Name        string `json:"name"`
-	Affiliation string `json:"affiliation,omitempty"`
-	LocationKey string `json:"location_key"`
-}
-
-type weatherMetricSummary struct {
-	Value string `json:"value"`
-	Unit  string `json:"unit,omitempty"`
-}
-
-type weatherWindSummary struct {
-	Direction weatherMetricSummary `json:"direction"`
-	Speed     weatherMetricSummary `json:"speed"`
-}
-
-type weatherCurrentSummary struct {
-	WeatherCode string               `json:"weather_code"`
-	WeatherText string               `json:"weather_text"`
-	Temperature weatherMetricSummary `json:"temperature"`
-	FeelsLike   weatherMetricSummary `json:"feels_like"`
-	Humidity    weatherMetricSummary `json:"humidity"`
-	Pressure    weatherMetricSummary `json:"pressure"`
-	Visibility  weatherMetricSummary `json:"visibility"`
-	Wind        weatherWindSummary   `json:"wind"`
-	PublishedAt string               `json:"published_at,omitempty"`
-}
-
-type weatherAirQualitySummary struct {
-	Value string `json:"value"`
-	Level int    `json:"level"`
-	Label string `json:"label"`
-}
-
-type weatherAlertSummary struct {
-	Title       string `json:"title"`
-	Type        string `json:"type,omitempty"`
-	Level       string `json:"level,omitempty"`
-	Detail      string `json:"detail,omitempty"`
+type weatherCurrentData struct {
+	Text        string `json:"text"`
+	Temperature string `json:"temperature"`
+	FeelsLike   string `json:"feels_like,omitempty"`
 	PublishedAt string `json:"published_at,omitempty"`
 }
 
-type weatherTodayTemperatureSummary struct {
-	Low  string `json:"low,omitempty"`
-	High string `json:"high,omitempty"`
-	Unit string `json:"unit,omitempty"`
+type weatherAirQualityData struct {
+	Label string `json:"label"`
+	Value string `json:"value"`
 }
 
-type weatherTodayCodeSummary struct {
-	DayCode   string `json:"day_code,omitempty"`
-	DayText   string `json:"day_text,omitempty"`
-	NightCode string `json:"night_code,omitempty"`
-	NightText string `json:"night_text,omitempty"`
+type weatherAlertData struct {
+	Title       string `json:"title"`
+	Level       string `json:"level,omitempty"`
+	PublishedAt string `json:"published_at,omitempty"`
 }
 
-type weatherTodaySummary struct {
-	PrecipitationProbability string                         `json:"precipitation_probability,omitempty"`
-	Temperature              weatherTodayTemperatureSummary `json:"temperature"`
-	Weather                  weatherTodayCodeSummary        `json:"weather"`
-	SunRise                  string                         `json:"sun_rise,omitempty"`
-	SunSet                   string                         `json:"sun_set,omitempty"`
+type weatherTodayData struct {
+	Day                      string `json:"day"`
+	Night                    string `json:"night"`
+	TempLow                  string `json:"temp_low,omitempty"`
+	TempHigh                 string `json:"temp_high,omitempty"`
+	PrecipitationProbability string `json:"precipitation_probability,omitempty"`
+	SunRise                  string `json:"sun_rise,omitempty"`
+	SunSet                   string `json:"sun_set,omitempty"`
 }
 
-type weatherHourlySummary struct {
+type weatherHourlyData struct {
 	OffsetHour  int     `json:"offset_hour"`
 	Temperature float64 `json:"temperature"`
-	WeatherCode string  `json:"weather_code,omitempty"`
-	WeatherText string  `json:"weather_text"`
+	Text        string  `json:"text"`
 }
 
-type weatherMinutelySummary struct {
-	Precipitation     []float64 `json:"precipitation"`
-	NextRainInMinutes *int      `json:"next_rain_in_minutes,omitempty"`
-	RainEndInMinutes  *int      `json:"rain_end_in_minutes,omitempty"`
+type weatherRainData struct {
+	NextRainInMinutes *int  `json:"next_rain_in_minutes"`
+	RainEndInMinutes  *int  `json:"rain_end_in_minutes"`
+	RainingNow        *bool `json:"raining_now,omitempty"`
 }
 
 var weatherCodeTextMap = map[string]string{
@@ -277,29 +244,31 @@ func (e *chatToolExecutor) handleGetWeather(ctx context.Context, toolCall client
 
 	return chatToolResult{
 		OK:   true,
-		Data: buildWeatherToolSummary(sourceMode, queryCity, resolvedCity, weatherInfo),
+		Data: buildWeatherToolData(sourceMode, queryCity, resolvedCity, weatherInfo),
 	}
 }
 
-func buildWeatherToolSummary(sourceMode, queryCity string, city *config.WeatherCity, weatherInfo *client.WeatherInfo) weatherToolSummary {
-	return weatherToolSummary{
-		City:        city.Name,
-		Affiliation: city.Affiliation,
-		SourceCity: weatherToolSourceCity{
-			Mode:        sourceMode,
-			Query:       queryCity,
-			Name:        city.Name,
-			Affiliation: city.Affiliation,
-			LocationKey: city.LocationKey,
-		},
+func buildWeatherToolData(sourceMode, queryCity string, city *config.WeatherCity, weatherInfo *client.WeatherInfo) weatherToolData {
+	location := strings.TrimSpace(city.Affiliation)
+	if location == "" {
+		location = strings.TrimSpace(city.Name)
+	}
+
+	data := weatherToolData{
+		Location:   location,
+		SourceMode: sourceMode,
 		UpdatedAt:  formatWeatherUpdateTime(weatherInfo.UpdateTime),
-		Current:    buildWeatherCurrentSummary(weatherInfo.Current),
+		Current:    buildWeatherCurrentData(weatherInfo.Current),
 		AirQuality: buildWeatherAirQualitySummary(weatherInfo.AQI.AQI),
 		Alerts:     buildWeatherAlertSummaries(weatherInfo.Alerts),
 		Today:      buildWeatherTodaySummary(weatherInfo.ForecastDaily),
 		Hourly:     buildWeatherHourlySummaries(weatherInfo.ForecastHourly),
-		Minutely:   buildWeatherMinutelySummary(weatherInfo.Minutely),
+		Rain:       buildWeatherRainSummary(weatherInfo.Minutely),
 	}
+	if sourceMode == "explicit" {
+		data.Query = queryCity
+	}
+	return data
 }
 
 func translateWeatherCode(code string) string {
@@ -310,39 +279,29 @@ func translateWeatherCode(code string) string {
 	return "未知"
 }
 
-func buildWeatherCurrentSummary(current client.CurrentWeather) weatherCurrentSummary {
-	return weatherCurrentSummary{
-		WeatherCode: strings.TrimSpace(current.Weather),
-		WeatherText: translateWeatherCode(current.Weather),
-		Temperature: buildWeatherMetricSummary(current.Temperature),
-		FeelsLike:   buildWeatherMetricSummary(current.FeelsLike),
-		Humidity:    buildWeatherMetricSummary(current.Humidity),
-		Pressure:    buildWeatherMetricSummary(current.Pressure),
-		Visibility:  buildWeatherMetricSummary(current.Visibility),
-		Wind: weatherWindSummary{
-			Direction: buildWeatherMetricSummary(current.Wind.Direction),
-			Speed:     buildWeatherMetricSummary(current.Wind.Speed),
-		},
+func buildWeatherCurrentData(current client.CurrentWeather) weatherCurrentData {
+	return weatherCurrentData{
+		Text:        translateWeatherCode(current.Weather),
+		Temperature: formatWeatherTemperature(current.Temperature.Value, current.Temperature.Unit),
+		FeelsLike:   formatWeatherTemperature(current.FeelsLike.Value, current.FeelsLike.Unit),
 		PublishedAt: strings.TrimSpace(current.PubTime),
 	}
 }
 
-func buildWeatherMetricSummary(metric client.WeatherMetric) weatherMetricSummary {
-	return weatherMetricSummary{
-		Value: strings.TrimSpace(metric.Value),
-		Unit:  strings.TrimSpace(metric.Unit),
-	}
+func formatWeatherTemperature(value, unit string) string {
+	combined := strings.TrimSpace(value) + strings.TrimSpace(unit)
+	return strings.TrimSpace(combined)
 }
 
-func buildWeatherAirQualitySummary(raw string) weatherAirQualitySummary {
+func buildWeatherAirQualitySummary(raw string) *weatherAirQualityData {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return weatherAirQualitySummary{Value: "", Level: 0, Label: "未知"}
+		return nil
 	}
 
 	value, errParse := strconv.Atoi(raw)
 	if errParse != nil {
-		return weatherAirQualitySummary{Value: raw, Level: 0, Label: "未知"}
+		return &weatherAirQualityData{Value: raw, Label: "未知"}
 	}
 
 	level := 6
@@ -373,33 +332,33 @@ func buildWeatherAirQualitySummary(raw string) weatherAirQualitySummary {
 		label = "重度污染"
 	}
 
-	return weatherAirQualitySummary{
-		Value: raw,
-		Level: level,
-		Label: label,
-	}
+	return &weatherAirQualityData{Value: raw, Label: label}
 }
 
-func buildWeatherAlertSummaries(alerts []client.WeatherAlert) []weatherAlertSummary {
+func buildWeatherAlertSummaries(alerts []client.WeatherAlert) []weatherAlertData {
 	if len(alerts) == 0 {
-		return []weatherAlertSummary{}
+		return nil
 	}
 
-	results := make([]weatherAlertSummary, 0, len(alerts))
-	for _, alert := range alerts {
-		results = append(results, weatherAlertSummary{
+	limit := len(alerts)
+	if limit > weatherMaxAlerts {
+		limit = weatherMaxAlerts
+	}
+
+	results := make([]weatherAlertData, 0, limit)
+	for index := 0; index < limit; index++ {
+		alert := alerts[index]
+		results = append(results, weatherAlertData{
 			Title:       strings.TrimSpace(alert.Title),
-			Type:        strings.TrimSpace(alert.Type),
 			Level:       strings.TrimSpace(alert.Level),
-			Detail:      strings.TrimSpace(alert.Detail),
 			PublishedAt: strings.TrimSpace(alert.PubTime),
 		})
 	}
 	return results
 }
 
-func buildWeatherTodaySummary(forecast client.ForecastDaily) *weatherTodaySummary {
-	var summary weatherTodaySummary
+func buildWeatherTodaySummary(forecast client.ForecastDaily) *weatherTodayData {
+	var summary weatherTodayData
 	hasValue := false
 
 	if len(forecast.PrecipitationProbability.Value) > 0 {
@@ -407,22 +366,15 @@ func buildWeatherTodaySummary(forecast client.ForecastDaily) *weatherTodaySummar
 		hasValue = hasValue || summary.PrecipitationProbability != ""
 	}
 	if len(forecast.Temperature.Value) > 0 {
-		summary.Temperature = weatherTodayTemperatureSummary{
-			Low:  strings.TrimSpace(forecast.Temperature.Value[0].From),
-			High: strings.TrimSpace(forecast.Temperature.Value[0].To),
-			Unit: "°",
-		}
-		hasValue = true
+		summary.TempLow = formatWeatherTemperature(forecast.Temperature.Value[0].From, "°")
+		summary.TempHigh = formatWeatherTemperature(forecast.Temperature.Value[0].To, "°")
+		hasValue = hasValue || summary.TempLow != "" || summary.TempHigh != ""
 	}
 	if len(forecast.Weather.Value) > 0 {
 		dayCode := strings.TrimSpace(forecast.Weather.Value[0].From)
 		nightCode := strings.TrimSpace(forecast.Weather.Value[0].To)
-		summary.Weather = weatherTodayCodeSummary{
-			DayCode:   dayCode,
-			DayText:   translateWeatherCode(dayCode),
-			NightCode: nightCode,
-			NightText: translateWeatherCode(nightCode),
-		}
+		summary.Day = translateWeatherCode(dayCode)
+		summary.Night = translateWeatherCode(nightCode)
 		hasValue = true
 	}
 	if len(forecast.SunRiseSet.Value) > 0 {
@@ -434,47 +386,55 @@ func buildWeatherTodaySummary(forecast client.ForecastDaily) *weatherTodaySummar
 	if !hasValue {
 		return nil
 	}
+
+	if summary.Day == "" {
+		summary.Day = "未知"
+	}
+	if summary.Night == "" {
+		summary.Night = "未知"
+	}
 	return &summary
 }
 
-func buildWeatherHourlySummaries(forecast client.ForecastHourly) []weatherHourlySummary {
+func buildWeatherHourlySummaries(forecast client.ForecastHourly) []weatherHourlyData {
 	total := len(forecast.Temperature.Value)
 	if len(forecast.Weather.Value) > total {
 		total = len(forecast.Weather.Value)
 	}
 	if total == 0 {
-		return []weatherHourlySummary{}
+		return nil
 	}
 
-	results := make([]weatherHourlySummary, 0, total)
+	if total > weatherMaxHourlyItems {
+		total = weatherMaxHourlyItems
+	}
+
+	results := make([]weatherHourlyData, 0, total)
 	for index := 0; index < total; index++ {
-		item := weatherHourlySummary{OffsetHour: index}
+		item := weatherHourlyData{OffsetHour: index, Text: "未知"}
 		if index < len(forecast.Temperature.Value) {
 			item.Temperature = forecast.Temperature.Value[index]
 		}
 		if index < len(forecast.Weather.Value) {
 			code := strconv.Itoa(forecast.Weather.Value[index])
-			item.WeatherCode = code
-			item.WeatherText = translateWeatherCode(code)
-		} else {
-			item.WeatherText = "未知"
+			item.Text = translateWeatherCode(code)
 		}
 		results = append(results, item)
 	}
 	return results
 }
 
-func buildWeatherMinutelySummary(minutely client.Minutely) weatherMinutelySummary {
-	summary := weatherMinutelySummary{
-		Precipitation: minutely.Precipitation.Value,
-	}
-	if len(summary.Precipitation) == 0 {
+func buildWeatherRainSummary(minutely client.Minutely) weatherRainData {
+	var summary weatherRainData
+	precipitation := minutely.Precipitation.Value
+	if len(precipitation) == 0 {
 		return summary
 	}
 
-	if summary.Precipitation[0] > 0 {
-		for index := 1; index < len(summary.Precipitation); index++ {
-			if summary.Precipitation[index] <= 0 {
+	if precipitation[0] > 0 {
+		summary.RainingNow = boolPointer(true)
+		for index := 1; index < len(precipitation); index++ {
+			if precipitation[index] <= 0 {
 				summary.RainEndInMinutes = intPointer(index)
 				break
 			}
@@ -482,11 +442,12 @@ func buildWeatherMinutelySummary(minutely client.Minutely) weatherMinutelySummar
 		return summary
 	}
 
-	for index, value := range summary.Precipitation {
+	summary.RainingNow = boolPointer(false)
+	for index, value := range precipitation {
 		if value > 0 {
 			summary.NextRainInMinutes = intPointer(index)
-			for endIndex := index + 1; endIndex < len(summary.Precipitation); endIndex++ {
-				if summary.Precipitation[endIndex] <= 0 {
+			for endIndex := index + 1; endIndex < len(precipitation); endIndex++ {
+				if precipitation[endIndex] <= 0 {
 					summary.RainEndInMinutes = intPointer(endIndex)
 					break
 				}
@@ -505,5 +466,9 @@ func formatWeatherUpdateTime(timestampMillis int64) string {
 }
 
 func intPointer(value int) *int {
+	return &value
+}
+
+func boolPointer(value bool) *bool {
 	return &value
 }
