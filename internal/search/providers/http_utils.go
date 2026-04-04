@@ -51,14 +51,6 @@ func resolveEndpoint(apiHost string, relativePath string) (string, error) {
 	return parsed.String(), nil
 }
 
-func readErrorBody(resp *http.Response) string {
-	if resp == nil || resp.Body == nil {
-		return ""
-	}
-	data, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodyBytes))
-	return strings.TrimSpace(string(data))
-}
-
 func basicAuthHeader(username, password string) string {
 	if strings.TrimSpace(username) == "" {
 		return ""
