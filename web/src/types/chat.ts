@@ -75,6 +75,14 @@ export interface AuthSession {
     user_id: string
 }
 
+export interface WeatherCity {
+    name: string
+    affiliation: string
+    location_key: string
+    latitude: string
+    longitude: string
+}
+
 // 供应商类型
 export type ProviderType = 'openai' | 'openai_response' | 'gemini' | 'gemini_image' | 'anthropic'
 
@@ -111,6 +119,7 @@ export interface ProvidersResponse {
     system_prompt: string
     reply_wait_window_mode?: 'fixed' | 'sliding' | string
     reply_wait_window_seconds?: number
+    weather_default_city?: WeatherCity | null
     image_provider_id?: string
     memory_provider_id?: string
     memory_provider?: Provider | null
@@ -125,6 +134,7 @@ export interface AppConfig {
     system_prompt: string
     reply_wait_window_mode?: 'fixed' | 'sliding' | string
     reply_wait_window_seconds?: number
+    weather_default_city?: WeatherCity | null
 }
 
 // 提示词模板

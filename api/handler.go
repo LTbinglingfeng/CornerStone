@@ -31,6 +31,7 @@ type Handler struct {
 	momentManager   *storage.MomentManager
 	momentGenerator *MomentGenerator
 	clawBotService  *ClawBotService
+	weatherService  weatherService
 
 	cleanupOnce sync.Once
 	cleanupDone chan struct{}
@@ -119,6 +120,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	h.registerProtectedRoute(mux, "/management/providers/active", h.handleActiveProvider)
 	h.registerProtectedRoute(mux, "/management/image-provider", h.handleImageProvider)
 	h.registerProtectedRoute(mux, "/management/memory-provider", h.handleMemoryProvider)
+	h.registerProtectedRoute(mux, "/management/weather/cities/search", h.handleWeatherCitySearch)
 
 	// 提示词接口
 	h.registerProtectedRoute(mux, "/management/prompts", h.handlePrompts)

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"cornerstone/client"
+	"cornerstone/config"
 	"cornerstone/logging"
 	"cornerstone/storage"
 	"encoding/json"
@@ -43,6 +44,8 @@ type chatToolExecutor struct {
 
 	momentManager   *storage.MomentManager
 	momentGenerator *MomentGenerator
+	configManager   *config.Manager
+	weatherService  weatherService
 }
 
 func newChatToolExecutor(momentManager *storage.MomentManager, momentGenerator *MomentGenerator) *chatToolExecutor {
@@ -56,6 +59,7 @@ func newChatToolExecutor(momentManager *storage.MomentManager, momentGenerator *
 	executor.handlers["red_packet_received"] = executor.handleRedPacketReceived
 	executor.handlers["send_pat"] = executor.handleSendPat
 	executor.handlers["generate_moment"] = executor.handleGenerateMoment
+	executor.handlers["get_weather"] = executor.handleGetWeather
 
 	return executor
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { getProviders, updateConfig, updateSystemPrompt } from '../services/api'
+import { getProviders, searchWeatherCities, updateConfig, updateSystemPrompt } from '../services/api'
 import {
     memoryService,
     type MemoryExtractionPromptTemplate,
@@ -9,7 +9,7 @@ import {
 import { ttsService, type TTSProviderConfig } from '../services/ttsService'
 import { clawBotService, type ClawBotSettings } from '../services/clawbotService'
 import { localeNames, type Locale } from '../i18n'
-import type { Provider } from '../types/chat'
+import type { Provider, WeatherCity } from '../types/chat'
 import {
     getReplyWaitWindowConfig,
     setReplyWaitWindowConfig,
@@ -91,6 +91,15 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     )
     const [showReplyWaitModal, setShowReplyWaitModal] = useState(false)
     const [savingReplyWaitConfig, setSavingReplyWaitConfig] = useState(false)
+    const [defaultWeatherCity, setDefaultWeatherCity] = useState<WeatherCity | null>(null)
+    const [showWeatherCityModal, setShowWeatherCityModal] = useState(false)
+    const [weatherCityQuery, setWeatherCityQuery] = useState('')
+    const [weatherCityResults, setWeatherCityResults] = useState<WeatherCity[]>([])
+    const [weatherCitySearchError, setWeatherCitySearchError] = useState('')
+    const [weatherCityLoading, setWeatherCityLoading] = useState(false)
+    const [weatherCitySearched, setWeatherCitySearched] = useState(false)
+    const [selectedWeatherCity, setSelectedWeatherCity] = useState<WeatherCity | null>(null)
+    const [weatherCitySaving, setWeatherCitySaving] = useState(false)
     const [notificationsEnabled, setNotificationsEnabledState] = useState(() => getNotificationsEnabled())
     const [notificationsSupported, setNotificationsSupported] = useState(() => isNotificationSupported())
     const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | 'unsupported'>(() =>
@@ -114,11 +123,57 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         setNotificationsEnabledState(getNotificationsEnabled())
     }, [])
 
+    useEffect(() => {
+        if (!showWeatherCityModal) {
+            return
+        }
+
+        const keyword = weatherCityQuery.trim()
+        if (keyword === '') {
+            setWeatherCityResults([])
+            setWeatherCitySearchError('')
+            setWeatherCityLoading(false)
+            setWeatherCitySearched(false)
+            return
+        }
+
+        let cancelled = false
+        const timer = window.setTimeout(() => {
+            setWeatherCityLoading(true)
+            setWeatherCitySearchError('')
+            void (async () => {
+                try {
+                    const results = await searchWeatherCities(keyword)
+                    if (cancelled) return
+                    setWeatherCityResults(results)
+                    setWeatherCitySearched(true)
+                } catch (error) {
+                    if (cancelled) return
+                    const message =
+                        error instanceof Error ? error.message : t('service.searchWeatherCitiesFailed')
+                    setWeatherCityResults([])
+                    setWeatherCitySearchError(message)
+                    setWeatherCitySearched(true)
+                } finally {
+                    if (!cancelled) {
+                        setWeatherCityLoading(false)
+                    }
+                }
+            })()
+        }, 300)
+
+        return () => {
+            cancelled = true
+            window.clearTimeout(timer)
+        }
+    }, [showWeatherCityModal, weatherCityQuery, t])
+
     const loadData = async ({ showLoading = true }: { showLoading?: boolean } = {}) => {
         if (showLoading) setLoading(true)
         const providersData = await getProviders()
         if (providersData) {
             setSystemPrompt(providersData.system_prompt)
+            setDefaultWeatherCity(providersData.weather_default_city || null)
             if (
                 typeof providersData.reply_wait_window_mode === 'string' ||
                 typeof providersData.reply_wait_window_seconds === 'number'
@@ -210,6 +265,21 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
 
     const handleCloseReplyWaitModal = () => {
         setShowReplyWaitModal(false)
+    }
+
+    const handleOpenWeatherCityModal = () => {
+        setSelectedWeatherCity(defaultWeatherCity)
+        setWeatherCityQuery('')
+        setWeatherCityResults([])
+        setWeatherCitySearchError('')
+        setWeatherCityLoading(false)
+        setWeatherCitySearched(false)
+        setWeatherCitySaving(false)
+        setShowWeatherCityModal(true)
+    }
+
+    const handleCloseWeatherCityModal = () => {
+        setShowWeatherCityModal(false)
     }
 
     const handleOpenMemoryExtractionRoundsModal = () => {
@@ -328,6 +398,25 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
             handleCloseReplyWaitModal()
         } finally {
             setSavingReplyWaitConfig(false)
+        }
+    }
+
+    const handleSaveWeatherCity = async () => {
+        if (weatherCitySaving || !selectedWeatherCity) return
+
+        setWeatherCitySaving(true)
+        try {
+            const success = await updateConfig({ weather_default_city: selectedWeatherCity })
+            if (!success) {
+                showToast(t('common.saveFailed'), 'error')
+                return
+            }
+
+            setDefaultWeatherCity(selectedWeatherCity)
+            showToast(t('settings.defaultWeatherCitySaved'), 'success')
+            handleCloseWeatherCityModal()
+        } finally {
+            setWeatherCitySaving(false)
         }
     }
 
@@ -520,6 +609,16 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         return formatReplyWaitWindowConfig(replyWaitConfig)
     }
 
+    const getDefaultWeatherCityPreview = () => {
+        if (!defaultWeatherCity) {
+            return { title: t('common.notSet'), detail: t('settings.defaultWeatherCityHint') }
+        }
+        return {
+            title: defaultWeatherCity.name,
+            detail: defaultWeatherCity.affiliation || defaultWeatherCity.location_key,
+        }
+    }
+
     const getMemoryExtractionRoundsPreview = () => {
         const rounds = memoryExtractionRounds || memoryExtractionSettings?.rounds || 5
         return t('settings.roundsPreview', { count: rounds })
@@ -566,6 +665,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     const memoryProviderPreview = getMemoryProviderPreview()
     const ttsProviderPreview = getTTSProviderPreview()
     const clawBotPreview = getClawBotPreview()
+    const defaultWeatherCityPreview = getDefaultWeatherCityPreview()
 
     return (
         <div className="settings">
@@ -651,6 +751,23 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                             <div className="settings-entry-info">
                                 <span className="settings-entry-label">{t('settings.replyWaitWindow')}</span>
                                 <span className="settings-entry-value">{getReplyWaitPreview()}</span>
+                            </div>
+                            <svg className="settings-entry-arrow" viewBox="0 0 24 24">
+                                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                            </svg>
+                        </button>
+
+                        <button
+                            className="settings-entry-btn"
+                            onClick={handleOpenWeatherCityModal}
+                            style={{ marginTop: 12 }}
+                        >
+                            <div className="settings-entry-info">
+                                <span className="settings-entry-label">{t('settings.defaultWeatherCity')}</span>
+                                <span className="settings-entry-value">{defaultWeatherCityPreview.title}</span>
+                                {defaultWeatherCityPreview.detail && (
+                                    <span className="settings-entry-subvalue">{defaultWeatherCityPreview.detail}</span>
+                                )}
                             </div>
                             <svg className="settings-entry-arrow" viewBox="0 0 24 24">
                                 <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
@@ -992,6 +1109,106 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                                     disabled={savingReplyWaitConfig}
                                 >
                                     {t('common.save')}
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+                {showWeatherCityModal && (
+                    <motion.div
+                        className="prompt-modal-overlay"
+                        initial="hidden"
+                        animate="visible"
+                        exit="hidden"
+                        variants={overlayVariants}
+                        onClick={handleCloseWeatherCityModal}
+                    >
+                        <motion.div
+                            className="prompt-modal-card"
+                            initial="hidden"
+                            animate="visible"
+                            exit="hidden"
+                            variants={centerModalVariants}
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="prompt-modal-header">
+                                <h3>{t('settings.defaultWeatherCity')}</h3>
+                                <button className="prompt-modal-close" onClick={handleCloseWeatherCityModal}>
+                                    <svg viewBox="0 0 24 24">
+                                        <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                                    </svg>
+                                </button>
+                            </div>
+
+                            <div className="prompt-modal-body">
+                                <p className="prompt-modal-hint">{t('settings.defaultWeatherCityHint')}</p>
+                                <div className="settings-group">
+                                    <input
+                                        className="settings-input"
+                                        value={weatherCityQuery}
+                                        onChange={(e) => setWeatherCityQuery(e.target.value)}
+                                        placeholder={t('settings.weatherCitySearchPlaceholder')}
+                                    />
+                                </div>
+
+                                <div className="weather-city-current">
+                                    <span className="weather-city-current-label">
+                                        {t('settings.selectedWeatherCity')}
+                                    </span>
+                                    <span className="weather-city-current-value">
+                                        {selectedWeatherCity?.name || t('common.notSet')}
+                                    </span>
+                                    {(selectedWeatherCity?.affiliation || selectedWeatherCity?.location_key) && (
+                                        <span className="weather-city-current-detail">
+                                            {selectedWeatherCity?.affiliation || selectedWeatherCity?.location_key}
+                                        </span>
+                                    )}
+                                </div>
+
+                                {weatherCityLoading ? (
+                                    <p className="weather-city-status">{t('common.loading')}</p>
+                                ) : weatherCitySearchError ? (
+                                    <p className="weather-city-status error">{weatherCitySearchError}</p>
+                                ) : weatherCityQuery.trim() === '' ? (
+                                    <p className="weather-city-status">{t('settings.weatherCitySearchHint')}</p>
+                                ) : weatherCityResults.length === 0 && weatherCitySearched ? (
+                                    <p className="weather-city-status">{t('settings.weatherCityNoResults')}</p>
+                                ) : (
+                                    <div className="weather-city-results">
+                                        {weatherCityResults.map((city) => {
+                                            const isSelected =
+                                                selectedWeatherCity?.location_key === city.location_key
+                                            return (
+                                                <button
+                                                    key={city.location_key}
+                                                    type="button"
+                                                    className={`weather-city-item${isSelected ? ' selected' : ''}`}
+                                                    onClick={() => setSelectedWeatherCity(city)}
+                                                >
+                                                    <span className="weather-city-item-name">{city.name}</span>
+                                                    <span className="weather-city-item-affiliation">
+                                                        {city.affiliation || city.location_key}
+                                                    </span>
+                                                </button>
+                                            )
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="prompt-modal-footer">
+                                <button className="prompt-modal-btn cancel" onClick={handleCloseWeatherCityModal}>
+                                    {t('common.cancel')}
+                                </button>
+                                <button
+                                    className="prompt-modal-btn save"
+                                    onClick={() => void handleSaveWeatherCity()}
+                                    disabled={weatherCitySaving || !selectedWeatherCity}
+                                >
+                                    {weatherCitySaving ? t('common.saving') : t('common.save')}
                                 </button>
                             </div>
                         </motion.div>

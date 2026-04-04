@@ -50,6 +50,14 @@ type TTSProvider struct {
 	LanguageBoost string          `json:"language_boost,omitempty"`
 }
 
+type WeatherCity struct {
+	Name        string `json:"name"`
+	Affiliation string `json:"affiliation"`
+	LocationKey string `json:"location_key"`
+	Latitude    string `json:"latitude"`
+	Longitude   string `json:"longitude"`
+}
+
 type ClawBotConfig struct {
 	Enabled            bool            `json:"enabled"`
 	BaseURL            string          `json:"base_url"`
@@ -128,6 +136,49 @@ func clawBotCommandPermissionsEqual(left, right map[string]bool) bool {
 	return true
 }
 
+func cloneWeatherCity(city *WeatherCity) *WeatherCity {
+	if city == nil {
+		return nil
+	}
+	clone := *city
+	return &clone
+}
+
+func weatherCitiesEqual(left, right *WeatherCity) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return left.Name == right.Name &&
+		left.Affiliation == right.Affiliation &&
+		left.LocationKey == right.LocationKey &&
+		left.Latitude == right.Latitude &&
+		left.Longitude == right.Longitude
+}
+
+func normalizeWeatherCity(city *WeatherCity) *WeatherCity {
+	if city == nil {
+		return nil
+	}
+	normalized := &WeatherCity{
+		Name:        strings.TrimSpace(city.Name),
+		Affiliation: strings.TrimSpace(city.Affiliation),
+		LocationKey: strings.TrimSpace(city.LocationKey),
+		Latitude:    strings.TrimSpace(city.Latitude),
+		Longitude:   strings.TrimSpace(city.Longitude),
+	}
+	if normalized.Name == "" &&
+		normalized.Affiliation == "" &&
+		normalized.LocationKey == "" &&
+		normalized.Latitude == "" &&
+		normalized.Longitude == "" {
+		return nil
+	}
+	if normalized.Name == "" || normalized.LocationKey == "" || normalized.Latitude == "" || normalized.Longitude == "" {
+		return nil
+	}
+	return normalized
+}
+
 // Provider 供应商配置
 type Provider struct {
 	ID                        string       `json:"id"`                                      // 供应商唯一标识
@@ -169,9 +220,10 @@ type Config struct {
 	SystemPrompt           string        `json:"system_prompt"`             // 全局系统提示词
 	ReplyWaitWindowMode    string        `json:"reply_wait_window_mode"`    // 回复等候窗口模式 (fixed/sliding)
 	ReplyWaitWindowSeconds int           `json:"reply_wait_window_seconds"` // 回复等候窗口秒数
-	TLSCertPath            string        `json:"tls_cert_path,omitempty"`   // TLS证书路径(PEM)，留空禁用HTTPS
-	TLSKeyPath             string        `json:"tls_key_path,omitempty"`    // TLS私钥路径(PEM)，留空禁用HTTPS
-	ClawBot                ClawBotConfig `json:"clawbot"`                   // 微信 iLink ClawBot 配置
+	WeatherDefaultCity     *WeatherCity  `json:"weather_default_city,omitempty"`
+	TLSCertPath            string        `json:"tls_cert_path,omitempty"` // TLS证书路径(PEM)，留空禁用HTTPS
+	TLSKeyPath             string        `json:"tls_key_path,omitempty"`  // TLS私钥路径(PEM)，留空禁用HTTPS
+	ClawBot                ClawBotConfig `json:"clawbot"`                 // 微信 iLink ClawBot 配置
 }
 
 // Manager 配置管理器
@@ -218,6 +270,7 @@ func DefaultConfig() Config {
 		SystemPrompt:           "You are a helpful assistant.",
 		ReplyWaitWindowMode:    string(ReplyWaitWindowModeSliding),
 		ReplyWaitWindowSeconds: DefaultReplyWaitWindowSeconds,
+		WeatherDefaultCity:     nil,
 		ClawBot: ClawBotConfig{
 			BaseURL:            DefaultClawBotBaseURL,
 			CommandPermissions: DefaultClawBotCommandPermissions(),
@@ -338,6 +391,11 @@ func (m *Manager) applyConfigDefaults() bool {
 	replyWaitSeconds := normalizeReplyWaitWindowSeconds(m.config.ReplyWaitWindowSeconds)
 	if replyWaitSeconds != m.config.ReplyWaitWindowSeconds {
 		m.config.ReplyWaitWindowSeconds = replyWaitSeconds
+		changed = true
+	}
+	normalizedWeatherCity := normalizeWeatherCity(m.config.WeatherDefaultCity)
+	if !weatherCitiesEqual(m.config.WeatherDefaultCity, normalizedWeatherCity) {
+		m.config.WeatherDefaultCity = normalizedWeatherCity
 		changed = true
 	}
 	if m.config.MemoryExtractionRounds <= 0 {
@@ -967,6 +1025,12 @@ func (m *Manager) GetSystemPrompt() string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.config.SystemPrompt
+}
+
+func (m *Manager) GetWeatherDefaultCity() *WeatherCity {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return cloneWeatherCity(m.config.WeatherDefaultCity)
 }
 
 // GetActiveProviderID 获取激活的供应商ID

@@ -2,6 +2,7 @@ package api
 
 import (
 	"cornerstone/config"
+	"encoding/json"
 	"net/http"
 	"strings"
 )
@@ -29,12 +30,13 @@ func normalizeProviderBaseURL(providerType config.ProviderType, baseURL string) 
 
 // ConfigUpdateRequest 配置更新请求
 type ConfigUpdateRequest struct {
-	BaseURL                *string `json:"base_url,omitempty"`
-	APIKey                 *string `json:"api_key,omitempty"`
-	Model                  *string `json:"model,omitempty"`
-	SystemPrompt           *string `json:"system_prompt,omitempty"`
-	ReplyWaitWindowMode    *string `json:"reply_wait_window_mode,omitempty"`
-	ReplyWaitWindowSeconds *int    `json:"reply_wait_window_seconds,omitempty"`
+	BaseURL                *string         `json:"base_url,omitempty"`
+	APIKey                 *string         `json:"api_key,omitempty"`
+	Model                  *string         `json:"model,omitempty"`
+	SystemPrompt           *string         `json:"system_prompt,omitempty"`
+	ReplyWaitWindowMode    *string         `json:"reply_wait_window_mode,omitempty"`
+	ReplyWaitWindowSeconds *int            `json:"reply_wait_window_seconds,omitempty"`
+	WeatherDefaultCity     json.RawMessage `json:"weather_default_city,omitempty"`
 }
 
 // ProviderRequest 供应商请求
@@ -83,12 +85,13 @@ func (h *Handler) handleConfig(w http.ResponseWriter, r *http.Request) {
 		}
 		// 返回兼容旧格式的配置
 		cfg := struct {
-			BaseURL                string `json:"base_url"`
-			APIKey                 string `json:"api_key"`
-			Model                  string `json:"model"`
-			SystemPrompt           string `json:"system_prompt"`
-			ReplyWaitWindowMode    string `json:"reply_wait_window_mode"`
-			ReplyWaitWindowSeconds int    `json:"reply_wait_window_seconds"`
+			BaseURL                string              `json:"base_url"`
+			APIKey                 string              `json:"api_key"`
+			Model                  string              `json:"model"`
+			SystemPrompt           string              `json:"system_prompt"`
+			ReplyWaitWindowMode    string              `json:"reply_wait_window_mode"`
+			ReplyWaitWindowSeconds int                 `json:"reply_wait_window_seconds"`
+			WeatherDefaultCity     *config.WeatherCity `json:"weather_default_city,omitempty"`
 		}{
 			BaseURL:                provider.BaseURL,
 			APIKey:                 provider.APIKey,
@@ -96,6 +99,7 @@ func (h *Handler) handleConfig(w http.ResponseWriter, r *http.Request) {
 			SystemPrompt:           h.configManager.GetSystemPrompt(),
 			ReplyWaitWindowMode:    h.configManager.Get().ReplyWaitWindowMode,
 			ReplyWaitWindowSeconds: h.configManager.Get().ReplyWaitWindowSeconds,
+			WeatherDefaultCity:     h.configManager.GetWeatherDefaultCity(),
 		}
 		// 隐藏完整API密钥
 		if len(cfg.APIKey) > 8 {
@@ -128,13 +132,30 @@ func (h *Handler) handleConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if req.ReplyWaitWindowMode != nil || req.ReplyWaitWindowSeconds != nil {
+		if req.ReplyWaitWindowMode != nil || req.ReplyWaitWindowSeconds != nil || req.WeatherDefaultCity != nil {
 			cfg := h.configManager.Get()
 			if req.ReplyWaitWindowMode != nil {
 				cfg.ReplyWaitWindowMode = *req.ReplyWaitWindowMode
 			}
 			if req.ReplyWaitWindowSeconds != nil {
 				cfg.ReplyWaitWindowSeconds = *req.ReplyWaitWindowSeconds
+			}
+			if req.WeatherDefaultCity != nil {
+				if string(req.WeatherDefaultCity) == "null" {
+					cfg.WeatherDefaultCity = nil
+				} else {
+					var city config.WeatherCity
+					if errUnmarshal := json.Unmarshal(req.WeatherDefaultCity, &city); errUnmarshal != nil {
+						h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid weather_default_city"})
+						return
+					}
+					city = sanitizeWeatherConfigCity(city)
+					if errValidate := validateWeatherConfigCity(city); errValidate != nil {
+						h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: errValidate.Error()})
+						return
+					}
+					cfg.WeatherDefaultCity = &city
+				}
 			}
 			if err := h.configManager.Update(cfg); err != nil {
 				h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: err.Error()})
@@ -189,6 +210,7 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 			"system_prompt":             h.configManager.GetSystemPrompt(),
 			"reply_wait_window_mode":    cfg.ReplyWaitWindowMode,
 			"reply_wait_window_seconds": cfg.ReplyWaitWindowSeconds,
+			"weather_default_city":      h.configManager.GetWeatherDefaultCity(),
 			"image_provider_id":         cfg.ImageProviderID,
 			"memory_provider_id":        cfg.MemoryProviderID,
 			"memory_provider":           memoryProvider,

@@ -165,6 +165,13 @@ const zh = {
         globalSettings: '全局设置',
         defaultSystemPrompt: '默认系统提示词',
         replyWaitWindow: '回复等候窗口',
+        defaultWeatherCity: '默认天气城市',
+        defaultWeatherCityHint: '未传入 city 时，天气工具将使用这里保存的城市',
+        defaultWeatherCitySaved: '默认天气城市已保存',
+        weatherCitySearchPlaceholder: '输入城市关键词搜索',
+        weatherCitySearchHint: '输入关键词后选择一个城市作为默认天气城市',
+        weatherCityNoResults: '未找到匹配城市',
+        selectedWeatherCity: '当前选择',
         systemNotifications: '系统通知',
         notifyWhenNotInChat: '仅在不在聊天详情界面时提醒',
         notificationDeniedHint: '已拒绝通知权限，请在浏览器设置中开启',
@@ -575,6 +582,7 @@ const zh = {
         saveClawBotSettingsFailed: '保存 ClawBot 设置失败',
         getQRCodeFailed: '获取二维码失败',
         pollQRCodeFailed: '轮询二维码状态失败',
+        searchWeatherCitiesFailed: '搜索天气城市失败',
     },
 } as const
 

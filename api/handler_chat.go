@@ -286,6 +286,8 @@ func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiCli
 	ctxAI := context.WithoutCancel(r.Context())
 
 	toolExecutor := newChatToolExecutor(h.momentManager, h.momentGenerator)
+	toolExecutor.configManager = h.configManager
+	toolExecutor.weatherService = h.getWeatherService()
 	loopResult, errLoop := runChatWithToolLoop(
 		ctxAI,
 		aiClient,
@@ -437,6 +439,8 @@ func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiCli
 	}
 
 	toolExecutor := newChatToolExecutor(h.momentManager, h.momentGenerator)
+	toolExecutor.configManager = h.configManager
+	toolExecutor.weatherService = h.getWeatherService()
 
 	baseTime := time.Now()
 	messageCounter := 0
@@ -935,6 +939,23 @@ func getChatTools(options ...chatToolOptions) []client.Tool {
 						},
 					},
 					"required": []string{"name", "target"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: client.ToolFunction{
+				Name:        "get_weather",
+				Description: "查询天气信息。传入 city 时按城市查询；未传入时使用设置中保存的默认天气城市。",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"city": map[string]interface{}{
+							"type":        "string",
+							"description": "要查询的城市名，例如“北京”。不传时使用默认天气城市。",
+							"maxLength":   60,
+						},
+					},
 				},
 			},
 		},

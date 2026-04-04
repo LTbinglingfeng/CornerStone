@@ -165,6 +165,13 @@ const en = {
         globalSettings: 'Global Settings',
         defaultSystemPrompt: 'Default System Prompt',
         replyWaitWindow: 'Reply Wait Window',
+        defaultWeatherCity: 'Default Weather City',
+        defaultWeatherCityHint: 'Used by the weather tool when no city argument is provided',
+        defaultWeatherCitySaved: 'Default weather city saved',
+        weatherCitySearchPlaceholder: 'Search cities by keyword',
+        weatherCitySearchHint: 'Type a keyword and choose a city to use as the default weather city',
+        weatherCityNoResults: 'No matching cities found',
+        selectedWeatherCity: 'Selected City',
         systemNotifications: 'System Notifications',
         notifyWhenNotInChat: 'Only notify when not in chat detail view',
         notificationDeniedHint: 'Notification permission denied. Please enable in browser settings',
@@ -577,6 +584,7 @@ const en = {
         saveClawBotSettingsFailed: 'Failed to save ClawBot settings',
         getQRCodeFailed: 'Failed to get QR code',
         pollQRCodeFailed: 'Failed to poll QR code status',
+        searchWeatherCitiesFailed: 'Failed to search weather cities',
     },
 } as const
 

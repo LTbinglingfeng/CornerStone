@@ -10,6 +10,7 @@ import type {
     AuthStatus,
     AuthSession,
     ToolCall,
+    WeatherCity,
 } from '../types/chat'
 import { translate } from '../i18n'
 
@@ -394,6 +395,20 @@ export async function updateConfig(config: Partial<AppConfig>): Promise<boolean>
     } catch {
         return false
     }
+}
+
+export async function searchWeatherCities(query: string): Promise<WeatherCity[]> {
+    const trimmed = query.trim()
+    if (trimmed === '') {
+        return []
+    }
+
+    const url = appendQueryParam(`${MANAGEMENT_BASE}/weather/cities/search`, 'q', trimmed)
+    const data = await apiFetchJson<ApiResponse<WeatherCity[]>>(url)
+    if (!data.success) {
+        throw new Error(data.error || translate('service.searchWeatherCitiesFailed'))
+    }
+    return data.data || []
 }
 
 // ========== 供应商管理 API ==========
