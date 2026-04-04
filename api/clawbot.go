@@ -603,7 +603,11 @@ func (s *ClawBotService) handleRenameCommand(ctx context.Context, cfg config.Cla
 		return
 	}
 
-	s.sendCommandReply(ctx, cfg, userID, fmt.Sprintf("已将当前会话重命名为：%s", title), "rename reply")
+	finalTitle := title
+	if record, ok := s.handler.chatManager.GetSession(session.SessionID); ok && record != nil {
+		finalTitle = record.Title
+	}
+	s.sendCommandReply(ctx, cfg, userID, fmt.Sprintf("已将当前会话重命名为：%s", finalTitle), "rename reply")
 }
 
 func (s *ClawBotService) handleDeleteCommand(ctx context.Context, cfg config.ClawBotConfig, userID, args string) {

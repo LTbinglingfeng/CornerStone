@@ -12,6 +12,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestIsClawBotNewCommand(t *testing.T) {
@@ -510,6 +511,49 @@ func TestHandleRenameCommand_UpdatesCurrentSessionTitle(t *testing.T) {
 	}
 	if record.Title != "New Title" {
 		t.Fatalf("session title = %q, want %q", record.Title, "New Title")
+	}
+}
+
+func TestHandleRenameCommand_TruncatesLongTitleAndEchoesStoredTitle(t *testing.T) {
+	server, state := newClawBotTestServer(t, "unused")
+	defer server.Close()
+
+	service := newTestClawBotService(t, server.URL)
+	cfg := service.handler.configManager.GetClawBotConfig()
+
+	userID := "wx-user"
+	sessionID := generateClawBotSessionID(userID)
+	session, err := service.handler.chatManager.CreateSession(sessionID, "Old Title", "", "")
+	if err != nil {
+		t.Fatalf("CreateSession err = %v", err)
+	}
+	service.touchActiveSession(userID, session.SessionID)
+
+	longTitle := strings.Repeat("你", 130)
+	service.handleRenameCommand(context.Background(), cfg, userID, longTitle)
+
+	wantTitle := strings.Repeat("你", 117) + "..."
+
+	state.mu.Lock()
+	if len(state.sendTexts) != 1 {
+		state.mu.Unlock()
+		t.Fatalf("send text count = %d, want 1", len(state.sendTexts))
+	}
+	reply := state.sendTexts[0]
+	state.mu.Unlock()
+	if !strings.Contains(reply, wantTitle) {
+		t.Fatalf("rename reply = %q, want truncated title %q", reply, wantTitle)
+	}
+
+	record, ok := service.handler.chatManager.GetSession(session.SessionID)
+	if !ok {
+		t.Fatal("session not found after rename")
+	}
+	if record.Title != wantTitle {
+		t.Fatalf("session title = %q, want %q", record.Title, wantTitle)
+	}
+	if utf8.RuneCountInString(record.Title) != 120 {
+		t.Fatalf("session title runes = %d, want 120", utf8.RuneCountInString(record.Title))
 	}
 }
 

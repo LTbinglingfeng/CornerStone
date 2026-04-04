@@ -716,9 +716,32 @@ func (cm *ChatManager) UpdateSessionTitle(sessionID, title string) error {
 		return os.ErrNotExist
 	}
 
-	record.Title = title
+	record.Title = normalizeChatSessionTitle(title)
 	record.UpdatedAt = time.Now()
 	return cm.saveSession(record)
+}
+
+func normalizeChatSessionTitle(title string) string {
+	title = strings.Join(strings.Fields(strings.TrimSpace(title)), " ")
+	if title == "" {
+		return ""
+	}
+
+	const (
+		maxRunes = 120
+		suffix   = "..."
+	)
+
+	runes := []rune(title)
+	if len(runes) <= maxRunes {
+		return title
+	}
+
+	suffixRunes := len([]rune(suffix))
+	if maxRunes <= suffixRunes {
+		return string(runes[:maxRunes])
+	}
+	return string(runes[:maxRunes-suffixRunes]) + suffix
 }
 
 // DeleteSession 删除会话
