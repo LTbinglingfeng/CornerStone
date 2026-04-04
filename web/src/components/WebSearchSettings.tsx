@@ -41,8 +41,10 @@ const WebSearchSettingsPanel: React.FC<WebSearchSettingsProps> = ({ onBack }) =>
 
     const [apiHost, setApiHost] = useState('')
     const [apiKey, setApiKey] = useState('')
+    const [apiKeyDirty, setApiKeyDirty] = useState(false)
     const [basicAuthUsername, setBasicAuthUsername] = useState('')
     const [basicAuthPassword, setBasicAuthPassword] = useState('')
+    const [basicAuthPasswordDirty, setBasicAuthPasswordDirty] = useState(false)
 
     const activeProviderInfo = useMemo(
         () => availableProviders.find((p) => p.id === activeProviderId) || null,
@@ -74,7 +76,9 @@ const WebSearchSettingsPanel: React.FC<WebSearchSettingsProps> = ({ onBack }) =>
         setApiHost(cfg.api_host || '')
         setBasicAuthUsername(cfg.basic_auth_username || '')
         setApiKey('')
+        setApiKeyDirty(false)
         setBasicAuthPassword('')
+        setBasicAuthPasswordDirty(false)
     }
 
     const loadData = async () => {
@@ -110,8 +114,8 @@ const WebSearchSettingsPanel: React.FC<WebSearchSettingsProps> = ({ onBack }) =>
                 providersPatch[activeProviderId] = {
                     api_host: apiHost,
                     basic_auth_username: basicAuthUsername,
-                    ...(apiKey.trim() !== '' ? { api_key: apiKey.trim() } : {}),
-                    ...(basicAuthPassword.trim() !== '' ? { basic_auth_password: basicAuthPassword.trim() } : {}),
+                    ...(apiKeyDirty ? { api_key: apiKey.trim() } : {}),
+                    ...(basicAuthPasswordDirty ? { basic_auth_password: basicAuthPassword.trim() } : {}),
                 }
             }
 
@@ -249,7 +253,10 @@ const WebSearchSettingsPanel: React.FC<WebSearchSettingsProps> = ({ onBack }) =>
                                 <input
                                     className="settings-input"
                                     value={apiKey}
-                                    onChange={(e) => setApiKey(e.target.value)}
+                                    onChange={(e) => {
+                                        setApiKey(e.target.value)
+                                        setApiKeyDirty(true)
+                                    }}
                                     placeholder={hasStoredApiKey ? '****' : ''}
                                     disabled={saving}
                                 />
@@ -274,7 +281,10 @@ const WebSearchSettingsPanel: React.FC<WebSearchSettingsProps> = ({ onBack }) =>
                                 <input
                                     className="settings-input"
                                     value={basicAuthPassword}
-                                    onChange={(e) => setBasicAuthPassword(e.target.value)}
+                                    onChange={(e) => {
+                                        setBasicAuthPassword(e.target.value)
+                                        setBasicAuthPasswordDirty(true)
+                                    }}
                                     placeholder={hasStoredBasicAuthPassword ? '****' : ''}
                                     disabled={saving}
                                 />
