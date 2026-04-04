@@ -201,6 +201,69 @@ func TestRunChatWithToolLoop_ToolFailureFedBack(t *testing.T) {
 	}
 }
 
+func TestRunChatWithToolLoop_RejectsDisabledToolCall(t *testing.T) {
+	ai := &fakeAIClient{
+		t: t,
+		responses: []*client.ChatResponse{
+			chatResp(assistantMessage("", toolCall("call_disabled", "send_red_packet", `{"amount":8.8,"message":"hi"}`))),
+			chatResp(assistantMessage("done")),
+		},
+	}
+
+	executor := newChatToolExecutor(nil, nil)
+	handlerCalled := false
+	executor.handlers["send_red_packet"] = func(ctx context.Context, toolCall client.ToolCall, toolCtx chatToolContext) chatToolResult {
+		handlerCalled = true
+		return chatToolResult{
+			OK:   true,
+			Data: map[string]interface{}{"unexpected": true},
+		}
+	}
+
+	got, err := runChatWithToolLoop(
+		context.Background(),
+		ai,
+		client.ChatRequest{
+			Messages: []client.Message{{Role: "user", Content: "hi"}},
+			Tools: []client.Tool{
+				{
+					Type: "function",
+					Function: client.ToolFunction{
+						Name: "send_pat",
+					},
+				},
+			},
+		},
+		executor,
+		chatToolContext{},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("runChatWithToolLoop err: %v", err)
+	}
+	if handlerCalled {
+		t.Fatalf("disabled tool handler should not be called")
+	}
+	if got == nil || len(got.NewMessages) < 3 {
+		t.Fatalf("expected assistant, tool, assistant messages, got %#v", got)
+	}
+
+	toolMsg := got.NewMessages[1]
+	if toolMsg.Role != "tool" || toolMsg.ToolCallID != "call_disabled" {
+		t.Fatalf("expected tool message call_disabled, got=%#v", toolMsg)
+	}
+	payload := parseToolResult(t, toolMsg.Content)
+	if ok, _ := payload["ok"].(bool); ok {
+		t.Fatalf("expected ok=false, got=%v", payload["ok"])
+	}
+	if tool, _ := payload["tool"].(string); tool != "send_red_packet" {
+		t.Fatalf("expected tool=send_red_packet, got=%v", tool)
+	}
+	if errMsg, _ := payload["error"].(string); errMsg != "tool disabled" {
+		t.Fatalf("expected error=tool disabled, got=%v", payload["error"])
+	}
+}
+
 func TestRunChatWithToolLoop_MaxToolSteps(t *testing.T) {
 	responses := make([]*client.ChatResponse, 0, 6)
 	for i := 0; i < 6; i++ {

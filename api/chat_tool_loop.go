@@ -45,6 +45,8 @@ func runChatWithToolLoop(
 
 	conversation := append([]client.Message(nil), baseReq.Messages...)
 	newMessages := make([]client.Message, 0, 4)
+	allowedToolNames := buildToolNameSet(baseReq.Tools)
+	enforceToolAllowlist := baseReq.Tools != nil
 
 	toolStepsUsed := 0
 	executedToolCallIDs := make(map[string]struct{})
@@ -130,6 +132,14 @@ func runChatWithToolLoop(
 					Tool:  strings.TrimSpace(tc.Function.Name),
 					Data:  nil,
 					Error: "duplicate tool_call_id",
+				})
+			} else if enforceToolAllowlist && !isToolAvailable(allowedToolNames, tc.Function.Name) {
+				executedToolCallIDs[callID] = struct{}{}
+				resultJSON = marshalChatToolResult(chatToolResult{
+					OK:    false,
+					Tool:  strings.TrimSpace(tc.Function.Name),
+					Data:  nil,
+					Error: "tool disabled",
 				})
 			} else {
 				executedToolCallIDs[callID] = struct{}{}
