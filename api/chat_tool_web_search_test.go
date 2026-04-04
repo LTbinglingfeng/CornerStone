@@ -36,6 +36,58 @@ func decodeWebSearchToolResult(t *testing.T, raw string) (chatToolResult, search
 	return result, payload
 }
 
+func TestGetChatTools_WebSearchOnlyIncludedWhenEnabled(t *testing.T) {
+	defaultTools := getChatTools()
+	for _, tool := range defaultTools {
+		if tool.Function.Name == "web_search" {
+			t.Fatalf("web_search unexpectedly registered without configuration")
+		}
+	}
+
+	enabledTools := getChatTools(chatToolOptions{WebSearchEnabled: true})
+	found := false
+	for _, tool := range enabledTools {
+		if tool.Function.Name == "web_search" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("web_search tool not registered when enabled")
+	}
+}
+
+func TestIsWebSearchConfigured_RequiresProviderSpecificSettings(t *testing.T) {
+	cfg := config.DefaultConfig()
+	if isWebSearchConfigured(cfg) {
+		t.Fatal("expected web search to be disabled without an active provider")
+	}
+
+	cfg.WebSearch.ActiveProviderID = "tavily"
+	cfg.WebSearch.Providers = map[string]config.WebSearchProvider{
+		"tavily": {},
+	}
+	if isWebSearchConfigured(cfg) {
+		t.Fatal("expected tavily to require an API key")
+	}
+
+	cfg.WebSearch.Providers["tavily"] = config.WebSearchProvider{APIKey: "secret-key"}
+	if !isWebSearchConfigured(cfg) {
+		t.Fatal("expected tavily to be enabled once its API key is configured")
+	}
+
+	cfg.WebSearch.ActiveProviderID = "searxng"
+	cfg.WebSearch.Providers["searxng"] = config.WebSearchProvider{}
+	if isWebSearchConfigured(cfg) {
+		t.Fatal("expected searxng to require an API host")
+	}
+
+	cfg.WebSearch.Providers["searxng"] = config.WebSearchProvider{APIHost: "https://search.example.com"}
+	if !isWebSearchConfigured(cfg) {
+		t.Fatal("expected searxng to be enabled once its API host is configured")
+	}
+}
+
 func TestChatTool_WebSearch_Integration(t *testing.T) {
 	var gotReq map[string]interface{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -4,6 +4,8 @@ import (
 	"context"
 	"cornerstone/client"
 	"cornerstone/config"
+	"cornerstone/internal/search"
+	"cornerstone/internal/search/providers"
 	"cornerstone/logging"
 	"cornerstone/storage"
 	"encoding/json"
@@ -252,7 +254,9 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 		Temperature: temperature,
 		TopP:        provider.TopP,
 		MaxTokens:   req.MaxTokens,
-		Tools:       getChatTools(),
+		Tools: getChatTools(chatToolOptions{
+			WebSearchEnabled: h.configManager != nil && isWebSearchConfigured(h.configManager.Get()),
+		}),
 	}
 	switch provider.Type {
 	case config.ProviderTypeAnthropic:
@@ -871,13 +875,18 @@ const (
 )
 
 type chatToolOptions struct {
-	Channel chatToolChannel
+	Channel          chatToolChannel
+	WebSearchEnabled bool
 }
 
 func getChatTools(options ...chatToolOptions) []client.Tool {
 	channel := chatToolChannelDefault
+	webSearchEnabled := false
 	if len(options) > 0 && options[0].Channel != "" {
 		channel = options[0].Channel
+	}
+	if len(options) > 0 {
+		webSearchEnabled = options[0].WebSearchEnabled
 	}
 	tools := []client.Tool{
 		{
@@ -984,24 +993,6 @@ func getChatTools(options ...chatToolOptions) []client.Tool {
 		{
 			Type: "function",
 			Function: client.ToolFunction{
-				Name:        "web_search",
-				Description: "使用外部搜索 API 查询网络信息。当需要查事实、资料、百科、新闻等外部信息时使用此工具。",
-				Parameters: map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"query": map[string]interface{}{
-							"type":        "string",
-							"description": "搜索关键词或问题",
-							"maxLength":   400,
-						},
-					},
-					"required": []string{"query"},
-				},
-			},
-		},
-		{
-			Type: "function",
-			Function: client.ToolFunction{
 				Name:        "generate_moment",
 				Description: "发布一条朋友圈动态。当你想分享生活、心情或有趣的事情时使用此工具。需要提供朋友圈文案和用于生成配图的提示词。",
 				Parameters: map[string]interface{}{
@@ -1028,6 +1019,26 @@ func getChatTools(options ...chatToolOptions) []client.Tool {
 			},
 		},
 	}
+	if webSearchEnabled {
+		tools = append(tools, client.Tool{
+			Type: "function",
+			Function: client.ToolFunction{
+				Name:        "web_search",
+				Description: "使用外部搜索 API 查询网络信息。当需要查事实、资料、百科、新闻等外部信息时使用此工具。",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"query": map[string]interface{}{
+							"type":        "string",
+							"description": "搜索关键词或问题",
+							"maxLength":   400,
+						},
+					},
+					"required": []string{"query"},
+				},
+			},
+		})
+	}
 
 	if channel == chatToolChannelClawBot {
 		filtered := make([]client.Tool, 0, 2)
@@ -1044,4 +1055,37 @@ func getChatTools(options ...chatToolOptions) []client.Tool {
 	}
 
 	return tools
+}
+
+func isWebSearchConfigured(cfg config.Config) bool {
+	providerID := strings.TrimSpace(cfg.WebSearch.ActiveProviderID)
+	if providerID == "" {
+		return false
+	}
+
+	providerCfg, ok := cfg.WebSearch.Providers[providerID]
+	if !ok {
+		return false
+	}
+
+	reg := search.NewRegistry()
+	if err := providers.RegisterAll(reg); err != nil {
+		logging.Errorf("web_search register providers failed: %v", err)
+		return false
+	}
+
+	provider, err := reg.Create(providerID, nil)
+	if err != nil || provider == nil {
+		return false
+	}
+
+	info := provider.Info()
+	if info.RequiresAPIKey && strings.TrimSpace(providerCfg.APIKey) == "" {
+		return false
+	}
+	if info.RequiresAPIHost && strings.TrimSpace(providerCfg.APIHost) == "" {
+		return false
+	}
+
+	return true
 }
