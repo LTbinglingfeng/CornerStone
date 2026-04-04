@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 )
 
 const defaultExaAPIHost = "https://api.exa.ai"
@@ -24,17 +25,19 @@ func (p *Exa) Info() search.ProviderInfo {
 		Name:               "Exa",
 		RequiresAPIKey:     true,
 		RequiresAPIHost:    false,
-		SupportsExclude:    false,
-		SupportsTimeFilter: false,
+		SupportsExclude:    true,
+		SupportsTimeFilter: true,
 		SupportsBasicAuth:  false,
 		SupportsMaxResults: true,
 	}
 }
 
 type exaSearchRequest struct {
-	Query      string `json:"query"`
-	NumResults int    `json:"numResults,omitempty"`
-	Contents   struct {
+	Query              string   `json:"query"`
+	NumResults         int      `json:"numResults,omitempty"`
+	ExcludeDomains     []string `json:"excludeDomains,omitempty"`
+	StartPublishedDate string   `json:"startPublishedDate,omitempty"`
+	Contents           struct {
 		Text bool `json:"text"`
 	} `json:"contents,omitempty"`
 }
@@ -68,11 +71,17 @@ func (p *Exa) Search(ctx context.Context, query string, cfg search.SearchConfig,
 		Query:      strings.TrimSpace(query),
 		NumResults: providerFetchResults(cfg),
 	}
+	if len(cfg.ExcludeDomains) > 0 {
+		reqBody.ExcludeDomains = cfg.ExcludeDomains
+	}
+	if cfg.SearchWithTime {
+		// Best-effort recent filter: Exa supports startPublishedDate, so use the past 7 days.
+		reqBody.StartPublishedDate = time.Now().UTC().AddDate(0, 0, -7).Format("2006-01-02")
+	}
 	reqBody.Contents.Text = true
 
 	headers := map[string]string{
-		"x-api-key":     apiKey,
-		"Authorization": "Bearer " + apiKey,
+		"x-api-key": apiKey,
 	}
 
 	var respBody exaSearchResponse

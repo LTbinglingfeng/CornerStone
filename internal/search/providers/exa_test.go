@@ -7,11 +7,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
-func TestTavily_Search_RequestAndResponseMapping(t *testing.T) {
-	var gotReq tavilySearchRequest
-	var gotAuth string
+func TestExa_Search_RequestAndResponseMapping(t *testing.T) {
+	var gotReq exaSearchRequest
+	var gotAPIKey string
+	var gotAuthorization string
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -20,23 +22,24 @@ func TestTavily_Search_RequestAndResponseMapping(t *testing.T) {
 		if r.URL.Path != "/search" {
 			t.Fatalf("path=%s want /search", r.URL.Path)
 		}
-		gotAuth = r.Header.Get("Authorization")
+		gotAPIKey = r.Header.Get("x-api-key")
+		gotAuthorization = r.Header.Get("Authorization")
 		if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
-			"query": "hello",
+			"autopromptString": "hello",
 			"results": [
-				{ "title": "t1", "url": "https://a.com/1", "content": "c1" },
-				{ "title": "t2", "url": "https://b.com/2", "content": "c2" }
+				{ "title": "t1", "url": "https://a.com/1", "text": "c1" },
+				{ "title": "t2", "url": "https://b.com/2", "text": "c2" }
 			]
 		}`))
 	}))
 	defer srv.Close()
 
-	provider := NewTavily(srv.Client())
+	provider := NewExa(srv.Client())
 	resp, err := provider.Search(context.Background(), "hello", search.SearchConfig{
 		MaxResults:     2,
 		FetchResults:   4,
@@ -50,24 +53,33 @@ func TestTavily_Search_RequestAndResponseMapping(t *testing.T) {
 		t.Fatalf("Search error: %v", err)
 	}
 
-	if gotAuth != "Bearer test_key" {
-		t.Fatalf("Authorization=%q want %q", gotAuth, "Bearer test_key")
+	if gotAPIKey != "test_key" {
+		t.Fatalf("x-api-key=%q want test_key", gotAPIKey)
+	}
+	if gotAuthorization != "" {
+		t.Fatalf("Authorization=%q want empty", gotAuthorization)
 	}
 	if gotReq.Query != "hello" {
 		t.Fatalf("req.query=%q want hello", gotReq.Query)
 	}
-	if gotReq.MaxResults != 4 {
-		t.Fatalf("req.max_results=%d want 4", gotReq.MaxResults)
+	if gotReq.NumResults != 4 {
+		t.Fatalf("req.numResults=%d want 4", gotReq.NumResults)
+	}
+	if !gotReq.Contents.Text {
+		t.Fatal("req.contents.text=false want true")
 	}
 	if len(gotReq.ExcludeDomains) != 2 || gotReq.ExcludeDomains[0] != "example.com" || gotReq.ExcludeDomains[1] != "news.example.com" {
-		t.Fatalf("req.exclude_domains=%v want both domains", gotReq.ExcludeDomains)
+		t.Fatalf("req.excludeDomains=%v want both domains", gotReq.ExcludeDomains)
 	}
-	if gotReq.TimeRange != "week" {
-		t.Fatalf("req.time_range=%q want week", gotReq.TimeRange)
+	if gotReq.StartPublishedDate == "" {
+		t.Fatal("req.startPublishedDate empty")
+	}
+	if _, err := time.Parse("2006-01-02", gotReq.StartPublishedDate); err != nil {
+		t.Fatalf("req.startPublishedDate=%q not parseable date: %v", gotReq.StartPublishedDate, err)
 	}
 
 	if resp == nil {
-		t.Fatalf("resp=nil")
+		t.Fatal("resp=nil")
 	}
 	if resp.Query != "hello" {
 		t.Fatalf("resp.query=%q want hello", resp.Query)

@@ -24,7 +24,7 @@ func (p *SearxNG) Info() search.ProviderInfo {
 		RequiresAPIKey:     false,
 		RequiresAPIHost:    true,
 		SupportsExclude:    false,
-		SupportsTimeFilter: false,
+		SupportsTimeFilter: true,
 		SupportsBasicAuth:  true,
 		SupportsMaxResults: false,
 	}
@@ -58,6 +58,10 @@ func (p *SearxNG) Search(ctx context.Context, query string, cfg search.SearchCon
 	q.Set("format", "json")
 	q.Set("q", strings.TrimSpace(query))
 	q.Set("language", "auto")
+	if cfg.SearchWithTime {
+		// Best-effort recent filter: the public SearxNG API documents day/month/year.
+		q.Set("time_range", "month")
+	}
 	parsed.RawQuery = q.Encode()
 
 	headers := map[string]string{}
@@ -96,6 +100,6 @@ func (p *SearxNG) Search(ctx context.Context, query string, cfg search.SearchCon
 			Content: strings.TrimSpace(item.Content),
 		})
 	}
-	_ = cfg // searxng does not support max_results in the simple JSON API; orchestrator will trim.
+	_ = cfg // max_results is still enforced by the orchestrator after response normalization.
 	return out, nil
 }

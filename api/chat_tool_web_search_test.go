@@ -90,6 +90,7 @@ func TestIsWebSearchConfigured_RequiresProviderSpecificSettings(t *testing.T) {
 
 func TestChatTool_WebSearch_Integration(t *testing.T) {
 	var gotReq map[string]interface{}
+	var gotAuth string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Fatalf("method=%s want POST", r.Method)
@@ -97,6 +98,7 @@ func TestChatTool_WebSearch_Integration(t *testing.T) {
 		if r.URL.Path != "/search" {
 			t.Fatalf("path=%s want /search", r.URL.Path)
 		}
+		gotAuth = r.Header.Get("Authorization")
 		if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
@@ -149,8 +151,8 @@ func TestChatTool_WebSearch_Integration(t *testing.T) {
 	if len(payload.Results) != 1 {
 		t.Fatalf("len(payload.results)=%d want 1", len(payload.Results))
 	}
-	if gotReq["api_key"] != "test_key" {
-		t.Fatalf("req.api_key=%v want test_key", gotReq["api_key"])
+	if gotAuth != "Bearer test_key" {
+		t.Fatalf("Authorization=%q want %q", gotAuth, "Bearer test_key")
 	}
 	if gotReq["query"] != "hello" {
 		t.Fatalf("req.query=%v want hello", gotReq["query"])

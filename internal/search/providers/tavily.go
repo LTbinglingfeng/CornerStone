@@ -24,17 +24,18 @@ func (p *Tavily) Info() search.ProviderInfo {
 		Name:               "Tavily",
 		RequiresAPIKey:     true,
 		RequiresAPIHost:    false,
-		SupportsExclude:    false,
-		SupportsTimeFilter: false,
+		SupportsExclude:    true,
+		SupportsTimeFilter: true,
 		SupportsBasicAuth:  false,
 		SupportsMaxResults: true,
 	}
 }
 
 type tavilySearchRequest struct {
-	APIKey     string `json:"api_key"`
-	Query      string `json:"query"`
-	MaxResults int    `json:"max_results,omitempty"`
+	Query          string   `json:"query"`
+	MaxResults     int      `json:"max_results,omitempty"`
+	ExcludeDomains []string `json:"exclude_domains,omitempty"`
+	TimeRange      string   `json:"time_range,omitempty"`
 }
 
 type tavilySearchResponse struct {
@@ -63,13 +64,23 @@ func (p *Tavily) Search(ctx context.Context, query string, cfg search.SearchConf
 	}
 
 	reqBody := tavilySearchRequest{
-		APIKey:     apiKey,
 		Query:      strings.TrimSpace(query),
 		MaxResults: providerFetchResults(cfg),
 	}
+	if len(cfg.ExcludeDomains) > 0 {
+		reqBody.ExcludeDomains = cfg.ExcludeDomains
+	}
+	if cfg.SearchWithTime {
+		// Best-effort recent filter matching other providers' past-week behavior.
+		reqBody.TimeRange = "week"
+	}
+
+	headers := map[string]string{
+		"Authorization": "Bearer " + apiKey,
+	}
 
 	var respBody tavilySearchResponse
-	resp, _, errDo := doJSON(ctx, p.httpClient, http.MethodPost, endpoint, nil, reqBody, &respBody)
+	resp, _, errDo := doJSON(ctx, p.httpClient, http.MethodPost, endpoint, headers, reqBody, &respBody)
 	if errDo != nil {
 		return nil, &search.Error{Kind: search.ErrKindUpstream, ProviderID: ProviderIDTavily, Message: "request failed", Cause: errDo}
 	}
