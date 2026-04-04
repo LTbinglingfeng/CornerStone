@@ -31,6 +31,7 @@ import { useT } from './contexts/I18nContext'
 import { formatNotificationBody, getNotificationsEnabled, isNotificationSupported } from './utils/notifications'
 import { slideTransition } from './utils/motion'
 import { buildChatRoute, getRouteState, normalizePathname, tabOrder, tabRoutes } from './utils/routes'
+import { logoBlackDataUrl } from 'virtual:cornerstone-logos'
 import './App.css'
 
 const getErrorStatus = (error: unknown): number | undefined => {
@@ -370,7 +371,7 @@ function App() {
                     const title = record?.title || record?.prompt_name || t('chat.newChat')
                     const icon = record?.prompt_id
                         ? appendQueryParam(getPromptAvatarUrl(record.prompt_id), 't', Date.now())
-                        : '/logo_black.jpg'
+                        : logoBlackDataUrl
 
                     const messageParts = splitAssistantMessageContent(lastMessage.content || '')
                     const bodies =

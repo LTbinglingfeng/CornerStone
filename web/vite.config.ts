@@ -74,6 +74,22 @@ const cornerstoneInlineLogos = (): Plugin => {
   }
 }
 
+const cornerstoneServiceWorker = (): Plugin => {
+  const serviceWorkerPath = fileURLToPath(new URL('./public/sw.js', import.meta.url))
+
+  return {
+    name: 'cornerstone-service-worker',
+    apply: 'build',
+    buildStart() {
+      this.emitFile({
+        type: 'asset',
+        fileName: 'sw.js',
+        source: fs.readFileSync(serviceWorkerPath, 'utf8'),
+      })
+    },
+  }
+}
+
 const normalizeViteAssetPath = (url: string) => {
   if (url.startsWith('data:') || url.startsWith('http:') || url.startsWith('https:') || url.startsWith('//')) {
     return null
@@ -138,7 +154,7 @@ const cornerstoneSingleFileBuild = (): Plugin => {
       htmlAsset.source = html
 
       for (const fileName of Object.keys(bundle)) {
-        if (fileName !== 'index.html') {
+        if (fileName !== 'index.html' && fileName !== 'sw.js') {
           delete bundle[fileName]
         }
       }
@@ -150,9 +166,9 @@ export default defineConfig({
   define: {
     __CORNERSTONE_VERSION__: JSON.stringify(resolveBuildVersion()),
   },
-  plugins: [cornerstoneInlineLogos(), react(), cornerstoneSingleFileBuild()],
+  plugins: [cornerstoneInlineLogos(), cornerstoneServiceWorker(), react(), cornerstoneSingleFileBuild()],
   build: {
-    copyPublicDir: true,
+    copyPublicDir: false,
     rollupOptions: {
       output: {
         inlineDynamicImports: true,
