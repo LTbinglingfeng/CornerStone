@@ -2,7 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'motion/react'
 import QRCode from 'qrcode'
 import { getPrompts } from '../services/api'
-import { clawBotService, type ClawBotQRCodeStartResponse, type ClawBotSettings } from '../services/clawbotService'
+import {
+    clawBotService,
+    type ClawBotCommandPermissionKey,
+    type ClawBotCommandPermissions,
+    type ClawBotQRCodeStartResponse,
+    type ClawBotSettings,
+} from '../services/clawbotService'
 import { useT } from '../contexts/I18nContext'
 import type { Prompt } from '../types/chat'
 import { CustomSelect } from './provider'
@@ -21,7 +27,25 @@ type ClawBotFormState = {
     bot_token: string
     prompt_id: string
     clear_bot_token: boolean
+    command_permissions: ClawBotCommandPermissions
 }
+
+const DEFAULT_COMMAND_PERMISSIONS: ClawBotCommandPermissions = {
+    new: true,
+    ls: true,
+    checkout: true,
+    rename: true,
+    delete: true,
+    prompt: true,
+    re: true,
+}
+
+const normalizeCommandPermissions = (
+    permissions?: Partial<Record<ClawBotCommandPermissionKey, boolean>>
+): ClawBotCommandPermissions => ({
+    ...DEFAULT_COMMAND_PERMISSIONS,
+    ...(permissions || {}),
+})
 
 const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
     const { t } = useT()
@@ -37,6 +61,7 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
         bot_token: '',
         prompt_id: '',
         clear_bot_token: false,
+        command_permissions: DEFAULT_COMMAND_PERMISSIONS,
     })
     const [qrData, setQRData] = useState<ClawBotQRCodeStartResponse | null>(null)
     const [qrStatus, setQRStatus] = useState('')
@@ -92,6 +117,52 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
         [prompts, t]
     )
 
+    const commandPermissionItems = useMemo(
+        () =>
+            [
+                {
+                    key: 'new',
+                    label: t('clawBot.commandNewLabel'),
+                    description: t('clawBot.commandNewDesc'),
+                },
+                {
+                    key: 'ls',
+                    label: t('clawBot.commandListLabel'),
+                    description: t('clawBot.commandListDesc'),
+                },
+                {
+                    key: 'checkout',
+                    label: t('clawBot.commandCheckoutLabel'),
+                    description: t('clawBot.commandCheckoutDesc'),
+                },
+                {
+                    key: 'rename',
+                    label: t('clawBot.commandRenameLabel'),
+                    description: t('clawBot.commandRenameDesc'),
+                },
+                {
+                    key: 'delete',
+                    label: t('clawBot.commandDeleteLabel'),
+                    description: t('clawBot.commandDeleteDesc'),
+                },
+                {
+                    key: 'prompt',
+                    label: t('clawBot.commandPromptLabel'),
+                    description: t('clawBot.commandPromptDesc'),
+                },
+                {
+                    key: 're',
+                    label: t('clawBot.commandRegenerateLabel'),
+                    description: t('clawBot.commandRegenerateDesc'),
+                },
+            ] satisfies Array<{
+                key: ClawBotCommandPermissionKey
+                label: string
+                description: string
+            }>,
+        [t]
+    )
+
     const loadData = async () => {
         setLoading(true)
         try {
@@ -104,6 +175,7 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
                 bot_token: '',
                 prompt_id: nextSettings.prompt_id || '',
                 clear_bot_token: false,
+                command_permissions: normalizeCommandPermissions(nextSettings.command_permissions),
             })
         } catch (error) {
             const message = error instanceof Error ? error.message : t('common.loadFailed')
@@ -122,6 +194,7 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
             bot_token: '',
             prompt_id: nextSettings.prompt_id || '',
             clear_bot_token: false,
+            command_permissions: normalizeCommandPermissions(nextSettings.command_permissions),
         }))
     }
 
@@ -165,6 +238,7 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
                 bot_token: form.bot_token.trim() || undefined,
                 prompt_id: form.prompt_id || undefined,
                 clear_bot_token: form.clear_bot_token,
+                command_permissions: form.command_permissions,
             })
             syncSettings(nextSettings)
             showToast(t('clawBot.saved'), 'success')
@@ -185,6 +259,7 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
                 base_url: form.base_url.trim(),
                 prompt_id: form.prompt_id || undefined,
                 clear_bot_token: false,
+                command_permissions: form.command_permissions,
             })
             syncSettings(nextSettings)
 
@@ -326,6 +401,53 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
                                     ariaLabel={t('clawBot.bindPersona')}
                                     disabled={saving}
                                 />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* ── 命令权限 ── */}
+                    <div className="clawbot-section">
+                        <div className="clawbot-section-title">{t('clawBot.commandPermissions')}</div>
+                        <div className="clawbot-section-card">
+                            <div className="settings-group">
+                                <div className="clawbot-command-permissions-hint">
+                                    {t('clawBot.commandPermissionsHint')}
+                                </div>
+                                <div className="clawbot-command-permissions">
+                                    {commandPermissionItems.map((item) => {
+                                        const enabled = form.command_permissions[item.key]
+                                        return (
+                                            <div className="clawbot-command-row" key={item.key}>
+                                                <div className="clawbot-command-copy">
+                                                    <div className="clawbot-command-label">{item.label}</div>
+                                                    <div className="clawbot-command-desc">{item.description}</div>
+                                                </div>
+                                                <div className="modal-toggle-wrapper clawbot-command-toggle">
+                                                    <label className="toggle-switch">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={enabled}
+                                                            onChange={(event) =>
+                                                                setForm((current) => ({
+                                                                    ...current,
+                                                                    command_permissions: {
+                                                                        ...current.command_permissions,
+                                                                        [item.key]: event.target.checked,
+                                                                    },
+                                                                }))
+                                                            }
+                                                            disabled={saving}
+                                                        />
+                                                        <span className="toggle-slider"></span>
+                                                    </label>
+                                                    <span className="toggle-label">
+                                                        {enabled ? t('common.enabled') : t('common.disabled')}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        )
+                                    })}
+                                </div>
                             </div>
                         </div>
                     </div>

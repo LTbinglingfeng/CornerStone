@@ -51,12 +51,13 @@ type TTSProvider struct {
 }
 
 type ClawBotConfig struct {
-	Enabled       bool   `json:"enabled"`
-	BaseURL       string `json:"base_url"`
-	BotToken      string `json:"bot_token,omitempty"`
-	ILinkUserID   string `json:"ilink_user_id,omitempty"`
-	PromptID      string `json:"prompt_id,omitempty"`
-	GetUpdatesBuf string `json:"get_updates_buf,omitempty"`
+	Enabled            bool            `json:"enabled"`
+	BaseURL            string          `json:"base_url"`
+	BotToken           string          `json:"bot_token,omitempty"`
+	ILinkUserID        string          `json:"ilink_user_id,omitempty"`
+	PromptID           string          `json:"prompt_id,omitempty"`
+	GetUpdatesBuf      string          `json:"get_updates_buf,omitempty"`
+	CommandPermissions map[string]bool `json:"command_permissions,omitempty"`
 }
 
 type ReplyWaitWindowMode string
@@ -85,6 +86,47 @@ const (
 	DefaultReplyWaitWindowSeconds  = 2
 	MaxReplyWaitWindowSeconds      = 120
 )
+
+var defaultClawBotCommandPermissionKeys = []string{
+	"new",
+	"ls",
+	"checkout",
+	"rename",
+	"delete",
+	"prompt",
+	"re",
+}
+
+func DefaultClawBotCommandPermissions() map[string]bool {
+	permissions := make(map[string]bool, len(defaultClawBotCommandPermissionKeys))
+	for _, key := range defaultClawBotCommandPermissionKeys {
+		permissions[key] = true
+	}
+	return permissions
+}
+
+func NormalizeClawBotCommandPermissions(permissions map[string]bool) map[string]bool {
+	normalized := DefaultClawBotCommandPermissions()
+	for _, key := range defaultClawBotCommandPermissionKeys {
+		if value, ok := permissions[key]; ok {
+			normalized[key] = value
+		}
+	}
+	return normalized
+}
+
+func clawBotCommandPermissionsEqual(left, right map[string]bool) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for key, value := range left {
+		otherValue, ok := right[key]
+		if !ok || otherValue != value {
+			return false
+		}
+	}
+	return true
+}
 
 // Provider 供应商配置
 type Provider struct {
@@ -177,7 +219,8 @@ func DefaultConfig() Config {
 		ReplyWaitWindowMode:    string(ReplyWaitWindowModeSliding),
 		ReplyWaitWindowSeconds: DefaultReplyWaitWindowSeconds,
 		ClawBot: ClawBotConfig{
-			BaseURL: DefaultClawBotBaseURL,
+			BaseURL:            DefaultClawBotBaseURL,
+			CommandPermissions: DefaultClawBotCommandPermissions(),
 		},
 	}
 }
@@ -349,6 +392,11 @@ func (m *Manager) applyConfigDefaults() bool {
 	getUpdatesBuf := strings.TrimSpace(m.config.ClawBot.GetUpdatesBuf)
 	if getUpdatesBuf != m.config.ClawBot.GetUpdatesBuf {
 		m.config.ClawBot.GetUpdatesBuf = getUpdatesBuf
+		changed = true
+	}
+	normalizedCommandPermissions := NormalizeClawBotCommandPermissions(m.config.ClawBot.CommandPermissions)
+	if !clawBotCommandPermissionsEqual(m.config.ClawBot.CommandPermissions, normalizedCommandPermissions) {
+		m.config.ClawBot.CommandPermissions = normalizedCommandPermissions
 		changed = true
 	}
 	return changed

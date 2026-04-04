@@ -2,6 +2,10 @@ import type { ApiResponse } from '../types/chat'
 import { translate } from '../i18n'
 import { apiFetchJson } from './api'
 
+export type ClawBotCommandPermissionKey = 'new' | 'ls' | 'checkout' | 'rename' | 'delete' | 'prompt' | 're'
+
+export type ClawBotCommandPermissions = Record<ClawBotCommandPermissionKey, boolean>
+
 export interface ClawBotSettings {
     enabled: boolean
     base_url: string
@@ -10,6 +14,7 @@ export interface ClawBotSettings {
     ilink_user_id?: string
     prompt_id?: string
     prompt_name?: string
+    command_permissions: ClawBotCommandPermissions
     status: 'disabled' | 'missing_token' | 'running' | 'error' | 'stopped' | string
     polling: boolean
     last_error?: string
@@ -42,6 +47,7 @@ export const clawBotService = {
         bot_token?: string
         prompt_id?: string
         clear_bot_token?: boolean
+        command_permissions?: ClawBotCommandPermissions
     }): Promise<ClawBotSettings> {
         const data = await apiFetchJson<ApiResponse<ClawBotSettings>>('/api/settings/clawbot', {
             method: 'PUT',

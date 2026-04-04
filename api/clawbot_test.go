@@ -648,6 +648,41 @@ func TestHandleIncomingMessage_KnownCommandWithInvalidArgsReturnsUsage(t *testin
 	}
 }
 
+func TestHandleIncomingMessage_DisabledCommandReturnsHint(t *testing.T) {
+	server, state := newClawBotTestServer(t, "unused")
+	defer server.Close()
+
+	service := newTestClawBotService(t, server.URL)
+	cfg := service.handler.configManager.GetClawBotConfig()
+	cfg.CommandPermissions = config.NormalizeClawBotCommandPermissions(map[string]bool{
+		clawBotCommandNew:        true,
+		clawBotCommandList:       true,
+		clawBotCommandCheckout:   true,
+		clawBotCommandRename:     false,
+		clawBotCommandDelete:     true,
+		clawBotCommandPrompt:     true,
+		clawBotCommandRegenerate: true,
+	})
+	if err := service.handler.configManager.UpdateClawBotConfig(cfg); err != nil {
+		t.Fatalf("UpdateClawBotConfig err = %v", err)
+	}
+
+	service.handleIncomingMessage(context.Background(), cfg, newClawBotTextIncomingMessage("wx-user", "/rename test"))
+
+	state.mu.Lock()
+	defer state.mu.Unlock()
+
+	if len(state.chatRequests) != 0 {
+		t.Fatalf("chat request count = %d, want 0", len(state.chatRequests))
+	}
+	if len(state.sendTexts) != 1 {
+		t.Fatalf("send text count = %d, want 1", len(state.sendTexts))
+	}
+	if !strings.Contains(state.sendTexts[0], "命令已禁用") || !strings.Contains(state.sendTexts[0], "/rename") {
+		t.Fatalf("disabled command reply = %q, want disabled hint", state.sendTexts[0])
+	}
+}
+
 func TestHandleIncomingMessage_DoubleSlashEscapesCommandText(t *testing.T) {
 	server, state := newClawBotTestServer(t, "assistant reply")
 	defer server.Close()
@@ -669,6 +704,39 @@ func TestHandleIncomingMessage_DoubleSlashEscapesCommandText(t *testing.T) {
 	content, _ := lastMessage.Content.(string)
 	if lastMessage.Role != "user" || content != "/menu" {
 		t.Fatalf("last request message = (%s, %v), want user /menu", lastMessage.Role, lastMessage.Content)
+	}
+}
+
+func TestHandleMenuCommand_OmitsDisabledCommands(t *testing.T) {
+	server, state := newClawBotTestServer(t, "unused")
+	defer server.Close()
+
+	service := newTestClawBotService(t, server.URL)
+	cfg := service.handler.configManager.GetClawBotConfig()
+	cfg.CommandPermissions = config.NormalizeClawBotCommandPermissions(map[string]bool{
+		clawBotCommandNew:        false,
+		clawBotCommandList:       true,
+		clawBotCommandCheckout:   true,
+		clawBotCommandRename:     false,
+		clawBotCommandDelete:     false,
+		clawBotCommandPrompt:     true,
+		clawBotCommandRegenerate: true,
+	})
+
+	service.handleMenuCommand(context.Background(), cfg, "wx-user", "")
+
+	state.mu.Lock()
+	defer state.mu.Unlock()
+
+	if len(state.sendTexts) != 1 {
+		t.Fatalf("send text count = %d, want 1", len(state.sendTexts))
+	}
+	reply := state.sendTexts[0]
+	if strings.Contains(reply, "/new 开始新聊天") || strings.Contains(reply, "/rename <标题>") || strings.Contains(reply, "/delete <序号|current>") {
+		t.Fatalf("menu reply = %q, want disabled commands omitted", reply)
+	}
+	if !strings.Contains(reply, "/ls 查看当前人设下的会话列表") || !strings.Contains(reply, "/menu 查看此菜单") {
+		t.Fatalf("menu reply = %q, want enabled commands retained", reply)
 	}
 }
 

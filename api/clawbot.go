@@ -36,17 +36,18 @@ const (
 )
 
 type ClawBotSettingsResponse struct {
-	Enabled     bool   `json:"enabled"`
-	BaseURL     string `json:"base_url"`
-	BotToken    string `json:"bot_token,omitempty"`
-	HasBotToken bool   `json:"has_bot_token"`
-	ILinkUserID string `json:"ilink_user_id,omitempty"`
-	PromptID    string `json:"prompt_id,omitempty"`
-	PromptName  string `json:"prompt_name,omitempty"`
-	Status      string `json:"status"`
-	Polling     bool   `json:"polling"`
-	LastError   string `json:"last_error,omitempty"`
-	LastErrorAt string `json:"last_error_at,omitempty"`
+	Enabled            bool            `json:"enabled"`
+	BaseURL            string          `json:"base_url"`
+	BotToken           string          `json:"bot_token,omitempty"`
+	HasBotToken        bool            `json:"has_bot_token"`
+	ILinkUserID        string          `json:"ilink_user_id,omitempty"`
+	PromptID           string          `json:"prompt_id,omitempty"`
+	PromptName         string          `json:"prompt_name,omitempty"`
+	CommandPermissions map[string]bool `json:"command_permissions"`
+	Status             string          `json:"status"`
+	Polling            bool            `json:"polling"`
+	LastError          string          `json:"last_error,omitempty"`
+	LastErrorAt        string          `json:"last_error_at,omitempty"`
 }
 
 type ClawBotQRCodeStartResponse struct {
@@ -299,16 +300,17 @@ func (s *ClawBotService) GetSettings() (*ClawBotSettingsResponse, error) {
 	}
 
 	resp := &ClawBotSettingsResponse{
-		Enabled:     cfg.Enabled,
-		BaseURL:     cfg.BaseURL,
-		BotToken:    maskClawBotSecret(cfg.BotToken),
-		HasBotToken: strings.TrimSpace(cfg.BotToken) != "",
-		ILinkUserID: cfg.ILinkUserID,
-		PromptID:    cfg.PromptID,
-		PromptName:  promptName,
-		Status:      status,
-		Polling:     polling,
-		LastError:   lastError,
+		Enabled:            cfg.Enabled,
+		BaseURL:            cfg.BaseURL,
+		BotToken:           maskClawBotSecret(cfg.BotToken),
+		HasBotToken:        strings.TrimSpace(cfg.BotToken) != "",
+		ILinkUserID:        cfg.ILinkUserID,
+		PromptID:           cfg.PromptID,
+		PromptName:         promptName,
+		CommandPermissions: config.NormalizeClawBotCommandPermissions(cfg.CommandPermissions),
+		Status:             status,
+		Polling:            polling,
+		LastError:          lastError,
 	}
 	if !lastErrorAt.IsZero() {
 		resp.LastErrorAt = lastErrorAt.Format(time.RFC3339)
@@ -379,6 +381,14 @@ func (s *ClawBotService) handleIncomingMessage(ctx context.Context, cfg config.C
 		if escapedText, ok := unescapeClawBotLiteralCommandText(text); ok {
 			text = escapedText
 		} else if command, ok := parseClawBotCommand(text); ok {
+			if !isKnownClawBotCommand(command.Name) {
+				s.sendCommandReply(ctx, cfg, userID, formatUnknownClawBotCommandReply(cfg, command.Name), "unknown command")
+				return
+			}
+			if !isClawBotCommandAllowed(cfg, command.Name) {
+				s.sendCommandReply(ctx, cfg, userID, formatDisabledClawBotCommandReply(cfg, command.Name), "disabled command")
+				return
+			}
 			if command.Name == clawBotCommandRegenerate {
 				s.handleRegenerateCommand(ctx, cfg, userID, command.Args)
 				return
@@ -417,8 +427,6 @@ func (s *ClawBotService) handleIncomingMessage(ctx context.Context, cfg config.C
 				s.handlePromptCommand(ctx, cfg, userID, command.Args)
 				return
 			}
-			s.sendCommandReply(ctx, cfg, userID, formatUnknownClawBotCommandReply(command.Name), "unknown command")
-			return
 		}
 	}
 	if s.hasExclusiveOperation(userID) {
@@ -498,7 +506,7 @@ func (s *ClawBotService) handleMenuCommand(ctx context.Context, cfg config.ClawB
 		return
 	}
 
-	s.sendCommandReply(ctx, cfg, userID, s.formatMenuReply(userID, cfg.PromptID), "menu reply")
+	s.sendCommandReply(ctx, cfg, userID, s.formatMenuReply(userID, cfg), "menu reply")
 }
 
 func (s *ClawBotService) handleListCommand(ctx context.Context, cfg config.ClawBotConfig, userID, args string) {
@@ -508,7 +516,7 @@ func (s *ClawBotService) handleListCommand(ctx context.Context, cfg config.ClawB
 	}
 
 	sessions := s.listSessionsForUser(userID, cfg.PromptID)
-	reply := s.formatSessionListReply(userID, cfg.PromptID, sessions)
+	reply := s.formatSessionListReply(userID, cfg, sessions)
 	s.sendCommandReply(ctx, cfg, userID, reply, "list reply")
 }
 
@@ -521,7 +529,7 @@ func (s *ClawBotService) handleCheckoutCommand(ctx context.Context, cfg config.C
 
 	sessions := s.listSessionsForUser(userID, cfg.PromptID)
 	if len(sessions) == 0 {
-		reply := fmt.Sprintf("当前人设 %s 暂无可切换的会话，可先发送消息或使用 /new 开始新会话。", s.getPromptDisplayName(cfg.PromptID))
+		reply := fmt.Sprintf("当前人设 %s 暂无可切换的会话，%s", s.getPromptDisplayName(cfg.PromptID), formatClawBotStartChatHint(cfg))
 		s.sendCommandReply(ctx, cfg, userID, reply, "checkout empty")
 		return
 	}
@@ -566,7 +574,7 @@ func (s *ClawBotService) handleRenameCommand(ctx context.Context, cfg config.Cla
 
 	session, ok := s.getCurrentSessionForUser(userID, cfg.PromptID)
 	if !ok {
-		reply := "当前没有可重命名的会话，可先发送消息或使用 /new 开始新会话。"
+		reply := "当前没有可重命名的会话，" + formatClawBotStartChatHint(cfg)
 		s.sendCommandReply(ctx, cfg, userID, reply, "rename missing session")
 		return
 	}
@@ -592,7 +600,7 @@ func (s *ClawBotService) handleDeleteCommand(ctx context.Context, cfg config.Cla
 	if isClawBotCurrentSelector(selector) {
 		record, ok := s.getCurrentSessionForUser(userID, cfg.PromptID)
 		if !ok {
-			reply := "当前没有可删除的会话，可先发送消息或使用 /new 开始新会话。"
+			reply := "当前没有可删除的会话，" + formatClawBotStartChatHint(cfg)
 			s.sendCommandReply(ctx, cfg, userID, reply, "delete missing current session")
 			return
 		}
@@ -607,7 +615,7 @@ func (s *ClawBotService) handleDeleteCommand(ctx context.Context, cfg config.Cla
 	} else {
 		sessions := s.listSessionsForUser(userID, cfg.PromptID)
 		if len(sessions) == 0 {
-			reply := fmt.Sprintf("当前人设 %s 暂无可删除的会话，可先发送消息或使用 /new 开始新会话。", s.getPromptDisplayName(cfg.PromptID))
+			reply := fmt.Sprintf("当前人设 %s 暂无可删除的会话，%s", s.getPromptDisplayName(cfg.PromptID), formatClawBotStartChatHint(cfg))
 			s.sendCommandReply(ctx, cfg, userID, reply, "delete empty")
 			return
 		}
@@ -741,7 +749,7 @@ func (s *ClawBotService) handleRegenerateCommand(ctx context.Context, cfg config
 func (s *ClawBotService) processRegenerateCommand(ctx context.Context, cfg config.ClawBotConfig, userID string) {
 	session, ok := s.getCurrentSessionForUser(userID, cfg.PromptID)
 	if !ok {
-		reply := "当前没有可重新生成的会话，可先发送消息或使用 /new 开始新会话。"
+		reply := "当前没有可重新生成的会话，" + formatClawBotStartChatHint(cfg)
 		s.sendCommandReply(ctx, cfg, userID, reply, "regenerate missing session")
 		return
 	}
@@ -1354,7 +1362,48 @@ func (s *ClawBotService) listPrompts() []storage.Prompt {
 	return prompts
 }
 
-func (s *ClawBotService) formatMenuReply(userID, promptID string) string {
+func isKnownClawBotCommand(name string) bool {
+	switch strings.ToLower(strings.TrimPrefix(strings.TrimSpace(name), "/")) {
+	case clawBotCommandMenu, clawBotCommandNew, clawBotCommandList, clawBotCommandCheckout, clawBotCommandRename, clawBotCommandDelete, clawBotCommandPrompt, clawBotCommandRegenerate:
+		return true
+	default:
+		return false
+	}
+}
+
+func isClawBotCommandAllowed(cfg config.ClawBotConfig, name string) bool {
+	name = strings.ToLower(strings.TrimPrefix(strings.TrimSpace(name), "/"))
+	if name == clawBotCommandMenu {
+		return true
+	}
+	permissions := config.NormalizeClawBotCommandPermissions(cfg.CommandPermissions)
+	allowed, ok := permissions[name]
+	if !ok {
+		return true
+	}
+	return allowed
+}
+
+func listEnabledClawBotCommands(cfg config.ClawBotConfig) []string {
+	commands := []string{clawBotCommandMenu}
+	for _, command := range listClawBotKnownCommands() {
+		if !isClawBotCommandAllowed(cfg, command) {
+			continue
+		}
+		commands = append(commands, command)
+	}
+	return commands
+}
+
+func formatClawBotStartChatHint(cfg config.ClawBotConfig) string {
+	if isClawBotCommandAllowed(cfg, clawBotCommandNew) {
+		return "可先发送消息或使用 /new 开始新会话。"
+	}
+	return "可先直接发送消息开始新会话。"
+}
+
+func (s *ClawBotService) formatMenuReply(userID string, cfg config.ClawBotConfig) string {
+	promptID := cfg.PromptID
 	currentSession := "未开始"
 	if session, ok := s.getCurrentSessionForUser(userID, promptID); ok {
 		currentSession = formatClawBotSessionTitle(session.Title)
@@ -1364,24 +1413,39 @@ func (s *ClawBotService) formatMenuReply(userID, promptID string) string {
 	builder.WriteString("[ClawBot 菜单]")
 	fmt.Fprintf(&builder, "\n当前人设：%s", s.getPromptDisplayName(promptID))
 	fmt.Fprintf(&builder, "\n当前会话：%s", currentSession)
-	builder.WriteString("\n/new 开始新聊天")
-	builder.WriteString("\n/ls 查看当前人设下的会话列表")
-	builder.WriteString("\n/checkout <序号> 切换会话")
-	builder.WriteString("\n/re 重新生成当前会话的上一轮回复")
-	builder.WriteString("\n/rename <标题> 重命名当前会话")
-	builder.WriteString("\n/delete <序号|current> 删除会话")
-	builder.WriteString("\n/prompt 查看当前人设与用法")
-	builder.WriteString("\n/prompt ls 查看人设列表")
-	builder.WriteString("\n/prompt <序号|id> 切换人设")
 	builder.WriteString("\n/menu 查看此菜单")
-	builder.WriteString("\n注意：/prompt 会切换整个 ClawBot 渠道的人设。")
+	if isClawBotCommandAllowed(cfg, clawBotCommandNew) {
+		builder.WriteString("\n/new 开始新聊天")
+	}
+	if isClawBotCommandAllowed(cfg, clawBotCommandList) {
+		builder.WriteString("\n/ls 查看当前人设下的会话列表")
+	}
+	if isClawBotCommandAllowed(cfg, clawBotCommandCheckout) {
+		builder.WriteString("\n/checkout <序号> 切换会话")
+	}
+	if isClawBotCommandAllowed(cfg, clawBotCommandRegenerate) {
+		builder.WriteString("\n/re 重新生成当前会话的上一轮回复")
+	}
+	if isClawBotCommandAllowed(cfg, clawBotCommandRename) {
+		builder.WriteString("\n/rename <标题> 重命名当前会话")
+	}
+	if isClawBotCommandAllowed(cfg, clawBotCommandDelete) {
+		builder.WriteString("\n/delete <序号|current> 删除会话")
+	}
+	if isClawBotCommandAllowed(cfg, clawBotCommandPrompt) {
+		builder.WriteString("\n/prompt 查看当前人设与用法")
+		builder.WriteString("\n/prompt ls 查看人设列表")
+		builder.WriteString("\n/prompt <序号|id> 切换人设")
+		builder.WriteString("\n注意：/prompt 会切换整个 ClawBot 渠道的人设。")
+	}
 	return builder.String()
 }
 
-func (s *ClawBotService) formatSessionListReply(userID, promptID string, sessions []storage.ChatSession) string {
+func (s *ClawBotService) formatSessionListReply(userID string, cfg config.ClawBotConfig, sessions []storage.ChatSession) string {
+	promptID := cfg.PromptID
 	promptName := s.getPromptDisplayName(promptID)
 	if len(sessions) == 0 {
-		return fmt.Sprintf("当前人设：%s\n暂无会话，可先发送消息或使用 /new 开始新会话。", promptName)
+		return fmt.Sprintf("当前人设：%s\n暂无会话，%s", promptName, formatClawBotStartChatHint(cfg))
 	}
 
 	activeID, _ := s.getActiveSessionID(userID)
@@ -1395,10 +1459,18 @@ func (s *ClawBotService) formatSessionListReply(userID, promptID string, session
 		fmt.Fprintf(&builder, "\n%s %d. %s", marker, index+1, formatClawBotSessionTitle(session.Title))
 		fmt.Fprintf(&builder, "\n   更新于 %s | ID %s", formatClawBotSessionTime(session.UpdatedAt), shortClawBotSessionID(session.ID))
 	}
-	builder.WriteString("\n发送 /checkout <序号> 切换会话，例如 /checkout 2")
-	builder.WriteString("\n发送 /re 重新生成当前会话的上一轮回复")
-	builder.WriteString("\n发送 /rename <标题> 重命名当前会话")
-	builder.WriteString("\n发送 /delete <序号|current> 删除会话")
+	if isClawBotCommandAllowed(cfg, clawBotCommandCheckout) {
+		builder.WriteString("\n发送 /checkout <序号> 切换会话，例如 /checkout 2")
+	}
+	if isClawBotCommandAllowed(cfg, clawBotCommandRegenerate) {
+		builder.WriteString("\n发送 /re 重新生成当前会话的上一轮回复")
+	}
+	if isClawBotCommandAllowed(cfg, clawBotCommandRename) {
+		builder.WriteString("\n发送 /rename <标题> 重命名当前会话")
+	}
+	if isClawBotCommandAllowed(cfg, clawBotCommandDelete) {
+		builder.WriteString("\n发送 /delete <序号|current> 删除会话")
+	}
 	builder.WriteString("\n发送 /menu 查看全部命令")
 	return builder.String()
 }
@@ -1673,7 +1745,6 @@ func unescapeClawBotLiteralCommandText(text string) (string, bool) {
 
 func listClawBotKnownCommands() []string {
 	return []string{
-		clawBotCommandMenu,
 		clawBotCommandNew,
 		clawBotCommandList,
 		clawBotCommandCheckout,
@@ -1684,12 +1755,12 @@ func listClawBotKnownCommands() []string {
 	}
 }
 
-func formatUnknownClawBotCommandReply(name string) string {
+func formatUnknownClawBotCommandReply(cfg config.ClawBotConfig, name string) string {
 	normalized := strings.TrimPrefix(strings.TrimSpace(name), "/")
 	commandText := "/" + normalized
 	var builder strings.Builder
 	fmt.Fprintf(&builder, "未知命令：%s", commandText)
-	if suggestion := suggestClawBotCommand(normalized); suggestion != "" {
+	if suggestion := suggestClawBotCommand(listEnabledClawBotCommands(cfg), normalized); suggestion != "" {
 		fmt.Fprintf(&builder, "\n你是不是想输入 /%s ？", suggestion)
 	}
 	builder.WriteString("\n发送 /menu 查看可用命令")
@@ -1697,7 +1768,18 @@ func formatUnknownClawBotCommandReply(name string) string {
 	return builder.String()
 }
 
-func suggestClawBotCommand(name string) string {
+func formatDisabledClawBotCommandReply(cfg config.ClawBotConfig, name string) string {
+	commandText := "/" + strings.TrimPrefix(strings.TrimSpace(name), "/")
+	var builder strings.Builder
+	fmt.Fprintf(&builder, "命令已禁用：%s", commandText)
+	builder.WriteString("\n发送 /menu 查看当前可用命令")
+	if suggestion := suggestClawBotCommand(listEnabledClawBotCommands(cfg), name); suggestion != "" {
+		fmt.Fprintf(&builder, "\n可用的相近命令：/%s", suggestion)
+	}
+	return builder.String()
+}
+
+func suggestClawBotCommand(candidates []string, name string) string {
 	name = strings.ToLower(strings.TrimPrefix(strings.TrimSpace(name), "/"))
 	if name == "" {
 		return ""
@@ -1705,7 +1787,7 @@ func suggestClawBotCommand(name string) string {
 
 	best := ""
 	bestDistance := -1
-	for _, candidate := range listClawBotKnownCommands() {
+	for _, candidate := range candidates {
 		if strings.HasPrefix(candidate, name) || strings.HasPrefix(name, candidate) {
 			return candidate
 		}

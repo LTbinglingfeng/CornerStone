@@ -9,11 +9,12 @@ import (
 )
 
 type ClawBotSettingsRequest struct {
-	Enabled       bool   `json:"enabled"`
-	BaseURL       string `json:"base_url"`
-	BotToken      string `json:"bot_token,omitempty"`
-	PromptID      string `json:"prompt_id,omitempty"`
-	ClearBotToken bool   `json:"clear_bot_token,omitempty"`
+	Enabled            bool            `json:"enabled"`
+	BaseURL            string          `json:"base_url"`
+	BotToken           string          `json:"bot_token,omitempty"`
+	PromptID           string          `json:"prompt_id,omitempty"`
+	ClearBotToken      bool            `json:"clear_bot_token,omitempty"`
+	CommandPermissions map[string]bool `json:"command_permissions,omitempty"`
 }
 
 type ClawBotQRCodeStartRequest struct {
@@ -60,6 +61,9 @@ func (h *Handler) handleClawBotSettings(w http.ResponseWriter, r *http.Request) 
 			cfg.BaseURL = config.DefaultClawBotBaseURL
 		}
 		cfg.PromptID = promptID
+		if req.CommandPermissions != nil {
+			cfg.CommandPermissions = config.NormalizeClawBotCommandPermissions(req.CommandPermissions)
+		}
 
 		switch {
 		case req.ClearBotToken:

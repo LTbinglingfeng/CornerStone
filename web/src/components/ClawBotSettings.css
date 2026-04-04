@@ -219,6 +219,53 @@
     border-radius: 10px;
 }
 
+/* ── 命令权限 ── */
+.clawbot-command-permissions-hint {
+    margin-bottom: 14px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.clawbot-command-permissions {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.clawbot-command-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.clawbot-command-copy {
+    min-width: 0;
+    flex: 1;
+}
+
+.clawbot-command-label {
+    color: var(--text-primary);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.4;
+}
+
+.clawbot-command-desc {
+    margin-top: 4px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.clawbot-command-toggle {
+    flex-shrink: 0;
+}
+
 /* ── Token 管理区 ── */
 .clawbot-token-row {
     display: flex;
@@ -376,4 +423,15 @@
     color: var(--text-secondary);
     font-size: 12px;
     line-height: 1.6;
+}
+
+@media (max-width: 640px) {
+    .clawbot-command-row {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .clawbot-command-toggle {
+        width: 100%;
+    }
 }
