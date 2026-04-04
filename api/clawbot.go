@@ -23,9 +23,13 @@ const (
 	clawBotReplyChunkMaxRune = 2000
 	clawBotProcessTimeout    = 2 * time.Minute
 
+	clawBotCommandMenu       = "menu"
 	clawBotCommandNew        = "new"
 	clawBotCommandList       = "ls"
 	clawBotCommandCheckout   = "checkout"
+	clawBotCommandRename     = "rename"
+	clawBotCommandDelete     = "delete"
+	clawBotCommandPrompt     = "prompt"
 	clawBotCommandRegenerate = "re"
 
 	clawBotExclusiveOpRegenerate = "regenerate"
@@ -362,6 +366,7 @@ func (s *ClawBotService) handleIncomingMessage(ctx context.Context, cfg config.C
 	if userID == "" {
 		return
 	}
+	cfg = s.handler.configManager.GetClawBotConfig()
 
 	text := strings.TrimSpace(client.ExtractTextFromClawBotMessage(msg))
 	imageItems := client.ExtractImageItemsFromClawBotMessage(msg)
@@ -381,6 +386,10 @@ func (s *ClawBotService) handleIncomingMessage(ctx context.Context, cfg config.C
 				return
 			}
 			switch command.Name {
+			case clawBotCommandMenu:
+				s.clearPendingReply(userID)
+				s.handleMenuCommand(ctx, cfg, userID, command.Args)
+				return
 			case clawBotCommandNew:
 				if command.Args == "" {
 					s.clearPendingReply(userID)
@@ -394,6 +403,18 @@ func (s *ClawBotService) handleIncomingMessage(ctx context.Context, cfg config.C
 			case clawBotCommandCheckout:
 				s.clearPendingReply(userID)
 				s.handleCheckoutCommand(ctx, cfg, userID, command.Args)
+				return
+			case clawBotCommandRename:
+				s.clearPendingReply(userID)
+				s.handleRenameCommand(ctx, cfg, userID, command.Args)
+				return
+			case clawBotCommandDelete:
+				s.clearPendingReply(userID)
+				s.handleDeleteCommand(ctx, cfg, userID, command.Args)
+				return
+			case clawBotCommandPrompt:
+				s.clearPendingReply(userID)
+				s.handlePromptCommand(ctx, cfg, userID, command.Args)
 				return
 			}
 		}
@@ -464,6 +485,15 @@ func (s *ClawBotService) handleNewCommand(ctx context.Context, cfg config.ClawBo
 	}
 }
 
+func (s *ClawBotService) handleMenuCommand(ctx context.Context, cfg config.ClawBotConfig, userID, args string) {
+	if strings.TrimSpace(args) != "" {
+		s.sendCommandReply(ctx, cfg, userID, "用法：/menu", "menu usage")
+		return
+	}
+
+	s.sendCommandReply(ctx, cfg, userID, s.formatMenuReply(userID, cfg.PromptID), "menu reply")
+}
+
 func (s *ClawBotService) handleListCommand(ctx context.Context, cfg config.ClawBotConfig, userID, args string) {
 	if strings.TrimSpace(args) != "" {
 		s.sendCommandReply(ctx, cfg, userID, "用法：/ls", "list usage")
@@ -476,9 +506,7 @@ func (s *ClawBotService) handleListCommand(ctx context.Context, cfg config.ClawB
 }
 
 func (s *ClawBotService) handleCheckoutCommand(ctx context.Context, cfg config.ClawBotConfig, userID, args string) {
-	selector := strings.Trim(args, clawBotCommandTrimChars)
-	selector = strings.Trim(selector, clawBotCommandTrailingPunctuation)
-	selector = strings.Trim(selector, clawBotCommandTrimChars)
+	selector := normalizeClawBotCommandSelector(args)
 	if selector == "" {
 		s.sendCommandReply(ctx, cfg, userID, "用法：/checkout <序号>\n可先发送 /ls 查看当前人设下的会话列表。", "checkout usage")
 		return
@@ -518,6 +546,157 @@ func (s *ClawBotService) handleCheckoutCommand(ctx context.Context, cfg config.C
 
 	reply := fmt.Sprintf("已切换到会话 %d：%s", index+1, title)
 	s.sendCommandReply(ctx, cfg, userID, reply, "checkout reply")
+}
+
+func (s *ClawBotService) handleRenameCommand(ctx context.Context, cfg config.ClawBotConfig, userID, args string) {
+	title := strings.TrimSpace(args)
+	if title == "" {
+		s.sendCommandReply(ctx, cfg, userID, "用法：/rename <标题>", "rename usage")
+		return
+	}
+
+	session, ok := s.getCurrentSessionForUser(userID, cfg.PromptID)
+	if !ok {
+		reply := "当前没有可重命名的会话，可先发送消息或使用 /new 开始新会话。"
+		s.sendCommandReply(ctx, cfg, userID, reply, "rename missing session")
+		return
+	}
+
+	if err := s.handler.chatManager.UpdateSessionTitle(session.SessionID, title); err != nil {
+		logging.Errorf("clawbot rename session failed: user=%s session=%s err=%v", userID, session.SessionID, err)
+		s.setLastError(err)
+		s.sendCommandReply(ctx, cfg, userID, "暂时无法重命名会话，请稍后再试。", "rename failure")
+		return
+	}
+
+	s.sendCommandReply(ctx, cfg, userID, fmt.Sprintf("已将当前会话重命名为：%s", title), "rename reply")
+}
+
+func (s *ClawBotService) handleDeleteCommand(ctx context.Context, cfg config.ClawBotConfig, userID, args string) {
+	selector := normalizeClawBotCommandSelector(args)
+	if selector == "" {
+		s.sendCommandReply(ctx, cfg, userID, "用法：/delete <序号|current>\n可先发送 /ls 查看当前人设下的会话列表。", "delete usage")
+		return
+	}
+
+	var target storage.ChatSession
+	if isClawBotCurrentSelector(selector) {
+		record, ok := s.getCurrentSessionForUser(userID, cfg.PromptID)
+		if !ok {
+			reply := "当前没有可删除的会话，可先发送消息或使用 /new 开始新会话。"
+			s.sendCommandReply(ctx, cfg, userID, reply, "delete missing current session")
+			return
+		}
+		target = storage.ChatSession{
+			ID:         record.SessionID,
+			Title:      record.Title,
+			PromptID:   record.PromptID,
+			PromptName: record.PromptName,
+			CreatedAt:  record.CreatedAt,
+			UpdatedAt:  record.UpdatedAt,
+		}
+	} else {
+		sessions := s.listSessionsForUser(userID, cfg.PromptID)
+		if len(sessions) == 0 {
+			reply := fmt.Sprintf("当前人设 %s 暂无可删除的会话，可先发送消息或使用 /new 开始新会话。", s.getPromptDisplayName(cfg.PromptID))
+			s.sendCommandReply(ctx, cfg, userID, reply, "delete empty")
+			return
+		}
+
+		session, _, err := resolveClawBotSessionSelector(sessions, selector)
+		if err != nil {
+			reply := "未找到对应会话，可先发送 /ls 查看当前人设下的会话列表。"
+			if _, convErr := strconv.Atoi(selector); convErr == nil {
+				reply = fmt.Sprintf("会话序号超出范围，当前共 %d 个会话。可先发送 /ls 查看列表。", len(sessions))
+			}
+			s.sendCommandReply(ctx, cfg, userID, reply, "delete not found")
+			return
+		}
+		target = session
+	}
+
+	activeID, hasActive := s.getActiveSessionID(userID)
+	if err := s.handler.chatManager.DeleteSession(target.ID); err != nil {
+		logging.Errorf("clawbot delete session failed: user=%s session=%s err=%v", userID, target.ID, err)
+		s.setLastError(err)
+		s.sendCommandReply(ctx, cfg, userID, "暂时无法删除会话，请稍后再试。", "delete failure")
+		return
+	}
+
+	reply := fmt.Sprintf("已删除会话：%s", formatClawBotSessionTitle(target.Title))
+	if hasActive && activeID == target.ID {
+		if next, ok := s.findLatestSessionForUser(userID, cfg.PromptID); ok {
+			s.touchActiveSession(userID, next.SessionID)
+			reply += fmt.Sprintf("\n已切换到最新会话：%s", formatClawBotSessionTitle(next.Title))
+		} else {
+			s.clearActiveSession(userID, target.ID)
+			reply += "\n当前人设下已无剩余会话，下一条消息会开始新会话。"
+		}
+	}
+
+	s.sendCommandReply(ctx, cfg, userID, reply, "delete reply")
+}
+
+func (s *ClawBotService) handlePromptCommand(ctx context.Context, cfg config.ClawBotConfig, userID, args string) {
+	selector := normalizeClawBotCommandSelector(args)
+	if selector == "" {
+		reply := fmt.Sprintf("当前人设：%s\n发送 /prompt ls 查看人设列表\n发送 /prompt <序号|id> 切换人设\n发送 /prompt default 切换到默认人设\n注意：此命令会切换整个 ClawBot 渠道的人设。", s.getPromptDisplayName(cfg.PromptID))
+		s.sendCommandReply(ctx, cfg, userID, reply, "prompt usage")
+		return
+	}
+
+	if isClawBotListSelector(selector) {
+		s.sendCommandReply(ctx, cfg, userID, s.formatPromptListReply(cfg.PromptID), "prompt list")
+		return
+	}
+
+	prompts := s.listPrompts()
+	prompt, _, useDefault, err := resolveClawBotPromptSelector(prompts, selector)
+	if err != nil {
+		reply := "未找到对应人设，可先发送 /prompt ls 查看列表。"
+		if _, convErr := strconv.Atoi(selector); convErr == nil {
+			reply = fmt.Sprintf("人设序号超出范围，当前共 %d 个自定义人设。可先发送 /prompt ls 查看列表。", len(prompts))
+		}
+		s.sendCommandReply(ctx, cfg, userID, reply, "prompt not found")
+		return
+	}
+
+	targetPromptID := ""
+	targetPromptName := "默认"
+	if !useDefault {
+		targetPromptID = prompt.ID
+		targetPromptName = formatClawBotPromptName(prompt)
+	}
+
+	if strings.TrimSpace(cfg.PromptID) == targetPromptID {
+		reply := fmt.Sprintf("当前 ClawBot 已在使用人设：%s", targetPromptName)
+		s.sendCommandReply(ctx, cfg, userID, reply, "prompt noop")
+		return
+	}
+
+	cfg.PromptID = targetPromptID
+	if err := s.handler.configManager.UpdateClawBotConfig(cfg); err != nil {
+		logging.Errorf("clawbot update prompt failed: user=%s prompt=%s err=%v", userID, targetPromptID, err)
+		s.setLastError(err)
+		s.sendCommandReply(ctx, cfg, userID, "暂时无法切换人设，请稍后再试。", "prompt update failure")
+		return
+	}
+
+	reply := fmt.Sprintf("已切换 ClawBot 当前人设为：%s", targetPromptName)
+	if session, ok := s.findLatestSessionForUser(userID, targetPromptID); ok {
+		s.touchActiveSession(userID, session.SessionID)
+		reply += fmt.Sprintf("\n已定位到该人设最近会话：%s", formatClawBotSessionTitle(session.Title))
+	} else {
+		if activeID, ok := s.getActiveSessionID(userID); ok {
+			if record, exists := s.handler.chatManager.GetSession(activeID); !exists || !s.sessionMatchesUserAndPrompt(record, userID, targetPromptID) {
+				s.clearActiveSession(userID, activeID)
+			}
+		}
+		reply += "\n该人设暂无会话，下一条消息会开始新会话。"
+	}
+	reply += "\n注意：此变更对当前 ClawBot 渠道生效。"
+
+	s.sendCommandReply(ctx, cfg, userID, reply, "prompt reply")
 }
 
 func (s *ClawBotService) handleRegenerateCommand(ctx context.Context, cfg config.ClawBotConfig, userID, args string) {
@@ -1145,6 +1324,47 @@ func (s *ClawBotService) sessionMatchesUserAndPrompt(session *storage.ChatRecord
 	return clawBotSessionMatchesPrompt(session.PromptID, promptID)
 }
 
+func (s *ClawBotService) listPrompts() []storage.Prompt {
+	if s.handler == nil || s.handler.promptManager == nil {
+		return nil
+	}
+
+	prompts := s.handler.promptManager.List()
+	sort.Slice(prompts, func(i, j int) bool {
+		left := formatClawBotPromptName(prompts[i])
+		right := formatClawBotPromptName(prompts[j])
+		if strings.EqualFold(left, right) {
+			return prompts[i].ID < prompts[j].ID
+		}
+		return strings.ToLower(left) < strings.ToLower(right)
+	})
+	return prompts
+}
+
+func (s *ClawBotService) formatMenuReply(userID, promptID string) string {
+	currentSession := "未开始"
+	if session, ok := s.getCurrentSessionForUser(userID, promptID); ok {
+		currentSession = formatClawBotSessionTitle(session.Title)
+	}
+
+	var builder strings.Builder
+	builder.WriteString("[ClawBot 菜单]")
+	fmt.Fprintf(&builder, "\n当前人设：%s", s.getPromptDisplayName(promptID))
+	fmt.Fprintf(&builder, "\n当前会话：%s", currentSession)
+	builder.WriteString("\n/new 开始新聊天")
+	builder.WriteString("\n/ls 查看当前人设下的会话列表")
+	builder.WriteString("\n/checkout <序号> 切换会话")
+	builder.WriteString("\n/re 重新生成当前会话的上一轮回复")
+	builder.WriteString("\n/rename <标题> 重命名当前会话")
+	builder.WriteString("\n/delete <序号|current> 删除会话")
+	builder.WriteString("\n/prompt 查看当前人设与用法")
+	builder.WriteString("\n/prompt ls 查看人设列表")
+	builder.WriteString("\n/prompt <序号|id> 切换人设")
+	builder.WriteString("\n/menu 查看此菜单")
+	builder.WriteString("\n注意：/prompt 会切换整个 ClawBot 渠道的人设。")
+	return builder.String()
+}
+
 func (s *ClawBotService) formatSessionListReply(userID, promptID string, sessions []storage.ChatSession) string {
 	promptName := s.getPromptDisplayName(promptID)
 	if len(sessions) == 0 {
@@ -1164,6 +1384,36 @@ func (s *ClawBotService) formatSessionListReply(userID, promptID string, session
 	}
 	builder.WriteString("\n发送 /checkout <序号> 切换会话，例如 /checkout 2")
 	builder.WriteString("\n发送 /re 重新生成当前会话的上一轮回复")
+	builder.WriteString("\n发送 /rename <标题> 重命名当前会话")
+	builder.WriteString("\n发送 /delete <序号|current> 删除会话")
+	builder.WriteString("\n发送 /menu 查看全部命令")
+	return builder.String()
+}
+
+func (s *ClawBotService) formatPromptListReply(currentPromptID string) string {
+	prompts := s.listPrompts()
+
+	var builder strings.Builder
+	fmt.Fprintf(&builder, "当前人设：%s\n人设列表（当前人设以 * 标记）", s.getPromptDisplayName(currentPromptID))
+
+	defaultMarker := " "
+	if strings.TrimSpace(currentPromptID) == "" {
+		defaultMarker = "*"
+	}
+	fmt.Fprintf(&builder, "\n%s 0. 默认", defaultMarker)
+
+	for index, prompt := range prompts {
+		marker := " "
+		if prompt.ID == strings.TrimSpace(currentPromptID) {
+			marker = "*"
+		}
+		fmt.Fprintf(&builder, "\n%s %d. %s", marker, index+1, formatClawBotPromptName(prompt))
+		fmt.Fprintf(&builder, "\n   ID %s", prompt.ID)
+	}
+
+	builder.WriteString("\n发送 /prompt <序号|id> 切换人设，例如 /prompt 1")
+	builder.WriteString("\n发送 /prompt default 切换到默认人设")
+	builder.WriteString("\n注意：此命令会切换整个 ClawBot 渠道的人设。")
 	return builder.String()
 }
 
@@ -1206,6 +1456,20 @@ func (s *ClawBotService) touchActiveSession(userID, sessionID string) {
 		SessionID:  sessionID,
 		LastActive: time.Now(),
 	}
+}
+
+func (s *ClawBotService) clearActiveSession(userID, sessionID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	state, ok := s.activeSessions[userID]
+	if !ok || state == nil {
+		return
+	}
+	if strings.TrimSpace(sessionID) != "" && state.SessionID != sessionID {
+		return
+	}
+	delete(s.activeSessions, userID)
 }
 
 func (s *ClawBotService) setContextToken(userID, contextToken string) {
@@ -1378,8 +1642,34 @@ func isClawBotNewCommand(text string) bool {
 	return ok && command.Name == clawBotCommandNew && command.Args == ""
 }
 
-func resolveClawBotSessionSelector(sessions []storage.ChatSession, selector string) (storage.ChatSession, int, error) {
+func normalizeClawBotCommandSelector(selector string) string {
 	selector = strings.Trim(selector, clawBotCommandTrimChars)
+	selector = strings.Trim(selector, clawBotCommandTrailingPunctuation)
+	return strings.Trim(selector, clawBotCommandTrimChars)
+}
+
+func isClawBotCurrentSelector(selector string) bool {
+	switch strings.ToLower(normalizeClawBotCommandSelector(selector)) {
+	case "current", "cur", "this", "active":
+		return true
+	}
+	switch normalizeClawBotCommandSelector(selector) {
+	case "当前", "本会话", "当前会话":
+		return true
+	}
+	return false
+}
+
+func isClawBotListSelector(selector string) bool {
+	switch strings.ToLower(normalizeClawBotCommandSelector(selector)) {
+	case clawBotCommandList, "list":
+		return true
+	}
+	return false
+}
+
+func resolveClawBotSessionSelector(sessions []storage.ChatSession, selector string) (storage.ChatSession, int, error) {
+	selector = normalizeClawBotCommandSelector(selector)
 	if selector == "" {
 		return storage.ChatSession{}, -1, fmt.Errorf("empty selector")
 	}
@@ -1413,8 +1703,60 @@ func resolveClawBotSessionSelector(sessions []storage.ChatSession, selector stri
 	return storage.ChatSession{}, -1, fmt.Errorf("session not found")
 }
 
+func resolveClawBotPromptSelector(prompts []storage.Prompt, selector string) (storage.Prompt, int, bool, error) {
+	selector = normalizeClawBotCommandSelector(selector)
+	if selector == "" {
+		return storage.Prompt{}, -1, false, fmt.Errorf("empty selector")
+	}
+
+	switch strings.ToLower(selector) {
+	case "0", "default", "none":
+		return storage.Prompt{}, -1, true, nil
+	}
+	switch selector {
+	case "默认":
+		return storage.Prompt{}, -1, true, nil
+	}
+
+	if index, err := strconv.Atoi(selector); err == nil {
+		if index < 1 || index > len(prompts) {
+			return storage.Prompt{}, -1, false, fmt.Errorf("index out of range")
+		}
+		return prompts[index-1], index - 1, false, nil
+	}
+
+	for index, prompt := range prompts {
+		if prompt.ID == selector {
+			return prompt, index, false, nil
+		}
+	}
+
+	matchIndex := -1
+	for index, prompt := range prompts {
+		if strings.EqualFold(strings.TrimSpace(prompt.Name), selector) {
+			if matchIndex >= 0 {
+				return storage.Prompt{}, -1, false, fmt.Errorf("ambiguous prompt selector")
+			}
+			matchIndex = index
+		}
+	}
+	if matchIndex >= 0 {
+		return prompts[matchIndex], matchIndex, false, nil
+	}
+
+	return storage.Prompt{}, -1, false, fmt.Errorf("prompt not found")
+}
+
 func clawBotSessionMatchesPrompt(sessionPromptID, promptID string) bool {
 	return strings.TrimSpace(sessionPromptID) == strings.TrimSpace(promptID)
+}
+
+func formatClawBotPromptName(prompt storage.Prompt) string {
+	name := strings.TrimSpace(prompt.Name)
+	if name != "" {
+		return name
+	}
+	return strings.TrimSpace(prompt.ID)
 }
 
 func formatClawBotSessionTitle(title string) string {

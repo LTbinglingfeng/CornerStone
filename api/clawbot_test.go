@@ -71,6 +71,30 @@ func TestParseClawBotCommand(t *testing.T) {
 			command: clawBotCommand{Name: clawBotCommandRegenerate},
 		},
 		{
+			name:    "menu command",
+			text:    "/menu",
+			ok:      true,
+			command: clawBotCommand{Name: clawBotCommandMenu},
+		},
+		{
+			name:    "rename command",
+			text:    "/rename 新标题",
+			ok:      true,
+			command: clawBotCommand{Name: clawBotCommandRename, Args: "新标题"},
+		},
+		{
+			name:    "delete command",
+			text:    "/delete current",
+			ok:      true,
+			command: clawBotCommand{Name: clawBotCommandDelete, Args: "current"},
+		},
+		{
+			name:    "prompt command",
+			text:    "/prompt ls",
+			ok:      true,
+			command: clawBotCommand{Name: clawBotCommandPrompt, Args: "ls"},
+		},
+		{
 			name: "new command with content",
 			text: "/new hello",
 			ok:   true,
@@ -134,6 +158,49 @@ func TestResolveClawBotSessionSelector(t *testing.T) {
 
 	if _, _, err := resolveClawBotSessionSelector(sessions, "3"); err == nil {
 		t.Fatal("resolveClawBotSessionSelector out of range error = nil, want error")
+	}
+}
+
+func TestResolveClawBotPromptSelector(t *testing.T) {
+	prompts := []storage.Prompt{
+		{ID: "prompt-1", Name: "Alice"},
+		{ID: "prompt-2", Name: "Bob"},
+	}
+
+	prompt, index, useDefault, err := resolveClawBotPromptSelector(prompts, "2")
+	if err != nil {
+		t.Fatalf("resolveClawBotPromptSelector index err = %v", err)
+	}
+	if useDefault || index != 1 || prompt.ID != "prompt-2" {
+		t.Fatalf("resolveClawBotPromptSelector index = (%v, %d, %s), want (false, 1, prompt-2)", useDefault, index, prompt.ID)
+	}
+
+	prompt, index, useDefault, err = resolveClawBotPromptSelector(prompts, "prompt-1")
+	if err != nil {
+		t.Fatalf("resolveClawBotPromptSelector id err = %v", err)
+	}
+	if useDefault || index != 0 || prompt.ID != "prompt-1" {
+		t.Fatalf("resolveClawBotPromptSelector id = (%v, %d, %s), want (false, 0, prompt-1)", useDefault, index, prompt.ID)
+	}
+
+	prompt, index, useDefault, err = resolveClawBotPromptSelector(prompts, "Bob")
+	if err != nil {
+		t.Fatalf("resolveClawBotPromptSelector name err = %v", err)
+	}
+	if useDefault || index != 1 || prompt.ID != "prompt-2" {
+		t.Fatalf("resolveClawBotPromptSelector name = (%v, %d, %s), want (false, 1, prompt-2)", useDefault, index, prompt.ID)
+	}
+
+	_, index, useDefault, err = resolveClawBotPromptSelector(prompts, "default")
+	if err != nil {
+		t.Fatalf("resolveClawBotPromptSelector default err = %v", err)
+	}
+	if !useDefault || index != -1 {
+		t.Fatalf("resolveClawBotPromptSelector default = (%v, %d), want (true, -1)", useDefault, index)
+	}
+
+	if _, _, _, err := resolveClawBotPromptSelector(prompts, "3"); err == nil {
+		t.Fatal("resolveClawBotPromptSelector out of range error = nil, want error")
 	}
 }
 
@@ -363,6 +430,152 @@ func waitForAssistantMessageContent(t *testing.T, chatManager *storage.ChatManag
 
 	record, _ := chatManager.GetSession(sessionID)
 	t.Fatalf("assistant message did not become %q in time, got %#v", want, record.Messages)
+}
+
+func TestHandleMenuCommand_IncludesNewCommands(t *testing.T) {
+	server, state := newClawBotTestServer(t, "unused")
+	defer server.Close()
+
+	service := newTestClawBotService(t, server.URL)
+	cfg := service.handler.configManager.GetClawBotConfig()
+
+	service.handleMenuCommand(context.Background(), cfg, "wx-user", "")
+
+	state.mu.Lock()
+	defer state.mu.Unlock()
+
+	if len(state.sendTexts) != 1 {
+		t.Fatalf("send text count = %d, want 1", len(state.sendTexts))
+	}
+	reply := state.sendTexts[0]
+	for _, want := range []string{"/menu", "/rename <标题>", "/delete <序号|current>", "/prompt ls"} {
+		if !strings.Contains(reply, want) {
+			t.Fatalf("menu reply = %q, want substring %q", reply, want)
+		}
+	}
+}
+
+func TestHandleRenameCommand_UpdatesCurrentSessionTitle(t *testing.T) {
+	server, state := newClawBotTestServer(t, "unused")
+	defer server.Close()
+
+	service := newTestClawBotService(t, server.URL)
+	cfg := service.handler.configManager.GetClawBotConfig()
+
+	userID := "wx-user"
+	sessionID := generateClawBotSessionID(userID)
+	session, err := service.handler.chatManager.CreateSession(sessionID, "Old Title", "", "")
+	if err != nil {
+		t.Fatalf("CreateSession err = %v", err)
+	}
+	service.touchActiveSession(userID, session.SessionID)
+
+	service.handleRenameCommand(context.Background(), cfg, userID, "New Title")
+
+	state.mu.Lock()
+	if len(state.sendTexts) != 1 {
+		state.mu.Unlock()
+		t.Fatalf("send text count = %d, want 1", len(state.sendTexts))
+	}
+	if !strings.Contains(state.sendTexts[0], "New Title") {
+		text := state.sendTexts[0]
+		state.mu.Unlock()
+		t.Fatalf("rename reply = %q, want New Title", text)
+	}
+	state.mu.Unlock()
+
+	record, ok := service.handler.chatManager.GetSession(session.SessionID)
+	if !ok {
+		t.Fatal("session not found after rename")
+	}
+	if record.Title != "New Title" {
+		t.Fatalf("session title = %q, want %q", record.Title, "New Title")
+	}
+}
+
+func TestHandleDeleteCommand_DeletesCurrentSessionAndSwitchesToRemainingSession(t *testing.T) {
+	server, state := newClawBotTestServer(t, "unused")
+	defer server.Close()
+
+	service := newTestClawBotService(t, server.URL)
+	cfg := service.handler.configManager.GetClawBotConfig()
+
+	userID := "wx-user"
+	sessionA, err := service.handler.chatManager.CreateSession(generateClawBotSessionID(userID), "Session A", "", "")
+	if err != nil {
+		t.Fatalf("CreateSession A err = %v", err)
+	}
+	time.Sleep(10 * time.Millisecond)
+	sessionB, err := service.handler.chatManager.CreateSession(generateClawBotSessionID(userID), "Session B", "", "")
+	if err != nil {
+		t.Fatalf("CreateSession B err = %v", err)
+	}
+	service.touchActiveSession(userID, sessionB.SessionID)
+
+	service.handleDeleteCommand(context.Background(), cfg, userID, "current")
+
+	state.mu.Lock()
+	if len(state.sendTexts) != 1 {
+		state.mu.Unlock()
+		t.Fatalf("send text count = %d, want 1", len(state.sendTexts))
+	}
+	if !strings.Contains(state.sendTexts[0], "已删除会话") || !strings.Contains(state.sendTexts[0], "Session A") {
+		text := state.sendTexts[0]
+		state.mu.Unlock()
+		t.Fatalf("delete reply = %q, want delete confirmation and Session A switch hint", text)
+	}
+	state.mu.Unlock()
+
+	if _, ok := service.handler.chatManager.GetSession(sessionB.SessionID); ok {
+		t.Fatal("deleted session still exists")
+	}
+	if currentID, ok := service.getActiveSessionID(userID); !ok || currentID != sessionA.SessionID {
+		t.Fatalf("active session id = (%v, %s), want (true, %s)", ok, currentID, sessionA.SessionID)
+	}
+}
+
+func TestHandlePromptCommand_SwitchesPromptAndActivatesLatestPromptSession(t *testing.T) {
+	server, state := newClawBotTestServer(t, "unused")
+	defer server.Close()
+
+	service := newTestClawBotService(t, server.URL)
+	if _, err := service.handler.promptManager.Create("prompt-2", "Bob", "prompt two", "", ""); err != nil {
+		t.Fatalf("Create prompt-2 err = %v", err)
+	}
+
+	cfg := service.handler.configManager.GetClawBotConfig()
+	cfg.PromptID = "prompt-1"
+	if err := service.handler.configManager.UpdateClawBotConfig(cfg); err != nil {
+		t.Fatalf("UpdateClawBotConfig err = %v", err)
+	}
+
+	userID := "wx-user"
+	session, err := service.handler.chatManager.CreateSession(generateClawBotSessionID(userID), "Bob Session", "prompt-2", "Bob")
+	if err != nil {
+		t.Fatalf("CreateSession err = %v", err)
+	}
+
+	service.handlePromptCommand(context.Background(), cfg, userID, "prompt-2")
+
+	state.mu.Lock()
+	if len(state.sendTexts) != 1 {
+		state.mu.Unlock()
+		t.Fatalf("send text count = %d, want 1", len(state.sendTexts))
+	}
+	if !strings.Contains(state.sendTexts[0], "Bob") || !strings.Contains(state.sendTexts[0], "Bob Session") {
+		text := state.sendTexts[0]
+		state.mu.Unlock()
+		t.Fatalf("prompt reply = %q, want Bob prompt switch confirmation", text)
+	}
+	state.mu.Unlock()
+
+	updatedCfg := service.handler.configManager.GetClawBotConfig()
+	if updatedCfg.PromptID != "prompt-2" {
+		t.Fatalf("prompt id = %q, want %q", updatedCfg.PromptID, "prompt-2")
+	}
+	if currentID, ok := service.getActiveSessionID(userID); !ok || currentID != session.SessionID {
+		t.Fatalf("active session id = (%v, %s), want (true, %s)", ok, currentID, session.SessionID)
+	}
 }
 
 func TestProcessRegenerateCommand_ReplacesTailAndSendsFreshReply(t *testing.T) {
