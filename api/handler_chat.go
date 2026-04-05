@@ -213,6 +213,13 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 当消息中出现 [用户发红包] 时，表示用户给你发了红包，并会提供 packet_key/amount/message。
 如果你决定领取，请调用工具 red_packet_received 并传入 packet_key。`))
 	}
+	if isToolAvailable(availableToolNames, "no_reply") {
+		systemGuides = append(systemGuides, strings.TrimSpace(`[已读不回]
+当你决定这轮不回复用户时，必须调用 no_reply。
+你可以在同一轮中继续调用其它必要工具（例如 write_memory / schedule_reminder）；工具执行后本轮会静默结束，不发送任何可见文本。
+不要再额外输出文字内容。
+reason 和 cooldown_seconds 可按需填写。`))
+	}
 	if isToolAvailable(availableToolNames, "write_memory") {
 		systemGuides = append(systemGuides, strings.TrimSpace(`[记忆写入]
 write_memory 只能用于极为重要的长期记忆。
@@ -974,6 +981,29 @@ func getChatTools(options ...chatToolOptions) []client.Tool {
 		{
 			Type: "function",
 			Function: client.ToolFunction{
+				Name:        "no_reply",
+				Description: "表示本轮选择已读不回。你可以与其它工具一同调用以完成必要操作（例如 write_memory / schedule_reminder）；工具执行后本轮会静默结束，不会发送任何可见文字回复。调用此工具后不要再输出可见文本。",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"reason": map[string]interface{}{
+							"type":        "string",
+							"description": "已读不回的内部原因，可选，仅供记录",
+							"maxLength":   200,
+						},
+						"cooldown_seconds": map[string]interface{}{
+							"type":        "number",
+							"description": "建议的冷静时间（秒），可选",
+							"minimum":     0,
+						},
+					},
+					"additionalProperties": false,
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: client.ToolFunction{
 				Name:        "schedule_reminder",
 				Description: "创建一个未来触发的提醒任务。到点后，你会收到 reminder_prompt 作为内部提示，并主动向用户发送一条消息。",
 				Parameters: map[string]interface{}{
@@ -1146,10 +1176,10 @@ func getChatTools(options ...chatToolOptions) []client.Tool {
 	}
 
 	if channel == chatToolChannelClawBot {
-		filtered := make([]client.Tool, 0, 4)
+		filtered := make([]client.Tool, 0, 5)
 		for _, tool := range tools {
 			switch strings.TrimSpace(tool.Function.Name) {
-			case "get_time", "get_weather", "web_search", "schedule_reminder":
+			case "get_time", "get_weather", "web_search", "schedule_reminder", "no_reply":
 				filtered = append(filtered, tool)
 			}
 		}

@@ -135,6 +135,7 @@ var defaultToolToggleKeys = []string{
 	"send_red_packet",
 	"red_packet_received",
 	"send_pat",
+	"no_reply",
 	"get_time",
 	"get_weather",
 	"schedule_reminder",

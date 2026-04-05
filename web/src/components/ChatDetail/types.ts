@@ -19,6 +19,14 @@ export type DisplayItem =
           messageIndex: number
       }
     | { key: string; role: string; type: 'pat-banner'; message: ChatMessage; toolCall: ToolCall; messageIndex: number }
+    | {
+          key: string
+          role: string
+          type: 'no-reply-banner'
+          message: ChatMessage
+          toolCall: ToolCall
+          messageIndex: number
+      }
     | { key: string; role: string; type: 'recall-banner'; message: ChatMessage; messageIndex: number }
 
 export type QuoteDraft = {

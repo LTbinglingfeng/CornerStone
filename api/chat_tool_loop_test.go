@@ -346,6 +346,217 @@ func TestRunChatWithToolLoop_RejectsDisallowedWriteMemoryToolCallWhenToggleDisab
 	}
 }
 
+func TestRunChatWithToolLoop_TerminatesOnNoReply(t *testing.T) {
+	ai := &fakeAIClient{
+		t: t,
+		responses: []*client.ChatResponse{
+			chatResp(assistantMessage("", toolCall("call_no_reply", "no_reply", `{"reason":"生气了","cooldown_seconds":60}`))),
+		},
+	}
+
+	executor := newChatToolExecutor(nil, nil)
+	finalAssistantCalls := 0
+	var finalAssistant client.Message
+	got, err := runChatWithToolLoop(
+		context.Background(),
+		ai,
+		client.ChatRequest{
+			Messages: []client.Message{{Role: "user", Content: "hi"}},
+			Tools:    getChatTools(),
+		},
+		executor,
+		chatToolContext{
+			AllowedToolNames: map[string]bool{
+				"no_reply": true,
+			},
+		},
+		&toolLoopCallbacks{
+			OnFinalAssistant: func(msg client.Message) {
+				finalAssistantCalls++
+				finalAssistant = msg
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("runChatWithToolLoop err: %v", err)
+	}
+	if got.FinalResponse != nil {
+		t.Fatalf("FinalResponse = %#v, want nil", got.FinalResponse)
+	}
+	if got.ToolStepsUsed != 1 {
+		t.Fatalf("ToolStepsUsed = %d, want 1", got.ToolStepsUsed)
+	}
+	if len(ai.requests) != 1 {
+		t.Fatalf("model call count = %d, want 1", len(ai.requests))
+	}
+	if len(got.NewMessages) != 3 {
+		t.Fatalf("NewMessages len=%d, want 3", len(got.NewMessages))
+	}
+	if got.NewMessages[0].Role != "assistant" || len(got.NewMessages[0].ToolCalls) != 1 || got.NewMessages[0].ToolCalls[0].Function.Name != "no_reply" {
+		t.Fatalf("expected assistant no_reply tool call, got=%#v", got.NewMessages[0])
+	}
+	if got.NewMessages[1].Role != "tool" || got.NewMessages[1].ToolCallID != "call_no_reply" {
+		t.Fatalf("expected tool message call_no_reply, got=%#v", got.NewMessages[1])
+	}
+	payload := parseToolResult(t, got.NewMessages[1].Content)
+	if ok, _ := payload["ok"].(bool); !ok {
+		t.Fatalf("expected ok=true, got=%v", payload["ok"])
+	}
+	if tool, _ := payload["tool"].(string); tool != "no_reply" {
+		t.Fatalf("expected tool=no_reply, got=%v", payload["tool"])
+	}
+	data, _ := payload["data"].(map[string]interface{})
+	if reason, _ := data["reason"].(string); reason != "生气了" {
+		t.Fatalf("reason = %q, want %q", reason, "生气了")
+	}
+	if cooldown, _ := data["cooldown_seconds"].(float64); cooldown != 60 {
+		t.Fatalf("cooldown_seconds = %v, want 60", cooldown)
+	}
+	if got.NewMessages[2].Role != "assistant" || got.NewMessages[2].Content != "" || len(got.NewMessages[2].ToolCalls) != 0 {
+		t.Fatalf("expected silent final assistant, got=%#v", got.NewMessages[2])
+	}
+	if finalAssistantCalls != 1 {
+		t.Fatalf("OnFinalAssistant call count = %d, want 1", finalAssistantCalls)
+	}
+	if finalAssistant.Role != "assistant" || finalAssistant.Content != "" || len(finalAssistant.ToolCalls) != 0 {
+		t.Fatalf("OnFinalAssistant msg = %#v, want silent assistant", finalAssistant)
+	}
+}
+
+func TestRunChatWithToolLoop_TerminatesOnNoReplyEvenWhenOtherToolsFail(t *testing.T) {
+	ai := &fakeAIClient{
+		t: t,
+		responses: []*client.ChatResponse{
+			chatResp(assistantMessage(
+				"",
+				toolCall("call_no_reply", "no_reply", `{"reason":"生气了"}`),
+				toolCall("call_weather", "get_weather", `{}`),
+			)),
+		},
+	}
+
+	executor := newChatToolExecutor(nil, nil)
+	got, err := runChatWithToolLoop(
+		context.Background(),
+		ai,
+		client.ChatRequest{
+			Messages: []client.Message{{Role: "user", Content: "hi"}},
+			Tools:    getChatTools(),
+		},
+		executor,
+		chatToolContext{
+			AllowedToolNames: map[string]bool{
+				"no_reply":    true,
+				"get_weather": true,
+			},
+		},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("runChatWithToolLoop err: %v", err)
+	}
+	if got.FinalResponse != nil {
+		t.Fatalf("FinalResponse = %#v, want nil", got.FinalResponse)
+	}
+	if got.ToolStepsUsed != 1 {
+		t.Fatalf("ToolStepsUsed = %d, want 1", got.ToolStepsUsed)
+	}
+	if len(ai.requests) != 1 {
+		t.Fatalf("model call count = %d, want 1", len(ai.requests))
+	}
+	if len(got.NewMessages) != 4 {
+		t.Fatalf("NewMessages len=%d, want 4", len(got.NewMessages))
+	}
+
+	toolMsg := got.NewMessages[1]
+	if toolMsg.Role != "tool" || toolMsg.ToolCallID != "call_no_reply" {
+		t.Fatalf("expected tool message call_no_reply, got=%#v", toolMsg)
+	}
+	payload := parseToolResult(t, toolMsg.Content)
+	if ok, _ := payload["ok"].(bool); !ok {
+		t.Fatalf("expected ok=true, got=%v", payload["ok"])
+	}
+	if tool, _ := payload["tool"].(string); tool != "no_reply" {
+		t.Fatalf("expected tool=no_reply, got=%v", payload["tool"])
+	}
+
+	toolMsg = got.NewMessages[2]
+	if toolMsg.Role != "tool" || toolMsg.ToolCallID != "call_weather" {
+		t.Fatalf("expected tool message call_weather, got=%#v", toolMsg)
+	}
+	payload = parseToolResult(t, toolMsg.Content)
+	if ok, _ := payload["ok"].(bool); ok {
+		t.Fatalf("expected ok=false, got=%v", payload["ok"])
+	}
+	if tool, _ := payload["tool"].(string); tool != "get_weather" {
+		t.Fatalf("expected tool=get_weather, got=%v", payload["tool"])
+	}
+
+	if got.NewMessages[3].Role != "assistant" || got.NewMessages[3].Content != "" || len(got.NewMessages[3].ToolCalls) != 0 {
+		t.Fatalf("expected silent final assistant, got=%#v", got.NewMessages[3])
+	}
+}
+
+func TestRunChatWithToolLoop_DoesNotTerminateWhenNoReplyDisabled(t *testing.T) {
+	ai := &fakeAIClient{
+		t: t,
+		responses: []*client.ChatResponse{
+			chatResp(assistantMessage("", toolCall("call_no_reply", "no_reply", `{"reason":"生气了"}`))),
+			chatResp(assistantMessage("我还是回你了。")),
+		},
+	}
+
+	executor := newChatToolExecutor(nil, nil)
+	got, err := runChatWithToolLoop(
+		context.Background(),
+		ai,
+		client.ChatRequest{
+			Messages: []client.Message{{Role: "user", Content: "hi"}},
+			Tools:    getChatTools(),
+		},
+		executor,
+		chatToolContext{
+			AllowedToolNames: map[string]bool{
+				"get_time": true,
+			},
+		},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("runChatWithToolLoop err: %v", err)
+	}
+	if got.FinalResponse == nil || len(got.FinalResponse.Choices) == 0 {
+		t.Fatalf("expected final response after disabled no_reply")
+	}
+	if got.ToolStepsUsed != 1 {
+		t.Fatalf("ToolStepsUsed = %d, want 1", got.ToolStepsUsed)
+	}
+	if len(ai.requests) != 2 {
+		t.Fatalf("model call count = %d, want 2", len(ai.requests))
+	}
+	if len(got.NewMessages) != 3 {
+		t.Fatalf("NewMessages len=%d, want 3", len(got.NewMessages))
+	}
+	toolMsg := got.NewMessages[1]
+	if toolMsg.Role != "tool" || toolMsg.ToolCallID != "call_no_reply" {
+		t.Fatalf("expected tool message call_no_reply, got=%#v", toolMsg)
+	}
+	payload := parseToolResult(t, toolMsg.Content)
+	if ok, _ := payload["ok"].(bool); ok {
+		t.Fatalf("expected ok=false, got=%v", payload["ok"])
+	}
+	if tool, _ := payload["tool"].(string); tool != "no_reply" {
+		t.Fatalf("expected tool=no_reply, got=%v", tool)
+	}
+	errMsg, _ := payload["error"].(string)
+	if !strings.Contains(errMsg, "no_reply") || (!strings.Contains(errMsg, "disabled") && !strings.Contains(errMsg, "not allowed")) {
+		t.Fatalf("expected disabled no_reply error, got=%q", errMsg)
+	}
+	if got.NewMessages[2].Role != "assistant" || got.NewMessages[2].Content != "我还是回你了。" {
+		t.Fatalf("expected normal final assistant reply, got=%#v", got.NewMessages[2])
+	}
+}
+
 func TestRunChatWithToolLoop_MaxToolSteps(t *testing.T) {
 	steps := maxToolSteps + 1
 	responses := make([]*client.ChatResponse, 0, steps)

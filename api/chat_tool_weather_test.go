@@ -230,7 +230,7 @@ func TestGetChatTools_IncludesWeatherAndClawBotExcludesInteractiveTools(t *testi
 	clawBotTools := getChatTools(chatToolOptions{Channel: chatToolChannelClawBot})
 	for _, tool := range clawBotTools {
 		switch tool.Function.Name {
-		case "get_time", "get_weather", "schedule_reminder":
+		case "get_time", "get_weather", "schedule_reminder", "no_reply":
 		default:
 			t.Fatalf("unexpected clawbot tool %q", tool.Function.Name)
 		}

@@ -119,6 +119,7 @@ func runChatWithToolLoop(
 		}
 
 		toolMessages := make([]client.Message, 0, len(assistant.ToolCalls))
+		shouldTerminateWithNoReply := false
 		for index, tc := range assistant.ToolCalls {
 			callID := strings.TrimSpace(tc.ID)
 			if callID == "" {
@@ -126,26 +127,41 @@ func runChatWithToolLoop(
 			}
 			toolName := strings.TrimSpace(tc.Function.Name)
 
-			resultJSON := ""
+			result := chatToolResult{}
 			if _, dup := executedToolCallIDs[callID]; dup {
-				resultJSON = marshalChatToolResult(chatToolResult{
-					OK:    false,
-					Tool:  toolName,
-					Data:  nil,
-					Error: "duplicate tool_call_id",
-				})
+				// no_reply has no side effects; treat duplicate ids as a no-op success so it can
+				// still end the round silently.
+				if toolName == "no_reply" {
+					result = chatToolResult{
+						OK:    true,
+						Tool:  toolName,
+						Data:  nil,
+						Error: "",
+					}
+				} else {
+					result = chatToolResult{
+						OK:    false,
+						Tool:  toolName,
+						Data:  nil,
+						Error: "duplicate tool_call_id",
+					}
+				}
 			} else if enforceToolAllowlist && !isToolAvailable(allowedToolNames, toolName) {
 				executedToolCallIDs[callID] = struct{}{}
-				resultJSON = marshalChatToolResult(chatToolResult{
+				result = chatToolResult{
 					OK:    false,
 					Tool:  toolName,
 					Data:  nil,
 					Error: fmt.Sprintf("tool %q is disabled or not allowed by current user settings; do not retry it. Ask the user to enable it or continue without this tool.", toolName),
-				})
+				}
 			} else {
 				executedToolCallIDs[callID] = struct{}{}
-				resultJSON = toolExecutor.Execute(ctx, tc, toolCtx)
+				result = toolExecutor.ExecuteResult(ctx, tc, toolCtx)
 			}
+			if toolName == "no_reply" && result.OK {
+				shouldTerminateWithNoReply = true
+			}
+			resultJSON := marshalChatToolResult(result)
 
 			toolMsg := client.Message{
 				Role:       "tool",
@@ -160,5 +176,21 @@ func runChatWithToolLoop(
 		}
 
 		conversation = append(conversation, toolMessages...)
+		if shouldTerminateWithNoReply {
+			silentAssistant := client.Message{
+				Role:    "assistant",
+				Content: "",
+			}
+			conversation = append(conversation, silentAssistant)
+			newMessages = append(newMessages, silentAssistant)
+			if callbacks != nil && callbacks.OnFinalAssistant != nil {
+				callbacks.OnFinalAssistant(silentAssistant)
+			}
+			return &toolLoopResult{
+				FinalResponse: nil,
+				NewMessages:   newMessages,
+				ToolStepsUsed: toolStepsUsed,
+			}, nil
+		}
 	}
 }

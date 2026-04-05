@@ -68,6 +68,7 @@ func newChatToolExecutor(momentManager *storage.MomentManager, momentGenerator *
 	executor.handlers["send_red_packet"] = executor.handleSendRedPacket
 	executor.handlers["red_packet_received"] = executor.handleRedPacketReceived
 	executor.handlers["send_pat"] = executor.handleSendPat
+	executor.handlers["no_reply"] = executor.handleNoReply
 	executor.handlers["generate_moment"] = executor.handleGenerateMoment
 	executor.handlers["get_weather"] = executor.handleGetWeather
 	executor.handlers["get_time"] = executor.handleGetTime
@@ -78,34 +79,37 @@ func newChatToolExecutor(momentManager *storage.MomentManager, momentGenerator *
 	return executor
 }
 
-func (e *chatToolExecutor) Execute(ctx context.Context, toolCall client.ToolCall, toolCtx chatToolContext) string {
+func (e *chatToolExecutor) ExecuteResult(ctx context.Context, toolCall client.ToolCall, toolCtx chatToolContext) chatToolResult {
 	toolName := strings.TrimSpace(toolCall.Function.Name)
 	if toolName == "" {
-		return marshalChatToolResult(chatToolResult{
+		return chatToolResult{
 			OK:    false,
 			Tool:  "",
 			Data:  nil,
 			Error: "missing tool name",
-		})
+		}
 	}
 
 	handler, ok := e.handlers[toolName]
 	if !ok {
-		return marshalChatToolResult(chatToolResult{
+		return chatToolResult{
 			OK:    false,
 			Tool:  toolName,
 			Data:  nil,
 			Error: "unsupported tool",
-		})
+		}
 	}
 
 	result := handler(ctx, toolCall, toolCtx)
-	// Ensure required fields always present.
 	result.Tool = toolName
 	if result.OK {
 		result.Error = ""
 	}
-	return marshalChatToolResult(result)
+	return result
+}
+
+func (e *chatToolExecutor) Execute(ctx context.Context, toolCall client.ToolCall, toolCtx chatToolContext) string {
+	return marshalChatToolResult(e.ExecuteResult(ctx, toolCall, toolCtx))
 }
 
 func decodeToolArguments(arguments string, dst interface{}) error {
@@ -170,6 +174,34 @@ func (e *chatToolExecutor) handleSendPat(ctx context.Context, toolCall client.To
 			"name":   name,
 			"target": target,
 		},
+	}
+}
+
+type chatToolNoReplyArgs struct {
+	Reason          string   `json:"reason,omitempty"`
+	CooldownSeconds *float64 `json:"cooldown_seconds,omitempty"`
+}
+
+func (e *chatToolExecutor) handleNoReply(ctx context.Context, toolCall client.ToolCall, toolCtx chatToolContext) chatToolResult {
+	result := map[string]interface{}{}
+	var args chatToolNoReplyArgs
+	// no_reply is a "silent end" signal. It should be best-effort and never fail.
+	if errUnmarshal := decodeToolArguments(toolCall.Function.Arguments, &args); errUnmarshal == nil {
+		if reason := strings.TrimSpace(args.Reason); reason != "" {
+			result["reason"] = reason
+		}
+		if args.CooldownSeconds != nil {
+			cooldownSeconds := *args.CooldownSeconds
+			if cooldownSeconds < 0 {
+				cooldownSeconds = 0
+			}
+			result["cooldown_seconds"] = cooldownSeconds
+		}
+	}
+
+	return chatToolResult{
+		OK:   true,
+		Data: result,
 	}
 }
 

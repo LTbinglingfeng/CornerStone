@@ -137,6 +137,7 @@ export const MessageList: React.FC<MessageListProps> = ({
                         const isRedPacket = item.type === 'red-packet'
                         const isRedPacketReceivedBanner = item.type === 'red-packet-received-banner'
                         const isPatBanner = item.type === 'pat-banner'
+                        const isNoReplyBanner = item.type === 'no-reply-banner'
                         const isRecallBanner = item.type === 'recall-banner'
 
                         if (isRedPacketReceivedBanner) {
@@ -156,6 +157,14 @@ export const MessageList: React.FC<MessageListProps> = ({
                             return (
                                 <div key={item.key} className="message-item pat-banner-item">
                                     <PatBanner toolCall={item.toolCall} prompt={prompt} />
+                                </div>
+                            )
+                        }
+
+                        if (isNoReplyBanner) {
+                            return (
+                                <div key={item.key} className="message-item pat-banner-item">
+                                    <div className="pat-banner">{t('chat.noReplyBanner')}</div>
                                 </div>
                             )
                         }

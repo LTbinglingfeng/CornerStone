@@ -58,8 +58,8 @@ func TestGetChatTools_IncludesTimeAndClawBotKeepsReadOnlyTools(t *testing.T) {
 	}
 
 	clawBotTools := getChatTools(chatToolOptions{Channel: chatToolChannelClawBot})
-	if len(clawBotTools) != 3 {
-		t.Fatalf("clawbot tools len = %d, want 3", len(clawBotTools))
+	if len(clawBotTools) != 4 {
+		t.Fatalf("clawbot tools len = %d, want 4", len(clawBotTools))
 	}
 
 	names := make(map[string]struct{}, len(clawBotTools))
@@ -75,13 +75,16 @@ func TestGetChatTools_IncludesTimeAndClawBotKeepsReadOnlyTools(t *testing.T) {
 	if _, ok := names["schedule_reminder"]; !ok {
 		t.Fatalf("clawbot tools = %#v, want schedule_reminder", clawBotTools)
 	}
+	if _, ok := names["no_reply"]; !ok {
+		t.Fatalf("clawbot tools = %#v, want no_reply", clawBotTools)
+	}
 
 	clawBotTools = getChatTools(chatToolOptions{
 		Channel:          chatToolChannelClawBot,
 		WebSearchEnabled: true,
 	})
-	if len(clawBotTools) != 4 {
-		t.Fatalf("clawbot tools len with web search = %d, want 4", len(clawBotTools))
+	if len(clawBotTools) != 5 {
+		t.Fatalf("clawbot tools len with web search = %d, want 5", len(clawBotTools))
 	}
 
 	names = make(map[string]struct{}, len(clawBotTools))
@@ -114,8 +117,8 @@ func TestGetChatTools_IncludesTimeAndClawBotKeepsReadOnlyTools(t *testing.T) {
 			"get_weather": false,
 		},
 	})
-	if len(clawBotTools) != 3 {
-		t.Fatalf("clawbot tools len with get_weather toggle disabled = %d, want 3", len(clawBotTools))
+	if len(clawBotTools) != 4 {
+		t.Fatalf("clawbot tools len with get_weather toggle disabled = %d, want 4", len(clawBotTools))
 	}
 	names = make(map[string]struct{}, len(clawBotTools))
 	for _, tool := range clawBotTools {
@@ -129,6 +132,9 @@ func TestGetChatTools_IncludesTimeAndClawBotKeepsReadOnlyTools(t *testing.T) {
 	}
 	if _, ok := names["schedule_reminder"]; !ok {
 		t.Fatalf("clawbot tools = %#v, want schedule_reminder", clawBotTools)
+	}
+	if _, ok := names["no_reply"]; !ok {
+		t.Fatalf("clawbot tools = %#v, want no_reply", clawBotTools)
 	}
 }
 

@@ -7,6 +7,7 @@ export type ToolControlTitleKey =
     | 'settings.toolSendRedPacket'
     | 'settings.toolRedPacketReceived'
     | 'settings.toolSendPat'
+    | 'settings.toolNoReply'
     | 'settings.toolGetTime'
     | 'settings.toolGetWeather'
     | 'settings.toolScheduleReminder'
@@ -17,6 +18,7 @@ export type ToolControlDescriptionKey =
     | 'settings.toolSendRedPacketDescription'
     | 'settings.toolRedPacketReceivedDescription'
     | 'settings.toolSendPatDescription'
+    | 'settings.toolNoReplyDescription'
     | 'settings.toolGetTimeDescription'
     | 'settings.toolGetWeatherDescription'
     | 'settings.toolScheduleReminderDescription'
@@ -57,6 +59,12 @@ export const TOOL_CONTROL_DEFINITIONS: ToolControlDefinition[] = [
         section: 'interaction',
         titleKey: 'settings.toolSendPat',
         descriptionKey: 'settings.toolSendPatDescription',
+    },
+    {
+        key: 'no_reply',
+        section: 'interaction',
+        titleKey: 'settings.toolNoReply',
+        descriptionKey: 'settings.toolNoReplyDescription',
     },
     {
         key: 'get_time',

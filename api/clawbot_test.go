@@ -1034,12 +1034,12 @@ func TestProcessIncomingBatch_ClawBotRunsReadOnlyToolLoop(t *testing.T) {
 	}
 
 	firstReq := state.chatReqs[0]
-	if len(firstReq.Tools) != 3 {
-		t.Fatalf("first request tools len = %d, want 3", len(firstReq.Tools))
+	if len(firstReq.Tools) != 4 {
+		t.Fatalf("first request tools len = %d, want 4", len(firstReq.Tools))
 	}
 	for _, tool := range firstReq.Tools {
 		switch tool.Function.Name {
-		case "get_time", "get_weather", "schedule_reminder":
+		case "get_time", "get_weather", "schedule_reminder", "no_reply":
 		default:
 			t.Fatalf("unexpected clawbot tool %q", tool.Function.Name)
 		}
@@ -1220,8 +1220,8 @@ func TestProcessIncomingBatch_ClawBotRunsWebSearchToolLoopWhenConfigured(t *test
 	}
 
 	firstReq := state.chatReqs[0]
-	if len(firstReq.Tools) != 4 {
-		t.Fatalf("first request tools len = %d, want 4", len(firstReq.Tools))
+	if len(firstReq.Tools) != 5 {
+		t.Fatalf("first request tools len = %d, want 5", len(firstReq.Tools))
 	}
 	names := make(map[string]struct{}, len(firstReq.Tools))
 	for _, tool := range firstReq.Tools {
@@ -1238,6 +1238,9 @@ func TestProcessIncomingBatch_ClawBotRunsWebSearchToolLoopWhenConfigured(t *test
 	}
 	if _, ok := names["schedule_reminder"]; !ok {
 		t.Fatalf("first request tools = %#v, want schedule_reminder", firstReq.Tools)
+	}
+	if _, ok := names["no_reply"]; !ok {
+		t.Fatalf("first request tools = %#v, want no_reply", firstReq.Tools)
 	}
 
 	secondReq := state.chatReqs[1]
@@ -1404,6 +1407,124 @@ func TestProcessIncomingBatch_ClawBotCanCreateScheduleReminder(t *testing.T) {
 	}
 	if reminders[0].Title != "喝水提醒" {
 		t.Fatalf("title = %q, want %q", reminders[0].Title, "喝水提醒")
+	}
+}
+
+func TestProcessIncomingBatch_ClawBotNoReplyPersistsSilently(t *testing.T) {
+	var state struct {
+		mu       sync.Mutex
+		chatReqs []struct {
+			Tools []client.Tool `json:"tools"`
+		}
+		sendTexts []string
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/chat/completions":
+			var req struct {
+				Tools []client.Tool `json:"tools"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode chat request failed: %v", err)
+			}
+
+			state.mu.Lock()
+			state.chatReqs = append(state.chatReqs, req)
+			state.mu.Unlock()
+
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(client.ChatResponse{
+				ID:      "chatcmpl-test",
+				Object:  "chat.completion",
+				Created: time.Now().Unix(),
+				Model:   "gpt-test",
+				Choices: []client.Choice{
+					{
+						Index: 0,
+						Message: client.Message{
+							Role: "assistant",
+							ToolCalls: []client.ToolCall{
+								{
+									ID:   "call_no_reply_1",
+									Type: "function",
+									Function: client.ToolCallFunction{
+										Name:      "no_reply",
+										Arguments: `{"reason":"生气了","cooldown_seconds":120}`,
+									},
+								},
+							},
+						},
+						FinishReason: "tool_calls",
+					},
+				},
+			})
+		case "/ilink/bot/sendmessage":
+			var req client.ClawBotSendMessageRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode sendmessage request failed: %v", err)
+			}
+
+			text := ""
+			if len(req.Msg.ItemList) > 0 && req.Msg.ItemList[0].TextItem != nil {
+				text = req.Msg.ItemList[0].TextItem.Text
+			}
+
+			state.mu.Lock()
+			state.sendTexts = append(state.sendTexts, text)
+			state.mu.Unlock()
+
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(client.ClawBotSendMessageResponse{Ret: 0})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	service := newTestClawBotService(t, server.URL)
+	cfg := service.handler.configManager.GetClawBotConfig()
+	service.processIncomingBatch(context.Background(), cfg, "wx-user", []clawBotPendingMessage{{Text: "随便你"}})
+
+	state.mu.Lock()
+	defer state.mu.Unlock()
+
+	if len(state.chatReqs) != 1 {
+		t.Fatalf("chat request count = %d, want 1", len(state.chatReqs))
+	}
+	if len(state.sendTexts) != 0 {
+		t.Fatalf("send texts = %#v, want no outgoing messages", state.sendTexts)
+	}
+	foundNoReplyTool := false
+	for _, tool := range state.chatReqs[0].Tools {
+		if tool.Function.Name == "no_reply" {
+			foundNoReplyTool = true
+			break
+		}
+	}
+	if !foundNoReplyTool {
+		t.Fatalf("first request tools = %#v, want no_reply", state.chatReqs[0].Tools)
+	}
+
+	sessionID, ok := service.getActiveSessionID("wx-user")
+	if !ok {
+		t.Fatal("active session not found")
+	}
+	record, ok := service.handler.chatManager.GetSession(sessionID)
+	if !ok {
+		t.Fatal("session not found")
+	}
+	if len(record.Messages) != 4 {
+		t.Fatalf("message count = %d, want 4", len(record.Messages))
+	}
+	if record.Messages[1].Role != "assistant" || len(record.Messages[1].ToolCalls) != 1 || record.Messages[1].ToolCalls[0].Function.Name != "no_reply" {
+		t.Fatalf("assistant tool call message = %#v, want no_reply tool call", record.Messages[1])
+	}
+	if record.Messages[2].Role != "tool" || record.Messages[2].ToolCallID != "call_no_reply_1" || !strings.Contains(record.Messages[2].Content, `"tool":"no_reply"`) {
+		t.Fatalf("tool message = %#v, want no_reply tool result", record.Messages[2])
+	}
+	if record.Messages[3].Role != "assistant" || record.Messages[3].Content != "" || len(record.Messages[3].ToolCalls) != 0 {
+		t.Fatalf("final assistant message = %#v, want silent assistant", record.Messages[3])
 	}
 }
 

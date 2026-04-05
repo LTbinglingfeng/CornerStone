@@ -908,10 +908,13 @@ func (s *ClawBotService) generateReplyForSession(ctx context.Context, session *s
 		"[渠道说明]",
 		"你正在通过微信 ClawBot 渠道回复用户。",
 		"你只能回复适合微信文本消息的内容。",
-		"请直接输出可以发送给用户的自然语言消息。",
+		"默认请直接输出可以发送给用户的自然语言消息。",
 	}
-	clawBotToolNames := make([]string, 0, 3)
-	for _, name := range []string{"get_time", "get_weather", "web_search", "schedule_reminder"} {
+	if isToolAvailable(availableToolNames, "no_reply") {
+		channelGuideLines = append(channelGuideLines, "如果你决定已读不回，调用 no_reply（可与其它工具一同调用），且不要输出任何可见文本。")
+	}
+	clawBotToolNames := make([]string, 0, 5)
+	for _, name := range []string{"get_time", "get_weather", "web_search", "schedule_reminder", "no_reply"} {
 		if isToolAvailable(availableToolNames, name) {
 			clawBotToolNames = append(clawBotToolNames, name)
 		}
@@ -938,6 +941,12 @@ func (s *ClawBotService) generateReplyForSession(ctx context.Context, session *s
 当用户要求你在未来某个时间提醒、催促、复查或再次主动发消息时，调用 schedule_reminder。
 due_at 必须是带时区的绝对 RFC3339 时间；如果用户给的是相对时间，先调用 get_time 再换算。
 reminder_prompt 是到点后只给你自己看的内部提示词，不会直接写入聊天记录。`))
+	}
+	if isToolAvailable(availableToolNames, "no_reply") {
+		systemGuides = append(systemGuides, strings.TrimSpace(`[已读不回]
+如果你决定这轮不回复用户，调用 no_reply。
+你可以在同一轮中继续调用其它必要工具；工具执行后本轮会静默结束，微信侧不会发送任何文本。
+不要再输出任何可见文字。`))
 	}
 
 	reply, err := s.handler.generateSessionReply(ctx, sessionReplyOptions{
@@ -1229,18 +1238,16 @@ func (s *ClawBotService) sendAndPersistReply(ctx context.Context, cfg config.Cla
 	}
 
 	reply := strings.TrimSpace(generatedReply.Text)
-	if reply == "" {
-		return
-	}
-
-	if err := s.sendTextReply(ctx, cfg, userID, reply); err != nil {
-		s.setLastError(err)
-		logging.Errorf("clawbot send %s failed: user=%s session=%s err=%v", action, userID, sessionID, err)
-		return
+	if reply != "" {
+		if err := s.sendTextReply(ctx, cfg, userID, reply); err != nil {
+			s.setLastError(err)
+			logging.Errorf("clawbot send %s failed: user=%s session=%s err=%v", action, userID, sessionID, err)
+			return
+		}
 	}
 
 	messages := generatedReply.StorageMessages
-	if len(messages) == 0 {
+	if len(messages) == 0 && reply != "" {
 		messages = []storage.ChatMessage{
 			{
 				Role:      "assistant",
@@ -1250,10 +1257,12 @@ func (s *ClawBotService) sendAndPersistReply(ctx context.Context, cfg config.Cla
 		}
 	}
 
-	if err := s.handler.chatManager.AddMessages(sessionID, messages); err != nil {
-		logging.Errorf("clawbot save reply batch failed: user=%s session=%s err=%v", userID, sessionID, err)
-		s.setLastError(err)
-		return
+	if len(messages) > 0 {
+		if err := s.handler.chatManager.AddMessages(sessionID, messages); err != nil {
+			logging.Errorf("clawbot save reply batch failed: user=%s session=%s err=%v", userID, sessionID, err)
+			s.setLastError(err)
+			return
+		}
 	}
 
 	if generatedReply.MemSession != nil {
@@ -1267,18 +1276,16 @@ func (s *ClawBotService) sendAndReplaceTrailingReply(ctx context.Context, cfg co
 	}
 
 	reply := strings.TrimSpace(generatedReply.Text)
-	if reply == "" {
-		return
-	}
-
-	if err := s.sendTextReply(ctx, cfg, userID, reply); err != nil {
-		s.setLastError(err)
-		logging.Errorf("clawbot send %s failed: user=%s session=%s err=%v", action, userID, sessionID, err)
-		return
+	if reply != "" {
+		if err := s.sendTextReply(ctx, cfg, userID, reply); err != nil {
+			s.setLastError(err)
+			logging.Errorf("clawbot send %s failed: user=%s session=%s err=%v", action, userID, sessionID, err)
+			return
+		}
 	}
 
 	replacement := generatedReply.StorageMessages
-	if len(replacement) == 0 {
+	if len(replacement) == 0 && reply != "" {
 		replacement = []storage.ChatMessage{
 			{
 				Role:      "assistant",
@@ -1287,10 +1294,12 @@ func (s *ClawBotService) sendAndReplaceTrailingReply(ctx context.Context, cfg co
 			},
 		}
 	}
-	if err := s.handler.chatManager.ReplaceTrailingResponseBatch(sessionID, expectedTail, replacement); err != nil {
-		logging.Errorf("clawbot replace trailing response batch failed: user=%s session=%s err=%v", userID, sessionID, err)
-		s.setLastError(err)
-		return
+	if len(replacement) > 0 {
+		if err := s.handler.chatManager.ReplaceTrailingResponseBatch(sessionID, expectedTail, replacement); err != nil {
+			logging.Errorf("clawbot replace trailing response batch failed: user=%s session=%s err=%v", userID, sessionID, err)
+			s.setLastError(err)
+			return
+		}
 	}
 
 	if generatedReply.MemSession != nil {

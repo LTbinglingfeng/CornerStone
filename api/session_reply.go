@@ -178,27 +178,34 @@ func (h *Handler) generateSessionReply(ctx context.Context, options sessionReply
 	if err != nil {
 		return nil, err
 	}
-	if loopResult == nil || loopResult.FinalResponse == nil || len(loopResult.FinalResponse.Choices) == 0 {
-		return &generatedSessionReply{MemSession: memSession}, nil
+	text := ""
+	if loopResult != nil && loopResult.FinalResponse != nil && len(loopResult.FinalResponse.Choices) > 0 {
+		text = strings.TrimSpace(loopResult.FinalResponse.Choices[0].Message.Content)
 	}
 
-	baseTime := time.Now()
-	storageMessages := make([]storage.ChatMessage, 0, len(loopResult.NewMessages))
-	for index, msg := range loopResult.NewMessages {
-		storageMessages = append(storageMessages, storage.ChatMessage{
-			Role:             msg.Role,
-			Content:          msg.Content,
-			ReasoningContent: msg.ReasoningContent,
-			ToolCalls:        msg.ToolCalls,
-			ToolCallID:       msg.ToolCallID,
-			ImagePaths:       msg.ImagePaths,
-			TTSAudioPaths:    msg.TTSAudioPaths,
-			Timestamp:        baseTime.Add(time.Millisecond * time.Duration(index)),
-		})
+	storageCapacity := 0
+	if loopResult != nil {
+		storageCapacity = len(loopResult.NewMessages)
+	}
+	storageMessages := make([]storage.ChatMessage, 0, storageCapacity)
+	if loopResult != nil && len(loopResult.NewMessages) > 0 {
+		baseTime := time.Now()
+		for index, msg := range loopResult.NewMessages {
+			storageMessages = append(storageMessages, storage.ChatMessage{
+				Role:             msg.Role,
+				Content:          msg.Content,
+				ReasoningContent: msg.ReasoningContent,
+				ToolCalls:        msg.ToolCalls,
+				ToolCallID:       msg.ToolCallID,
+				ImagePaths:       msg.ImagePaths,
+				TTSAudioPaths:    msg.TTSAudioPaths,
+				Timestamp:        baseTime.Add(time.Millisecond * time.Duration(index)),
+			})
+		}
 	}
 
 	return &generatedSessionReply{
-		Text:            strings.TrimSpace(loopResult.FinalResponse.Choices[0].Message.Content),
+		Text:            text,
 		StorageMessages: storageMessages,
 		MemSession:      memSession,
 	}, nil

@@ -17,6 +17,21 @@ export function useDisplayItems(options: UseDisplayItemsOptions): DisplayItem[] 
 
     return useMemo(() => {
         const items: DisplayItem[] = []
+        const successfulNoReplyToolCallIds = new Set<string>()
+
+        messages.forEach((message) => {
+            if (message.role !== 'tool' || !message.tool_call_id) return
+
+            try {
+                const payload = JSON.parse(message.content || '{}') as { ok?: boolean; tool?: string }
+                if (payload.tool === 'no_reply' && payload.ok === true) {
+                    successfulNoReplyToolCallIds.add(message.tool_call_id)
+                }
+            } catch {
+                return
+            }
+        })
+
         messages.forEach((message, index) => {
             if (message.role === 'tool') return
 
@@ -139,6 +154,20 @@ export function useDisplayItems(options: UseDisplayItemsOptions): DisplayItem[] 
                     })
                 }
             })
+
+            const matchedNoReplyCall = toolCalls.find(
+                (toolCall) => toolCall.function.name === 'no_reply' && successfulNoReplyToolCallIds.has(toolCall.id)
+            )
+            if (matchedNoReplyCall) {
+                items.push({
+                    key: `${message.timestamp}-no-reply-${matchedNoReplyCall.id}`,
+                    role: message.role,
+                    type: 'no-reply-banner',
+                    message,
+                    toolCall: matchedNoReplyCall,
+                    messageIndex: index,
+                })
+            }
         })
         return items
     }, [messages, sending, streamingTimestamp, revealingTimestamp, visibleSegments])
