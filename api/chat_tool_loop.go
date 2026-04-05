@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-const maxToolSteps = 5
+const maxToolSteps = 10
 
 var ErrToolLoopExceededMaxSteps = errors.New("tool loop exceeded max steps")
 

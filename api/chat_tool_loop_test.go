@@ -285,8 +285,9 @@ func TestRunChatWithToolLoop_RejectsDisallowedToolCallUsingAllowedToolNames(t *t
 }
 
 func TestRunChatWithToolLoop_MaxToolSteps(t *testing.T) {
-	responses := make([]*client.ChatResponse, 0, 6)
-	for i := 0; i < 6; i++ {
+	steps := maxToolSteps + 1
+	responses := make([]*client.ChatResponse, 0, steps)
+	for i := 0; i < steps; i++ {
 		responses = append(responses, chatResp(assistantMessage("", toolCall("call_loop", "send_pat", `{"name":"a","target":"b"}`))))
 	}
 	ai := &fakeAIClient{t: t, responses: responses}
@@ -299,7 +300,7 @@ func TestRunChatWithToolLoop_MaxToolSteps(t *testing.T) {
 	if !errors.Is(err, ErrToolLoopExceededMaxSteps) {
 		t.Fatalf("expected ErrToolLoopExceededMaxSteps, got %v", err)
 	}
-	if len(ai.requests) != 6 {
-		t.Fatalf("expected 6 model calls, got %d", len(ai.requests))
+	if len(ai.requests) != steps {
+		t.Fatalf("expected %d model calls, got %d", steps, len(ai.requests))
 	}
 }
