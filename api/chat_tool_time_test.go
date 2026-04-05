@@ -94,10 +94,15 @@ func TestGetChatTools_IncludesTimeAndClawBotKeepsReadOnlyTools(t *testing.T) {
 			"get_time": false,
 		},
 	})
+	foundTime = false
 	for _, tool := range disabledTimeTools {
 		if tool.Function.Name == "get_time" {
-			t.Fatalf("get_time unexpectedly registered when disabled: %#v", disabledTimeTools)
+			foundTime = true
+			break
 		}
+	}
+	if !foundTime {
+		t.Fatalf("get_time should remain exposed even when toggle is off: %#v", disabledTimeTools)
 	}
 
 	clawBotTools = getChatTools(chatToolOptions{
@@ -106,8 +111,18 @@ func TestGetChatTools_IncludesTimeAndClawBotKeepsReadOnlyTools(t *testing.T) {
 			"get_weather": false,
 		},
 	})
-	if len(clawBotTools) != 1 || clawBotTools[0].Function.Name != "get_time" {
-		t.Fatalf("clawbot tools with get_weather disabled = %#v, want only get_time", clawBotTools)
+	if len(clawBotTools) != 2 {
+		t.Fatalf("clawbot tools len with get_weather toggle disabled = %d, want 2", len(clawBotTools))
+	}
+	names = make(map[string]struct{}, len(clawBotTools))
+	for _, tool := range clawBotTools {
+		names[tool.Function.Name] = struct{}{}
+	}
+	if _, ok := names["get_time"]; !ok {
+		t.Fatalf("clawbot tools = %#v, want get_time", clawBotTools)
+	}
+	if _, ok := names["get_weather"]; !ok {
+		t.Fatalf("clawbot tools = %#v, want get_weather even when toggle is off", clawBotTools)
 	}
 }
 

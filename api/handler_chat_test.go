@@ -61,6 +61,7 @@ func TestHandleNormalChat_PersistsToolMessagesOnToolLoopError(t *testing.T) {
 		nil,
 		"",
 		"",
+		nil,
 	)
 
 	if w.Code != http.StatusInternalServerError {
@@ -107,6 +108,7 @@ func TestHandleStreamChat_PersistsToolMessagesOnToolLoopError(t *testing.T) {
 		nil,
 		"",
 		"",
+		nil,
 	)
 
 	record, ok := chatMgr.GetSession(sessionID)

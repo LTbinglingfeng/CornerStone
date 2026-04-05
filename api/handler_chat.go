@@ -186,9 +186,9 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 	availableTools := getChatTools(chatToolOptions{
 		WebSearchEnabled: isWebSearchConfigured(currentConfig),
-		ToolToggles:      currentConfig.ToolToggles,
 	})
 	availableToolNames := buildToolNameSet(availableTools)
+	allowedToolNames := buildAllowedToolNameSet(availableTools, currentConfig.ToolToggles)
 	if req.SaveHistory {
 		if session, ok := h.chatManager.GetSession(sessionID); ok && len(session.Messages) > 0 {
 			historyMessages = convertChatMessages(session.Messages)
@@ -295,13 +295,13 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if useStream {
-		h.handleStreamChat(w, r, aiClient, chatReq, sessionID, req.SaveHistory, memSession, effectivePromptID, promptName)
+		h.handleStreamChat(w, r, aiClient, chatReq, sessionID, req.SaveHistory, memSession, effectivePromptID, promptName, allowedToolNames)
 	} else {
-		h.handleNormalChat(w, r, aiClient, chatReq, sessionID, req.SaveHistory, memSession, effectivePromptID, promptName)
+		h.handleNormalChat(w, r, aiClient, chatReq, sessionID, req.SaveHistory, memSession, effectivePromptID, promptName, allowedToolNames)
 	}
 }
 
-func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiClient client.AIClient, req client.ChatRequest, sessionID string, saveHistory bool, memSession *storage.MemorySession, promptID, promptName string) {
+func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiClient client.AIClient, req client.ChatRequest, sessionID string, saveHistory bool, memSession *storage.MemorySession, promptID, promptName string, allowedToolNames map[string]bool) {
 	ctxAI := context.WithoutCancel(r.Context())
 
 	toolExecutor := newChatToolExecutor(h.momentManager, h.momentGenerator)
@@ -317,9 +317,10 @@ func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiCli
 		req,
 		toolExecutor,
 		chatToolContext{
-			SessionID:  sessionID,
-			PromptID:   promptID,
-			PromptName: promptName,
+			SessionID:        sessionID,
+			PromptID:         promptID,
+			PromptName:       promptName,
+			AllowedToolNames: allowedToolNames,
 		},
 		nil,
 	)
@@ -425,7 +426,7 @@ func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiCli
 }
 
 // handleStreamChat 处理流式聊天 (SSE)
-func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiClient client.AIClient, req client.ChatRequest, sessionID string, saveHistory bool, memSession *storage.MemorySession, promptID, promptName string) {
+func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiClient client.AIClient, req client.ChatRequest, sessionID string, saveHistory bool, memSession *storage.MemorySession, promptID, promptName string, allowedToolNames map[string]bool) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -523,9 +524,10 @@ func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiCli
 		req,
 		toolExecutor,
 		chatToolContext{
-			SessionID:  sessionID,
-			PromptID:   promptID,
-			PromptName: promptName,
+			SessionID:        sessionID,
+			PromptID:         promptID,
+			PromptName:       promptName,
+			AllowedToolNames: allowedToolNames,
 		},
 		&toolLoopCallbacks{
 			OnToolStep: func(step int, assistant client.Message) {
@@ -898,15 +900,11 @@ type chatToolOptions struct {
 func getChatTools(options ...chatToolOptions) []client.Tool {
 	channel := chatToolChannelDefault
 	webSearchEnabled := false
-	toolToggles := config.DefaultToolToggles()
 	if len(options) > 0 && options[0].Channel != "" {
 		channel = options[0].Channel
 	}
 	if len(options) > 0 {
 		webSearchEnabled = options[0].WebSearchEnabled
-		if options[0].ToolToggles != nil {
-			toolToggles = config.NormalizeToolToggles(options[0].ToolToggles)
-		}
 	}
 	tools := []client.Tool{
 		{
@@ -1060,15 +1058,6 @@ func getChatTools(options ...chatToolOptions) []client.Tool {
 		})
 	}
 
-	filteredByToggle := make([]client.Tool, 0, len(tools))
-	for _, tool := range tools {
-		if !isToolEnabledByToggle(toolToggles, tool.Function.Name) {
-			continue
-		}
-		filteredByToggle = append(filteredByToggle, tool)
-	}
-	tools = filteredByToggle
-
 	if channel == chatToolChannelClawBot {
 		filtered := make([]client.Tool, 0, 3)
 		for _, tool := range tools {
@@ -1099,6 +1088,23 @@ func buildToolNameSet(tools []client.Tool) map[string]bool {
 		names[name] = true
 	}
 	return names
+}
+
+func buildAllowedToolNameSet(tools []client.Tool, toolToggles map[string]bool) map[string]bool {
+	normalizedToolToggles := config.DefaultToolToggles()
+	if toolToggles != nil {
+		normalizedToolToggles = config.NormalizeToolToggles(toolToggles)
+	}
+
+	allowed := make(map[string]bool, len(tools))
+	for _, tool := range tools {
+		name := strings.TrimSpace(tool.Function.Name)
+		if name == "" || !isToolEnabledByToggle(normalizedToolToggles, name) {
+			continue
+		}
+		allowed[name] = true
+	}
+	return allowed
 }
 
 func isToolAvailable(toolNames map[string]bool, name string) bool {

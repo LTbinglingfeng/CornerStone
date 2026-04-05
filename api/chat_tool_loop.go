@@ -45,8 +45,8 @@ func runChatWithToolLoop(
 
 	conversation := append([]client.Message(nil), baseReq.Messages...)
 	newMessages := make([]client.Message, 0, 4)
-	allowedToolNames := buildToolNameSet(baseReq.Tools)
-	enforceToolAllowlist := baseReq.Tools != nil
+	allowedToolNames := toolCtx.AllowedToolNames
+	enforceToolAllowlist := allowedToolNames != nil
 
 	toolStepsUsed := 0
 	executedToolCallIDs := make(map[string]struct{})
@@ -124,22 +124,23 @@ func runChatWithToolLoop(
 			if callID == "" {
 				callID = fmt.Sprintf("call_%d_%d", toolStepsUsed, index)
 			}
+			toolName := strings.TrimSpace(tc.Function.Name)
 
 			resultJSON := ""
 			if _, dup := executedToolCallIDs[callID]; dup {
 				resultJSON = marshalChatToolResult(chatToolResult{
 					OK:    false,
-					Tool:  strings.TrimSpace(tc.Function.Name),
+					Tool:  toolName,
 					Data:  nil,
 					Error: "duplicate tool_call_id",
 				})
-			} else if enforceToolAllowlist && !isToolAvailable(allowedToolNames, tc.Function.Name) {
+			} else if enforceToolAllowlist && !isToolAvailable(allowedToolNames, toolName) {
 				executedToolCallIDs[callID] = struct{}{}
 				resultJSON = marshalChatToolResult(chatToolResult{
 					OK:    false,
-					Tool:  strings.TrimSpace(tc.Function.Name),
+					Tool:  toolName,
 					Data:  nil,
-					Error: "tool disabled",
+					Error: fmt.Sprintf("tool %q is disabled or not allowed by current user settings; do not retry it. Ask the user to enable it or continue without this tool.", toolName),
 				})
 			} else {
 				executedToolCallIDs[callID] = struct{}{}

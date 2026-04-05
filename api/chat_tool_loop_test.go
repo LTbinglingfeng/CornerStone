@@ -201,7 +201,7 @@ func TestRunChatWithToolLoop_ToolFailureFedBack(t *testing.T) {
 	}
 }
 
-func TestRunChatWithToolLoop_RejectsDisabledToolCall(t *testing.T) {
+func TestRunChatWithToolLoop_RejectsDisallowedToolCallUsingAllowedToolNames(t *testing.T) {
 	ai := &fakeAIClient{
 		t: t,
 		responses: []*client.ChatResponse{
@@ -225,17 +225,14 @@ func TestRunChatWithToolLoop_RejectsDisabledToolCall(t *testing.T) {
 		ai,
 		client.ChatRequest{
 			Messages: []client.Message{{Role: "user", Content: "hi"}},
-			Tools: []client.Tool{
-				{
-					Type: "function",
-					Function: client.ToolFunction{
-						Name: "send_pat",
-					},
-				},
-			},
+			Tools:    getChatTools(),
 		},
 		executor,
-		chatToolContext{},
+		chatToolContext{
+			AllowedToolNames: map[string]bool{
+				"send_pat": true,
+			},
+		},
 		nil,
 	)
 	if err != nil {
@@ -243,6 +240,19 @@ func TestRunChatWithToolLoop_RejectsDisabledToolCall(t *testing.T) {
 	}
 	if handlerCalled {
 		t.Fatalf("disabled tool handler should not be called")
+	}
+	if len(ai.requests) == 0 {
+		t.Fatalf("expected at least one model request")
+	}
+	exposedToModel := false
+	for _, tool := range ai.requests[0].Tools {
+		if tool.Function.Name == "send_red_packet" {
+			exposedToModel = true
+			break
+		}
+	}
+	if !exposedToModel {
+		t.Fatalf("send_red_packet should still be exposed to the model")
 	}
 	if got == nil || len(got.NewMessages) < 3 {
 		t.Fatalf("expected assistant, tool, assistant messages, got %#v", got)
@@ -259,8 +269,18 @@ func TestRunChatWithToolLoop_RejectsDisabledToolCall(t *testing.T) {
 	if tool, _ := payload["tool"].(string); tool != "send_red_packet" {
 		t.Fatalf("expected tool=send_red_packet, got=%v", tool)
 	}
-	if errMsg, _ := payload["error"].(string); errMsg != "tool disabled" {
-		t.Fatalf("expected error=tool disabled, got=%v", payload["error"])
+	errMsg, _ := payload["error"].(string)
+	if !strings.Contains(errMsg, "send_red_packet") {
+		t.Fatalf("expected error to mention tool name, got=%q", errMsg)
+	}
+	if !strings.Contains(errMsg, "not allowed") && !strings.Contains(errMsg, "disabled") {
+		t.Fatalf("expected error to mention disabled/not allowed, got=%q", errMsg)
+	}
+	if !strings.Contains(errMsg, "do not retry") {
+		t.Fatalf("expected error to instruct model not to retry, got=%q", errMsg)
+	}
+	if !strings.Contains(errMsg, "enable") {
+		t.Fatalf("expected error to suggest asking user to enable, got=%q", errMsg)
 	}
 }
 

@@ -918,9 +918,9 @@ func (s *ClawBotService) generateReplyForSession(ctx context.Context, session *s
 	availableTools := getChatTools(chatToolOptions{
 		Channel:          chatToolChannelClawBot,
 		WebSearchEnabled: isWebSearchConfigured(currentConfig),
-		ToolToggles:      currentConfig.ToolToggles,
 	})
 	availableToolNames := buildToolNameSet(availableTools)
+	allowedToolNames := buildAllowedToolNameSet(availableTools, currentConfig.ToolToggles)
 
 	channelGuideLines := []string{
 		"[渠道说明]",
@@ -1024,9 +1024,10 @@ func (s *ClawBotService) generateReplyForSession(ctx context.Context, session *s
 		req,
 		toolExecutor,
 		chatToolContext{
-			SessionID:  session.SessionID,
-			PromptID:   validPromptID,
-			PromptName: promptName,
+			SessionID:        session.SessionID,
+			PromptID:         validPromptID,
+			PromptName:       promptName,
+			AllowedToolNames: allowedToolNames,
 		},
 		nil,
 	)

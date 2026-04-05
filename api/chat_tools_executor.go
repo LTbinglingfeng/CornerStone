@@ -33,9 +33,10 @@ func marshalChatToolResult(result chatToolResult) string {
 }
 
 type chatToolContext struct {
-	SessionID  string
-	PromptID   string
-	PromptName string
+	SessionID        string
+	PromptID         string
+	PromptName       string
+	AllowedToolNames map[string]bool
 }
 
 type chatToolHandler func(ctx context.Context, toolCall client.ToolCall, toolCtx chatToolContext) chatToolResult
