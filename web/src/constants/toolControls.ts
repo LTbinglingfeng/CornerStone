@@ -9,6 +9,7 @@ export type ToolControlTitleKey =
     | 'settings.toolSendPat'
     | 'settings.toolGetTime'
     | 'settings.toolGetWeather'
+    | 'settings.toolScheduleReminder'
     | 'settings.toolWriteMemory'
     | 'settings.toolWebSearch'
     | 'settings.toolGenerateMoment'
@@ -18,6 +19,7 @@ export type ToolControlDescriptionKey =
     | 'settings.toolSendPatDescription'
     | 'settings.toolGetTimeDescription'
     | 'settings.toolGetWeatherDescription'
+    | 'settings.toolScheduleReminderDescription'
     | 'settings.toolWriteMemoryDescription'
     | 'settings.toolWebSearchDescription'
     | 'settings.toolGenerateMomentDescription'
@@ -67,6 +69,12 @@ export const TOOL_CONTROL_DEFINITIONS: ToolControlDefinition[] = [
         section: 'realtime',
         titleKey: 'settings.toolGetWeather',
         descriptionKey: 'settings.toolGetWeatherDescription',
+    },
+    {
+        key: 'schedule_reminder',
+        section: 'realtime',
+        titleKey: 'settings.toolScheduleReminder',
+        descriptionKey: 'settings.toolScheduleReminderDescription',
     },
     {
         key: 'write_memory',

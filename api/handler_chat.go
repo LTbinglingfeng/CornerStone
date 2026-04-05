@@ -223,6 +223,13 @@ write_memory 只能用于极为重要的长期记忆。
 每轮最多调用一次；如果工具返回 disabled 或 error，不要反复重试。
 宁可少写，不要滥写。写入的记忆不会在同一轮自动出现在记忆块里，但会影响后续轮次。`))
 	}
+	if isToolAvailable(availableToolNames, "schedule_reminder") {
+		systemGuides = append(systemGuides, strings.TrimSpace(`[提醒工具]
+当用户要求你在未来某个时间提醒、催促、复查、再次主动发消息时，调用 schedule_reminder。
+due_at 必须是带时区的绝对 RFC3339 时间，例如 2026-04-05T18:30:00+08:00。
+如果用户给的是“明天/一小时后/今晚八点”等相对时间，先调用 get_time 获取当前时间后再换算。
+title 是提醒标题；reminder_prompt 是到点后只给你自己看的内部提示词，必须具体且非空。`))
+	}
 
 	fullSystemPrompt := buildChatSystemPrompt(systemPrompt, userContext, persona, systemGuides...)
 
@@ -264,47 +271,7 @@ write_memory 只能用于极为重要的长期记忆。
 		useStream = *req.Stream
 	}
 
-	temperature := provider.Temperature
-	if req.Temperature != nil {
-		temperature = *req.Temperature
-	}
-	if provider.Type == config.ProviderTypeAnthropic {
-		temperature = 1
-	}
-
-	chatReq := client.ChatRequest{
-		Model:       provider.Model,
-		Messages:    resolvedMessages,
-		Stream:      useStream,
-		Temperature: temperature,
-		TopP:        provider.TopP,
-		MaxTokens:   req.MaxTokens,
-		Tools:       availableTools,
-	}
-	switch provider.Type {
-	case config.ProviderTypeAnthropic:
-		chatReq.ThinkingBudget = provider.ThinkingBudget
-		chatReq.PromptCaching = provider.PromptCaching
-		chatReq.PromptCacheTTL = provider.PromptCacheTTL
-	case config.ProviderTypeGemini:
-		geminiMode := "none"
-		geminiLevel := "low"
-		geminiBudget := 128
-		if provider.GeminiThinkingMode != nil {
-			geminiMode = *provider.GeminiThinkingMode
-		}
-		if provider.GeminiThinkingLevel != nil {
-			geminiLevel = *provider.GeminiThinkingLevel
-		}
-		if provider.GeminiThinkingBudget != nil {
-			geminiBudget = *provider.GeminiThinkingBudget
-		}
-		chatReq.GeminiThinkingMode = geminiMode
-		chatReq.GeminiThinkingLevel = geminiLevel
-		chatReq.GeminiThinkingBudget = geminiBudget
-	default:
-		chatReq.ReasoningEffort = provider.ReasoningEffort
-	}
+	chatReq := buildChatRequestForProvider(provider, resolvedMessages, availableTools, useStream, req.MaxTokens, req.Temperature)
 
 	if useStream {
 		h.handleStreamChat(w, r, aiClient, chatReq, sessionID, req.SaveHistory, memSession, effectivePromptID, promptName, allowedToolNames)
@@ -321,6 +288,7 @@ func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiCli
 	toolExecutor.configManager = h.configManager
 	toolExecutor.weatherService = h.getWeatherService()
 	toolExecutor.exactTimeService = h.exactTimeService
+	toolExecutor.reminderService = h.reminderService
 	if h.configManager != nil {
 		toolExecutor.webSearch = newWebSearchOrchestrator(h.configManager.Get())
 	}
@@ -333,6 +301,7 @@ func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiCli
 			SessionID:        sessionID,
 			PromptID:         promptID,
 			PromptName:       promptName,
+			Channel:          chatToolChannelDefault,
 			MemSession:       memSession,
 			AllowedToolNames: allowedToolNames,
 		},
@@ -481,6 +450,7 @@ func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiCli
 	toolExecutor.configManager = h.configManager
 	toolExecutor.weatherService = h.getWeatherService()
 	toolExecutor.exactTimeService = h.exactTimeService
+	toolExecutor.reminderService = h.reminderService
 	if h.configManager != nil {
 		toolExecutor.webSearch = newWebSearchOrchestrator(h.configManager.Get())
 	}
@@ -542,6 +512,7 @@ func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiCli
 			SessionID:        sessionID,
 			PromptID:         promptID,
 			PromptName:       promptName,
+			Channel:          chatToolChannelDefault,
 			MemSession:       memSession,
 			AllowedToolNames: allowedToolNames,
 		},
@@ -911,6 +882,7 @@ type chatToolOptions struct {
 	Channel            chatToolChannel
 	WebSearchEnabled   bool
 	WriteMemoryEnabled bool
+	ReminderFiring     bool
 	ToolToggles        map[string]bool
 }
 
@@ -996,6 +968,35 @@ func getChatTools(options ...chatToolOptions) []client.Tool {
 						},
 					},
 					"required": []string{"name", "target"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: client.ToolFunction{
+				Name:        "schedule_reminder",
+				Description: "创建一个未来触发的提醒任务。到点后，你会收到 reminder_prompt 作为内部提示，并主动向用户发送一条消息。",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"due_at": map[string]interface{}{
+							"type":        "string",
+							"description": "提醒触发时间，必须是带时区的 RFC3339 时间，例如 2026-04-05T18:30:00+08:00",
+							"maxLength":   64,
+						},
+						"title": map[string]interface{}{
+							"type":        "string",
+							"description": "提醒标题，简要描述这个提醒是做什么的",
+							"maxLength":   120,
+						},
+						"reminder_prompt": map[string]interface{}{
+							"type":        "string",
+							"description": "到点后再次发给你的内部提示词，不会直接写入聊天记录，但会用于生成最终主动消息",
+							"maxLength":   2000,
+						},
+					},
+					"required":             []string{"due_at", "title", "reminder_prompt"},
+					"additionalProperties": false,
 				},
 			},
 		},
@@ -1130,11 +1131,25 @@ func getChatTools(options ...chatToolOptions) []client.Tool {
 		})
 	}
 
-	if channel == chatToolChannelClawBot {
+	if len(options) > 0 && options[0].ReminderFiring {
 		filtered := make([]client.Tool, 0, 3)
 		for _, tool := range tools {
 			switch strings.TrimSpace(tool.Function.Name) {
 			case "get_time", "get_weather", "web_search":
+				filtered = append(filtered, tool)
+			}
+		}
+		if len(filtered) == 0 {
+			return nil
+		}
+		return filtered
+	}
+
+	if channel == chatToolChannelClawBot {
+		filtered := make([]client.Tool, 0, 4)
+		for _, tool := range tools {
+			switch strings.TrimSpace(tool.Function.Name) {
+			case "get_time", "get_weather", "web_search", "schedule_reminder":
 				filtered = append(filtered, tool)
 			}
 		}

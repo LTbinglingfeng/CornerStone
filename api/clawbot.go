@@ -804,7 +804,7 @@ func (s *ClawBotService) processRegenerateCommand(ctx context.Context, cfg confi
 
 	logging.Infof("clawbot regenerate prepared trailing response replacement with %d messages: user=%s session=%s", len(snapshot.TailMessages), userID, session.SessionID)
 
-	generatedReply, err := s.generateReplyForSession(ctx, snapshot.Session, cfg.PromptID)
+	generatedReply, err := s.generateReplyForSession(ctx, snapshot.Session, cfg.PromptID, userID)
 	if err != nil {
 		logging.Errorf("clawbot regenerate reply failed: user=%s session=%s err=%v", userID, session.SessionID, err)
 		s.setLastError(err)
@@ -857,7 +857,7 @@ func (s *ClawBotService) processIncomingBatch(ctx context.Context, cfg config.Cl
 		return
 	}
 
-	generatedReply, err := s.generateReply(ctx, session.SessionID, cfg.PromptID)
+	generatedReply, err := s.generateReply(ctx, session.SessionID, cfg.PromptID, userID)
 	if err != nil {
 		logging.Errorf("clawbot generate reply failed: user=%s session=%s err=%v", userID, session.SessionID, err)
 		s.setLastError(err)
@@ -866,31 +866,29 @@ func (s *ClawBotService) processIncomingBatch(ctx context.Context, cfg config.Cl
 	s.sendAndPersistReply(ctx, cfg, userID, session.SessionID, generatedReply, "reply")
 }
 
-func (s *ClawBotService) generateReply(ctx context.Context, sessionID, configuredPromptID string) (*clawBotGeneratedReply, error) {
+func (s *ClawBotService) generateReply(ctx context.Context, sessionID, configuredPromptID, userID string) (*clawBotGeneratedReply, error) {
 	session, ok := s.handler.chatManager.GetSession(sessionID)
 	if !ok {
 		return nil, fmt.Errorf("session not found: %s", sessionID)
 	}
-	return s.generateReplyForSession(ctx, session, configuredPromptID)
+	return s.generateReplyForSession(ctx, session, configuredPromptID, userID)
 }
 
-func (s *ClawBotService) generateReplyForSession(ctx context.Context, session *storage.ChatRecord, configuredPromptID string) (*clawBotGeneratedReply, error) {
-	provider := s.handler.configManager.GetActiveProvider()
-	if provider == nil {
-		return nil, fmt.Errorf("no active provider configured")
-	}
-	if provider.Type == config.ProviderTypeGeminiImage {
-		return nil, fmt.Errorf("active provider is not chat-capable")
-	}
-	if strings.TrimSpace(provider.APIKey) == "" {
-		return nil, fmt.Errorf("api key not configured")
-	}
+func (s *ClawBotService) generateReplyForSession(ctx context.Context, session *storage.ChatRecord, configuredPromptID, userID string) (*clawBotGeneratedReply, error) {
 	if session == nil {
 		return nil, fmt.Errorf("session is nil")
 	}
 
-	systemPrompt := s.handler.configManager.GetSystemPrompt()
-	userContext := buildChatUserContext(s.handler.userManager.Get())
+	currentConfig := config.DefaultConfig()
+	if s.handler.configManager != nil {
+		currentConfig = s.handler.configManager.Get()
+	}
+	availableTools := getChatTools(chatToolOptions{
+		Channel:          chatToolChannelClawBot,
+		WebSearchEnabled: isWebSearchConfigured(currentConfig),
+	})
+	availableToolNames := buildToolNameSet(availableTools)
+
 	effectivePromptID := strings.TrimSpace(session.PromptID)
 	if effectivePromptID == "" {
 		effectivePromptID = strings.TrimSpace(configuredPromptID)
@@ -906,22 +904,6 @@ func (s *ClawBotService) generateReplyForSession(ctx context.Context, session *s
 		}
 	}
 
-	memSession := s.handler.getOrCreateMemorySession(validPromptID, session.SessionID)
-	if memSession != nil {
-		persona = storage.BuildPromptWithMemory(persona, memSession.GetActiveMemories())
-	}
-
-	currentConfig := config.DefaultConfig()
-	if s.handler.configManager != nil {
-		currentConfig = s.handler.configManager.Get()
-	}
-	availableTools := getChatTools(chatToolOptions{
-		Channel:          chatToolChannelClawBot,
-		WebSearchEnabled: isWebSearchConfigured(currentConfig),
-	})
-	availableToolNames := buildToolNameSet(availableTools)
-	allowedToolNames := buildAllowedToolNameSet(availableTools, currentConfig.ToolToggles)
-
 	channelGuideLines := []string{
 		"[渠道说明]",
 		"你正在通过微信 ClawBot 渠道回复用户。",
@@ -929,7 +911,7 @@ func (s *ClawBotService) generateReplyForSession(ctx context.Context, session *s
 		"请直接输出可以发送给用户的自然语言消息。",
 	}
 	clawBotToolNames := make([]string, 0, 3)
-	for _, name := range []string{"get_time", "get_weather", "web_search"} {
+	for _, name := range []string{"get_time", "get_weather", "web_search", "schedule_reminder"} {
 		if isToolAvailable(availableToolNames, name) {
 			clawBotToolNames = append(clawBotToolNames, name)
 		}
@@ -939,10 +921,6 @@ func (s *ClawBotService) generateReplyForSession(ctx context.Context, session *s
 	}
 	channelGuideLines = append(channelGuideLines, "不要调用红包、拍一拍、朋友圈等微信交互工具。")
 	channelGuide := strings.TrimSpace(strings.Join(channelGuideLines, "\n"))
-
-	history := convertChatMessages(session.Messages)
-	history = mergeTrailingUserMessages(history, availableToolNames)
-	history = limitMessagesByTurns(history, provider.ContextMessages)
 
 	systemGuides := []string{channelGuide}
 	if isToolAvailable(availableToolNames, "get_time") {
@@ -955,110 +933,37 @@ func (s *ClawBotService) generateReplyForSession(ctx context.Context, session *s
 当需要回答当前天气、气温、降雨、空气质量、天气预警等实时天气问题时，必须先调用 get_weather。
 如果用户没有指定城市，则使用设置中的默认天气城市。`))
 	}
-
-	fullSystemPrompt := buildChatSystemPrompt(systemPrompt, userContext, persona, systemGuides...)
-
-	messages := make([]client.Message, 0, len(history)+1)
-	if strings.TrimSpace(fullSystemPrompt) != "" {
-		messages = append(messages, client.Message{
-			Role:    "system",
-			Content: strings.TrimSpace(fullSystemPrompt),
-		})
-	}
-	messages = append(messages, history...)
-	messages = normalizeMessagesForProvider(messages, availableToolNames)
-	resolvedMessages, err := s.handler.prepareMessagesForProvider(messages, provider.ImageCapable)
-	if err != nil {
-		return nil, err
+	if isToolAvailable(availableToolNames, "schedule_reminder") {
+		systemGuides = append(systemGuides, strings.TrimSpace(`[提醒工具]
+当用户要求你在未来某个时间提醒、催促、复查或再次主动发消息时，调用 schedule_reminder。
+due_at 必须是带时区的绝对 RFC3339 时间；如果用户给的是相对时间，先调用 get_time 再换算。
+reminder_prompt 是到点后只给你自己看的内部提示词，不会直接写入聊天记录。`))
 	}
 
-	aiClient := newAIClientForProvider(provider)
-	temperature := provider.Temperature
-	if provider.Type == config.ProviderTypeAnthropic {
-		temperature = 1
-	}
-	req := client.ChatRequest{
-		Model:       provider.Model,
-		Messages:    resolvedMessages,
-		Stream:      false,
-		Temperature: temperature,
-		TopP:        provider.TopP,
-		Tools:       availableTools,
-	}
-	switch provider.Type {
-	case config.ProviderTypeAnthropic:
-		req.ThinkingBudget = provider.ThinkingBudget
-		req.PromptCaching = provider.PromptCaching
-		req.PromptCacheTTL = provider.PromptCacheTTL
-	case config.ProviderTypeGemini:
-		geminiMode := "none"
-		geminiLevel := "low"
-		geminiBudget := 128
-		if provider.GeminiThinkingMode != nil {
-			geminiMode = *provider.GeminiThinkingMode
-		}
-		if provider.GeminiThinkingLevel != nil {
-			geminiLevel = *provider.GeminiThinkingLevel
-		}
-		if provider.GeminiThinkingBudget != nil {
-			geminiBudget = *provider.GeminiThinkingBudget
-		}
-		req.GeminiThinkingMode = geminiMode
-		req.GeminiThinkingLevel = geminiLevel
-		req.GeminiThinkingBudget = geminiBudget
-	default:
-		req.ReasoningEffort = provider.ReasoningEffort
-	}
-
-	toolExecutor := newChatToolExecutor(s.handler.momentManager, s.handler.momentGenerator)
-	toolExecutor.memoryManager = s.handler.memoryManager
-	toolExecutor.configManager = s.handler.configManager
-	toolExecutor.weatherService = s.handler.getWeatherService()
-	toolExecutor.exactTimeService = s.handler.exactTimeService
-	if s.handler.configManager != nil {
-		toolExecutor.webSearch = newWebSearchOrchestrator(s.handler.configManager.Get())
-	}
-
-	loopResult, err := runChatWithToolLoop(
-		ctx,
-		aiClient,
-		req,
-		toolExecutor,
-		chatToolContext{
-			SessionID:        session.SessionID,
-			PromptID:         validPromptID,
-			PromptName:       promptName,
-			MemSession:       memSession,
-			AllowedToolNames: allowedToolNames,
+	reply, err := s.handler.generateSessionReply(ctx, sessionReplyOptions{
+		Session:       session,
+		PromptID:      validPromptID,
+		PromptName:    promptName,
+		Persona:       persona,
+		Channel:       chatToolChannelClawBot,
+		ClawBotUserID: strings.TrimSpace(userID),
+		ToolOptions: chatToolOptions{
+			Channel:          chatToolChannelClawBot,
+			WebSearchEnabled: isWebSearchConfigured(currentConfig),
 		},
-		nil,
-	)
+		ExtraSystemGuides: systemGuides,
+	})
 	if err != nil {
 		return nil, err
 	}
-	if loopResult == nil || loopResult.FinalResponse == nil || len(loopResult.FinalResponse.Choices) == 0 {
-		return &clawBotGeneratedReply{MemSession: memSession}, nil
-	}
-
-	baseTime := time.Now()
-	storageMessages := make([]storage.ChatMessage, 0, len(loopResult.NewMessages))
-	for index, msg := range loopResult.NewMessages {
-		storageMessages = append(storageMessages, storage.ChatMessage{
-			Role:             msg.Role,
-			Content:          msg.Content,
-			ReasoningContent: msg.ReasoningContent,
-			ToolCalls:        msg.ToolCalls,
-			ToolCallID:       msg.ToolCallID,
-			ImagePaths:       msg.ImagePaths,
-			TTSAudioPaths:    msg.TTSAudioPaths,
-			Timestamp:        baseTime.Add(time.Millisecond * time.Duration(index)),
-		})
+	if reply == nil {
+		return &clawBotGeneratedReply{}, nil
 	}
 
 	return &clawBotGeneratedReply{
-		Text:            strings.TrimSpace(loopResult.FinalResponse.Choices[0].Message.Content),
-		StorageMessages: storageMessages,
-		MemSession:      memSession,
+		Text:            reply.Text,
+		StorageMessages: reply.StorageMessages,
+		MemSession:      reply.MemSession,
 	}, nil
 }
 

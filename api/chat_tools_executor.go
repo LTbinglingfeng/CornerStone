@@ -36,6 +36,8 @@ type chatToolContext struct {
 	SessionID        string
 	PromptID         string
 	PromptName       string
+	Channel          chatToolChannel
+	ClawBotUserID    string
 	MemSession       *storage.MemorySession
 	AllowedToolNames map[string]bool
 }
@@ -52,6 +54,7 @@ type chatToolExecutor struct {
 	weatherService   weatherService
 	exactTimeService exactTimeProvider
 	webSearch        *search.Orchestrator
+	reminderService  *ReminderService
 	emitEvent        func(payload interface{})
 }
 
@@ -70,6 +73,7 @@ func newChatToolExecutor(momentManager *storage.MomentManager, momentGenerator *
 	executor.handlers["get_time"] = executor.handleGetTime
 	executor.handlers["web_search"] = executor.handleWebSearch
 	executor.handlers["write_memory"] = executor.handleWriteMemory
+	executor.handlers["schedule_reminder"] = executor.handleScheduleReminder
 
 	return executor
 }

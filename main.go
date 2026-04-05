@@ -188,6 +188,7 @@ func main() {
 	cachePhotoDir := filepath.Join(baseDir, "cache_photo")
 	ttsAudioDir := filepath.Join(baseDir, "tts_audio")
 	momentsDir := filepath.Join(baseDir, "moments")
+	remindersDir := filepath.Join(baseDir, "reminders")
 
 	// 初始化管理器
 	configManager := config.NewManager(configPath)
@@ -244,6 +245,7 @@ func main() {
 	momentManager := storage.NewMomentManager(momentsDir)
 	momentGenerator := api.NewMomentGenerator(momentManager, configManager)
 	memoryManager := storage.NewMemoryManager(promptsDir)
+	reminderManager := storage.NewReminderManager(remindersDir)
 	exactTimeService := exacttime.New(exacttime.DefaultConfig())
 	memoryExtractor := storage.NewMemoryExtractor(
 		memoryManager,
@@ -265,6 +267,11 @@ func main() {
 	defer exactTimeCancel()
 	go exactTimeService.Run(exactTimeCtx)
 	handler.SetExactTimeService(exactTimeService)
+	reminderService := api.NewReminderService(handler, reminderManager, exactTimeService)
+	handler.SetReminderService(reminderService)
+	reminderCtx, reminderCancel := context.WithCancel(context.Background())
+	defer reminderCancel()
+	reminderService.Start(reminderCtx)
 	appVersion := resolveVersion(exeDir)
 	clawBotService := api.NewClawBotService(handler)
 	handler.SetClawBotService(clawBotService)

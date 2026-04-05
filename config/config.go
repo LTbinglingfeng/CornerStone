@@ -137,6 +137,7 @@ var defaultToolToggleKeys = []string{
 	"send_pat",
 	"get_time",
 	"get_weather",
+	"schedule_reminder",
 	"write_memory",
 	"generate_moment",
 	"web_search",

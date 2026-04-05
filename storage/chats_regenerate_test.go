@@ -2,6 +2,7 @@ package storage
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -217,6 +218,106 @@ func TestDeleteTrailingResponseBatch_NoUserDeletesEntireTail(t *testing.T) {
 	record, _ := cm.GetSession(sid)
 	if len(record.Messages) != 0 {
 		t.Fatalf("expected empty session, got %d messages", len(record.Messages))
+	}
+}
+
+func TestReminderManager_CreateUpdateAndListDuePending(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "reminders")
+	manager := NewReminderManager(dir)
+
+	dueAt := time.Date(2026, 4, 5, 19, 30, 0, 0, time.FixedZone("CST", 8*3600))
+	createdAt := dueAt.Add(-time.Hour)
+	reminder, err := manager.Create(Reminder{
+		ID:             "reminder-1",
+		Channel:        ReminderChannelWeb,
+		SessionID:      "session-1",
+		PromptID:       "prompt-1",
+		PromptName:     "Alice",
+		Title:          "喝水提醒",
+		ReminderPrompt: "到点后提醒用户喝水",
+		DueAt:          dueAt,
+		Status:         ReminderStatusPending,
+		CreatedAt:      createdAt,
+		UpdatedAt:      createdAt,
+	})
+	if err != nil {
+		t.Fatalf("Create reminder failed: %v", err)
+	}
+	if reminder.Status != ReminderStatusPending {
+		t.Fatalf("status = %q, want %q", reminder.Status, ReminderStatusPending)
+	}
+
+	newTitle := "新的喝水提醒"
+	newPrompt := "到点后温柔地提醒用户喝水"
+	newDueAt := dueAt.Add(30 * time.Minute)
+	updated, err := manager.UpdatePending(reminder.ID, ReminderPatch{
+		Title:          &newTitle,
+		ReminderPrompt: &newPrompt,
+		DueAt:          &newDueAt,
+	}, createdAt.Add(10*time.Minute))
+	if err != nil {
+		t.Fatalf("UpdatePending failed: %v", err)
+	}
+	if updated.Title != newTitle {
+		t.Fatalf("title = %q, want %q", updated.Title, newTitle)
+	}
+	if updated.ReminderPrompt != newPrompt {
+		t.Fatalf("reminder_prompt = %q, want %q", updated.ReminderPrompt, newPrompt)
+	}
+
+	notDue := manager.ListDuePending(newDueAt.Add(-time.Second))
+	if len(notDue) != 0 {
+		t.Fatalf("ListDuePending before due returned %d items, want 0", len(notDue))
+	}
+
+	due := manager.ListDuePending(newDueAt)
+	if len(due) != 1 || due[0].ID != reminder.ID {
+		t.Fatalf("ListDuePending at due = %#v, want reminder-1", due)
+	}
+}
+
+func TestReminderManager_ReloadResetsFiringToPending(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "reminders")
+	manager := NewReminderManager(dir)
+
+	dueAt := time.Date(2026, 4, 5, 19, 30, 0, 0, time.UTC)
+	createdAt := dueAt.Add(-time.Hour)
+	reminder, err := manager.Create(Reminder{
+		ID:             "reminder-1",
+		Channel:        ReminderChannelClawBot,
+		SessionID:      "session-1",
+		PromptID:       "prompt-1",
+		PromptName:     "Alice",
+		ClawBotUserID:  "wx-user",
+		Title:          "喝水提醒",
+		ReminderPrompt: "到点后提醒用户喝水",
+		DueAt:          dueAt,
+		Status:         ReminderStatusPending,
+		CreatedAt:      createdAt,
+		UpdatedAt:      createdAt,
+	})
+	if err != nil {
+		t.Fatalf("Create reminder failed: %v", err)
+	}
+
+	_, transitioned, err := manager.TryMarkFiring(reminder.ID, dueAt)
+	if err != nil {
+		t.Fatalf("TryMarkFiring failed: %v", err)
+	}
+	if !transitioned {
+		t.Fatal("TryMarkFiring did not transition reminder to firing")
+	}
+
+	reloaded := NewReminderManager(dir)
+	loaded, ok := reloaded.Get(reminder.ID)
+	if !ok || loaded == nil {
+		t.Fatal("reloaded reminder not found")
+	}
+	if loaded.Status != ReminderStatusPending {
+		t.Fatalf("reloaded status = %q, want %q", loaded.Status, ReminderStatusPending)
+	}
+	if loaded.Attempts != 1 {
+		t.Fatalf("attempts = %d, want 1", loaded.Attempts)
 	}
 }
 

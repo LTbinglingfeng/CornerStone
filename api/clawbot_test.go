@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -325,6 +326,7 @@ func newTestClawBotService(t *testing.T, baseURL string) *ClawBotService {
 		chatManager:   storage.NewChatManager(t.TempDir()),
 		userManager:   newTestUserManager(t),
 	}
+	handler.SetReminderService(NewReminderService(handler, storage.NewReminderManager(filepath.Join(t.TempDir(), "reminders")), nil))
 
 	return &ClawBotService{
 		handler:        handler,
@@ -1032,12 +1034,12 @@ func TestProcessIncomingBatch_ClawBotRunsReadOnlyToolLoop(t *testing.T) {
 	}
 
 	firstReq := state.chatReqs[0]
-	if len(firstReq.Tools) != 2 {
-		t.Fatalf("first request tools len = %d, want 2", len(firstReq.Tools))
+	if len(firstReq.Tools) != 3 {
+		t.Fatalf("first request tools len = %d, want 3", len(firstReq.Tools))
 	}
 	for _, tool := range firstReq.Tools {
 		switch tool.Function.Name {
-		case "get_time", "get_weather":
+		case "get_time", "get_weather", "schedule_reminder":
 		default:
 			t.Fatalf("unexpected clawbot tool %q", tool.Function.Name)
 		}
@@ -1218,8 +1220,8 @@ func TestProcessIncomingBatch_ClawBotRunsWebSearchToolLoopWhenConfigured(t *test
 	}
 
 	firstReq := state.chatReqs[0]
-	if len(firstReq.Tools) != 3 {
-		t.Fatalf("first request tools len = %d, want 3", len(firstReq.Tools))
+	if len(firstReq.Tools) != 4 {
+		t.Fatalf("first request tools len = %d, want 4", len(firstReq.Tools))
 	}
 	names := make(map[string]struct{}, len(firstReq.Tools))
 	for _, tool := range firstReq.Tools {
@@ -1233,6 +1235,9 @@ func TestProcessIncomingBatch_ClawBotRunsWebSearchToolLoopWhenConfigured(t *test
 	}
 	if _, ok := names["web_search"]; !ok {
 		t.Fatalf("first request tools = %#v, want web_search", firstReq.Tools)
+	}
+	if _, ok := names["schedule_reminder"]; !ok {
+		t.Fatalf("first request tools = %#v, want schedule_reminder", firstReq.Tools)
 	}
 
 	secondReq := state.chatReqs[1]
@@ -1267,6 +1272,138 @@ func TestProcessIncomingBatch_ClawBotRunsWebSearchToolLoopWhenConfigured(t *test
 	}
 	if record.Messages[3].Role != "assistant" || record.Messages[3].Content != "我查到 CornerStone 是一个多模型聊天应用。" {
 		t.Fatalf("final assistant message = %#v, want final reply", record.Messages[3])
+	}
+}
+
+func TestProcessIncomingBatch_ClawBotCanCreateScheduleReminder(t *testing.T) {
+	var state struct {
+		mu       sync.Mutex
+		chatReqs []struct {
+			Tools []client.Tool `json:"tools"`
+		}
+		sendTexts []string
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/chat/completions":
+			var req struct {
+				Tools []client.Tool `json:"tools"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode chat request failed: %v", err)
+			}
+
+			state.mu.Lock()
+			state.chatReqs = append(state.chatReqs, req)
+			callIndex := len(state.chatReqs)
+			state.mu.Unlock()
+
+			respMessage := client.Message{
+				Role:    "assistant",
+				Content: "好，到时我会提醒你。",
+			}
+			finishReason := "stop"
+			if callIndex == 1 {
+				respMessage = client.Message{
+					Role: "assistant",
+					ToolCalls: []client.ToolCall{
+						{
+							ID:   "call_reminder_1",
+							Type: "function",
+							Function: client.ToolCallFunction{
+								Name:      "schedule_reminder",
+								Arguments: `{"due_at":"2026-04-05T19:30:00+08:00","title":"喝水提醒","reminder_prompt":"到时间后提醒用户去喝水，并简短关心一下。"}`,
+							},
+						},
+					},
+				}
+				finishReason = "tool_calls"
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(client.ChatResponse{
+				ID:      "chatcmpl-test",
+				Object:  "chat.completion",
+				Created: time.Now().Unix(),
+				Model:   "gpt-test",
+				Choices: []client.Choice{
+					{
+						Index:        0,
+						Message:      respMessage,
+						FinishReason: finishReason,
+					},
+				},
+			})
+		case "/ilink/bot/sendmessage":
+			var req client.ClawBotSendMessageRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode sendmessage request failed: %v", err)
+			}
+
+			text := ""
+			if len(req.Msg.ItemList) > 0 && req.Msg.ItemList[0].TextItem != nil {
+				text = req.Msg.ItemList[0].TextItem.Text
+			}
+
+			state.mu.Lock()
+			state.sendTexts = append(state.sendTexts, text)
+			state.mu.Unlock()
+
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(client.ClawBotSendMessageResponse{Ret: 0})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	service := newTestClawBotService(t, server.URL)
+	cfgAll := service.handler.configManager.Get()
+	cfgAll.ClawBot.PromptID = "prompt-1"
+	if err := service.handler.configManager.Update(cfgAll); err != nil {
+		t.Fatalf("Update clawbot prompt config failed: %v", err)
+	}
+
+	cfg := service.handler.configManager.GetClawBotConfig()
+	service.processIncomingBatch(context.Background(), cfg, "wx-user", []clawBotPendingMessage{{Text: "今晚七点半提醒我喝水"}})
+
+	state.mu.Lock()
+	defer state.mu.Unlock()
+
+	if len(state.sendTexts) != 1 || state.sendTexts[0] != "好，到时我会提醒你。" {
+		t.Fatalf("send texts = %#v, want final confirmation", state.sendTexts)
+	}
+	if len(state.chatReqs) == 0 {
+		t.Fatal("expected at least one chat request")
+	}
+
+	foundReminderTool := false
+	for _, tool := range state.chatReqs[0].Tools {
+		if tool.Function.Name == "schedule_reminder" {
+			foundReminderTool = true
+			break
+		}
+	}
+	if !foundReminderTool {
+		t.Fatalf("first request tools = %#v, want schedule_reminder", state.chatReqs[0].Tools)
+	}
+
+	reminders := service.handler.reminderService.List()
+	if len(reminders) != 1 {
+		t.Fatalf("reminders len = %d, want 1", len(reminders))
+	}
+	if reminders[0].Channel != storage.ReminderChannelClawBot {
+		t.Fatalf("reminder channel = %q, want %q", reminders[0].Channel, storage.ReminderChannelClawBot)
+	}
+	if reminders[0].ClawBotUserID != "wx-user" {
+		t.Fatalf("clawbot_user_id = %q, want %q", reminders[0].ClawBotUserID, "wx-user")
+	}
+	if reminders[0].PromptID != "prompt-1" {
+		t.Fatalf("prompt_id = %q, want %q", reminders[0].PromptID, "prompt-1")
+	}
+	if reminders[0].Title != "喝水提醒" {
+		t.Fatalf("title = %q, want %q", reminders[0].Title, "喝水提醒")
 	}
 }
 
