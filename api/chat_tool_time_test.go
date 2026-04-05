@@ -80,6 +80,22 @@ func TestGetChatTools_IncludesTimeAndClawBotKeepsReadOnlyTools(t *testing.T) {
 	}
 
 	clawBotTools = getChatTools(chatToolOptions{
+		Channel:            chatToolChannelClawBot,
+		WriteMemoryEnabled: true,
+	})
+	if len(clawBotTools) != 5 {
+		t.Fatalf("clawbot tools len with write memory = %d, want 5", len(clawBotTools))
+	}
+
+	names = make(map[string]struct{}, len(clawBotTools))
+	for _, tool := range clawBotTools {
+		names[tool.Function.Name] = struct{}{}
+	}
+	if _, ok := names["write_memory"]; !ok {
+		t.Fatalf("clawbot tools = %#v, want write_memory when enabled", clawBotTools)
+	}
+
+	clawBotTools = getChatTools(chatToolOptions{
 		Channel:          chatToolChannelClawBot,
 		WebSearchEnabled: true,
 	})
@@ -93,6 +109,15 @@ func TestGetChatTools_IncludesTimeAndClawBotKeepsReadOnlyTools(t *testing.T) {
 	}
 	if _, ok := names["web_search"]; !ok {
 		t.Fatalf("clawbot tools = %#v, want web_search when enabled", clawBotTools)
+	}
+
+	clawBotTools = getChatTools(chatToolOptions{
+		Channel:            chatToolChannelClawBot,
+		WebSearchEnabled:   true,
+		WriteMemoryEnabled: true,
+	})
+	if len(clawBotTools) != 6 {
+		t.Fatalf("clawbot tools len with web search and write memory = %d, want 6", len(clawBotTools))
 	}
 
 	disabledTimeTools := getChatTools(chatToolOptions{

@@ -321,10 +321,13 @@ func newTestClawBotService(t *testing.T, baseURL string) *ClawBotService {
 	}
 
 	handler := &Handler{
-		configManager: configManager,
-		promptManager: newTestPromptManager(t),
-		chatManager:   storage.NewChatManager(t.TempDir()),
-		userManager:   newTestUserManager(t),
+		configManager:  configManager,
+		promptManager:  newTestPromptManager(t),
+		chatManager:    storage.NewChatManager(t.TempDir()),
+		userManager:    newTestUserManager(t),
+		memoryManager:  storage.NewMemoryManager(t.TempDir()),
+		memorySessions: make(map[string]*storage.MemorySession),
+		cleanupDone:    make(chan struct{}),
 	}
 	handler.SetReminderService(NewReminderService(handler, storage.NewReminderManager(filepath.Join(t.TempDir(), "reminders")), nil))
 
@@ -1275,6 +1278,168 @@ func TestProcessIncomingBatch_ClawBotRunsWebSearchToolLoopWhenConfigured(t *test
 	}
 	if record.Messages[3].Role != "assistant" || record.Messages[3].Content != "我查到 CornerStone 是一个多模型聊天应用。" {
 		t.Fatalf("final assistant message = %#v, want final reply", record.Messages[3])
+	}
+}
+
+func TestProcessIncomingBatch_ClawBotRunsWriteMemoryToolLoopWhenEnabled(t *testing.T) {
+	var state struct {
+		mu       sync.Mutex
+		chatReqs []struct {
+			Messages []struct {
+				Role       string            `json:"role"`
+				Content    interface{}       `json:"content"`
+				ToolCalls  []client.ToolCall `json:"tool_calls,omitempty"`
+				ToolCallID string            `json:"tool_call_id,omitempty"`
+			} `json:"messages"`
+			Tools []client.Tool `json:"tools"`
+		}
+		sendTexts []string
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/chat/completions":
+			var req struct {
+				Messages []struct {
+					Role       string            `json:"role"`
+					Content    interface{}       `json:"content"`
+					ToolCalls  []client.ToolCall `json:"tool_calls,omitempty"`
+					ToolCallID string            `json:"tool_call_id,omitempty"`
+				} `json:"messages"`
+				Tools []client.Tool `json:"tools"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode chat request failed: %v", err)
+			}
+
+			state.mu.Lock()
+			state.chatReqs = append(state.chatReqs, req)
+			callIndex := len(state.chatReqs)
+			state.mu.Unlock()
+
+			respMessage := client.Message{
+				Role:    "assistant",
+				Content: "记住了。",
+			}
+			finishReason := "stop"
+			if callIndex == 1 {
+				respMessage = client.Message{
+					Role: "assistant",
+					ToolCalls: []client.ToolCall{
+						{
+							ID:   "call_memory_1",
+							Type: "function",
+							Function: client.ToolCallFunction{
+								Name:      "write_memory",
+								Arguments: `{"items":[{"subject":"user","category":"preference","content":"用户喜欢黑咖啡"}]}`,
+							},
+						},
+					},
+				}
+				finishReason = "tool_calls"
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(client.ChatResponse{
+				ID:      "chatcmpl-test",
+				Object:  "chat.completion",
+				Created: time.Now().Unix(),
+				Model:   "gpt-test",
+				Choices: []client.Choice{
+					{
+						Index:        0,
+						Message:      respMessage,
+						FinishReason: finishReason,
+					},
+				},
+			})
+		case "/ilink/bot/sendmessage":
+			var req client.ClawBotSendMessageRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode sendmessage request failed: %v", err)
+			}
+
+			text := ""
+			if len(req.Msg.ItemList) > 0 && req.Msg.ItemList[0].TextItem != nil {
+				text = req.Msg.ItemList[0].TextItem.Text
+			}
+
+			state.mu.Lock()
+			state.sendTexts = append(state.sendTexts, text)
+			state.mu.Unlock()
+
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(client.ClawBotSendMessageResponse{Ret: 0})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	service := newTestClawBotService(t, server.URL)
+	cfgAll := service.handler.configManager.Get()
+	cfgAll.MemoryEnabled = true
+	cfgAll.ClawBot.PromptID = "prompt-1"
+	if err := service.handler.configManager.Update(cfgAll); err != nil {
+		t.Fatalf("Update clawbot memory config failed: %v", err)
+	}
+
+	cfg := service.handler.configManager.GetClawBotConfig()
+	service.processIncomingBatch(context.Background(), cfg, "wx-user", []clawBotPendingMessage{{Text: "我喜欢黑咖啡"}})
+
+	state.mu.Lock()
+	defer state.mu.Unlock()
+
+	if len(state.chatReqs) != 2 {
+		t.Fatalf("chat request count = %d, want 2", len(state.chatReqs))
+	}
+	if len(state.sendTexts) != 1 || state.sendTexts[0] != "记住了。" {
+		t.Fatalf("send texts = %#v, want final assistant reply", state.sendTexts)
+	}
+
+	firstReq := state.chatReqs[0]
+	if len(firstReq.Tools) != 5 {
+		t.Fatalf("first request tools len = %d, want 5", len(firstReq.Tools))
+	}
+	names := make(map[string]struct{}, len(firstReq.Tools))
+	for _, tool := range firstReq.Tools {
+		names[tool.Function.Name] = struct{}{}
+	}
+	if _, ok := names["get_time"]; !ok {
+		t.Fatalf("first request tools = %#v, want get_time", firstReq.Tools)
+	}
+	if _, ok := names["get_weather"]; !ok {
+		t.Fatalf("first request tools = %#v, want get_weather", firstReq.Tools)
+	}
+	if _, ok := names["schedule_reminder"]; !ok {
+		t.Fatalf("first request tools = %#v, want schedule_reminder", firstReq.Tools)
+	}
+	if _, ok := names["write_memory"]; !ok {
+		t.Fatalf("first request tools = %#v, want write_memory", firstReq.Tools)
+	}
+	if _, ok := names["no_reply"]; !ok {
+		t.Fatalf("first request tools = %#v, want no_reply", firstReq.Tools)
+	}
+
+	secondReq := state.chatReqs[1]
+	foundToolResult := false
+	for _, msg := range secondReq.Messages {
+		content, _ := msg.Content.(string)
+		if msg.Role == "tool" && msg.ToolCallID == "call_memory_1" && strings.Contains(content, `"tool":"write_memory"`) {
+			foundToolResult = true
+			break
+		}
+	}
+	if !foundToolResult {
+		t.Fatalf("second request missing write_memory tool result: %#v", secondReq.Messages)
+	}
+
+	memories := service.handler.memoryManager.GetAll("prompt-1")
+	if len(memories) != 1 {
+		t.Fatalf("memories len = %d, want 1", len(memories))
+	}
+	if memories[0].Content != "用户喜欢黑咖啡" {
+		t.Fatalf("memory content = %q, want %q", memories[0].Content, "用户喜欢黑咖啡")
 	}
 }
 
