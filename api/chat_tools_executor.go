@@ -36,6 +36,7 @@ type chatToolContext struct {
 	SessionID        string
 	PromptID         string
 	PromptName       string
+	MemSession       *storage.MemorySession
 	AllowedToolNames map[string]bool
 }
 
@@ -46,6 +47,7 @@ type chatToolExecutor struct {
 
 	momentManager    *storage.MomentManager
 	momentGenerator  *MomentGenerator
+	memoryManager    *storage.MemoryManager
 	configManager    *config.Manager
 	weatherService   weatherService
 	exactTimeService exactTimeProvider
@@ -67,6 +69,7 @@ func newChatToolExecutor(momentManager *storage.MomentManager, momentGenerator *
 	executor.handlers["get_weather"] = executor.handleGetWeather
 	executor.handlers["get_time"] = executor.handleGetTime
 	executor.handlers["web_search"] = executor.handleWebSearch
+	executor.handlers["write_memory"] = executor.handleWriteMemory
 
 	return executor
 }

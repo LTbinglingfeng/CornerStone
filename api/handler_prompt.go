@@ -1,12 +1,14 @@
 package api
 
 import (
+	"cornerstone/storage"
 	"crypto/rand"
 	"errors"
 	"fmt"
 	"net/http"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // PromptRequest 提示词创建请求
@@ -29,7 +31,7 @@ type PromptUpdateRequest struct {
 func (h *Handler) handlePrompts(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
-		prompts := h.promptManager.List()
+		prompts := h.listPromptsForManagement()
 		h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: prompts})
 
 	case "POST":
@@ -71,7 +73,7 @@ func (h *Handler) handlePromptByID(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case "GET":
-		prompt, ok := h.promptManager.Get(id)
+		prompt, ok := h.getPromptForManagement(id)
 		if !ok {
 			h.jsonResponse(w, http.StatusNotFound, Response{Success: false, Error: "Prompt not found"})
 			return
@@ -84,11 +86,12 @@ func (h *Handler) handlePromptByID(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		existing, ok := h.promptManager.Get(id)
+		existing, ok := h.getPromptForManagement(id)
 		if !ok {
 			h.jsonResponse(w, http.StatusNotFound, Response{Success: false, Error: "Prompt not found"})
 			return
 		}
+		_, persisted := h.promptManager.Get(id)
 
 		name := existing.Name
 		content := existing.Content
@@ -116,7 +119,15 @@ func (h *Handler) handlePromptByID(w http.ResponseWriter, r *http.Request) {
 			fileName = *req.FileName
 		}
 
-		prompt, err := h.promptManager.Update(id, name, content, description, fileName)
+		var (
+			prompt *storage.Prompt
+			err    error
+		)
+		if persisted {
+			prompt, err = h.promptManager.Update(id, name, content, description, fileName)
+		} else {
+			prompt, err = h.promptManager.Create(id, name, content, description, fileName)
+		}
 		if err != nil {
 			h.jsonResponse(w, http.StatusNotFound, Response{Success: false, Error: "Prompt not found"})
 			return
@@ -152,8 +163,8 @@ func (h *Handler) handlePromptSessions(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case "GET":
-		// 先检查 prompt 是否存在
-		if _, ok := h.promptManager.Get(promptID); !ok {
+		// 先检查 prompt 是否存在；缺失 prompt.json 时，允许从历史会话恢复展示。
+		if _, ok := h.getPromptForManagement(promptID); !ok {
 			h.jsonResponse(w, http.StatusNotFound, Response{Success: false, Error: "Prompt not found"})
 			return
 		}
@@ -164,6 +175,114 @@ func (h *Handler) handlePromptSessions(w http.ResponseWriter, r *http.Request) {
 	default:
 		h.jsonResponse(w, http.StatusMethodNotAllowed, Response{Success: false, Error: "Method not allowed"})
 	}
+}
+
+func (h *Handler) listPromptsForManagement() []storage.Prompt {
+	promptMap := make(map[string]storage.Prompt)
+	if h.promptManager != nil {
+		for _, prompt := range h.promptManager.List() {
+			promptMap[prompt.ID] = prompt
+		}
+	}
+
+	if h.chatManager == nil {
+		return mapPromptValues(promptMap)
+	}
+
+	for _, session := range h.chatManager.ListSessions() {
+		promptID := strings.TrimSpace(session.PromptID)
+		if promptID == "" {
+			continue
+		}
+		if _, exists := promptMap[promptID]; exists {
+			continue
+		}
+
+		recovered := recoveredPromptFromSession(promptID, session)
+		if current, exists := promptMap[promptID]; !exists || recovered.UpdatedAt.After(current.UpdatedAt) {
+			promptMap[promptID] = recovered
+		}
+	}
+
+	return mapPromptValues(promptMap)
+}
+
+func (h *Handler) getPromptForManagement(id string) (*storage.Prompt, bool) {
+	if h.promptManager != nil {
+		if prompt, ok := h.promptManager.Get(id); ok {
+			return prompt, true
+		}
+	}
+
+	if h.chatManager != nil {
+		sessions := h.chatManager.GetSessionsByPromptID(id)
+		if len(sessions) > 0 {
+			recovered := recoveredPromptFromSessions(id, sessions)
+			return &recovered, true
+		}
+	}
+
+	if h.memoryManager != nil && len(h.memoryManager.GetAll(id)) > 0 {
+		now := time.Now()
+		recovered := storage.Prompt{
+			ID:        id,
+			Name:      id,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+		return &recovered, true
+	}
+
+	return nil, false
+}
+
+func recoveredPromptFromSessions(promptID string, sessions []storage.ChatSession) storage.Prompt {
+	recovered := recoveredPromptFromSession(promptID, sessions[0])
+	for i := 1; i < len(sessions); i++ {
+		candidate := recoveredPromptFromSession(promptID, sessions[i])
+		if candidate.UpdatedAt.After(recovered.UpdatedAt) {
+			recovered = candidate
+		}
+	}
+	return recovered
+}
+
+func recoveredPromptFromSession(promptID string, session storage.ChatSession) storage.Prompt {
+	name := strings.TrimSpace(session.PromptName)
+	if name == "" {
+		name = strings.TrimSpace(session.Title)
+	}
+	if name == "" {
+		name = promptID
+	}
+
+	createdAt := session.CreatedAt
+	updatedAt := session.UpdatedAt
+	if createdAt.IsZero() {
+		createdAt = updatedAt
+	}
+	if updatedAt.IsZero() {
+		updatedAt = createdAt
+	}
+	if createdAt.IsZero() {
+		createdAt = time.Now()
+		updatedAt = createdAt
+	}
+
+	return storage.Prompt{
+		ID:        promptID,
+		Name:      name,
+		CreatedAt: createdAt,
+		UpdatedAt: updatedAt,
+	}
+}
+
+func mapPromptValues(promptMap map[string]storage.Prompt) []storage.Prompt {
+	prompts := make([]storage.Prompt, 0, len(promptMap))
+	for _, prompt := range promptMap {
+		prompts = append(prompts, prompt)
+	}
+	return prompts
 }
 
 func (h *Handler) handlePromptAvatar(w http.ResponseWriter, r *http.Request) {

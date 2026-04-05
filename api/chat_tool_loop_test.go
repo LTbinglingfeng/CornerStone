@@ -284,6 +284,68 @@ func TestRunChatWithToolLoop_RejectsDisallowedToolCallUsingAllowedToolNames(t *t
 	}
 }
 
+func TestRunChatWithToolLoop_RejectsDisallowedWriteMemoryToolCallWhenToggleDisabled(t *testing.T) {
+	ai := &fakeAIClient{
+		t: t,
+		responses: []*client.ChatResponse{
+			chatResp(assistantMessage("", toolCall("call_memory", "write_memory", `{"items":[{"subject":"user","category":"preference","content":"喜欢黑咖啡"}]}`))),
+			chatResp(assistantMessage("done")),
+		},
+	}
+
+	availableTools := getChatTools(chatToolOptions{WriteMemoryEnabled: true})
+	allowedToolNames := buildAllowedToolNameSet(availableTools, map[string]bool{
+		"write_memory": false,
+	})
+
+	executor := newChatToolExecutor(nil, nil)
+	handlerCalled := false
+	executor.handlers["write_memory"] = func(ctx context.Context, toolCall client.ToolCall, toolCtx chatToolContext) chatToolResult {
+		handlerCalled = true
+		return chatToolResult{OK: true}
+	}
+
+	got, err := runChatWithToolLoop(
+		context.Background(),
+		ai,
+		client.ChatRequest{
+			Messages: []client.Message{{Role: "user", Content: "hi"}},
+			Tools:    availableTools,
+		},
+		executor,
+		chatToolContext{AllowedToolNames: allowedToolNames},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("runChatWithToolLoop err: %v", err)
+	}
+	if handlerCalled {
+		t.Fatal("write_memory handler should not be called when toggle is disabled")
+	}
+	if got == nil || len(got.NewMessages) < 2 {
+		t.Fatalf("expected assistant and tool messages, got %#v", got)
+	}
+
+	toolMsg := got.NewMessages[1]
+	if toolMsg.Role != "tool" || toolMsg.ToolCallID != "call_memory" {
+		t.Fatalf("expected tool message call_memory, got=%#v", toolMsg)
+	}
+	payload := parseToolResult(t, toolMsg.Content)
+	if ok, _ := payload["ok"].(bool); ok {
+		t.Fatalf("expected ok=false, got=%v", payload["ok"])
+	}
+	if tool, _ := payload["tool"].(string); tool != "write_memory" {
+		t.Fatalf("expected tool=write_memory, got=%v", payload["tool"])
+	}
+	errMsg, _ := payload["error"].(string)
+	if !strings.Contains(errMsg, "write_memory") {
+		t.Fatalf("expected error to mention write_memory, got=%q", errMsg)
+	}
+	if !strings.Contains(errMsg, "do not retry") {
+		t.Fatalf("expected error to instruct model not to retry, got=%q", errMsg)
+	}
+}
+
 func TestRunChatWithToolLoop_MaxToolSteps(t *testing.T) {
 	steps := maxToolSteps + 1
 	responses := make([]*client.ChatResponse, 0, steps)

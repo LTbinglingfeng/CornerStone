@@ -194,6 +194,8 @@ const zh = {
         toolGetTimeDescription: '允许 AI 查询当前时间、日期、星期和时区等实时信息',
         toolGetWeather: '天气查询',
         toolGetWeatherDescription: '允许 AI 查询天气、气温、空气质量和天气预警',
+        toolWriteMemory: '写入记忆',
+        toolWriteMemoryDescription: '允许 AI 将稳定且有用的事实、偏好和承诺写入长期记忆（会过滤敏感信息）',
         toolWebSearch: '网络搜索',
         toolWebSearchDescription: '允许 AI 使用外部搜索 API 查询资料、百科和新闻等信息',
         toolWebSearchHint: '还需要先在“网络搜索”页面完成 Provider 配置，开启后才会真正生效',

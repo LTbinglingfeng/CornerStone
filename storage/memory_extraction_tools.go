@@ -2,7 +2,6 @@ package storage
 
 import (
 	"encoding/json"
-	"math"
 	"strings"
 	"time"
 
@@ -247,26 +246,20 @@ func (e *MemoryExtractor) applyExtractedMemories(promptID string, items []Extrac
 			matchingID := strings.TrimSpace(*item.MatchingID)
 			old := e.mm.FindByID(promptID, matchingID)
 			if old != nil {
-				seenCount := old.SeenCount + 1
-				if seenCount <= 0 {
-					seenCount = 1
-				}
-				strength := clamp01(old.Strength)
-				strength = math.Min(1.0, strength*1.2+0.15)
-				stability := old.Stability
-				if stability <= 0 {
-					stability = DefaultStabilityForCategory(category)
-				}
-				stability = math.Min(10.0, stability+0.3)
+				updated := *old
+				updated.Subject = subject
+				updated.Category = category
+				updated.Content = content
+				updated.ReinforceAt(now)
 				errUpdate := e.mm.Patch(promptID, MemoryPatch{
 					ID:        matchingID,
 					Subject:   &subject,
 					Category:  &category,
 					Content:   &content,
-					Strength:  &strength,
-					Stability: &stability,
-					LastSeen:  &now,
-					SeenCount: &seenCount,
+					Strength:  &updated.Strength,
+					Stability: &updated.Stability,
+					LastSeen:  &updated.LastSeen,
+					SeenCount: &updated.SeenCount,
 				})
 				if errUpdate != nil {
 					stats.UpdateFailedCount++

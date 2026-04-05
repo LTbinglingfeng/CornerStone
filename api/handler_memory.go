@@ -77,7 +77,8 @@ func (h *Handler) getOrCreateMemorySession(promptID, sessionID string) *storage.
 	if h.memoryManager == nil || h.configManager == nil {
 		return nil
 	}
-	if sessionID == "" {
+	cacheKey := memorySessionCacheKey(sessionID, promptID)
+	if cacheKey == "" {
 		return nil
 	}
 
@@ -98,16 +99,22 @@ func (h *Handler) getOrCreateMemorySession(promptID, sessionID string) *storage.
 		h.memorySessions = make(map[string]*storage.MemorySession)
 	}
 
-	if session, ok := h.memorySessions[sessionID]; ok {
+	if session, ok := h.memorySessions[cacheKey]; ok {
 		return session
-	}
-	if promptID == "" {
-		return nil
 	}
 
 	session := storage.NewMemorySession(promptID, sessionID, h.memoryManager, h.memoryExtractor)
-	h.memorySessions[sessionID] = session
+	h.memorySessions[cacheKey] = session
 	return session
+}
+
+func memorySessionCacheKey(sessionID, promptID string) string {
+	sessionID = strings.TrimSpace(sessionID)
+	promptID = strings.TrimSpace(promptID)
+	if sessionID == "" || promptID == "" {
+		return ""
+	}
+	return sessionID + ":" + promptID
 }
 
 // cleanupMemorySessions 定期清理空闲的记忆会话
@@ -130,10 +137,10 @@ func (h *Handler) doCleanupMemorySessions() {
 	defer h.sessionsMu.Unlock()
 
 	now := time.Now()
-	for sessionID, session := range h.memorySessions {
+	for cacheKey, session := range h.memorySessions {
 		if now.Sub(session.LastAccess()) > memorySessionMaxIdle {
-			delete(h.memorySessions, sessionID)
-			logging.Infof("清理空闲记忆会话: %s", sessionID)
+			delete(h.memorySessions, cacheKey)
+			logging.Infof("清理空闲记忆会话: %s", cacheKey)
 		}
 	}
 }

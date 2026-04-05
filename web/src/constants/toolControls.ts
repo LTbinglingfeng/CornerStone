@@ -9,6 +9,7 @@ export type ToolControlTitleKey =
     | 'settings.toolSendPat'
     | 'settings.toolGetTime'
     | 'settings.toolGetWeather'
+    | 'settings.toolWriteMemory'
     | 'settings.toolWebSearch'
     | 'settings.toolGenerateMoment'
 export type ToolControlDescriptionKey =
@@ -17,6 +18,7 @@ export type ToolControlDescriptionKey =
     | 'settings.toolSendPatDescription'
     | 'settings.toolGetTimeDescription'
     | 'settings.toolGetWeatherDescription'
+    | 'settings.toolWriteMemoryDescription'
     | 'settings.toolWebSearchDescription'
     | 'settings.toolGenerateMomentDescription'
 export type ToolControlHintKey = 'settings.toolWebSearchHint'
@@ -65,6 +67,12 @@ export const TOOL_CONTROL_DEFINITIONS: ToolControlDefinition[] = [
         section: 'realtime',
         titleKey: 'settings.toolGetWeather',
         descriptionKey: 'settings.toolGetWeatherDescription',
+    },
+    {
+        key: 'write_memory',
+        section: 'interaction',
+        titleKey: 'settings.toolWriteMemory',
+        descriptionKey: 'settings.toolWriteMemoryDescription',
     },
     {
         key: 'web_search',

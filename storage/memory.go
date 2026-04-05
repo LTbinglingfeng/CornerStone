@@ -113,10 +113,21 @@ func (m *Memory) CurrentStrength() float64 {
 }
 
 func (m *Memory) Reinforce() {
-	m.SeenCount++
-	m.LastSeen = time.Now()
-	m.Strength = math.Min(1.0, m.Strength*1.2+0.15)
-	// 每次强化增加稳定性，衰减速度逐渐变慢
+	m.ReinforceAt(time.Now())
+}
+
+func (m *Memory) ReinforceAt(now time.Time) {
+	if now.IsZero() {
+		now = time.Now()
+	}
+
+	seenCount := m.SeenCount + 1
+	if seenCount <= 0 {
+		seenCount = 1
+	}
+	m.SeenCount = seenCount
+	m.LastSeen = now
+	m.Strength = math.Min(1.0, clamp01(m.Strength)*1.2+0.15)
 	if m.Stability <= 0 {
 		m.Stability = DefaultStabilityForCategory(m.Category)
 	}

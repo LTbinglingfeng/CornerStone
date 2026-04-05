@@ -78,6 +78,15 @@ func (s *MemorySession) OnRoundComplete() {
 	}()
 }
 
+func (s *MemorySession) RefreshNow() {
+	s.mu.Lock()
+	s.roundCount = 0
+	s.touch()
+	s.mu.Unlock()
+
+	s.refresh()
+}
+
 func (s *MemorySession) refresh() {
 	active := s.mm.GetActiveMemories(s.promptID)
 	s.mu.Lock()

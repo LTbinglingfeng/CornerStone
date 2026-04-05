@@ -196,6 +196,7 @@ func TestBuildWeatherAirQualitySummary(t *testing.T) {
 func TestGetChatTools_IncludesWeatherAndClawBotExcludesInteractiveTools(t *testing.T) {
 	tools := getChatTools()
 	foundWeather := false
+	foundWriteMemoryByDefault := false
 	for _, tool := range tools {
 		if tool.Function.Name == "memory_batch_upsert" {
 			t.Fatal("memory_batch_upsert should not be exposed to normal chat tools")
@@ -203,9 +204,27 @@ func TestGetChatTools_IncludesWeatherAndClawBotExcludesInteractiveTools(t *testi
 		if tool.Function.Name == "get_weather" {
 			foundWeather = true
 		}
+		if tool.Function.Name == "write_memory" {
+			foundWriteMemoryByDefault = true
+		}
 	}
 	if !foundWeather {
 		t.Fatal("get_weather tool not registered")
+	}
+	if foundWriteMemoryByDefault {
+		t.Fatal("write_memory should not be exposed without runtime availability")
+	}
+
+	writeMemoryTools := getChatTools(chatToolOptions{WriteMemoryEnabled: true})
+	foundWriteMemory := false
+	for _, tool := range writeMemoryTools {
+		if tool.Function.Name == "write_memory" {
+			foundWriteMemory = true
+			break
+		}
+	}
+	if !foundWriteMemory {
+		t.Fatal("write_memory tool not registered when runtime availability is enabled")
 	}
 
 	clawBotTools := getChatTools(chatToolOptions{Channel: chatToolChannelClawBot})

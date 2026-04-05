@@ -51,11 +51,15 @@ func (h *Handler) handleSessions(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// 如果提供了 promptID 但没有提供 promptName，尝试从 promptManager 获取
 		promptID := req.PromptID
 		promptName := req.PromptName
-		if promptID != "" && promptName == "" {
-			if prompt, ok := h.promptManager.Get(promptID); ok {
+		if promptID != "" {
+			prompt, ok := h.getPromptForManagement(promptID)
+			if !ok {
+				h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Prompt not found"})
+				return
+			}
+			if promptName == "" {
 				promptName = prompt.Name
 			}
 		}

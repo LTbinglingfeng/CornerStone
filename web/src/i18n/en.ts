@@ -195,6 +195,9 @@ const en = {
         toolGetTimeDescription: 'Allow the AI to query current time, date, weekday, and timezone information',
         toolGetWeather: 'Weather Query',
         toolGetWeatherDescription: 'Allow the AI to query weather, temperature, air quality, and alerts',
+        toolWriteMemory: 'Write Memory',
+        toolWriteMemoryDescription:
+            'Allow the AI to save stable facts, preferences, and commitments into long-term memory with sensitive-data filtering',
         toolWebSearch: 'Web Search',
         toolWebSearchDescription: 'Allow the AI to use an external search API for facts, encyclopedic info, and news',
         toolWebSearchHint:

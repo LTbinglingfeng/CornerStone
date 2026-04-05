@@ -1011,6 +1011,7 @@ func (s *ClawBotService) generateReplyForSession(ctx context.Context, session *s
 	}
 
 	toolExecutor := newChatToolExecutor(s.handler.momentManager, s.handler.momentGenerator)
+	toolExecutor.memoryManager = s.handler.memoryManager
 	toolExecutor.configManager = s.handler.configManager
 	toolExecutor.weatherService = s.handler.getWeatherService()
 	toolExecutor.exactTimeService = s.handler.exactTimeService
@@ -1027,6 +1028,7 @@ func (s *ClawBotService) generateReplyForSession(ctx context.Context, session *s
 			SessionID:        session.SessionID,
 			PromptID:         validPromptID,
 			PromptName:       promptName,
+			MemSession:       memSession,
 			AllowedToolNames: allowedToolNames,
 		},
 		nil,
