@@ -71,6 +71,18 @@ type ClawBotConfig struct {
 	CommandPermissions map[string]bool `json:"command_permissions,omitempty"`
 }
 
+type NapCatConfig struct {
+	Enabled               bool     `json:"enabled"`
+	AccessToken           string   `json:"access_token,omitempty"`
+	PromptID              string   `json:"prompt_id,omitempty"`
+	AllowPrivate          bool     `json:"allow_private"`
+	AllowGroup            bool     `json:"allow_group"`
+	SourceFilterMode      string   `json:"source_filter_mode,omitempty"` // all / allowlist
+	AllowedPrivateUserIDs []string `json:"allowed_private_user_ids,omitempty"`
+	AllowedGroupIDs       []string `json:"allowed_group_ids,omitempty"`
+	AllowedGroupUserIDs   []string `json:"allowed_group_user_ids,omitempty"`
+}
+
 type WebSearchProvider struct {
 	APIKey            string `json:"api_key,omitempty"`
 	APIHost           string `json:"api_host,omitempty"`
@@ -296,6 +308,7 @@ type Config struct {
 	TLSCertPath            string          `json:"tls_cert_path,omitempty"` // TLS证书路径(PEM)，留空禁用HTTPS
 	TLSKeyPath             string          `json:"tls_key_path,omitempty"`  // TLS私钥路径(PEM)，留空禁用HTTPS
 	ClawBot                ClawBotConfig   `json:"clawbot"`                 // 微信 iLink ClawBot 配置
+	NapCat                 NapCatConfig    `json:"napcat"`                  // QQ NapCat 配置
 }
 
 // Manager 配置管理器
@@ -357,6 +370,17 @@ func DefaultConfig() Config {
 		ClawBot: ClawBotConfig{
 			BaseURL:            DefaultClawBotBaseURL,
 			CommandPermissions: DefaultClawBotCommandPermissions(),
+		},
+		NapCat: NapCatConfig{
+			Enabled:               false,
+			AccessToken:           "",
+			PromptID:              "",
+			AllowPrivate:          true,
+			AllowGroup:            false,
+			SourceFilterMode:      "all",
+			AllowedPrivateUserIDs: nil,
+			AllowedGroupIDs:       nil,
+			AllowedGroupUserIDs:   nil,
 		},
 	}
 }
@@ -548,6 +572,37 @@ func (m *Manager) applyConfigDefaults() bool {
 	normalizedCommandPermissions := NormalizeClawBotCommandPermissions(m.config.ClawBot.CommandPermissions)
 	if !clawBotCommandPermissionsEqual(m.config.ClawBot.CommandPermissions, normalizedCommandPermissions) {
 		m.config.ClawBot.CommandPermissions = normalizedCommandPermissions
+		changed = true
+	}
+
+	napCatAccessToken := strings.TrimSpace(m.config.NapCat.AccessToken)
+	if napCatAccessToken != m.config.NapCat.AccessToken {
+		m.config.NapCat.AccessToken = napCatAccessToken
+		changed = true
+	}
+	napCatPromptID := strings.TrimSpace(m.config.NapCat.PromptID)
+	if napCatPromptID != m.config.NapCat.PromptID {
+		m.config.NapCat.PromptID = napCatPromptID
+		changed = true
+	}
+	napCatFilterMode := normalizeNapCatSourceFilterMode(m.config.NapCat.SourceFilterMode)
+	if napCatFilterMode != m.config.NapCat.SourceFilterMode {
+		m.config.NapCat.SourceFilterMode = napCatFilterMode
+		changed = true
+	}
+	allowedPrivate := normalizeNapCatAllowlist(m.config.NapCat.AllowedPrivateUserIDs)
+	if !stringSliceEqual(m.config.NapCat.AllowedPrivateUserIDs, allowedPrivate) {
+		m.config.NapCat.AllowedPrivateUserIDs = allowedPrivate
+		changed = true
+	}
+	allowedGroups := normalizeNapCatAllowlist(m.config.NapCat.AllowedGroupIDs)
+	if !stringSliceEqual(m.config.NapCat.AllowedGroupIDs, allowedGroups) {
+		m.config.NapCat.AllowedGroupIDs = allowedGroups
+		changed = true
+	}
+	allowedGroupUsers := normalizeNapCatAllowlist(m.config.NapCat.AllowedGroupUserIDs)
+	if !stringSliceEqual(m.config.NapCat.AllowedGroupUserIDs, allowedGroupUsers) {
+		m.config.NapCat.AllowedGroupUserIDs = allowedGroupUsers
 		changed = true
 	}
 
@@ -964,6 +1019,41 @@ func normalizeTimeZone(value string) string {
 	return value
 }
 
+func normalizeNapCatSourceFilterMode(mode string) string {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	switch mode {
+	case "all":
+		return "all"
+	case "allowlist":
+		return "allowlist"
+	default:
+		return "all"
+	}
+}
+
+func normalizeNapCatAllowlist(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(values))
+	normalized := make([]string, 0, len(values))
+	for _, raw := range values {
+		value := strings.TrimSpace(raw)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		normalized = append(normalized, value)
+	}
+	if len(normalized) == 0 {
+		return nil
+	}
+	return normalized
+}
+
 func normalizeWebSearchProviderID(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
 }
@@ -1310,6 +1400,24 @@ func (m *Manager) UpdateClawBotConfig(cfg ClawBotConfig) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.config.ClawBot = cfg
+	if m.applyConfigDefaults() {
+		return m.saveUnsafe()
+	}
+	return m.saveUnsafe()
+}
+
+// GetNapCatConfig 获取 QQ NapCat 配置
+func (m *Manager) GetNapCatConfig() NapCatConfig {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.config.NapCat
+}
+
+// UpdateNapCatConfig 更新 QQ NapCat 配置
+func (m *Manager) UpdateNapCatConfig(cfg NapCatConfig) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.config.NapCat = cfg
 	if m.applyConfigDefaults() {
 		return m.saveUnsafe()
 	}

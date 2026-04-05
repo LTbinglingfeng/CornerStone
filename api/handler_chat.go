@@ -883,6 +883,7 @@ type chatToolChannel string
 const (
 	chatToolChannelDefault chatToolChannel = "default"
 	chatToolChannelClawBot chatToolChannel = "clawbot"
+	chatToolChannelNapCat  chatToolChannel = "napcat"
 )
 
 type chatToolOptions struct {
@@ -1152,6 +1153,20 @@ func getChatTools(options ...chatToolOptions) []client.Tool {
 		for _, tool := range tools {
 			switch strings.TrimSpace(tool.Function.Name) {
 			case "get_time", "get_weather", "web_search", "schedule_reminder", "write_memory", "no_reply":
+				filtered = append(filtered, tool)
+			}
+		}
+		if len(filtered) == 0 {
+			return nil
+		}
+		return filtered
+	}
+
+	if channel == chatToolChannelNapCat {
+		filtered := make([]client.Tool, 0, 4)
+		for _, tool := range tools {
+			switch strings.TrimSpace(tool.Function.Name) {
+			case "get_time", "get_weather", "web_search", "write_memory":
 				filtered = append(filtered, tool)
 			}
 		}

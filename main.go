@@ -273,6 +273,9 @@ func main() {
 	clawBotService := api.NewClawBotService(handler)
 	handler.SetClawBotService(clawBotService)
 	defer clawBotService.Close()
+	napCatService := api.NewNapCatService(handler)
+	handler.SetNapCatService(napCatService)
+	defer napCatService.Close()
 	handler.RegisterRoutes(mux)
 
 	// 注册前端静态文件

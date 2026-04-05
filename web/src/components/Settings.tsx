@@ -8,6 +8,7 @@ import {
 } from '../services/memoryService'
 import { ttsService, type TTSProviderConfig } from '../services/ttsService'
 import { clawBotService, type ClawBotSettings } from '../services/clawbotService'
+import { napCatService, type NapCatSettings } from '../services/napcatService'
 import { reminderService } from '../services/reminderService'
 import { webSearchService, type WebSearchSettings } from '../services/webSearchService'
 import { localeNames, type Locale } from '../i18n'
@@ -24,6 +25,7 @@ import ProviderSettings from './ProviderSettings'
 import MemoryProviderSettings from './MemoryProviderSettings'
 import ImageProviderSettings from './ImageProviderSettings'
 import ClawBotSettingsPanel from './ClawBotSettings'
+import NapCatSettingsPanel from './NapCatSettings'
 import WebSearchSettingsPanel from './WebSearchSettings'
 import { useT } from '../contexts/I18nContext'
 import { useToast } from '../contexts/ToastContext'
@@ -63,6 +65,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     })
     const [memoryProvider, setMemoryProvider] = useState<Provider | null>(null)
     const [clawBotSettings, setClawBotSettings] = useState<ClawBotSettings | null>(null)
+    const [napCatSettings, setNapCatSettings] = useState<NapCatSettings | null>(null)
     const [memoryEnabled, setMemoryEnabled] = useState(false)
     const [ttsEnabled, setTTSEnabledState] = useState(false)
     const [ttsProvider, setTTSProvider] = useState<TTSProviderConfig | null>(null)
@@ -98,6 +101,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     const [showImageProviderSettings, setShowImageProviderSettings] = useState(false)
     const [showMemoryProviderSettings, setShowMemoryProviderSettings] = useState(false)
     const [showClawBotSettings, setShowClawBotSettings] = useState(false)
+    const [showNapCatSettings, setShowNapCatSettings] = useState(false)
     const [webSearchSettings, setWebSearchSettings] = useState<WebSearchSettings | null>(null)
     const [showWebSearchSettings, setShowWebSearchSettings] = useState(false)
     const [toolToggles, setToolToggles] = useState<Record<string, boolean>>(() => createDefaultToolToggles())
@@ -266,6 +270,12 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
             setClawBotSettings(settings)
         } catch {
             setClawBotSettings(null)
+        }
+        try {
+            const settings = await napCatService.getSettings()
+            setNapCatSettings(settings)
+        } catch {
+            setNapCatSettings(null)
         }
         try {
             const settings = await webSearchService.getSettings()
@@ -662,6 +672,10 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         setShowClawBotSettings(false)
     }
 
+    const handleNapCatSettingsBack = () => {
+        setShowNapCatSettings(false)
+    }
+
     const handleWebSearchSettingsBack = () => {
         setShowWebSearchSettings(false)
     }
@@ -782,6 +796,26 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         return { title, detail }
     }
 
+    const getNapCatPreview = () => {
+        if (!napCatSettings) return { title: t('common.notConfigured'), detail: '' }
+        const statusMap: Record<string, string> = {
+            disabled: t('napCat.disabled'),
+            missing_token: t('napCat.missingToken'),
+            connected: t('napCat.connected'),
+            disconnected: t('napCat.disconnected'),
+            error: t('napCat.error'),
+        }
+        const title = statusMap[napCatSettings.status] || napCatSettings.status || t('common.notConfigured')
+        const detail = napCatSettings.prompt_name
+            ? `${t('settings.persona')}：${napCatSettings.prompt_name}`
+            : napCatSettings.self_id
+              ? `${t('settings.account')}：${napCatSettings.self_id}${napCatSettings.nickname ? ` · ${napCatSettings.nickname}` : ''}`
+              : napCatSettings.has_access_token
+                ? t('napCat.savedToken')
+                : t('napCat.notSavedToken')
+        return { title, detail }
+    }
+
     const getWebSearchPreview = () => {
         if (!webSearchSettings) return { title: t('common.notConfigured'), detail: '' }
         const activeId = (webSearchSettings.active_provider_id || '').trim()
@@ -835,6 +869,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     const memoryProviderPreview = getMemoryProviderPreview()
     const ttsProviderPreview = getTTSProviderPreview()
     const clawBotPreview = getClawBotPreview()
+    const napCatPreview = getNapCatPreview()
     const webSearchPreview = getWebSearchPreview()
     const toolControlPreview = getToolControlPreview()
     const reminderPreview = getReminderPreview()
@@ -943,6 +978,23 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                                 <span className="settings-entry-value">{clawBotPreview.title}</span>
                                 {clawBotPreview.detail && (
                                     <span className="settings-entry-subvalue">{clawBotPreview.detail}</span>
+                                )}
+                            </div>
+                            <svg className="settings-entry-arrow" viewBox="0 0 24 24">
+                                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                            </svg>
+                        </button>
+
+                        <button
+                            className="settings-entry-btn"
+                            onClick={() => setShowNapCatSettings(true)}
+                            style={{ marginTop: 12 }}
+                        >
+                            <div className="settings-entry-info">
+                                <span className="settings-entry-label">{t('settings.qqNapCat')}</span>
+                                <span className="settings-entry-value">{napCatPreview.title}</span>
+                                {napCatPreview.detail && (
+                                    <span className="settings-entry-subvalue">{napCatPreview.detail}</span>
                                 )}
                             </div>
                             <svg className="settings-entry-arrow" viewBox="0 0 24 24">
@@ -1212,6 +1264,10 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
 
             <AnimatePresence onExitComplete={() => void loadData({ showLoading: false })}>
                 {showClawBotSettings && <ClawBotSettingsPanel onBack={handleClawBotSettingsBack} />}
+            </AnimatePresence>
+
+            <AnimatePresence onExitComplete={() => void loadData({ showLoading: false })}>
+                {showNapCatSettings && <NapCatSettingsPanel onBack={handleNapCatSettingsBack} />}
             </AnimatePresence>
 
             <AnimatePresence onExitComplete={() => void loadData({ showLoading: false })}>

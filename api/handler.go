@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bufio"
 	"bytes"
 	"cornerstone/config"
 	"cornerstone/exacttime"
@@ -8,6 +9,7 @@ import (
 	"cornerstone/storage"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -31,6 +33,7 @@ type Handler struct {
 	sessionsMu      sync.RWMutex
 
 	clawBotService   *ClawBotService
+	napCatService    *NapCatService
 	reminderService  *ReminderService
 	weatherService   weatherService
 	exactTimeService exactTimeProvider
@@ -109,6 +112,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	h.registerProtectedRoute(mux, "/api/settings/clawbot", h.handleClawBotSettings)
 	h.registerProtectedRoute(mux, "/api/settings/clawbot/qr-start", h.handleClawBotQRCodeStart)
 	h.registerProtectedRoute(mux, "/api/settings/clawbot/qr-poll", h.handleClawBotQRCodePoll)
+	h.registerProtectedRoute(mux, "/api/settings/napcat", h.handleNapCatSettings)
 	h.registerProtectedRoute(mux, "/api/settings/reminders", h.handleReminders)
 	h.registerProtectedRoute(mux, "/api/settings/reminders/", h.handleReminderByID)
 	h.registerProtectedRoute(mux, "/api/settings/web-search", h.handleWebSearchSettings)
@@ -149,6 +153,9 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 
 	// 健康检查
 	h.registerPublicRoute(mux, "/management/health", h.handleHealth)
+
+	// NapCat reverse websocket channel (no management auth, uses napcat access_token)
+	h.registerPublicRoute(mux, "/api/channel/napcat/ws", h.handleNapCatWS)
 }
 
 func (h *Handler) registerPublicRoute(mux *http.ServeMux, path string, handler http.HandlerFunc) {
@@ -204,6 +211,14 @@ func (w *apiLogResponseWriter) Flush() {
 	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
 		flusher.Flush()
 	}
+}
+
+func (w *apiLogResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hijacker, ok := w.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, errors.New("hijacker not supported")
+	}
+	return hijacker.Hijack()
 }
 
 // corsMiddleware 处理跨域请求
@@ -263,6 +278,10 @@ func (h *Handler) jsonResponse(w http.ResponseWriter, status int, data interface
 
 func (h *Handler) SetClawBotService(service *ClawBotService) {
 	h.clawBotService = service
+}
+
+func (h *Handler) SetNapCatService(service *NapCatService) {
+	h.napCatService = service
 }
 
 func (h *Handler) SetExactTimeService(service exactTimeProvider) {
