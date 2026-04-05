@@ -194,6 +194,126 @@ func TestHasRoleTemplateHeader(t *testing.T) {
 	}
 }
 
+func TestGetMemoryExtractionTools_ReturnsDeepCopy(t *testing.T) {
+	if len(memoryExtractionTools) == 0 {
+		t.Fatalf("expected memoryExtractionTools to be non-empty")
+	}
+
+	getItemsSchema := func(params map[string]interface{}) map[string]interface{} {
+		t.Helper()
+
+		props, ok := params["properties"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected properties map, got: %T", params["properties"])
+		}
+		items, ok := props["items"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected items schema map, got: %T", props["items"])
+		}
+		return items
+	}
+
+	getFirstCategoryEnum := func(params map[string]interface{}) interface{} {
+		t.Helper()
+
+		props, ok := params["properties"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected properties map, got: %T", params["properties"])
+		}
+		itemsSchema, ok := props["items"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected items schema map, got: %T", props["items"])
+		}
+		itemSchema, ok := itemsSchema["items"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected item schema map, got: %T", itemsSchema["items"])
+		}
+		oneOf, ok := itemSchema["oneOf"].([]interface{})
+		if !ok || len(oneOf) == 0 {
+			t.Fatalf("expected oneOf array, got: %T len=%d", itemSchema["oneOf"], len(oneOf))
+		}
+		alt0, ok := oneOf[0].(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected oneOf[0] object, got: %T", oneOf[0])
+		}
+		altProps, ok := alt0["properties"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected oneOf[0].properties map, got: %T", alt0["properties"])
+		}
+		category, ok := altProps["category"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected category schema map, got: %T", altProps["category"])
+		}
+		return category["enum"]
+	}
+
+	globalParams := memoryExtractionTools[0].Function.Parameters
+	globalItems := getItemsSchema(globalParams)
+	globalDesc, ok := globalItems["description"].(string)
+	if !ok {
+		t.Fatalf("expected global items.description string, got: %T", globalItems["description"])
+	}
+
+	tools1 := getMemoryExtractionTools()
+	if len(tools1) != len(memoryExtractionTools) {
+		t.Fatalf("unexpected tool count: got=%d want=%d", len(tools1), len(memoryExtractionTools))
+	}
+
+	// Mutate nested map in the returned copy.
+	items1 := getItemsSchema(tools1[0].Function.Parameters)
+	items1["description"] = "MUTATED"
+
+	// Global schema must remain unchanged.
+	globalItemsAfter := getItemsSchema(memoryExtractionTools[0].Function.Parameters)
+	if got := globalItemsAfter["description"]; got != globalDesc {
+		t.Fatalf("global schema mutated via returned tools: got=%v want=%v", got, globalDesc)
+	}
+
+	// Mutate a nested []string enum inside oneOf; it also must not leak back.
+	enum1 := getFirstCategoryEnum(tools1[0].Function.Parameters)
+	switch typed := enum1.(type) {
+	case []string:
+		if len(typed) == 0 {
+			t.Fatalf("expected non-empty enum slice")
+		}
+		typed[0] = "MUTATED_ENUM"
+	case []interface{}:
+		if len(typed) == 0 {
+			t.Fatalf("expected non-empty enum slice")
+		}
+		typed[0] = "MUTATED_ENUM"
+	default:
+		t.Fatalf("unexpected enum type: %T", enum1)
+	}
+
+	globalEnum := getFirstCategoryEnum(memoryExtractionTools[0].Function.Parameters)
+	switch typed := globalEnum.(type) {
+	case []string:
+		if len(typed) == 0 {
+			t.Fatalf("expected non-empty global enum slice")
+		}
+		if typed[0] == "MUTATED_ENUM" {
+			t.Fatalf("global enum slice mutated via returned tools")
+		}
+	case []interface{}:
+		if len(typed) == 0 {
+			t.Fatalf("expected non-empty global enum slice")
+		}
+		if typed[0] == "MUTATED_ENUM" {
+			t.Fatalf("global enum slice mutated via returned tools")
+		}
+	default:
+		t.Fatalf("unexpected global enum type: %T", globalEnum)
+	}
+
+	// A second call must not observe previous mutations.
+	tools2 := getMemoryExtractionTools()
+	items2 := getItemsSchema(tools2[0].Function.Parameters)
+	if got, ok := items2["description"].(string); !ok || got != globalDesc {
+		t.Fatalf("second getMemoryExtractionTools call saw mutated description: got=%v want=%v", items2["description"], globalDesc)
+	}
+}
+
 func TestMemoryExtractor_BuildExtractionMessages_SplitTemplate(t *testing.T) {
 	tempDir := t.TempDir()
 

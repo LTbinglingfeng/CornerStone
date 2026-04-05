@@ -132,7 +132,43 @@ var memoryExtractionTools = []client.Tool{
 }
 
 func getMemoryExtractionTools() []client.Tool {
-	return append([]client.Tool(nil), memoryExtractionTools...)
+	tools := make([]client.Tool, len(memoryExtractionTools))
+	for i, tool := range memoryExtractionTools {
+		tools[i] = tool
+		tools[i].Function.Parameters = deepCopyJSONSchemaMap(tool.Function.Parameters)
+	}
+	return tools
+}
+
+func deepCopyJSONSchemaMap(src map[string]interface{}) map[string]interface{} {
+	if src == nil {
+		return nil
+	}
+
+	dst := make(map[string]interface{}, len(src))
+	for k, v := range src {
+		dst[k] = deepCopyJSONSchemaValue(v)
+	}
+	return dst
+}
+
+func deepCopyJSONSchemaValue(value interface{}) interface{} {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		return deepCopyJSONSchemaMap(typed)
+	case []interface{}:
+		copied := make([]interface{}, len(typed))
+		for i, item := range typed {
+			copied[i] = deepCopyJSONSchemaValue(item)
+		}
+		return copied
+	case []string:
+		copied := make([]string, len(typed))
+		copy(copied, typed)
+		return copied
+	default:
+		return value
+	}
 }
 
 func parseMemoryBatchUpsertToolCalls(promptID string, toolCalls []client.ToolCall) memoryBatchUpsertParseResult {
