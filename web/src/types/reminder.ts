@@ -1,4 +1,10 @@
-export type ReminderChannel = 'web' | 'clawbot'
+export type ReminderChannel = 'web' | 'clawbot' | 'napcat'
+
+export interface ReminderTarget {
+    kind?: 'session' | 'user' | string
+    bot_self_id?: string
+    user_id?: string
+}
 
 export type ReminderStatus = 'pending' | 'firing' | 'sent' | 'failed' | 'cancelled' | string
 
@@ -11,6 +17,7 @@ export interface Reminder {
     prompt_id: string
     prompt_name: string
     prompt_exists: boolean
+    target?: ReminderTarget
     clawbot_user_id?: string
     title: string
     reminder_prompt: string

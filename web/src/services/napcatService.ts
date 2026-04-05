@@ -9,11 +9,8 @@ export interface NapCatSettings {
     prompt_id?: string
     prompt_name?: string
     allow_private: boolean
-    allow_group: boolean
     source_filter_mode: 'all' | 'allowlist' | string
     allowed_private_user_ids?: string[]
-    allowed_group_ids?: string[]
-    allowed_group_user_ids?: string[]
     status: 'disabled' | 'missing_token' | 'connected' | 'disconnected' | 'error' | string
     self_id?: string
     nickname?: string
@@ -36,11 +33,8 @@ export const napCatService = {
         clear_access_token?: boolean
         prompt_id?: string
         allow_private: boolean
-        allow_group: boolean
         source_filter_mode: string
         allowed_private_user_ids: string[]
-        allowed_group_ids: string[]
-        allowed_group_user_ids: string[]
     }): Promise<NapCatSettings> {
         const data = await apiFetchJson<ApiResponse<NapCatSettings>>('/api/settings/napcat', {
             method: 'PUT',

@@ -609,16 +609,62 @@ func convertChatMessages(messages []storage.ChatMessage) []client.Message {
 	}
 	converted := make([]client.Message, 0, len(messages))
 	for _, msg := range messages {
+		content, imagePaths := buildChatMessageModelInput(msg)
 		converted = append(converted, client.Message{
 			Role:             msg.Role,
-			Content:          msg.Content,
+			Content:          content,
 			ReasoningContent: msg.ReasoningContent,
 			ToolCalls:        msg.ToolCalls,
 			ToolCallID:       msg.ToolCallID,
-			ImagePaths:       msg.ImagePaths,
+			ImagePaths:       imagePaths,
 		})
 	}
 	return converted
+}
+
+func buildChatMessageModelInput(msg storage.ChatMessage) (string, []string) {
+	content := strings.TrimSpace(msg.Content)
+	imagePaths := append([]string(nil), msg.ImagePaths...)
+
+	if msg.Quote == nil {
+		return content, imagePaths
+	}
+
+	quoteContent := strings.TrimSpace(msg.Quote.Content)
+	if quoteContent == "" {
+		quoteContent = "[引用消息内容不可用]"
+	}
+
+	quoteLines := []string{"[引用消息]"}
+	if msg.Quote.SenderNickname != "" || msg.Quote.SenderUserID != "" {
+		sender := msg.Quote.SenderNickname
+		if sender == "" {
+			sender = msg.Quote.SenderUserID
+		} else if msg.Quote.SenderUserID != "" {
+			sender = fmt.Sprintf("%s (%s)", sender, msg.Quote.SenderUserID)
+		}
+		quoteLines = append(quoteLines, "发送者: "+sender)
+	}
+	if msg.Quote.MessageType != "" {
+		quoteLines = append(quoteLines, "消息类型: "+msg.Quote.MessageType)
+	}
+	quoteLines = append(quoteLines, "内容:")
+	quoteLines = append(quoteLines, quoteContent)
+
+	if len(msg.Quote.ImagePaths) > 0 {
+		quoteLines = append(quoteLines, fmt.Sprintf("前 %d 张图片来自引用消息。", len(msg.Quote.ImagePaths)))
+		imagePaths = append(append([]string(nil), msg.Quote.ImagePaths...), imagePaths...)
+	}
+
+	quoteText := strings.Join(quoteLines, "\n")
+	switch {
+	case quoteText == "":
+		return content, imagePaths
+	case content == "":
+		return quoteText, imagePaths
+	default:
+		return quoteText + "\n\n[当前消息]\n" + content, imagePaths
+	}
 }
 
 func limitMessagesByTurns(messages []client.Message, maxTurns int) []client.Message {
@@ -1163,10 +1209,10 @@ func getChatTools(options ...chatToolOptions) []client.Tool {
 	}
 
 	if channel == chatToolChannelNapCat {
-		filtered := make([]client.Tool, 0, 4)
+		filtered := make([]client.Tool, 0, 5)
 		for _, tool := range tools {
 			switch strings.TrimSpace(tool.Function.Name) {
-			case "get_time", "get_weather", "web_search", "write_memory":
+			case "get_time", "get_weather", "web_search", "schedule_reminder", "write_memory":
 				filtered = append(filtered, tool)
 			}
 		}

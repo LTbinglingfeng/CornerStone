@@ -220,6 +220,7 @@ const en = {
         reminderChannel: 'Channel',
         reminderChannelWeb: 'Web',
         reminderChannelClawBot: 'ClawBot',
+        reminderChannelNapCat: 'NapCat',
         reminderSession: 'Session',
         reminderTarget: 'Target',
         reminderAttempts: 'Attempts',
@@ -625,8 +626,11 @@ const en = {
         wsUrl: 'Reverse WS URL',
         wsUrlHint:
             'Fill this URL in NapCat reverse WebSocket settings. Supports access_token query or Authorization: Bearer <token>.',
+        messagePostFormatHint:
+            'Use messagePostFormat=array in NapCat for full private-chat compatibility. string mode is only a CQ fallback, and group chat is still unsupported.',
         enableChannel: 'Enable Channel',
-        m1PrivateOnly: 'M1 only supports stable private text messages. More types will be added later.',
+        m1PrivateOnly:
+            'This version supports NapCat private text, image, and poke messages. Group chat and other message types remain unsupported.',
         bindPersona: 'Bind Persona',
         noPersonaBind: 'No persona',
         accessToken: 'Access Token',
@@ -638,15 +642,11 @@ const en = {
         markedCleared: 'Marked as cleared',
         saveSettings: 'Save Settings',
         allowPrivate: 'Allow private sources',
-        allowGroup: 'Allow group sources',
-        groupNotSupportedYet: 'Note: group messages are not handled in M1. This is reserved for future support.',
         sourceFilterMode: 'Source filter mode',
         filterAll: 'All (no filter)',
         filterAllowlist: 'Allowlist',
         sourceFilterHint: 'In allowlist mode, non-allowlisted sources are silently dropped.',
         allowedPrivateUserIds: 'Private allowlist user_id',
-        allowedGroupIds: 'Group allowlist group_id',
-        allowedGroupUserIds: 'Group member allowlist user_id (optional)',
         allowlistPlaceholder: 'One ID per line',
     },
     time: {

@@ -14,11 +14,8 @@ type NapCatSettingsRequest struct {
 	ClearAccessToken      bool     `json:"clear_access_token,omitempty"`
 	PromptID              string   `json:"prompt_id,omitempty"`
 	AllowPrivate          bool     `json:"allow_private"`
-	AllowGroup            bool     `json:"allow_group"`
 	SourceFilterMode      string   `json:"source_filter_mode,omitempty"`
 	AllowedPrivateUserIDs []string `json:"allowed_private_user_ids,omitempty"`
-	AllowedGroupIDs       []string `json:"allowed_group_ids,omitempty"`
-	AllowedGroupUserIDs   []string `json:"allowed_group_user_ids,omitempty"`
 }
 
 func (h *Handler) handleNapCatSettings(w http.ResponseWriter, r *http.Request) {
@@ -55,17 +52,10 @@ func (h *Handler) handleNapCatSettings(w http.ResponseWriter, r *http.Request) {
 		cfg.Enabled = req.Enabled
 		cfg.PromptID = promptID
 		cfg.AllowPrivate = req.AllowPrivate
-		cfg.AllowGroup = req.AllowGroup
 		cfg.SourceFilterMode = strings.TrimSpace(req.SourceFilterMode)
 
 		if req.AllowedPrivateUserIDs != nil {
 			cfg.AllowedPrivateUserIDs = req.AllowedPrivateUserIDs
-		}
-		if req.AllowedGroupIDs != nil {
-			cfg.AllowedGroupIDs = req.AllowedGroupIDs
-		}
-		if req.AllowedGroupUserIDs != nil {
-			cfg.AllowedGroupUserIDs = req.AllowedGroupUserIDs
 		}
 
 		switch {

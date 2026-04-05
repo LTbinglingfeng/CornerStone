@@ -321,6 +321,59 @@ func TestReminderManager_ReloadResetsFiringToPending(t *testing.T) {
 	}
 }
 
+func TestReminderManager_MarkPendingRestoresFiringForRetry(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "reminders")
+	manager := NewReminderManager(dir)
+
+	dueAt := time.Date(2026, 4, 5, 19, 30, 0, 0, time.UTC)
+	createdAt := dueAt.Add(-time.Hour)
+	reminder, err := manager.Create(Reminder{
+		ID:         "reminder-retry",
+		Channel:    ReminderChannelNapCat,
+		SessionID:  "session-1",
+		PromptID:   "prompt-1",
+		PromptName: "Alice",
+		Target: ReminderTarget{
+			Kind:      ReminderTargetKindUser,
+			UserID:    "10001",
+			BotSelfID: "20002",
+		},
+		Title:          "喝水提醒",
+		ReminderPrompt: "到点后提醒用户喝水",
+		DueAt:          dueAt,
+		Status:         ReminderStatusPending,
+		CreatedAt:      createdAt,
+		UpdatedAt:      createdAt,
+	})
+	if err != nil {
+		t.Fatalf("Create reminder failed: %v", err)
+	}
+
+	firingAt := dueAt
+	_, transitioned, err := manager.TryMarkFiring(reminder.ID, firingAt)
+	if err != nil {
+		t.Fatalf("TryMarkFiring failed: %v", err)
+	}
+	if !transitioned {
+		t.Fatal("TryMarkFiring did not transition reminder to firing")
+	}
+
+	retriedAt := firingAt.Add(time.Minute)
+	retried, err := manager.MarkPending(reminder.ID, retriedAt, "napcat channel is unavailable")
+	if err != nil {
+		t.Fatalf("MarkPending failed: %v", err)
+	}
+	if retried.Status != ReminderStatusPending {
+		t.Fatalf("status = %q, want %q", retried.Status, ReminderStatusPending)
+	}
+	if retried.LastError != "napcat channel is unavailable" {
+		t.Fatalf("last_error = %q, want %q", retried.LastError, "napcat channel is unavailable")
+	}
+	if retried.Attempts != 1 {
+		t.Fatalf("attempts = %d, want 1", retried.Attempts)
+	}
+}
+
 func TestSnapshotTrailingResponseBatch_TrimmedSessionAndTail(t *testing.T) {
 	cm := newTestChatManager(t)
 	sid := "test-snapshot-tail"

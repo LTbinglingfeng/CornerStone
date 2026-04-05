@@ -58,7 +58,24 @@ const ReminderSettingsPanel: React.FC<ReminderSettingsProps> = ({ onBack }) => {
         if (channel === 'clawbot') {
             return t('settings.reminderChannelClawBot')
         }
+        if (channel === 'napcat') {
+            return t('settings.reminderChannelNapCat')
+        }
         return t('settings.reminderChannelWeb')
+    }
+
+    const getTargetLabel = (reminder: Reminder) => {
+        const userID = reminder.target?.user_id || reminder.clawbot_user_id || ''
+        const botSelfID = reminder.target?.bot_self_id || ''
+        if (!userID && !botSelfID) return t('common.notSet')
+        if (reminder.channel === 'napcat') {
+            if (userID && botSelfID) {
+                return `${userID} · ${t('napCat.selfId')}: ${botSelfID}`
+            }
+            if (userID) return userID
+            return `${t('napCat.selfId')}: ${botSelfID}`
+        }
+        return userID || botSelfID
     }
 
     const syncEditor = (reminder: Reminder) => {
@@ -247,10 +264,10 @@ const ReminderSettingsPanel: React.FC<ReminderSettingsProps> = ({ onBack }) => {
                                 <span>{t('settings.reminderSession')}</span>
                                 <strong>{selectedReminder.session_title || selectedReminder.session_id}</strong>
                             </div>
-                            {selectedReminder.channel === 'clawbot' && (
+                            {(selectedReminder.channel === 'clawbot' || selectedReminder.channel === 'napcat') && (
                                 <div className="reminder-meta-row">
                                     <span>{t('settings.reminderTarget')}</span>
-                                    <strong>{selectedReminder.clawbot_user_id || t('common.notSet')}</strong>
+                                    <strong>{getTargetLabel(selectedReminder)}</strong>
                                 </div>
                             )}
                             <div className="reminder-meta-row">

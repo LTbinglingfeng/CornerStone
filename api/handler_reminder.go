@@ -24,6 +24,7 @@ type reminderResponse struct {
 	PromptID       string                  `json:"prompt_id"`
 	PromptName     string                  `json:"prompt_name"`
 	PromptExists   bool                    `json:"prompt_exists"`
+	Target         *storage.ReminderTarget `json:"target,omitempty"`
 	ClawBotUserID  string                  `json:"clawbot_user_id,omitempty"`
 	Title          string                  `json:"title"`
 	ReminderPrompt string                  `json:"reminder_prompt"`
@@ -206,6 +207,20 @@ func (h *Handler) buildReminderResponse(reminder storage.Reminder) reminderRespo
 		}
 	}
 
+	var target *storage.ReminderTarget
+	if reminder.Target != (storage.ReminderTarget{}) {
+		cloned := reminder.Target
+		target = &cloned
+	}
+
+	clawBotUserID := ""
+	if reminder.Channel == storage.ReminderChannelClawBot {
+		clawBotUserID = strings.TrimSpace(reminder.Target.UserID)
+		if clawBotUserID == "" {
+			clawBotUserID = strings.TrimSpace(reminder.ClawBotUserID)
+		}
+	}
+
 	return reminderResponse{
 		ID:             reminder.ID,
 		Channel:        reminder.Channel,
@@ -215,7 +230,8 @@ func (h *Handler) buildReminderResponse(reminder storage.Reminder) reminderRespo
 		PromptID:       reminder.PromptID,
 		PromptName:     promptName,
 		PromptExists:   promptExists,
-		ClawBotUserID:  reminder.ClawBotUserID,
+		Target:         target,
+		ClawBotUserID:  clawBotUserID,
 		Title:          reminder.Title,
 		ReminderPrompt: reminder.ReminderPrompt,
 		DueAt:          reminder.DueAt,

@@ -19,11 +19,8 @@ type NapCatFormState = {
     clear_access_token: boolean
     prompt_id: string
     allow_private: boolean
-    allow_group: boolean
     source_filter_mode: 'all' | 'allowlist'
     allowed_private_user_ids_text: string
-    allowed_group_ids_text: string
-    allowed_group_user_ids_text: string
 }
 
 const buildAllowlistText = (items?: string[]) =>
@@ -59,11 +56,8 @@ const NapCatSettingsPanel: React.FC<NapCatSettingsProps> = ({ onBack }) => {
         clear_access_token: false,
         prompt_id: '',
         allow_private: true,
-        allow_group: false,
         source_filter_mode: 'all',
         allowed_private_user_ids_text: '',
-        allowed_group_ids_text: '',
-        allowed_group_user_ids_text: '',
     })
 
     useEffect(() => {
@@ -82,11 +76,8 @@ const NapCatSettingsPanel: React.FC<NapCatSettingsProps> = ({ onBack }) => {
                 clear_access_token: false,
                 prompt_id: nextSettings.prompt_id || '',
                 allow_private: nextSettings.allow_private ?? true,
-                allow_group: nextSettings.allow_group ?? false,
                 source_filter_mode: nextSettings.source_filter_mode === 'allowlist' ? 'allowlist' : 'all',
                 allowed_private_user_ids_text: buildAllowlistText(nextSettings.allowed_private_user_ids),
-                allowed_group_ids_text: buildAllowlistText(nextSettings.allowed_group_ids),
-                allowed_group_user_ids_text: buildAllowlistText(nextSettings.allowed_group_user_ids),
             })
         } catch (error) {
             const message = error instanceof Error ? error.message : t('common.loadFailed')
@@ -105,11 +96,8 @@ const NapCatSettingsPanel: React.FC<NapCatSettingsProps> = ({ onBack }) => {
             clear_access_token: false,
             prompt_id: nextSettings.prompt_id || '',
             allow_private: nextSettings.allow_private ?? current.allow_private,
-            allow_group: nextSettings.allow_group ?? current.allow_group,
             source_filter_mode: nextSettings.source_filter_mode === 'allowlist' ? 'allowlist' : 'all',
             allowed_private_user_ids_text: buildAllowlistText(nextSettings.allowed_private_user_ids),
-            allowed_group_ids_text: buildAllowlistText(nextSettings.allowed_group_ids),
-            allowed_group_user_ids_text: buildAllowlistText(nextSettings.allowed_group_user_ids),
         }))
     }
 
@@ -154,11 +142,8 @@ const NapCatSettingsPanel: React.FC<NapCatSettingsProps> = ({ onBack }) => {
                 clear_access_token: form.clear_access_token,
                 prompt_id: form.prompt_id || undefined,
                 allow_private: form.allow_private,
-                allow_group: form.allow_group,
                 source_filter_mode: form.source_filter_mode,
                 allowed_private_user_ids: parseAllowlistText(form.allowed_private_user_ids_text),
-                allowed_group_ids: parseAllowlistText(form.allowed_group_ids_text),
-                allowed_group_user_ids: parseAllowlistText(form.allowed_group_user_ids_text),
             })
             syncSettings(nextSettings)
             showToast(t('napCat.saved'), 'success')
@@ -254,6 +239,9 @@ const NapCatSettingsPanel: React.FC<NapCatSettingsProps> = ({ onBack }) => {
                         </div>
                         <p className="prompt-modal-hint" style={{ marginTop: 8 }}>
                             {t('napCat.wsUrlHint')}
+                        </p>
+                        <p className="prompt-modal-hint" style={{ marginTop: 8 }}>
+                            {t('napCat.messagePostFormatHint')}
                         </p>
                     </div>
 
@@ -367,29 +355,6 @@ const NapCatSettingsPanel: React.FC<NapCatSettingsProps> = ({ onBack }) => {
                     </div>
 
                     <div className="settings-group">
-                        <label className="settings-label">{t('napCat.allowGroup')}</label>
-                        <div className="modal-toggle-wrapper">
-                            <label className="toggle-switch">
-                                <input
-                                    type="checkbox"
-                                    checked={form.allow_group}
-                                    onChange={(event) =>
-                                        setForm((current) => ({ ...current, allow_group: event.target.checked }))
-                                    }
-                                    disabled={saving}
-                                />
-                                <span className="toggle-slider"></span>
-                            </label>
-                            <span className="toggle-label">
-                                {form.allow_group ? t('common.enabled') : t('common.disabled')}
-                            </span>
-                        </div>
-                        <p className="prompt-modal-hint" style={{ marginTop: 8 }}>
-                            {t('napCat.groupNotSupportedYet')}
-                        </p>
-                    </div>
-
-                    <div className="settings-group">
                         <label className="settings-label">{t('napCat.sourceFilterMode')}</label>
                         <CustomSelect
                             value={form.source_filter_mode}
@@ -421,32 +386,6 @@ const NapCatSettingsPanel: React.FC<NapCatSettingsProps> = ({ onBack }) => {
                                     ...current,
                                     allowed_private_user_ids_text: event.target.value,
                                 }))
-                            }
-                            placeholder={t('napCat.allowlistPlaceholder')}
-                            disabled={saving || allowlistDisabled}
-                        />
-                    </div>
-
-                    <div className="settings-group">
-                        <label className="settings-label">{t('napCat.allowedGroupIds')}</label>
-                        <textarea
-                            className="settings-textarea"
-                            value={form.allowed_group_ids_text}
-                            onChange={(event) =>
-                                setForm((current) => ({ ...current, allowed_group_ids_text: event.target.value }))
-                            }
-                            placeholder={t('napCat.allowlistPlaceholder')}
-                            disabled={saving || allowlistDisabled}
-                        />
-                    </div>
-
-                    <div className="settings-group">
-                        <label className="settings-label">{t('napCat.allowedGroupUserIds')}</label>
-                        <textarea
-                            className="settings-textarea"
-                            value={form.allowed_group_user_ids_text}
-                            onChange={(event) =>
-                                setForm((current) => ({ ...current, allowed_group_user_ids_text: event.target.value }))
                             }
                             placeholder={t('napCat.allowlistPlaceholder')}
                             disabled={saving || allowlistDisabled}

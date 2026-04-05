@@ -76,11 +76,8 @@ type NapCatConfig struct {
 	AccessToken           string   `json:"access_token,omitempty"`
 	PromptID              string   `json:"prompt_id,omitempty"`
 	AllowPrivate          bool     `json:"allow_private"`
-	AllowGroup            bool     `json:"allow_group"`
 	SourceFilterMode      string   `json:"source_filter_mode,omitempty"` // all / allowlist
 	AllowedPrivateUserIDs []string `json:"allowed_private_user_ids,omitempty"`
-	AllowedGroupIDs       []string `json:"allowed_group_ids,omitempty"`
-	AllowedGroupUserIDs   []string `json:"allowed_group_user_ids,omitempty"`
 }
 
 type WebSearchProvider struct {
@@ -376,11 +373,8 @@ func DefaultConfig() Config {
 			AccessToken:           "",
 			PromptID:              "",
 			AllowPrivate:          true,
-			AllowGroup:            false,
 			SourceFilterMode:      "all",
 			AllowedPrivateUserIDs: nil,
-			AllowedGroupIDs:       nil,
-			AllowedGroupUserIDs:   nil,
 		},
 	}
 }
@@ -593,16 +587,6 @@ func (m *Manager) applyConfigDefaults() bool {
 	allowedPrivate := normalizeNapCatAllowlist(m.config.NapCat.AllowedPrivateUserIDs)
 	if !stringSliceEqual(m.config.NapCat.AllowedPrivateUserIDs, allowedPrivate) {
 		m.config.NapCat.AllowedPrivateUserIDs = allowedPrivate
-		changed = true
-	}
-	allowedGroups := normalizeNapCatAllowlist(m.config.NapCat.AllowedGroupIDs)
-	if !stringSliceEqual(m.config.NapCat.AllowedGroupIDs, allowedGroups) {
-		m.config.NapCat.AllowedGroupIDs = allowedGroups
-		changed = true
-	}
-	allowedGroupUsers := normalizeNapCatAllowlist(m.config.NapCat.AllowedGroupUserIDs)
-	if !stringSliceEqual(m.config.NapCat.AllowedGroupUserIDs, allowedGroupUsers) {
-		m.config.NapCat.AllowedGroupUserIDs = allowedGroupUsers
 		changed = true
 	}
 

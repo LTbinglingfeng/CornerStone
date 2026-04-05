@@ -963,12 +963,15 @@ write_memory 只能用于极为重要的长期记忆。
 	}
 
 	reply, err := s.handler.generateSessionReply(ctx, sessionReplyOptions{
-		Session:       session,
-		PromptID:      validPromptID,
-		PromptName:    promptName,
-		Persona:       persona,
-		Channel:       chatToolChannelClawBot,
-		ClawBotUserID: strings.TrimSpace(userID),
+		Session:    session,
+		PromptID:   validPromptID,
+		PromptName: promptName,
+		Persona:    persona,
+		Channel:    chatToolChannelClawBot,
+		Target: storage.ReminderTarget{
+			Kind:   storage.ReminderTargetKindUser,
+			UserID: strings.TrimSpace(userID),
+		},
 		ToolOptions: chatToolOptions{
 			Channel:            chatToolChannelClawBot,
 			WebSearchEnabled:   isWebSearchConfigured(currentConfig),

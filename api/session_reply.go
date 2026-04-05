@@ -22,7 +22,7 @@ type sessionReplyOptions struct {
 	PromptName        string
 	Persona           string
 	Channel           chatToolChannel
-	ClawBotUserID     string
+	Target            storage.ReminderTarget
 	ToolOptions       chatToolOptions
 	ExtraSystemGuides []string
 	EphemeralMessages []client.Message
@@ -169,7 +169,7 @@ func (h *Handler) generateSessionReply(ctx context.Context, options sessionReply
 			PromptID:         promptID,
 			PromptName:       promptName,
 			Channel:          options.Channel,
-			ClawBotUserID:    options.ClawBotUserID,
+			Target:           options.Target,
 			MemSession:       memSession,
 			AllowedToolNames: allowedToolNames,
 		},

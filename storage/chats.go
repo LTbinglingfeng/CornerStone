@@ -24,9 +24,19 @@ type ChatMessage struct {
 	ReasoningContent string            `json:"reasoning_content,omitempty"` // 思考模型的推理内容
 	ToolCalls        []client.ToolCall `json:"tool_calls,omitempty"`        // 工具调用
 	ToolCallID       string            `json:"tool_call_id,omitempty"`      // 工具调用ID (用于tool角色消息)
+	Quote            *QuotedMessage    `json:"quote,omitempty"`             // 被引用消息上下文
 	ImagePaths       []string          `json:"image_paths,omitempty"`       // 图片路径
 	TTSAudioPaths    []string          `json:"tts_audio_paths,omitempty"`   // TTS音频路径
 	Timestamp        time.Time         `json:"timestamp"`
+}
+
+type QuotedMessage struct {
+	MessageID      string   `json:"message_id,omitempty"`
+	MessageType    string   `json:"message_type,omitempty"`
+	SenderUserID   string   `json:"sender_user_id,omitempty"`
+	SenderNickname string   `json:"sender_nickname,omitempty"`
+	Content        string   `json:"content,omitempty"`
+	ImagePaths     []string `json:"image_paths,omitempty"`
 }
 
 // ChatRecord 聊天记录条目（每个会话一个JSONL文件）
@@ -249,7 +259,19 @@ func cloneChatRecord(record *ChatRecord) *ChatRecord {
 		return nil
 	}
 	copied := *record
-	copied.Messages = append([]ChatMessage(nil), record.Messages...)
+	copied.Messages = cloneChatMessages(record.Messages)
+	return &copied
+}
+
+func cloneQuotedMessage(quote *QuotedMessage) *QuotedMessage {
+	if quote == nil {
+		return nil
+	}
+
+	copied := *quote
+	if len(quote.ImagePaths) > 0 {
+		copied.ImagePaths = append([]string(nil), quote.ImagePaths...)
+	}
 	return &copied
 }
 
@@ -396,6 +418,7 @@ func cloneChatMessages(messages []ChatMessage) []ChatMessage {
 	copied := make([]ChatMessage, len(messages))
 	for i := range messages {
 		copied[i] = messages[i]
+		copied[i].Quote = cloneQuotedMessage(messages[i].Quote)
 		if len(messages[i].ToolCalls) > 0 {
 			copied[i].ToolCalls = append([]client.ToolCall(nil), messages[i].ToolCalls...)
 		}
@@ -672,13 +695,14 @@ func (cm *ChatManager) AddMessages(sessionID string, messages []ChatMessage) err
 		return err
 	}
 
-	record.Messages = append(record.Messages, messages...)
+	clonedMessages := cloneChatMessages(messages)
+	record.Messages = append(record.Messages, clonedMessages...)
 	record.UpdatedAt = time.Now()
 
 	// 设置标题
 	metaChanged := false
 	if record.Title == "New Chat" {
-		for _, msg := range messages {
+		for _, msg := range clonedMessages {
 			if msg.Role != "user" {
 				continue
 			}
@@ -699,7 +723,7 @@ func (cm *ChatManager) AddMessages(sessionID string, messages []ChatMessage) err
 		}
 	}
 
-	return cm.persistMessagesLocked(record, messages, metaChanged)
+	return cm.persistMessagesLocked(record, clonedMessages, metaChanged)
 }
 
 // UpdateSessionTitle 更新会话标题

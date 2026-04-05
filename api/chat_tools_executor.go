@@ -33,7 +33,7 @@ type chatToolContext struct {
 	PromptID         string
 	PromptName       string
 	Channel          chatToolChannel
-	ClawBotUserID    string
+	Target           storage.ReminderTarget
 	MemSession       *storage.MemorySession
 	AllowedToolNames map[string]bool
 }

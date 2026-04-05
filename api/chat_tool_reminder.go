@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"cornerstone/client"
+	"cornerstone/logging"
 	"cornerstone/storage"
 	"strings"
 	"time"
@@ -52,10 +53,16 @@ func (e *chatToolExecutor) handleScheduleReminder(ctx context.Context, toolCall 
 	}
 
 	channel := storage.ReminderChannelWeb
+	target := toolCtx.Target
 	if toolCtx.Channel == chatToolChannelClawBot {
 		channel = storage.ReminderChannelClawBot
-		if strings.TrimSpace(toolCtx.ClawBotUserID) == "" {
+		if strings.TrimSpace(target.UserID) == "" {
 			return chatToolResult{OK: false, Data: nil, Error: "missing clawbot user context"}
+		}
+	} else if toolCtx.Channel == chatToolChannelNapCat {
+		channel = storage.ReminderChannelNapCat
+		if strings.TrimSpace(target.UserID) == "" || strings.TrimSpace(target.BotSelfID) == "" {
+			return chatToolResult{OK: false, Data: nil, Error: "missing napcat private context"}
 		}
 	}
 
@@ -64,12 +71,13 @@ func (e *chatToolExecutor) handleScheduleReminder(ctx context.Context, toolCall 
 		SessionID:      sessionID,
 		PromptID:       promptID,
 		PromptName:     strings.TrimSpace(toolCtx.PromptName),
-		ClawBotUserID:  strings.TrimSpace(toolCtx.ClawBotUserID),
+		Target:         target,
 		Title:          title,
 		ReminderPrompt: reminderPrompt,
 		DueAt:          dueAt,
 	})
 	if errCreate != nil {
+		logging.Errorf("schedule reminder create failed: channel=%s session=%s prompt=%s err=%v", channel, sessionID, promptID, errCreate)
 		return chatToolResult{OK: false, Data: nil, Error: errCreate.Error()}
 	}
 
@@ -81,6 +89,7 @@ func (e *chatToolExecutor) handleScheduleReminder(ctx context.Context, toolCall 
 			"session_id":      created.SessionID,
 			"prompt_id":       created.PromptID,
 			"prompt_name":     created.PromptName,
+			"target":          created.Target,
 			"title":           created.Title,
 			"reminder_prompt": created.ReminderPrompt,
 			"due_at":          created.DueAt.Format(time.RFC3339),

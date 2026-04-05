@@ -1564,8 +1564,8 @@ func TestProcessIncomingBatch_ClawBotCanCreateScheduleReminder(t *testing.T) {
 	if reminders[0].Channel != storage.ReminderChannelClawBot {
 		t.Fatalf("reminder channel = %q, want %q", reminders[0].Channel, storage.ReminderChannelClawBot)
 	}
-	if reminders[0].ClawBotUserID != "wx-user" {
-		t.Fatalf("clawbot_user_id = %q, want %q", reminders[0].ClawBotUserID, "wx-user")
+	if reminders[0].Target.UserID != "wx-user" {
+		t.Fatalf("target.user_id = %q, want %q", reminders[0].Target.UserID, "wx-user")
 	}
 	if reminders[0].PromptID != "prompt-1" {
 		t.Fatalf("prompt_id = %q, want %q", reminders[0].PromptID, "prompt-1")

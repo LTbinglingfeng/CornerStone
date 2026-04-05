@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -17,7 +18,21 @@ type ReminderChannel string
 const (
 	ReminderChannelWeb     ReminderChannel = "web"
 	ReminderChannelClawBot ReminderChannel = "clawbot"
+	ReminderChannelNapCat  ReminderChannel = "napcat"
 )
+
+type ReminderTargetKind string
+
+const (
+	ReminderTargetKindSession ReminderTargetKind = "session"
+	ReminderTargetKindUser    ReminderTargetKind = "user"
+)
+
+type ReminderTarget struct {
+	Kind      ReminderTargetKind `json:"kind,omitempty"`
+	BotSelfID string             `json:"bot_self_id,omitempty"`
+	UserID    string             `json:"user_id,omitempty"`
+}
 
 type ReminderStatus string
 
@@ -37,6 +52,7 @@ type Reminder struct {
 	SessionID      string          `json:"session_id"`
 	PromptID       string          `json:"prompt_id"`
 	PromptName     string          `json:"prompt_name,omitempty"`
+	Target         ReminderTarget  `json:"target,omitempty"`
 	ClawBotUserID  string          `json:"clawbot_user_id,omitempty"`
 	Title          string          `json:"title"`
 	ReminderPrompt string          `json:"reminder_prompt"`
@@ -94,6 +110,15 @@ func (m *ReminderManager) load() {
 	changed := false
 	next := make(map[string]*Reminder, len(stored))
 	for i := range stored {
+		legacyClawBotUserID := strings.TrimSpace(stored[i].ClawBotUserID)
+		if legacyClawBotUserID != "" && strings.TrimSpace(stored[i].Target.UserID) == "" {
+			if stored[i].Channel == ReminderChannelClawBot {
+				logging.Infof("normalize legacy reminder target: id=%s channel=%s", strings.TrimSpace(stored[i].ID), stored[i].Channel)
+			} else {
+				logging.Warnf("ignore legacy clawbot target on non-clawbot reminder: id=%s channel=%s", strings.TrimSpace(stored[i].ID), stored[i].Channel)
+			}
+		}
+
 		normalized, errNormalize := normalizeReminder(stored[i])
 		if errNormalize != nil {
 			logging.Warnf("ignore invalid reminder while loading: id=%s err=%v", stored[i].ID, errNormalize)
@@ -103,6 +128,9 @@ func (m *ReminderManager) load() {
 		if normalized.Status == ReminderStatusFiring {
 			normalized.Status = ReminderStatusPending
 			normalized.LastError = ""
+			changed = true
+		}
+		if !reflect.DeepEqual(stored[i], normalized) {
 			changed = true
 		}
 		next[normalized.ID] = cloneReminder(&normalized)
@@ -367,6 +395,33 @@ func (m *ReminderManager) MarkFailed(id string, updatedAt time.Time, lastError s
 	return cloneReminder(reminder), nil
 }
 
+func (m *ReminderManager) MarkPending(id string, updatedAt time.Time, lastError string) (*Reminder, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	reminder, ok := m.reminders[id]
+	if !ok {
+		return nil, os.ErrNotExist
+	}
+	if reminder.Status != ReminderStatusFiring {
+		return nil, os.ErrInvalid
+	}
+
+	lastError = strings.TrimSpace(lastError)
+	if lastError == "" {
+		lastError = "unknown reminder error"
+	}
+
+	reminder.Status = ReminderStatusPending
+	reminder.LastError = lastError
+	reminder.UpdatedAt = updatedAt
+
+	if err := m.saveLocked(); err != nil {
+		return nil, err
+	}
+	return cloneReminder(reminder), nil
+}
+
 func cloneReminder(reminder *Reminder) *Reminder {
 	if reminder == nil {
 		return nil
@@ -401,6 +456,9 @@ func normalizeReminder(reminder Reminder) (Reminder, error) {
 	reminder.SessionID = strings.TrimSpace(reminder.SessionID)
 	reminder.PromptID = strings.TrimSpace(reminder.PromptID)
 	reminder.PromptName = strings.TrimSpace(reminder.PromptName)
+	reminder.Target.Kind = ReminderTargetKind(strings.TrimSpace(string(reminder.Target.Kind)))
+	reminder.Target.BotSelfID = strings.TrimSpace(reminder.Target.BotSelfID)
+	reminder.Target.UserID = strings.TrimSpace(reminder.Target.UserID)
 	reminder.ClawBotUserID = strings.TrimSpace(reminder.ClawBotUserID)
 	reminder.Title = strings.TrimSpace(reminder.Title)
 	reminder.ReminderPrompt = strings.TrimSpace(reminder.ReminderPrompt)
@@ -430,12 +488,14 @@ func normalizeReminder(reminder Reminder) (Reminder, error) {
 	if reminder.Status == "" {
 		reminder.Status = ReminderStatusPending
 	}
+	target, errNormalizeTarget := normalizeReminderTarget(reminder.Channel, reminder.Target, reminder.ClawBotUserID)
+	if errNormalizeTarget != nil {
+		return Reminder{}, errNormalizeTarget
+	}
+	reminder.Target = target
+	reminder.ClawBotUserID = ""
 	switch reminder.Channel {
-	case ReminderChannelWeb:
-	case ReminderChannelClawBot:
-		if reminder.ClawBotUserID == "" {
-			return Reminder{}, os.ErrInvalid
-		}
+	case ReminderChannelWeb, ReminderChannelClawBot, ReminderChannelNapCat:
 	default:
 		return Reminder{}, os.ErrInvalid
 	}
@@ -457,4 +517,46 @@ func normalizeReminder(reminder Reminder) (Reminder, error) {
 		reminder.UpdatedAt = reminder.CreatedAt
 	}
 	return reminder, nil
+}
+
+func normalizeReminderTarget(channel ReminderChannel, target ReminderTarget, legacyClawBotUserID string) (ReminderTarget, error) {
+	target.Kind = ReminderTargetKind(strings.TrimSpace(string(target.Kind)))
+	target.BotSelfID = strings.TrimSpace(target.BotSelfID)
+	target.UserID = strings.TrimSpace(target.UserID)
+	legacyClawBotUserID = strings.TrimSpace(legacyClawBotUserID)
+
+	if channel == ReminderChannelClawBot && target.UserID == "" && legacyClawBotUserID != "" {
+		target.UserID = legacyClawBotUserID
+	}
+
+	switch channel {
+	case ReminderChannelWeb:
+		if target.Kind == "" {
+			target.Kind = ReminderTargetKindSession
+		}
+		if target.Kind != ReminderTargetKindSession {
+			return ReminderTarget{}, os.ErrInvalid
+		}
+		target.BotSelfID = ""
+		target.UserID = ""
+	case ReminderChannelClawBot:
+		if target.Kind == "" {
+			target.Kind = ReminderTargetKindUser
+		}
+		if target.Kind != ReminderTargetKindUser || target.UserID == "" {
+			return ReminderTarget{}, os.ErrInvalid
+		}
+		target.BotSelfID = ""
+	case ReminderChannelNapCat:
+		if target.Kind == "" {
+			target.Kind = ReminderTargetKindUser
+		}
+		if target.Kind != ReminderTargetKindUser || target.UserID == "" || target.BotSelfID == "" {
+			return ReminderTarget{}, os.ErrInvalid
+		}
+	default:
+		return ReminderTarget{}, os.ErrInvalid
+	}
+
+	return target, nil
 }

@@ -4,15 +4,21 @@ import (
 	"bytes"
 	"context"
 	"cornerstone/client"
+	"cornerstone/config"
 	"cornerstone/exacttime"
 	"cornerstone/storage"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 type flushRecorder struct {
@@ -41,6 +47,105 @@ func (f *flushRecorder) Write(p []byte) (int, error) {
 }
 
 func (f *flushRecorder) Flush() {}
+
+func mustJSONRawMessage(t *testing.T, value interface{}) json.RawMessage {
+	t.Helper()
+
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("Marshal JSON failed: %v", err)
+	}
+	return json.RawMessage(data)
+}
+
+func writeTinyPNGForNapCatTest(t *testing.T) string {
+	t.Helper()
+
+	imageData, err := base64.StdEncoding.DecodeString(
+		"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO8B3ioAAAAASUVORK5CYII=",
+	)
+	if err != nil {
+		t.Fatalf("decode png err = %v", err)
+	}
+
+	dir := t.TempDir()
+	imagePath := filepath.Join(dir, "quote.png")
+	if err := os.WriteFile(imagePath, imageData, 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+	return imagePath
+}
+
+func newNapCatTestService(
+	t *testing.T,
+	handler *Handler,
+	responder func(req napCatActionRequest) napCatActionResponse,
+) *NapCatService {
+	t.Helper()
+
+	upgrader := websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool { return true },
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+
+		go func() {
+			defer func() {
+				_ = conn.Close()
+			}()
+
+			for {
+				var req napCatActionRequest
+				if err := conn.ReadJSON(&req); err != nil {
+					return
+				}
+
+				resp := responder(req)
+				if resp.Status == "" {
+					resp.Status = "ok"
+				}
+				resp.Echo = req.Echo
+				if err := conn.WriteJSON(resp); err != nil {
+					return
+				}
+			}
+		}()
+	}))
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		server.Close()
+		t.Fatalf("Dial websocket failed: %v", err)
+	}
+
+	service := NewNapCatService(handler)
+	service.Connect(conn, "test-token")
+
+	t.Cleanup(func() {
+		service.Close()
+		server.Close()
+	})
+
+	return service
+}
+
+func newNapCatQuoteTestHandler(t *testing.T) *Handler {
+	t.Helper()
+
+	provider := newTestProvider("provider-1")
+	provider.APIKey = ""
+
+	return &Handler{
+		chatManager:   storage.NewChatManager(t.TempDir()),
+		configManager: newTestProviderConfigManager(t, provider),
+		cachePhotoDir: t.TempDir(),
+	}
+}
 
 func TestHandleNormalChat_PersistsToolMessagesOnToolLoopError(t *testing.T) {
 	chatMgr := storage.NewChatManager(t.TempDir())
@@ -314,6 +419,486 @@ func TestChatToolExecutor_ScheduleReminderCreatesWebReminder(t *testing.T) {
 	}
 }
 
+func TestNapCatParseIncomingPrivateMessage_PureImageUsesPlaceholder(t *testing.T) {
+	service := &NapCatService{}
+	parsed, ok := service.parseIncomingPrivateMessage(napCatChatSource{
+		Kind:   "private",
+		SelfID: 20002,
+		UserID: 10001,
+	}, napCatMessageEvent{
+		MessageID: 123,
+		Message:   json.RawMessage(`[{"type":"image","data":{"path":"/tmp/test.png"}}]`),
+	})
+	if !ok || parsed == nil {
+		t.Fatal("parseIncomingPrivateMessage returned no message for pure image input")
+	}
+	if parsed.Text != "[用户发送了图片]" {
+		t.Fatalf("text = %q, want placeholder", parsed.Text)
+	}
+	if parsed.MessageID != 123 {
+		t.Fatalf("message_id = %d, want 123", parsed.MessageID)
+	}
+	if len(parsed.ImageSegments) != 1 {
+		t.Fatalf("image_segments len = %d, want 1", len(parsed.ImageSegments))
+	}
+	if parsed.ImageSegments[0].Data.Path != "/tmp/test.png" {
+		t.Fatalf("image path = %q, want %q", parsed.ImageSegments[0].Data.Path, "/tmp/test.png")
+	}
+	if len(parsed.ImagePaths) != 0 {
+		t.Fatalf("image_paths len = %d, want 0 before async download", len(parsed.ImagePaths))
+	}
+}
+
+func TestNapCatProcessIncomingBatch_PersistsReplyQuoteAndText(t *testing.T) {
+	handler := newNapCatQuoteTestHandler(t)
+	source := napCatChatSource{Kind: "private", SelfID: 20002, UserID: 10001}
+
+	var mu sync.Mutex
+	getMsgCalls := 0
+	getMsgReplyID := int64(0)
+
+	service := newNapCatTestService(t, handler, func(req napCatActionRequest) napCatActionResponse {
+		switch req.Action {
+		case "get_login_info":
+			return napCatActionResponse{
+				Data: mustJSONRawMessage(t, napCatLoginInfo{UserID: 20002, Nickname: "CornerStone"}),
+			}
+		case "get_msg":
+			mu.Lock()
+			getMsgCalls++
+			if params, ok := req.Params.(map[string]interface{}); ok {
+				if rawID, ok := params["message_id"].(float64); ok {
+					getMsgReplyID = int64(rawID)
+				}
+			}
+			mu.Unlock()
+			return napCatActionResponse{
+				Data: mustJSONRawMessage(t, napCatGetMsgData{
+					MessageID:   88,
+					MessageType: "private",
+					UserID:      10001,
+					Message:     mustJSONRawMessage(t, "被引用的内容"),
+					Sender: struct {
+						UserID   int64  `json:"user_id"`
+						Nickname string `json:"nickname"`
+						Card     string `json:"card"`
+					}{
+						UserID:   10001,
+						Nickname: "Alice",
+					},
+				}),
+			}
+		case "send_private_msg":
+			return napCatActionResponse{
+				Data: mustJSONRawMessage(t, map[string]int64{"message_id": 999}),
+			}
+		default:
+			return napCatActionResponse{}
+		}
+	})
+
+	event := napCatMessageEvent{
+		MessageID: 123,
+		Message: mustJSONRawMessage(t, []napCatMessageSegment{
+			{
+				Type: "reply",
+				Data: napCatMessageSegmentData{ID: "88"},
+			},
+			{
+				Type: "text",
+				Data: napCatMessageSegmentData{Text: "你好"},
+			},
+		}),
+	}
+
+	parsed, ok := service.parseIncomingPrivateMessage(source, event)
+	if !ok || parsed == nil {
+		t.Fatal("parseIncomingPrivateMessage returned no message")
+	}
+	service.processIncomingBatch(context.Background(), config.NapCatConfig{}, source, []napCatPendingMessage{*parsed})
+
+	mu.Lock()
+	if getMsgCalls != 1 {
+		t.Fatalf("get_msg calls = %d, want 1", getMsgCalls)
+	}
+	if getMsgReplyID != 88 {
+		t.Fatalf("get_msg reply id = %d, want 88", getMsgReplyID)
+	}
+	mu.Unlock()
+
+	sessions := handler.chatManager.ListSessions()
+	if len(sessions) != 1 {
+		t.Fatalf("sessions len = %d, want 1", len(sessions))
+	}
+
+	record, ok := handler.chatManager.GetSession(sessions[0].ID)
+	if !ok {
+		t.Fatal("session not found")
+	}
+	if len(record.Messages) == 0 {
+		t.Fatal("expected persisted user message")
+	}
+
+	msg := record.Messages[0]
+	if msg.Role != "user" {
+		t.Fatalf("role = %q, want user", msg.Role)
+	}
+	if msg.Content != "你好" {
+		t.Fatalf("content = %q, want %q", msg.Content, "你好")
+	}
+	if msg.Quote == nil {
+		t.Fatal("expected quote to be persisted")
+	}
+	if msg.Quote.MessageID != "88" {
+		t.Fatalf("quote.message_id = %q, want %q", msg.Quote.MessageID, "88")
+	}
+	if msg.Quote.MessageType != "private" {
+		t.Fatalf("quote.message_type = %q, want %q", msg.Quote.MessageType, "private")
+	}
+	if msg.Quote.SenderUserID != "10001" {
+		t.Fatalf("quote.sender_user_id = %q, want %q", msg.Quote.SenderUserID, "10001")
+	}
+	if msg.Quote.SenderNickname != "Alice" {
+		t.Fatalf("quote.sender_nickname = %q, want %q", msg.Quote.SenderNickname, "Alice")
+	}
+	if msg.Quote.Content != "被引用的内容" {
+		t.Fatalf("quote.content = %q, want %q", msg.Quote.Content, "被引用的内容")
+	}
+}
+
+func TestNapCatProcessIncomingBatch_PersistsReplyQuoteImages(t *testing.T) {
+	handler := newNapCatQuoteTestHandler(t)
+	source := napCatChatSource{Kind: "private", SelfID: 20002, UserID: 10001}
+	quoteImagePath := writeTinyPNGForNapCatTest(t)
+
+	service := newNapCatTestService(t, handler, func(req napCatActionRequest) napCatActionResponse {
+		switch req.Action {
+		case "get_login_info":
+			return napCatActionResponse{
+				Data: mustJSONRawMessage(t, napCatLoginInfo{UserID: 20002, Nickname: "CornerStone"}),
+			}
+		case "get_msg":
+			return napCatActionResponse{
+				Data: mustJSONRawMessage(t, napCatGetMsgData{
+					MessageID:   88,
+					MessageType: "private",
+					UserID:      10001,
+					Message: mustJSONRawMessage(t, []napCatMessageSegment{
+						{
+							Type: "image",
+							Data: napCatMessageSegmentData{Path: quoteImagePath},
+						},
+					}),
+					Sender: struct {
+						UserID   int64  `json:"user_id"`
+						Nickname string `json:"nickname"`
+						Card     string `json:"card"`
+					}{
+						UserID:   10001,
+						Nickname: "Alice",
+					},
+				}),
+			}
+		case "send_private_msg":
+			return napCatActionResponse{
+				Data: mustJSONRawMessage(t, map[string]int64{"message_id": 999}),
+			}
+		default:
+			return napCatActionResponse{}
+		}
+	})
+
+	event := napCatMessageEvent{
+		MessageID: 124,
+		Message: mustJSONRawMessage(t, []napCatMessageSegment{
+			{
+				Type: "reply",
+				Data: napCatMessageSegmentData{ID: "88"},
+			},
+			{
+				Type: "text",
+				Data: napCatMessageSegmentData{Text: "看看这个"},
+			},
+		}),
+	}
+
+	parsed, ok := service.parseIncomingPrivateMessage(source, event)
+	if !ok || parsed == nil {
+		t.Fatal("parseIncomingPrivateMessage returned no message")
+	}
+	service.processIncomingBatch(context.Background(), config.NapCatConfig{}, source, []napCatPendingMessage{*parsed})
+
+	sessions := handler.chatManager.ListSessions()
+	if len(sessions) != 1 {
+		t.Fatalf("sessions len = %d, want 1", len(sessions))
+	}
+
+	record, ok := handler.chatManager.GetSession(sessions[0].ID)
+	if !ok || len(record.Messages) == 0 {
+		t.Fatal("expected persisted session message")
+	}
+	msg := record.Messages[0]
+	if msg.Quote == nil {
+		t.Fatal("expected quote to be persisted")
+	}
+	if msg.Quote.Content != "[用户发送了图片]" {
+		t.Fatalf("quote.content = %q, want image placeholder", msg.Quote.Content)
+	}
+	if len(msg.Quote.ImagePaths) != 1 {
+		t.Fatalf("quote.image_paths len = %d, want 1", len(msg.Quote.ImagePaths))
+	}
+	if !strings.HasPrefix(msg.Quote.ImagePaths[0], cachePhotoDirName+"/") {
+		t.Fatalf("quote.image_paths[0] = %q, want cache photo path", msg.Quote.ImagePaths[0])
+	}
+
+	converted := convertChatMessages([]storage.ChatMessage{msg})
+	if len(converted) != 1 {
+		t.Fatalf("converted len = %d, want 1", len(converted))
+	}
+	if len(converted[0].ImagePaths) != 1 {
+		t.Fatalf("converted image_paths len = %d, want 1", len(converted[0].ImagePaths))
+	}
+	if !strings.Contains(converted[0].Content, "前 1 张图片来自引用消息") {
+		t.Fatalf("converted content = %q, want quoted image notice", converted[0].Content)
+	}
+	if !strings.Contains(converted[0].Content, "[当前消息]\n看看这个") {
+		t.Fatalf("converted content = %q, want current message section", converted[0].Content)
+	}
+}
+
+func TestNapCatProcessIncomingBatch_GetMsgFailureUsesPlaceholderQuote(t *testing.T) {
+	handler := newNapCatQuoteTestHandler(t)
+	source := napCatChatSource{Kind: "private", SelfID: 20002, UserID: 10001}
+
+	service := newNapCatTestService(t, handler, func(req napCatActionRequest) napCatActionResponse {
+		switch req.Action {
+		case "get_login_info":
+			return napCatActionResponse{
+				Data: mustJSONRawMessage(t, napCatLoginInfo{UserID: 20002, Nickname: "CornerStone"}),
+			}
+		case "get_msg":
+			return napCatActionResponse{
+				Status:  "failed",
+				RetCode: 1,
+				Message: "not found",
+			}
+		case "send_private_msg":
+			return napCatActionResponse{
+				Data: mustJSONRawMessage(t, map[string]int64{"message_id": 999}),
+			}
+		default:
+			return napCatActionResponse{}
+		}
+	})
+
+	event := napCatMessageEvent{
+		MessageID: 125,
+		Message: mustJSONRawMessage(t, []napCatMessageSegment{
+			{
+				Type: "reply",
+				Data: napCatMessageSegmentData{ID: "88"},
+			},
+			{
+				Type: "text",
+				Data: napCatMessageSegmentData{Text: "继续说"},
+			},
+		}),
+	}
+
+	parsed, ok := service.parseIncomingPrivateMessage(source, event)
+	if !ok || parsed == nil {
+		t.Fatal("parseIncomingPrivateMessage returned no message")
+	}
+	service.processIncomingBatch(context.Background(), config.NapCatConfig{}, source, []napCatPendingMessage{*parsed})
+
+	sessions := handler.chatManager.ListSessions()
+	if len(sessions) != 1 {
+		t.Fatalf("sessions len = %d, want 1", len(sessions))
+	}
+
+	record, ok := handler.chatManager.GetSession(sessions[0].ID)
+	if !ok || len(record.Messages) == 0 {
+		t.Fatal("expected persisted session message")
+	}
+	msg := record.Messages[0]
+	if msg.Quote == nil {
+		t.Fatal("expected placeholder quote")
+	}
+	if msg.Quote.MessageID != "88" {
+		t.Fatalf("quote.message_id = %q, want %q", msg.Quote.MessageID, "88")
+	}
+	if msg.Quote.Content != "[引用消息内容不可用]" {
+		t.Fatalf("quote.content = %q, want placeholder", msg.Quote.Content)
+	}
+}
+
+func TestNapCatParseIncomingPrivateMessage_FaceAndText(t *testing.T) {
+	service := &NapCatService{}
+	parsed, ok := service.parseIncomingPrivateMessage(napCatChatSource{
+		Kind:   "private",
+		SelfID: 20002,
+		UserID: 10001,
+	}, napCatMessageEvent{
+		MessageID: 126,
+		Message: mustJSONRawMessage(t, []napCatMessageSegment{
+			{
+				Type: "text",
+				Data: napCatMessageSegmentData{Text: "你好"},
+			},
+			{
+				Type: "face",
+				Data: napCatMessageSegmentData{ID: "123"},
+			},
+		}),
+	})
+	if !ok || parsed == nil {
+		t.Fatal("parseIncomingPrivateMessage returned no message")
+	}
+	if parsed.Text != "你好[QQ表情#123]" {
+		t.Fatalf("text = %q, want %q", parsed.Text, "你好[QQ表情#123]")
+	}
+	if len(parsed.ImageSegments) != 0 {
+		t.Fatalf("image_segments len = %d, want 0", len(parsed.ImageSegments))
+	}
+}
+
+func TestNapCatParseIncomingPrivateMessage_MFaceUsesSummary(t *testing.T) {
+	service := &NapCatService{}
+	parsed, ok := service.parseIncomingPrivateMessage(napCatChatSource{
+		Kind:   "private",
+		SelfID: 20002,
+		UserID: 10001,
+	}, napCatMessageEvent{
+		MessageID: 127,
+		Message: mustJSONRawMessage(t, []napCatMessageSegment{
+			{
+				Type: "mface",
+				Data: napCatMessageSegmentData{Summary: "[摇头]"},
+			},
+		}),
+	})
+	if !ok || parsed == nil {
+		t.Fatal("parseIncomingPrivateMessage returned no message")
+	}
+	if parsed.Text != "[摇头]" {
+		t.Fatalf("text = %q, want %q", parsed.Text, "[摇头]")
+	}
+}
+
+func TestNapCatParseIncomingPrivateMessage_PokeUsesPlaceholder(t *testing.T) {
+	service := &NapCatService{}
+	parsed, ok := service.parseIncomingPrivateMessage(napCatChatSource{
+		Kind:   "private",
+		SelfID: 20002,
+		UserID: 10001,
+	}, napCatMessageEvent{
+		MessageID: 128,
+		Message: mustJSONRawMessage(t, []napCatMessageSegment{
+			{
+				Type: "poke",
+				Data: napCatMessageSegmentData{PokeType: "126", ID: "1"},
+			},
+		}),
+	})
+	if !ok || parsed == nil {
+		t.Fatal("parseIncomingPrivateMessage returned no message")
+	}
+	if parsed.Text != "[戳一戳]" {
+		t.Fatalf("text = %q, want %q", parsed.Text, "[戳一戳]")
+	}
+	if len(parsed.ImageSegments) != 0 {
+		t.Fatalf("image_segments len = %d, want 0", len(parsed.ImageSegments))
+	}
+}
+
+func TestNapCatHandleEvent_PokeEntersReplyWaitWindow(t *testing.T) {
+	provider := newTestProvider("provider-1")
+	configManager := newTestProviderConfigManager(t, provider)
+
+	cfg := configManager.Get()
+	cfg.ReplyWaitWindowMode = string(config.ReplyWaitWindowModeSliding)
+	cfg.ReplyWaitWindowSeconds = 5
+	cfg.NapCat.Enabled = true
+	cfg.NapCat.AllowPrivate = true
+	cfg.NapCat.AccessToken = "napcat-token"
+	if err := configManager.Update(cfg); err != nil {
+		t.Fatalf("Update config failed: %v", err)
+	}
+
+	service := &NapCatService{
+		handler:              &Handler{configManager: configManager},
+		pendingActionWaiters: make(map[string]chan *napCatActionResponse),
+		activeSessions:       make(map[napCatChatSource]*napCatActiveSession),
+		pendingReplies:       make(map[napCatChatSource]*napCatPendingReply),
+	}
+
+	source := napCatChatSource{Kind: "private", SelfID: 20002, UserID: 10001}
+	service.handleEvent(context.Background(), napCatMessageEvent{
+		PostType:    "message",
+		MessageType: "private",
+		MessageID:   129,
+		SelfID:      source.SelfID,
+		UserID:      source.UserID,
+		Message: mustJSONRawMessage(t, []napCatMessageSegment{
+			{
+				Type: "poke",
+				Data: napCatMessageSegmentData{PokeType: "126", ID: "1"},
+			},
+		}),
+	})
+
+	service.mu.Lock()
+	state := service.pendingReplies[source]
+	if state == nil {
+		service.mu.Unlock()
+		t.Fatal("expected poke event to enter pending reply window")
+	}
+	if len(state.Messages) != 1 {
+		service.mu.Unlock()
+		t.Fatalf("pending messages len = %d, want 1", len(state.Messages))
+	}
+	if state.Messages[0].Text != "[戳一戳]" {
+		service.mu.Unlock()
+		t.Fatalf("pending text = %q, want %q", state.Messages[0].Text, "[戳一戳]")
+	}
+	if state.Timer == nil {
+		service.mu.Unlock()
+		t.Fatal("expected reply wait window timer to be scheduled")
+	}
+	state.Timer.Stop()
+	service.mu.Unlock()
+}
+
+func TestNapCatParseIncomingPrivateMessage_CQStringFallback(t *testing.T) {
+	service := &NapCatService{}
+	rawCQ := "[CQ:reply,id=88]看这个[CQ:face,id=123][CQ:image,file=/tmp/test.png]"
+
+	parsed, ok := service.parseIncomingPrivateMessage(napCatChatSource{
+		Kind:   "private",
+		SelfID: 20002,
+		UserID: 10001,
+	}, napCatMessageEvent{
+		MessageID:  128,
+		Message:    mustJSONRawMessage(t, rawCQ),
+		RawMessage: rawCQ,
+	})
+	if !ok || parsed == nil {
+		t.Fatal("parseIncomingPrivateMessage returned no message")
+	}
+	if parsed.ReplyMessageID != 88 {
+		t.Fatalf("reply_message_id = %d, want 88", parsed.ReplyMessageID)
+	}
+	if parsed.Text != "看这个[QQ表情#123]" {
+		t.Fatalf("text = %q, want %q", parsed.Text, "看这个[QQ表情#123]")
+	}
+	if len(parsed.ImageSegments) != 1 {
+		t.Fatalf("image_segments len = %d, want 1", len(parsed.ImageSegments))
+	}
+	if parsed.ImageSegments[0].Data.File != "/tmp/test.png" {
+		t.Fatalf("image file = %q, want %q", parsed.ImageSegments[0].Data.File, "/tmp/test.png")
+	}
+}
+
 func TestReminderService_FireReminder_WebPersistsAssistantMessageWithoutInternalPrompt(t *testing.T) {
 	var state struct {
 		req struct {
@@ -435,6 +1020,121 @@ func TestReminderService_FireReminder_WebPersistsAssistantMessageWithoutInternal
 	}
 	if saved.Status != storage.ReminderStatusSent {
 		t.Fatalf("status = %q, want %q", saved.Status, storage.ReminderStatusSent)
+	}
+}
+
+func TestReminderService_FireReminder_NapCatRetryableSendRequeuesPending(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(client.ChatResponse{
+			ID:      "chatcmpl-test",
+			Object:  "chat.completion",
+			Created: time.Now().Unix(),
+			Model:   "gpt-test",
+			Choices: []client.Choice{
+				{
+					Index: 0,
+					Message: client.Message{
+						Role:    "assistant",
+						Content: "该喝水了。",
+					},
+					FinishReason: "stop",
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	provider := newTestProvider("provider-1")
+	provider.BaseURL = server.URL
+	configManager := newTestProviderConfigManager(t, provider)
+	napCfg := configManager.GetNapCatConfig()
+	napCfg.Enabled = true
+	napCfg.AllowPrivate = true
+	napCfg.AccessToken = "napcat-token"
+	if err := configManager.UpdateNapCatConfig(napCfg); err != nil {
+		t.Fatalf("UpdateNapCatConfig failed: %v", err)
+	}
+
+	promptManager := newTestPromptManager(t)
+	chatMgr := storage.NewChatManager(t.TempDir())
+	if _, err := chatMgr.CreateSession("session-1", "Alice", "prompt-1", "Alice"); err != nil {
+		t.Fatalf("CreateSession failed: %v", err)
+	}
+	if err := chatMgr.AddMessage("session-1", "user", "记得提醒我喝水"); err != nil {
+		t.Fatalf("AddMessage failed: %v", err)
+	}
+
+	exactTimeSvc := &stubExactTimeService{
+		now: time.Date(2026, 4, 5, 19, 30, 0, 0, time.FixedZone("CST", 8*3600)),
+		status: exacttime.Status{
+			Server:      "ntp.aliyun.com",
+			LastSuccess: true,
+			Message:     "ntp sync succeeded",
+		},
+	}
+	handler := &Handler{
+		configManager: configManager,
+		promptManager: promptManager,
+		chatManager:   chatMgr,
+		userManager:   newTestUserManager(t),
+		cleanupDone:   make(chan struct{}),
+	}
+	handler.SetExactTimeService(exactTimeSvc)
+
+	napCatSvc := NewNapCatService(handler)
+	defer napCatSvc.Close()
+	handler.SetNapCatService(napCatSvc)
+
+	reminderSvc := NewReminderService(handler, storage.NewReminderManager(filepath.Join(t.TempDir(), "reminders")), exactTimeSvc)
+	handler.SetReminderService(reminderSvc)
+
+	reminder, err := reminderSvc.Create(reminderCreateRequest{
+		Channel:    storage.ReminderChannelNapCat,
+		SessionID:  "session-1",
+		PromptID:   "prompt-1",
+		PromptName: "Alice",
+		Target: storage.ReminderTarget{
+			Kind:      storage.ReminderTargetKindUser,
+			UserID:    "10001",
+			BotSelfID: "20002",
+		},
+		Title:          "喝水提醒",
+		ReminderPrompt: "到时间后提醒用户喝水，并简单关心一下。",
+		DueAt:          time.Date(2026, 4, 5, 19, 29, 0, 0, time.FixedZone("CST", 8*3600)),
+	})
+	if err != nil {
+		t.Fatalf("Create reminder failed: %v", err)
+	}
+
+	if err := reminderSvc.fireReminder(context.Background(), reminder.ID); err != nil {
+		t.Fatalf("fireReminder failed: %v", err)
+	}
+
+	record, ok := chatMgr.GetSession("session-1")
+	if !ok {
+		t.Fatal("session not found")
+	}
+	if len(record.Messages) != 1 {
+		t.Fatalf("message count = %d, want 1 unchanged user message", len(record.Messages))
+	}
+
+	saved, ok := reminderSvc.Get(reminder.ID)
+	if !ok || saved == nil {
+		t.Fatal("saved reminder not found")
+	}
+	if saved.Status != storage.ReminderStatusPending {
+		t.Fatalf("status = %q, want %q", saved.Status, storage.ReminderStatusPending)
+	}
+	if saved.Attempts != 1 {
+		t.Fatalf("attempts = %d, want 1", saved.Attempts)
+	}
+	if !strings.Contains(saved.LastError, "napcat channel is unavailable") {
+		t.Fatalf("last_error = %q, want temporary napcat channel error", saved.LastError)
 	}
 }
 
