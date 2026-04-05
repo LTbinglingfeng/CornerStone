@@ -244,7 +244,15 @@ func main() {
 	momentManager := storage.NewMomentManager(momentsDir)
 	momentGenerator := api.NewMomentGenerator(momentManager, configManager)
 	memoryManager := storage.NewMemoryManager(promptsDir)
-	memoryExtractor := storage.NewMemoryExtractor(memoryManager, configManager, chatManager, userManager, filepath.Join(baseDir, "memory_extraction_prompt.txt"))
+	exactTimeService := exacttime.New(exacttime.DefaultConfig())
+	memoryExtractor := storage.NewMemoryExtractor(
+		memoryManager,
+		configManager,
+		chatManager,
+		userManager,
+		filepath.Join(baseDir, "memory_extraction_prompt.txt"),
+		exactTimeService,
+	)
 	os.MkdirAll(cachePhotoDir, 0755)
 	os.MkdirAll(ttsAudioDir, 0755)
 
@@ -253,7 +261,6 @@ func main() {
 
 	// 注册API处理器
 	handler := api.NewHandler(configManager, promptManager, chatManager, userManager, authManager, cachePhotoDir, ttsAudioDir, memoryManager, memoryExtractor, momentManager, momentGenerator)
-	exactTimeService := exacttime.New(exacttime.DefaultConfig())
 	exactTimeCtx, exactTimeCancel := context.WithCancel(context.Background())
 	defer exactTimeCancel()
 	go exactTimeService.Run(exactTimeCtx)

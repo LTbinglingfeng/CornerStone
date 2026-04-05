@@ -197,9 +197,11 @@ func TestGetChatTools_IncludesWeatherAndClawBotExcludesInteractiveTools(t *testi
 	tools := getChatTools()
 	foundWeather := false
 	for _, tool := range tools {
+		if tool.Function.Name == "memory_batch_upsert" {
+			t.Fatal("memory_batch_upsert should not be exposed to normal chat tools")
+		}
 		if tool.Function.Name == "get_weather" {
 			foundWeather = true
-			break
 		}
 	}
 	if !foundWeather {

@@ -347,12 +347,14 @@ func (mm *MemoryManager) Add(promptID string, memory Memory) error {
 		memory.ID = uuid.New().String()
 	}
 
-	now := time.Now()
-	if memory.CreatedAt.IsZero() {
-		memory.CreatedAt = now
-	}
-	if memory.LastSeen.IsZero() {
-		memory.LastSeen = now
+	if memory.CreatedAt.IsZero() || memory.LastSeen.IsZero() {
+		now := time.Now()
+		if memory.CreatedAt.IsZero() {
+			memory.CreatedAt = now
+		}
+		if memory.LastSeen.IsZero() {
+			memory.LastSeen = now
+		}
 	}
 	if memory.SeenCount < 0 {
 		memory.SeenCount = 0
