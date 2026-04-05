@@ -386,6 +386,10 @@
   border-color: var(--accent-color);
 }
 
+.modal-select-ui.open {
+  z-index: 20;
+}
+
 .modal-select-text {
   flex: 1;
   min-width: 0;

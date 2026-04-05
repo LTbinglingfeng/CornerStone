@@ -194,7 +194,7 @@
     background: var(--bg-secondary);
     border-radius: 14px;
     border: 1px solid var(--border-color);
-    overflow: hidden;
+    overflow: visible;
     transition: border-color 0.3s ease, background-color 0.3s ease;
 }
 
