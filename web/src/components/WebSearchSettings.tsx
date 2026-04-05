@@ -77,7 +77,8 @@ const WebSearchSettingsPanel: React.FC<WebSearchSettingsProps> = ({ onBack }) =>
     const showSearchEngineField = activeProviderId === 'zhipu'
     const showApiHostField =
         activeProviderId.trim() !== '' && (!!activeProviderInfo?.requires_api_host || hasStoredApiHost)
-    const showApiKeyField = activeProviderId.trim() !== '' && (!!activeProviderInfo?.requires_api_key || hasStoredApiKey)
+    const showApiKeyField =
+        activeProviderId.trim() !== '' && (!!activeProviderInfo?.requires_api_key || hasStoredApiKey)
     const showBasicAuthUsernameField =
         activeProviderId.trim() !== '' && (!!activeProviderInfo?.supports_basic_auth || hasStoredBasicAuthUsername)
     const showBasicAuthPasswordField =
