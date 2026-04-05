@@ -991,7 +991,10 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                             style={{ marginTop: 12 }}
                         >
                             <div className="settings-entry-info">
-                                <span className="settings-entry-label">{t('settings.qqNapCat')}</span>
+                                <span className="settings-entry-label settings-entry-label-row">
+                                    <span>{t('settings.qqNapCat')}</span>
+                                    <span className="feature-beta-badge">BETA</span>
+                                </span>
                                 <span className="settings-entry-value">{napCatPreview.title}</span>
                                 {napCatPreview.detail && (
                                     <span className="settings-entry-subvalue">{napCatPreview.detail}</span>

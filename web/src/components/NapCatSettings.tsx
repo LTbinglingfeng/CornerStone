@@ -171,7 +171,12 @@ const NapCatSettingsPanel: React.FC<NapCatSettingsProps> = ({ onBack }) => {
                         <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
                     </svg>
                 </button>
-                <div className="provider-settings-title">{t('napCat.title')}</div>
+                <div className="provider-settings-title">
+                    <span className="provider-settings-title-inline">
+                        <span>{t('napCat.title')}</span>
+                        <span className="feature-beta-badge">BETA</span>
+                    </span>
+                </div>
                 <div style={{ width: 44 }}></div>
             </div>
 

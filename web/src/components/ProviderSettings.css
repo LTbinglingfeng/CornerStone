@@ -47,6 +47,14 @@
   transition: color 0.3s ease;
 }
 
+.provider-settings-title-inline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .header-add-button {
   width: 44px;
   height: 44px;

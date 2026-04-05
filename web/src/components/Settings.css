@@ -433,6 +433,13 @@
     font-size: 12px;
 }
 
+.settings-entry-label-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
 .settings-entry-value {
     color: var(--text-primary);
     font-size: 15px;
