@@ -70,7 +70,6 @@ const zh = {
     nav: {
         chat: '聊天',
         contacts: '通讯录',
-        moments: '朋友圈',
         me: '我',
     },
     chat: {
@@ -204,8 +203,6 @@ const zh = {
         toolWebSearch: '网络搜索',
         toolWebSearchDescription: '允许 AI 使用外部搜索 API 查询资料、百科和新闻等信息',
         toolWebSearchHint: '还需要先在“网络搜索”页面完成 Provider 配置，开启后才会真正生效',
-        toolGenerateMoment: '朋友圈生成',
-        toolGenerateMomentDescription: '允许 AI 生成并发布朋友圈内容',
         reminders: '提醒管理',
         reminderManagerHint: '查看、编辑和取消已经创建的 reminders。只有 pending 状态允许编辑。',
         noReminders: '暂无 reminders',
@@ -524,19 +521,6 @@ const zh = {
         loadFailed: '加载提示词失败，请重试',
         noPrompts: '暂无提示词模板',
         createFirst: '请先在通讯录中创建提示词',
-    },
-    moments: {
-        defaultUser: '我',
-        imageGenerating: '配图生成中...',
-        imageGenerateFailed: '配图生成失败：{{error}}',
-        like: '赞',
-        liked: '已赞',
-        comment: '评论',
-        noComments: '暂无评论',
-        commentPlaceholder: '写评论...',
-        user: '用户',
-        changeBackground: '更换背景',
-        noMoments: '暂无朋友圈动态',
     },
     redPacket: {
         defaultGreeting: '恭喜发财，大吉大利',

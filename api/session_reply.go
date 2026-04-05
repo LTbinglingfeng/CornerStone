@@ -149,7 +149,7 @@ func (h *Handler) generateSessionReply(ctx context.Context, options sessionReply
 
 	req := buildChatRequestForProvider(provider, resolvedMessages, availableTools, false, 0, nil)
 
-	toolExecutor := newChatToolExecutor(h.momentManager, h.momentGenerator)
+	toolExecutor := newChatToolExecutor()
 	toolExecutor.memoryManager = h.memoryManager
 	toolExecutor.configManager = h.configManager
 	toolExecutor.weatherService = h.getWeatherService()

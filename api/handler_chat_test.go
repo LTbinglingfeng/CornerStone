@@ -170,7 +170,7 @@ func TestChatToolExecutor_WriteMemoryRefreshesSessionAndReinforcesDuplicates(t *
 	memoryManager := storage.NewMemoryManager(t.TempDir())
 	memSession := storage.NewMemorySession("prompt_a", "session_1", memoryManager, nil)
 
-	executor := newChatToolExecutor(nil, nil)
+	executor := newChatToolExecutor()
 	executor.memoryManager = memoryManager
 
 	firstRaw := executor.Execute(context.Background(), client.ToolCall{
@@ -277,7 +277,7 @@ func TestChatToolExecutor_ScheduleReminderCreatesWebReminder(t *testing.T) {
 	})
 	handler.SetReminderService(reminderSvc)
 
-	executor := newChatToolExecutor(nil, nil)
+	executor := newChatToolExecutor()
 	executor.reminderService = reminderSvc
 
 	raw := executor.Execute(context.Background(), client.ToolCall{

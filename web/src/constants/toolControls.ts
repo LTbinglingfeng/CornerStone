@@ -1,8 +1,5 @@
-export type ToolControlSection = 'interaction' | 'realtime' | 'creation'
-export type ToolControlSectionTitleKey =
-    | 'settings.toolSectionInteraction'
-    | 'settings.toolSectionRealtime'
-    | 'settings.toolSectionCreation'
+export type ToolControlSection = 'interaction' | 'realtime'
+export type ToolControlSectionTitleKey = 'settings.toolSectionInteraction' | 'settings.toolSectionRealtime'
 export type ToolControlTitleKey =
     | 'settings.toolSendRedPacket'
     | 'settings.toolRedPacketReceived'
@@ -13,7 +10,6 @@ export type ToolControlTitleKey =
     | 'settings.toolScheduleReminder'
     | 'settings.toolWriteMemory'
     | 'settings.toolWebSearch'
-    | 'settings.toolGenerateMoment'
 export type ToolControlDescriptionKey =
     | 'settings.toolSendRedPacketDescription'
     | 'settings.toolRedPacketReceivedDescription'
@@ -24,7 +20,6 @@ export type ToolControlDescriptionKey =
     | 'settings.toolScheduleReminderDescription'
     | 'settings.toolWriteMemoryDescription'
     | 'settings.toolWebSearchDescription'
-    | 'settings.toolGenerateMomentDescription'
 export type ToolControlHintKey = 'settings.toolWebSearchHint'
 
 export interface ToolControlDefinition {
@@ -38,7 +33,6 @@ export interface ToolControlDefinition {
 export const TOOL_CONTROL_SECTION_TITLE_KEYS: Record<ToolControlSection, ToolControlSectionTitleKey> = {
     interaction: 'settings.toolSectionInteraction',
     realtime: 'settings.toolSectionRealtime',
-    creation: 'settings.toolSectionCreation',
 }
 
 export const TOOL_CONTROL_DEFINITIONS: ToolControlDefinition[] = [
@@ -96,12 +90,6 @@ export const TOOL_CONTROL_DEFINITIONS: ToolControlDefinition[] = [
         titleKey: 'settings.toolWebSearch',
         descriptionKey: 'settings.toolWebSearchDescription',
         hintKey: 'settings.toolWebSearchHint',
-    },
-    {
-        key: 'generate_moment',
-        section: 'creation',
-        titleKey: 'settings.toolGenerateMoment',
-        descriptionKey: 'settings.toolGenerateMomentDescription',
     },
 ]
 

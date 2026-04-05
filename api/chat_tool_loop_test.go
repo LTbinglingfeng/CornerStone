@@ -82,7 +82,7 @@ func TestRunChatWithToolLoop_SuccessMultipleTools(t *testing.T) {
 		},
 	}
 
-	executor := newChatToolExecutor(nil, nil)
+	executor := newChatToolExecutor()
 	got, err := runChatWithToolLoop(context.Background(), ai, client.ChatRequest{Messages: []client.Message{{Role: "user", Content: "hi"}}}, executor, chatToolContext{}, nil)
 	if err != nil {
 		t.Fatalf("runChatWithToolLoop err: %v", err)
@@ -148,7 +148,7 @@ func TestRunChatWithToolLoop_SyncNormalizedAssistantIntoFinalResponse(t *testing
 		},
 	}
 
-	executor := newChatToolExecutor(nil, nil)
+	executor := newChatToolExecutor()
 	got, err := runChatWithToolLoop(context.Background(), ai, client.ChatRequest{Messages: []client.Message{{Role: "user", Content: "hi"}}}, executor, chatToolContext{}, nil)
 	if err != nil {
 		t.Fatalf("runChatWithToolLoop err: %v", err)
@@ -176,7 +176,7 @@ func TestRunChatWithToolLoop_ToolFailureFedBack(t *testing.T) {
 		},
 	}
 
-	executor := newChatToolExecutor(nil, nil)
+	executor := newChatToolExecutor()
 	got, err := runChatWithToolLoop(context.Background(), ai, client.ChatRequest{Messages: []client.Message{{Role: "user", Content: "hi"}}}, executor, chatToolContext{}, nil)
 	if err != nil {
 		t.Fatalf("runChatWithToolLoop err: %v", err)
@@ -210,7 +210,7 @@ func TestRunChatWithToolLoop_RejectsDisallowedToolCallUsingAllowedToolNames(t *t
 		},
 	}
 
-	executor := newChatToolExecutor(nil, nil)
+	executor := newChatToolExecutor()
 	handlerCalled := false
 	executor.handlers["send_red_packet"] = func(ctx context.Context, toolCall client.ToolCall, toolCtx chatToolContext) chatToolResult {
 		handlerCalled = true
@@ -298,7 +298,7 @@ func TestRunChatWithToolLoop_RejectsDisallowedWriteMemoryToolCallWhenToggleDisab
 		"write_memory": false,
 	})
 
-	executor := newChatToolExecutor(nil, nil)
+	executor := newChatToolExecutor()
 	handlerCalled := false
 	executor.handlers["write_memory"] = func(ctx context.Context, toolCall client.ToolCall, toolCtx chatToolContext) chatToolResult {
 		handlerCalled = true
@@ -354,7 +354,7 @@ func TestRunChatWithToolLoop_TerminatesOnNoReply(t *testing.T) {
 		},
 	}
 
-	executor := newChatToolExecutor(nil, nil)
+	executor := newChatToolExecutor()
 	finalAssistantCalls := 0
 	var finalAssistant client.Message
 	got, err := runChatWithToolLoop(
@@ -435,7 +435,7 @@ func TestRunChatWithToolLoop_TerminatesOnNoReplyEvenWhenOtherToolsFail(t *testin
 		},
 	}
 
-	executor := newChatToolExecutor(nil, nil)
+	executor := newChatToolExecutor()
 	got, err := runChatWithToolLoop(
 		context.Background(),
 		ai,
@@ -506,7 +506,7 @@ func TestRunChatWithToolLoop_DoesNotTerminateWhenNoReplyDisabled(t *testing.T) {
 		},
 	}
 
-	executor := newChatToolExecutor(nil, nil)
+	executor := newChatToolExecutor()
 	got, err := runChatWithToolLoop(
 		context.Background(),
 		ai,
@@ -565,7 +565,7 @@ func TestRunChatWithToolLoop_MaxToolSteps(t *testing.T) {
 	}
 	ai := &fakeAIClient{t: t, responses: responses}
 
-	executor := newChatToolExecutor(nil, nil)
+	executor := newChatToolExecutor()
 	_, err := runChatWithToolLoop(context.Background(), ai, client.ChatRequest{Messages: []client.Message{{Role: "user", Content: "hi"}}}, executor, chatToolContext{}, nil)
 	if err == nil {
 		t.Fatalf("expected error")

@@ -30,8 +30,6 @@ type Handler struct {
 	memorySessions  map[string]*storage.MemorySession
 	sessionsMu      sync.RWMutex
 
-	momentManager    *storage.MomentManager
-	momentGenerator  *MomentGenerator
 	clawBotService   *ClawBotService
 	reminderService  *ReminderService
 	weatherService   weatherService
@@ -47,7 +45,7 @@ type exactTimeProvider interface {
 }
 
 // NewHandler 创建处理器
-func NewHandler(cm *config.Manager, pm *storage.PromptManager, chatMgr *storage.ChatManager, userMgr *storage.UserManager, authMgr *storage.AuthManager, cachePhotoDir string, ttsAudioDir string, memoryManager *storage.MemoryManager, memoryExtractor *storage.MemoryExtractor, momentManager *storage.MomentManager, momentGenerator *MomentGenerator) *Handler {
+func NewHandler(cm *config.Manager, pm *storage.PromptManager, chatMgr *storage.ChatManager, userMgr *storage.UserManager, authMgr *storage.AuthManager, cachePhotoDir string, ttsAudioDir string, memoryManager *storage.MemoryManager, memoryExtractor *storage.MemoryExtractor) *Handler {
 	return &Handler{
 		configManager:   cm,
 		promptManager:   pm,
@@ -60,8 +58,6 @@ func NewHandler(cm *config.Manager, pm *storage.PromptManager, chatMgr *storage.
 		memoryManager:   memoryManager,
 		memoryExtractor: memoryExtractor,
 		memorySessions:  make(map[string]*storage.MemorySession),
-		momentManager:   momentManager,
-		momentGenerator: momentGenerator,
 		cleanupDone:     make(chan struct{}),
 	}
 }
@@ -119,12 +115,6 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 
 	// 配置接口 (使用 /management 前缀)
 	h.registerProtectedRoute(mux, "/management/config", h.handleConfig)
-
-	// 朋友圈接口
-	h.registerProtectedRoute(mux, "/api/moments", h.handleMoments)
-	h.registerProtectedRoute(mux, "/api/moments/", h.handleMomentByID)
-	h.registerProtectedRoute(mux, "/api/moments/config", h.handleMomentsConfig)
-	h.registerProtectedRoute(mux, "/api/moments/config/background", h.handleMomentsBackgroundUpload)
 
 	// 供应商管理接口
 	h.registerProtectedRoute(mux, "/management/providers", h.handleProviders)

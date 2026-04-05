@@ -145,7 +145,7 @@ func TestChatTool_WebSearch_Integration(t *testing.T) {
 	}
 	orch := search.NewOrchestrator(reg, srv.Client(), search.WithTimeout(2*time.Second))
 
-	executor := newChatToolExecutor(nil, nil)
+	executor := newChatToolExecutor()
 	executor.configManager = cm
 	executor.webSearch = orch
 

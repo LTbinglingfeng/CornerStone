@@ -187,7 +187,6 @@ func main() {
 	userAboutDir := filepath.Join(baseDir, "user_about")
 	cachePhotoDir := filepath.Join(baseDir, "cache_photo")
 	ttsAudioDir := filepath.Join(baseDir, "tts_audio")
-	momentsDir := filepath.Join(baseDir, "moments")
 	remindersDir := filepath.Join(baseDir, "reminders")
 
 	// 初始化管理器
@@ -242,8 +241,6 @@ func main() {
 	chatManager := storage.NewChatManager(chatsDir)
 	userManager := storage.NewUserManager(userAboutDir)
 	authManager := storage.NewAuthManager(userAboutDir)
-	momentManager := storage.NewMomentManager(momentsDir)
-	momentGenerator := api.NewMomentGenerator(momentManager, configManager)
 	memoryManager := storage.NewMemoryManager(promptsDir)
 	reminderManager := storage.NewReminderManager(remindersDir)
 	exactTimeService := exacttime.New(exacttime.DefaultConfig())
@@ -262,7 +259,7 @@ func main() {
 	mux := http.NewServeMux()
 
 	// 注册API处理器
-	handler := api.NewHandler(configManager, promptManager, chatManager, userManager, authManager, cachePhotoDir, ttsAudioDir, memoryManager, memoryExtractor, momentManager, momentGenerator)
+	handler := api.NewHandler(configManager, promptManager, chatManager, userManager, authManager, cachePhotoDir, ttsAudioDir, memoryManager, memoryExtractor)
 	exactTimeCtx, exactTimeCancel := context.WithCancel(context.Background())
 	defer exactTimeCancel()
 	go exactTimeService.Run(exactTimeCtx)
@@ -277,10 +274,6 @@ func main() {
 	handler.SetClawBotService(clawBotService)
 	defer clawBotService.Close()
 	handler.RegisterRoutes(mux)
-
-	// 朋友圈静态文件（图片、背景图）
-	mux.Handle("/moments/images/", http.StripPrefix("/moments/images/", http.FileServer(http.Dir(filepath.Join(momentsDir, "images")))))
-	mux.Handle("/moments/backgrounds/", http.StripPrefix("/moments/backgrounds/", http.FileServer(http.Dir(filepath.Join(momentsDir, "backgrounds")))))
 
 	// 注册前端静态文件
 	distDir := *webDir

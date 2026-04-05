@@ -4,7 +4,7 @@
 
 ### CornerStone
 
-**CornerStone is a self-hosted AI chat client with a Go backend and a React + TypeScript frontend. It combines chat sessions, persona management, memory extraction, Moments-style posting, image generation, TTS, and local data persistence in one web application.
+**CornerStone is a self-hosted AI chat client with a Go backend and a React + TypeScript frontend. It combines chat sessions, persona management, memory extraction, TTS, and local data persistence in one web application.
 **
 
  English | [简体中文](README_CN.md)
@@ -27,7 +27,6 @@
 - Multimodal chat with uploaded image cache
 - Provider management for OpenAI-compatible Chat Completions, OpenAI Responses API, Google Gemini, Gemini image generation, and Anthropic Claude
 - Dedicated memory extraction settings, provider override, refresh interval, and custom extraction template
-- Moments feed with AI-generated images, likes, comments, and custom background images
 - MiniMax TTS integration
 - ClawBot / WeChat iLink settings and QR login flow
 - Browser notifications for new replies
@@ -113,10 +112,9 @@ src/
     user_about/
     cache_photo/
     tts_audio/
-    moments/
 ```
 
-The `moments/` directory stores the feed data, generated images, and background images. Prompt definitions, chat history, and user profile data are also kept locally in JSON files under this tree.
+Prompt definitions, chat history, and user profile data are also kept locally in JSON files under this tree.
 
 ## API and Access
 
@@ -139,10 +137,10 @@ HTTPS can also be enabled by setting `tls_cert_path` and `tls_key_path` in `conf
 ## Project Structure
 
 - `main.go`: backend entrypoint and static file registration
-- `api/`: HTTP handlers, auth, chat, memory, moments, TTS, and management routes
+- `api/`: HTTP handlers, auth, chat, memory, TTS, and management routes
 - `client/`: upstream provider clients
 - `config/`: configuration loading, defaults, and validation
-- `storage/`: JSON persistence for prompts, chats, user data, memory, and moments
+- `storage/`: JSON persistence for prompts, chats, user data, and memory
 - `web/`: React + TypeScript frontend source and build output
 - `src/`: default runtime data directory
 

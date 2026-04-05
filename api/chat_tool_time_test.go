@@ -153,7 +153,7 @@ func TestChatToolExecutor_GetTimeUsesConfiguredTimeZone(t *testing.T) {
 		t.Fatalf("Update config failed: %v", err)
 	}
 
-	executor := newChatToolExecutor(nil, nil)
+	executor := newChatToolExecutor()
 	executor.configManager = configManager
 	executor.exactTimeService = &stubExactTimeService{
 		now: nowUTC,
@@ -234,7 +234,7 @@ func TestChatToolExecutor_GetTimeAcceptsEmptyArguments(t *testing.T) {
 		t.Fatalf("Update config failed: %v", err)
 	}
 
-	executor := newChatToolExecutor(nil, nil)
+	executor := newChatToolExecutor()
 	executor.configManager = configManager
 	executor.exactTimeService = &stubExactTimeService{
 		now: time.Date(2026, 4, 4, 10, 0, 0, 0, time.UTC),

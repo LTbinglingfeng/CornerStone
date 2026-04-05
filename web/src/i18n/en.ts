@@ -70,7 +70,6 @@ const en = {
     nav: {
         chat: 'Chats',
         contacts: 'Contacts',
-        moments: 'Moments',
         me: 'Me',
     },
     chat: {
@@ -208,8 +207,6 @@ const en = {
         toolWebSearchDescription: 'Allow the AI to use an external search API for facts, encyclopedic info, and news',
         toolWebSearchHint:
             'You still need to configure a provider on the Web Search page before this tool can actually be used',
-        toolGenerateMoment: 'Generate Moment',
-        toolGenerateMomentDescription: 'Allow the AI to generate and publish Moments content',
         reminders: 'Reminders',
         reminderManagerHint: 'View, edit, and cancel created reminders. Only pending reminders are editable.',
         noReminders: 'No reminders yet',
@@ -529,19 +526,6 @@ const en = {
         loadFailed: 'Failed to load prompts, please retry',
         noPrompts: 'No prompt templates',
         createFirst: 'Please create a prompt in Contacts first',
-    },
-    moments: {
-        defaultUser: 'Me',
-        imageGenerating: 'Generating image...',
-        imageGenerateFailed: 'Image generation failed: {{error}}',
-        like: 'Like',
-        liked: 'Liked',
-        comment: 'Comment',
-        noComments: 'No comments yet',
-        commentPlaceholder: 'Write a comment...',
-        user: 'User',
-        changeBackground: 'Change Background',
-        noMoments: 'No moments yet',
     },
     redPacket: {
         defaultGreeting: 'Best wishes!',

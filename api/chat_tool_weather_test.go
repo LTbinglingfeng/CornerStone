@@ -254,7 +254,7 @@ func TestChatToolExecutor_GetWeatherWithExplicitCity(t *testing.T) {
 		weatherResult: newTestWeatherInfo(),
 	}
 
-	executor := newChatToolExecutor(nil, nil)
+	executor := newChatToolExecutor()
 	executor.configManager = newTestProviderConfigManager(t, newTestProvider("provider-1"))
 	executor.weatherService = service
 
@@ -325,7 +325,7 @@ func TestChatToolExecutor_GetWeatherUsesDefaultCity(t *testing.T) {
 		t.Fatalf("Update config failed: %v", err)
 	}
 
-	executor := newChatToolExecutor(nil, nil)
+	executor := newChatToolExecutor()
 	executor.configManager = configManager
 	executor.weatherService = service
 
@@ -388,7 +388,7 @@ func TestChatToolExecutor_GetWeatherTruncatesHourlyAndAlerts(t *testing.T) {
 		t.Fatalf("Update config failed: %v", err)
 	}
 
-	executor := newChatToolExecutor(nil, nil)
+	executor := newChatToolExecutor()
 	executor.configManager = configManager
 	executor.weatherService = service
 
@@ -414,7 +414,7 @@ func TestChatToolExecutor_GetWeatherTruncatesHourlyAndAlerts(t *testing.T) {
 }
 
 func TestChatToolExecutor_GetWeatherRequiresDefaultCityWhenCityMissing(t *testing.T) {
-	executor := newChatToolExecutor(nil, nil)
+	executor := newChatToolExecutor()
 	executor.configManager = newTestProviderConfigManager(t, newTestProvider("provider-1"))
 	executor.weatherService = &stubWeatherService{}
 

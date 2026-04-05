@@ -1,11 +1,10 @@
-export type AppTab = 'chat' | 'contacts' | 'moments' | 'me'
+export type AppTab = 'chat' | 'contacts' | 'me'
 
-export const tabOrder: AppTab[] = ['chat', 'contacts', 'moments', 'me']
+export const tabOrder: AppTab[] = ['chat', 'contacts', 'me']
 
 export const tabRoutes: Record<AppTab, string> = {
     chat: '/chat',
     contacts: '/contacts',
-    moments: '/moments',
     me: '/me',
 }
 
@@ -39,10 +38,6 @@ export const getRouteState = (pathname: string): { activeTab: AppTab; activeSess
 
     if (normalizedPath === tabRoutes.contacts) {
         return { activeTab: 'contacts', activeSessionId: null }
-    }
-
-    if (normalizedPath === tabRoutes.moments) {
-        return { activeTab: 'moments', activeSessionId: null }
     }
 
     if (normalizedPath === tabRoutes.me) {

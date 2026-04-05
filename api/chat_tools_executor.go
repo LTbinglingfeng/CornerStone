@@ -5,14 +5,10 @@ import (
 	"cornerstone/client"
 	"cornerstone/config"
 	"cornerstone/internal/search"
-	"cornerstone/logging"
 	"cornerstone/storage"
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
-
-	"github.com/google/uuid"
 )
 
 type chatToolResult struct {
@@ -47,8 +43,6 @@ type chatToolHandler func(ctx context.Context, toolCall client.ToolCall, toolCtx
 type chatToolExecutor struct {
 	handlers map[string]chatToolHandler
 
-	momentManager    *storage.MomentManager
-	momentGenerator  *MomentGenerator
 	memoryManager    *storage.MemoryManager
 	configManager    *config.Manager
 	weatherService   weatherService
@@ -58,18 +52,15 @@ type chatToolExecutor struct {
 	emitEvent        func(payload interface{})
 }
 
-func newChatToolExecutor(momentManager *storage.MomentManager, momentGenerator *MomentGenerator) *chatToolExecutor {
+func newChatToolExecutor() *chatToolExecutor {
 	executor := &chatToolExecutor{
-		handlers:        make(map[string]chatToolHandler),
-		momentManager:   momentManager,
-		momentGenerator: momentGenerator,
+		handlers: make(map[string]chatToolHandler),
 	}
 
 	executor.handlers["send_red_packet"] = executor.handleSendRedPacket
 	executor.handlers["red_packet_received"] = executor.handleRedPacketReceived
 	executor.handlers["send_pat"] = executor.handleSendPat
 	executor.handlers["no_reply"] = executor.handleNoReply
-	executor.handlers["generate_moment"] = executor.handleGenerateMoment
 	executor.handlers["get_weather"] = executor.handleGetWeather
 	executor.handlers["get_time"] = executor.handleGetTime
 	executor.handlers["web_search"] = executor.handleWebSearch
@@ -232,73 +223,5 @@ func (e *chatToolExecutor) handleRedPacketReceived(ctx context.Context, toolCall
 	return chatToolResult{
 		OK:   true,
 		Data: result,
-	}
-}
-
-type chatToolGenerateMomentArgs struct {
-	Content       string `json:"content"`
-	ImagePrompt   string `json:"image_prompt"`
-	Prompt        string `json:"prompt"`
-	ImagePromptV2 string `json:"imagePrompt"`
-}
-
-func (e *chatToolExecutor) handleGenerateMoment(ctx context.Context, toolCall client.ToolCall, toolCtx chatToolContext) chatToolResult {
-	if e.momentManager == nil || e.momentGenerator == nil {
-		return chatToolResult{OK: false, Data: nil, Error: "moment service not configured"}
-	}
-	promptID := strings.TrimSpace(toolCtx.PromptID)
-	promptName := strings.TrimSpace(toolCtx.PromptName)
-	if promptID == "" || promptName == "" {
-		return chatToolResult{OK: false, Data: nil, Error: "missing prompt context"}
-	}
-
-	var args chatToolGenerateMomentArgs
-	if errUnmarshal := decodeToolArguments(toolCall.Function.Arguments, &args); errUnmarshal != nil {
-		return chatToolResult{OK: false, Data: nil, Error: "invalid arguments"}
-	}
-
-	content := strings.TrimSpace(args.Content)
-	imagePrompt := strings.TrimSpace(args.ImagePrompt)
-	if imagePrompt == "" {
-		imagePrompt = strings.TrimSpace(args.Prompt)
-	}
-	if imagePrompt == "" {
-		imagePrompt = strings.TrimSpace(args.ImagePromptV2)
-	}
-	if content == "" || imagePrompt == "" {
-		return chatToolResult{OK: false, Data: nil, Error: "missing fields"}
-	}
-
-	now := time.Now()
-	moment := storage.Moment{
-		ID:          uuid.NewString(),
-		PromptID:    promptID,
-		PromptName:  promptName,
-		Content:     content,
-		ImagePrompt: imagePrompt,
-		Status:      storage.MomentStatusPending,
-		CreatedAt:   now,
-		UpdatedAt:   now,
-		Likes:       []storage.Like{},
-		Comments:    []storage.Comment{},
-	}
-
-	created, errCreate := e.momentManager.Create(moment)
-	if errCreate != nil {
-		logging.Errorf("generate_moment create moment failed: prompt_id=%s err=%v", promptID, errCreate)
-		return chatToolResult{OK: false, Data: nil, Error: "create moment failed"}
-	}
-
-	e.momentGenerator.StartGeneration(created.ID)
-	logging.Infof("moment created via tool: id=%s prompt_id=%s", created.ID, promptID)
-
-	return chatToolResult{
-		OK: true,
-		Data: map[string]interface{}{
-			"moment_id":   created.ID,
-			"prompt_id":   promptID,
-			"prompt_name": promptName,
-			"status":      created.Status,
-		},
 	}
 }

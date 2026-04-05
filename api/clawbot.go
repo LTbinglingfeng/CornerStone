@@ -922,7 +922,7 @@ func (s *ClawBotService) generateReplyForSession(ctx context.Context, session *s
 	if len(clawBotToolNames) > 0 {
 		channelGuideLines = append(channelGuideLines, "你可以根据需要调用这些工具："+strings.Join(clawBotToolNames, "、")+"。")
 	}
-	channelGuideLines = append(channelGuideLines, "不要调用红包、拍一拍、朋友圈等微信交互工具。")
+	channelGuideLines = append(channelGuideLines, "不要调用红包、拍一拍等微信交互工具。")
 	channelGuide := strings.TrimSpace(strings.Join(channelGuideLines, "\n"))
 
 	systemGuides := []string{channelGuide}

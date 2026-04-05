@@ -105,7 +105,6 @@ func TestHandleConfig_ToolTogglesRoundTripAndProvidersExposeThem(t *testing.T) {
 		"tool_toggles": map[string]bool{
 			"get_time":            false,
 			"web_search":          false,
-			"generate_moment":     false,
 			"red_packet_received": false,
 		},
 	})

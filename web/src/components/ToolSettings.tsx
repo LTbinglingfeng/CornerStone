@@ -18,7 +18,7 @@ interface ToolSettingsProps {
     onBack: () => void
 }
 
-const TOOL_SECTION_ORDER: ToolControlSection[] = ['interaction', 'realtime', 'creation']
+const TOOL_SECTION_ORDER: ToolControlSection[] = ['interaction', 'realtime']
 
 const ToolSettingsPanel: React.FC<ToolSettingsProps> = ({ onBack }) => {
     const { t } = useT()

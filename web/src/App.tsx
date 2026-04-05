@@ -6,7 +6,6 @@ import SearchBar from './components/SearchBar'
 import ChatList from './components/ChatList'
 import ChatDetail from './components/ChatDetail'
 import Contacts from './components/Contacts'
-import MomentsPage from './components/Moments/MomentsPage'
 import ProfilePage from './components/ProfilePage'
 import BottomNav from './components/BottomNav'
 import PromptSelector from './components/PromptSelector'
@@ -119,7 +118,7 @@ function App() {
     )
 
     const handleTabChange = useCallback(
-        (tab: 'chat' | 'contacts' | 'moments' | 'me') => {
+        (tab: 'chat' | 'contacts' | 'me') => {
             const nextPath = tabRoutes[tab]
             if (normalizePathname(location.pathname) === nextPath) return
             navigate(nextPath)
@@ -502,10 +501,6 @@ function App() {
                         onEditPersona={handleEditPersona}
                         refreshToken={contactsRefreshToken}
                     />
-                </div>
-
-                <div className="view-page">
-                    <MomentsPage />
                 </div>
 
                 <div className="view-page">

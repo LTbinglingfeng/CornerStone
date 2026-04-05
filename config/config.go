@@ -140,7 +140,6 @@ var defaultToolToggleKeys = []string{
 	"get_weather",
 	"schedule_reminder",
 	"write_memory",
-	"generate_moment",
 	"web_search",
 }
 
