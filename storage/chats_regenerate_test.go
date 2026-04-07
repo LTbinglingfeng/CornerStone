@@ -374,6 +374,67 @@ func TestReminderManager_MarkPendingRestoresFiringForRetry(t *testing.T) {
 	}
 }
 
+func TestIdleGreetingManager_UpsertPendingReplacesOlderPendingByTarget(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "idle-greetings")
+	manager := NewIdleGreetingManager(dir)
+
+	firstLastUserAt := time.Date(2026, 4, 5, 10, 0, 0, 0, time.UTC)
+	first, err := manager.UpsertPending(IdleGreetingTask{
+		Channel:    ReminderChannelClawBot,
+		SessionID:  "session-a",
+		PromptID:   "prompt-1",
+		PromptName: "Alice",
+		Target: ReminderTarget{
+			Kind:   ReminderTargetKindUser,
+			UserID: "wx-user",
+		},
+		DueAt:      firstLastUserAt.Add(2 * time.Hour),
+		LastUserAt: firstLastUserAt,
+	})
+	if err != nil {
+		t.Fatalf("UpsertPending first failed: %v", err)
+	}
+
+	secondLastUserAt := firstLastUserAt.Add(30 * time.Minute)
+	second, err := manager.UpsertPending(IdleGreetingTask{
+		Channel:    ReminderChannelClawBot,
+		SessionID:  "session-b",
+		PromptID:   "prompt-2",
+		PromptName: "Bob",
+		Target: ReminderTarget{
+			Kind:   ReminderTargetKindUser,
+			UserID: "wx-user",
+		},
+		DueAt:      secondLastUserAt.Add(3 * time.Hour),
+		LastUserAt: secondLastUserAt,
+	})
+	if err != nil {
+		t.Fatalf("UpsertPending second failed: %v", err)
+	}
+
+	if first.ID == second.ID {
+		t.Fatal("expected replacement task to use a different id")
+	}
+
+	tasks := manager.List()
+	if len(tasks) != 1 {
+		t.Fatalf("tasks len = %d, want 1", len(tasks))
+	}
+	if tasks[0].SessionID != "session-b" {
+		t.Fatalf("session_id = %q, want %q", tasks[0].SessionID, "session-b")
+	}
+	if tasks[0].PromptID != "prompt-2" {
+		t.Fatalf("prompt_id = %q, want %q", tasks[0].PromptID, "prompt-2")
+	}
+	if !tasks[0].LastUserAt.Equal(secondLastUserAt) {
+		t.Fatalf("last_user_at = %s, want %s", tasks[0].LastUserAt, secondLastUserAt)
+	}
+
+	if manager.HasNewerTaskForKey(tasks[0].Key, firstLastUserAt, first.ID) != true {
+		t.Fatal("HasNewerTaskForKey = false, want true for replaced task key")
+	}
+}
+
 func TestSnapshotTrailingResponseBatch_TrimmedSessionAndTail(t *testing.T) {
 	cm := newTestChatManager(t)
 	sid := "test-snapshot-tail"

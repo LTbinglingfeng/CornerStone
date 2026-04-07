@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -80,6 +81,18 @@ type NapCatConfig struct {
 	AllowedPrivateUserIDs []string `json:"allowed_private_user_ids,omitempty"`
 }
 
+type IdleGreetingTimeWindow struct {
+	Start string `json:"start"`
+	End   string `json:"end"`
+}
+
+type IdleGreetingConfig struct {
+	Enabled        bool                     `json:"enabled"`
+	TimeWindows    []IdleGreetingTimeWindow `json:"time_windows,omitempty"`
+	IdleMinMinutes int                      `json:"idle_min_minutes"`
+	IdleMaxMinutes int                      `json:"idle_max_minutes"`
+}
+
 type WebSearchProvider struct {
 	APIKey            string `json:"api_key,omitempty"`
 	APIHost           string `json:"api_host,omitempty"`
@@ -124,6 +137,9 @@ const (
 	DefaultReplyWaitWindowSeconds  = 2
 	MaxReplyWaitWindowSeconds      = 120
 	DefaultTimeZone                = "Asia/Shanghai"
+	DefaultIdleGreetingMinMinutes  = 100
+	DefaultIdleGreetingMaxMinutes  = 120
+	MaxIdleGreetingMinutes         = 7 * 24 * 60
 	DefaultWebSearchMaxResults     = 5
 	MaxWebSearchMaxResults         = 50
 	DefaultWebSearchTimeoutSeconds = 20
@@ -222,6 +238,24 @@ func cloneWeatherCity(city *WeatherCity) *WeatherCity {
 	return &clone
 }
 
+func DefaultIdleGreetingTimeWindows() []IdleGreetingTimeWindow {
+	return []IdleGreetingTimeWindow{
+		{
+			Start: "09:00",
+			End:   "22:00",
+		},
+	}
+}
+
+func DefaultIdleGreetingConfig() IdleGreetingConfig {
+	return IdleGreetingConfig{
+		Enabled:        false,
+		TimeWindows:    DefaultIdleGreetingTimeWindows(),
+		IdleMinMinutes: DefaultIdleGreetingMinMinutes,
+		IdleMaxMinutes: DefaultIdleGreetingMaxMinutes,
+	}
+}
+
 func weatherCitiesEqual(left, right *WeatherCity) bool {
 	if left == nil || right == nil {
 		return left == nil && right == nil
@@ -257,6 +291,113 @@ func normalizeWeatherCity(city *WeatherCity) *WeatherCity {
 	return normalized
 }
 
+func cloneIdleGreetingTimeWindows(windows []IdleGreetingTimeWindow) []IdleGreetingTimeWindow {
+	if len(windows) == 0 {
+		return nil
+	}
+	cloned := make([]IdleGreetingTimeWindow, len(windows))
+	copy(cloned, windows)
+	return cloned
+}
+
+func normalizeIdleGreetingMinutes(value, fallback int) int {
+	if value <= 0 {
+		return fallback
+	}
+	if value > MaxIdleGreetingMinutes {
+		return MaxIdleGreetingMinutes
+	}
+	return value
+}
+
+func isValidIdleGreetingClockTime(value string) bool {
+	if len(value) != len("15:04") {
+		return false
+	}
+	parsed, err := time.Parse("15:04", value)
+	if err != nil {
+		return false
+	}
+	return parsed.Format("15:04") == value
+}
+
+func ValidateIdleGreetingTimeClock(value string) bool {
+	return isValidIdleGreetingClockTime(strings.TrimSpace(value))
+}
+
+func normalizeIdleGreetingTimeWindow(window IdleGreetingTimeWindow) (IdleGreetingTimeWindow, bool) {
+	normalized := IdleGreetingTimeWindow{
+		Start: strings.TrimSpace(window.Start),
+		End:   strings.TrimSpace(window.End),
+	}
+	if !isValidIdleGreetingClockTime(normalized.Start) || !isValidIdleGreetingClockTime(normalized.End) {
+		return IdleGreetingTimeWindow{}, false
+	}
+	if normalized.Start == normalized.End {
+		return IdleGreetingTimeWindow{}, false
+	}
+	return normalized, true
+}
+
+func normalizeIdleGreetingTimeWindows(windows []IdleGreetingTimeWindow) []IdleGreetingTimeWindow {
+	if len(windows) == 0 {
+		return cloneIdleGreetingTimeWindows(DefaultIdleGreetingTimeWindows())
+	}
+
+	normalized := make([]IdleGreetingTimeWindow, 0, len(windows))
+	seen := make(map[IdleGreetingTimeWindow]struct{}, len(windows))
+	for _, window := range windows {
+		next, ok := normalizeIdleGreetingTimeWindow(window)
+		if !ok {
+			continue
+		}
+		if _, exists := seen[next]; exists {
+			continue
+		}
+		seen[next] = struct{}{}
+		normalized = append(normalized, next)
+	}
+	if len(normalized) == 0 {
+		return cloneIdleGreetingTimeWindows(DefaultIdleGreetingTimeWindows())
+	}
+	return normalized
+}
+
+func NormalizeIdleGreetingConfig(cfg IdleGreetingConfig) IdleGreetingConfig {
+	defaults := DefaultIdleGreetingConfig()
+	normalized := IdleGreetingConfig{
+		Enabled:        cfg.Enabled,
+		TimeWindows:    normalizeIdleGreetingTimeWindows(cfg.TimeWindows),
+		IdleMinMinutes: normalizeIdleGreetingMinutes(cfg.IdleMinMinutes, defaults.IdleMinMinutes),
+		IdleMaxMinutes: normalizeIdleGreetingMinutes(cfg.IdleMaxMinutes, defaults.IdleMaxMinutes),
+	}
+	if normalized.IdleMinMinutes > normalized.IdleMaxMinutes {
+		normalized.IdleMinMinutes, normalized.IdleMaxMinutes = normalized.IdleMaxMinutes, normalized.IdleMinMinutes
+	}
+	return normalized
+}
+
+func ValidateIdleGreetingConfig(cfg IdleGreetingConfig) error {
+	if cfg.IdleMinMinutes <= 0 || cfg.IdleMinMinutes > MaxIdleGreetingMinutes {
+		return os.ErrInvalid
+	}
+	if cfg.IdleMaxMinutes <= 0 || cfg.IdleMaxMinutes > MaxIdleGreetingMinutes {
+		return os.ErrInvalid
+	}
+	if cfg.IdleMinMinutes > cfg.IdleMaxMinutes {
+		return os.ErrInvalid
+	}
+	if len(cfg.TimeWindows) == 0 {
+		return os.ErrInvalid
+	}
+	for _, window := range cfg.TimeWindows {
+		if _, ok := normalizeIdleGreetingTimeWindow(window); !ok {
+			return os.ErrInvalid
+		}
+	}
+	return nil
+}
+
 // Provider 供应商配置
 type Provider struct {
 	ID                        string       `json:"id"`                                      // 供应商唯一标识
@@ -285,27 +426,28 @@ type Provider struct {
 
 // Config 存储应用配置信息
 type Config struct {
-	Providers              []Provider      `json:"providers"`                 // 供应商列表
-	ActiveProviderID       string          `json:"active_provider_id"`        // 当前激活的供应商ID
-	ImageProviderID        string          `json:"image_provider_id"`         // 生图供应商ID（gemini_image）
-	MemoryProviderID       string          `json:"memory_provider_id"`        // 记忆提取模型（供应商ID）
-	MemoryProvider         *Provider       `json:"memory_provider"`           // 记忆提取模型（独立配置）
-	MemoryEnabled          bool            `json:"memory_enabled"`            // 记忆功能开关
-	MemoryExtractionRounds int             `json:"memory_extraction_rounds"`  // 记忆提取上传的对话轮数（每轮从用户发言开始，直到下一轮用户发言前结束）
-	MemoryRefreshInterval  int             `json:"memory_refresh_interval"`   // 记忆刷新间隔（按对话轮数）
-	TTSEnabled             bool            `json:"tts_enabled"`               // TTS开关
-	TTSProvider            *TTSProvider    `json:"tts_provider,omitempty"`    // TTS提供商（仅支持 MiniMax）
-	SystemPrompt           string          `json:"system_prompt"`             // 全局系统提示词
-	ReplyWaitWindowMode    string          `json:"reply_wait_window_mode"`    // 回复等候窗口模式 (fixed/sliding)
-	ReplyWaitWindowSeconds int             `json:"reply_wait_window_seconds"` // 回复等候窗口秒数
-	TimeZone               string          `json:"time_zone"`                 // Agent 时间工具使用的时区
-	WeatherDefaultCity     *WeatherCity    `json:"weather_default_city,omitempty"`
-	ToolToggles            map[string]bool `json:"tool_toggles,omitempty"` // 模型可用工具开关
-	WebSearch              WebSearchConfig `json:"web_search,omitempty"`
-	TLSCertPath            string          `json:"tls_cert_path,omitempty"` // TLS证书路径(PEM)，留空禁用HTTPS
-	TLSKeyPath             string          `json:"tls_key_path,omitempty"`  // TLS私钥路径(PEM)，留空禁用HTTPS
-	ClawBot                ClawBotConfig   `json:"clawbot"`                 // 微信 iLink ClawBot 配置
-	NapCat                 NapCatConfig    `json:"napcat"`                  // QQ NapCat 配置
+	Providers              []Provider         `json:"providers"`                 // 供应商列表
+	ActiveProviderID       string             `json:"active_provider_id"`        // 当前激活的供应商ID
+	ImageProviderID        string             `json:"image_provider_id"`         // 生图供应商ID（gemini_image）
+	MemoryProviderID       string             `json:"memory_provider_id"`        // 记忆提取模型（供应商ID）
+	MemoryProvider         *Provider          `json:"memory_provider"`           // 记忆提取模型（独立配置）
+	MemoryEnabled          bool               `json:"memory_enabled"`            // 记忆功能开关
+	MemoryExtractionRounds int                `json:"memory_extraction_rounds"`  // 记忆提取上传的对话轮数（每轮从用户发言开始，直到下一轮用户发言前结束）
+	MemoryRefreshInterval  int                `json:"memory_refresh_interval"`   // 记忆刷新间隔（按对话轮数）
+	TTSEnabled             bool               `json:"tts_enabled"`               // TTS开关
+	TTSProvider            *TTSProvider       `json:"tts_provider,omitempty"`    // TTS提供商（仅支持 MiniMax）
+	SystemPrompt           string             `json:"system_prompt"`             // 全局系统提示词
+	ReplyWaitWindowMode    string             `json:"reply_wait_window_mode"`    // 回复等候窗口模式 (fixed/sliding)
+	ReplyWaitWindowSeconds int                `json:"reply_wait_window_seconds"` // 回复等候窗口秒数
+	TimeZone               string             `json:"time_zone"`                 // Agent 时间工具使用的时区
+	IdleGreeting           IdleGreetingConfig `json:"idle_greeting,omitempty"`   //
+	WeatherDefaultCity     *WeatherCity       `json:"weather_default_city,omitempty"`
+	ToolToggles            map[string]bool    `json:"tool_toggles,omitempty"` // 模型可用工具开关
+	WebSearch              WebSearchConfig    `json:"web_search,omitempty"`
+	TLSCertPath            string             `json:"tls_cert_path,omitempty"` // TLS证书路径(PEM)，留空禁用HTTPS
+	TLSKeyPath             string             `json:"tls_key_path,omitempty"`  // TLS私钥路径(PEM)，留空禁用HTTPS
+	ClawBot                ClawBotConfig      `json:"clawbot"`                 // 微信 iLink ClawBot 配置
+	NapCat                 NapCatConfig       `json:"napcat"`                  // QQ NapCat 配置
 }
 
 // Manager 配置管理器
@@ -353,6 +495,7 @@ func DefaultConfig() Config {
 		ReplyWaitWindowMode:    string(ReplyWaitWindowModeSliding),
 		ReplyWaitWindowSeconds: DefaultReplyWaitWindowSeconds,
 		TimeZone:               DefaultTimeZone,
+		IdleGreeting:           DefaultIdleGreetingConfig(),
 		WeatherDefaultCity:     nil,
 		ToolToggles:            DefaultToolToggles(),
 		WebSearch: WebSearchConfig{
@@ -497,6 +640,11 @@ func (m *Manager) applyConfigDefaults() bool {
 	timeZone := normalizeTimeZone(m.config.TimeZone)
 	if timeZone != m.config.TimeZone {
 		m.config.TimeZone = timeZone
+		changed = true
+	}
+	normalizedIdleGreeting := NormalizeIdleGreetingConfig(m.config.IdleGreeting)
+	if !reflect.DeepEqual(m.config.IdleGreeting, normalizedIdleGreeting) {
+		m.config.IdleGreeting = normalizedIdleGreeting
 		changed = true
 	}
 	normalizedWeatherCity := normalizeWeatherCity(m.config.WeatherDefaultCity)

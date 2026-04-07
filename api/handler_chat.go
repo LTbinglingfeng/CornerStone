@@ -176,6 +176,21 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 				h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: errAddMessages.Error()})
 				return
 			}
+			if h.idleGreetingService != nil {
+				lastUserAt := storageMessages[len(storageMessages)-1].Timestamp
+				if _, errIdleGreeting := h.idleGreetingService.Rebuild(idleGreetingScheduleRequest{
+					Channel:    storage.ReminderChannelWeb,
+					SessionID:  sessionID,
+					PromptID:   effectivePromptID,
+					PromptName: promptName,
+					Target: storage.ReminderTarget{
+						Kind: storage.ReminderTargetKindSession,
+					},
+					LastUserAt: lastUserAt,
+				}); errIdleGreeting != nil {
+					logging.Warnf("rebuild idle greeting failed: channel=web session=%s err=%v", sessionID, errIdleGreeting)
+				}
+			}
 		}
 	}
 
@@ -938,6 +953,8 @@ type chatToolOptions struct {
 	WriteMemoryEnabled bool
 	ReminderFiring     bool
 	ToolToggles        map[string]bool
+	RestrictToolNames  map[string]bool
+	StrictToggleFilter bool
 }
 
 func getChatTools(options ...chatToolOptions) []client.Tool {
@@ -1220,6 +1237,26 @@ func getChatTools(options ...chatToolOptions) []client.Tool {
 			return nil
 		}
 		return filtered
+	}
+
+	if len(options) > 0 && len(options[0].RestrictToolNames) > 0 {
+		filtered := make([]client.Tool, 0, len(tools))
+		for _, tool := range tools {
+			if options[0].RestrictToolNames[strings.TrimSpace(tool.Function.Name)] {
+				filtered = append(filtered, tool)
+			}
+		}
+		tools = filtered
+	}
+
+	if len(options) > 0 && options[0].StrictToggleFilter && options[0].ToolToggles != nil {
+		filtered := make([]client.Tool, 0, len(tools))
+		for _, tool := range tools {
+			if isToolEnabledByToggle(options[0].ToolToggles, tool.Function.Name) {
+				filtered = append(filtered, tool)
+			}
+		}
+		tools = filtered
 	}
 
 	return tools

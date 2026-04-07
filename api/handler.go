@@ -32,11 +32,12 @@ type Handler struct {
 	memorySessions  map[string]*storage.MemorySession
 	sessionsMu      sync.RWMutex
 
-	clawBotService   *ClawBotService
-	napCatService    *NapCatService
-	reminderService  *ReminderService
-	weatherService   weatherService
-	exactTimeService exactTimeProvider
+	clawBotService      *ClawBotService
+	napCatService       *NapCatService
+	reminderService     *ReminderService
+	idleGreetingService *IdleGreetingService
+	weatherService      weatherService
+	exactTimeService    exactTimeProvider
 
 	cleanupOnce sync.Once
 	cleanupDone chan struct{}
@@ -290,4 +291,8 @@ func (h *Handler) SetExactTimeService(service exactTimeProvider) {
 
 func (h *Handler) SetReminderService(service *ReminderService) {
 	h.reminderService = service
+}
+
+func (h *Handler) SetIdleGreetingService(service *IdleGreetingService) {
+	h.idleGreetingService = service
 }

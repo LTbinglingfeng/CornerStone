@@ -188,6 +188,7 @@ func main() {
 	cachePhotoDir := filepath.Join(baseDir, "cache_photo")
 	ttsAudioDir := filepath.Join(baseDir, "tts_audio")
 	remindersDir := filepath.Join(baseDir, "reminders")
+	idleGreetingsDir := filepath.Join(baseDir, "idle_greetings")
 
 	// 初始化管理器
 	configManager := config.NewManager(configPath)
@@ -243,6 +244,7 @@ func main() {
 	authManager := storage.NewAuthManager(userAboutDir)
 	memoryManager := storage.NewMemoryManager(promptsDir)
 	reminderManager := storage.NewReminderManager(remindersDir)
+	idleGreetingManager := storage.NewIdleGreetingManager(idleGreetingsDir)
 	exactTimeService := exacttime.New(exacttime.DefaultConfig())
 	memoryExtractor := storage.NewMemoryExtractor(
 		memoryManager,
@@ -269,6 +271,11 @@ func main() {
 	reminderCtx, reminderCancel := context.WithCancel(context.Background())
 	defer reminderCancel()
 	reminderService.Start(reminderCtx)
+	idleGreetingService := api.NewIdleGreetingService(handler, idleGreetingManager, exactTimeService)
+	handler.SetIdleGreetingService(idleGreetingService)
+	idleGreetingCtx, idleGreetingCancel := context.WithCancel(context.Background())
+	defer idleGreetingCancel()
+	idleGreetingService.Start(idleGreetingCtx)
 	appVersion := resolveVersion(exeDir)
 	clawBotService := api.NewClawBotService(handler)
 	handler.SetClawBotService(clawBotService)

@@ -856,6 +856,31 @@ func (s *ClawBotService) processIncomingBatch(ctx context.Context, cfg config.Cl
 		_ = s.sendTextReply(ctx, cfg, userID, "暂时无法处理你的消息，请稍后再试。")
 		return
 	}
+	if s.handler.idleGreetingService != nil {
+		promptID := strings.TrimSpace(session.PromptID)
+		if promptID == "" {
+			promptID = strings.TrimSpace(cfg.PromptID)
+		}
+		promptName := strings.TrimSpace(session.PromptName)
+		if promptName == "" && promptID != "" && s.handler.promptManager != nil {
+			if prompt, ok := s.handler.promptManager.Get(promptID); ok && prompt != nil {
+				promptName = strings.TrimSpace(prompt.Name)
+			}
+		}
+		if _, errIdleGreeting := s.handler.idleGreetingService.Rebuild(idleGreetingScheduleRequest{
+			Channel:    storage.ReminderChannelClawBot,
+			SessionID:  session.SessionID,
+			PromptID:   promptID,
+			PromptName: promptName,
+			Target: storage.ReminderTarget{
+				Kind:   storage.ReminderTargetKindUser,
+				UserID: strings.TrimSpace(userID),
+			},
+			LastUserAt: storageMessages[len(storageMessages)-1].Timestamp,
+		}); errIdleGreeting != nil {
+			logging.Warnf("rebuild idle greeting failed: channel=clawbot session=%s user=%s err=%v", session.SessionID, userID, errIdleGreeting)
+		}
+	}
 
 	generatedReply, err := s.generateReply(ctx, session.SessionID, cfg.PromptID, userID)
 	if err != nil {

@@ -83,6 +83,18 @@ export interface WeatherCity {
     longitude: string
 }
 
+export interface IdleGreetingTimeWindow {
+    start: string
+    end: string
+}
+
+export interface IdleGreetingConfig {
+    enabled: boolean
+    time_windows: IdleGreetingTimeWindow[]
+    idle_min_minutes: number
+    idle_max_minutes: number
+}
+
 // 供应商类型
 export type ProviderType = 'openai' | 'openai_response' | 'gemini' | 'gemini_image' | 'anthropic'
 
@@ -120,6 +132,7 @@ export interface ProvidersResponse {
     reply_wait_window_mode?: 'fixed' | 'sliding' | string
     reply_wait_window_seconds?: number
     time_zone?: string
+    idle_greeting?: IdleGreetingConfig
     weather_default_city?: WeatherCity | null
     tool_toggles?: Record<string, boolean>
     image_provider_id?: string
@@ -137,6 +150,7 @@ export interface AppConfig {
     reply_wait_window_mode?: 'fixed' | 'sliding' | string
     reply_wait_window_seconds?: number
     time_zone?: string
+    idle_greeting?: IdleGreetingConfig
     weather_default_city?: WeatherCity | null
     tool_toggles?: Record<string, boolean>
 }

@@ -1187,3 +1187,1022 @@ func TestHandleReminderByID_OnlyPendingCanBeEdited(t *testing.T) {
 		t.Fatalf("retry update status = %d, want %d", retryRec.Code, http.StatusConflict)
 	}
 }
+
+func newIdleGreetingTestHarness(
+	t *testing.T,
+	providerBaseURL string,
+) (*Handler, *config.Manager, *storage.ChatManager, *IdleGreetingService, *storage.IdleGreetingManager, *stubExactTimeService) {
+	t.Helper()
+
+	provider := newTestProvider("provider-1")
+	provider.BaseURL = providerBaseURL
+	configManager := newTestProviderConfigManager(t, provider)
+
+	cfg := configManager.Get()
+	cfg.TimeZone = "Asia/Shanghai"
+	cfg.IdleGreeting = config.IdleGreetingConfig{
+		Enabled: true,
+		TimeWindows: []config.IdleGreetingTimeWindow{
+			{Start: "09:00", End: "23:00"},
+		},
+		IdleMinMinutes: 100,
+		IdleMaxMinutes: 120,
+	}
+	if err := configManager.Update(cfg); err != nil {
+		t.Fatalf("Update config failed: %v", err)
+	}
+
+	chatMgr := storage.NewChatManager(t.TempDir())
+	handler := &Handler{
+		configManager: configManager,
+		promptManager: newTestPromptManager(t),
+		chatManager:   chatMgr,
+		userManager:   newTestUserManager(t),
+		cleanupDone:   make(chan struct{}),
+	}
+
+	exactTimeSvc := &stubExactTimeService{
+		now: time.Date(2026, 4, 5, 21, 0, 0, 0, time.FixedZone("CST", 8*3600)),
+		status: exacttime.Status{
+			Server:      "ntp.aliyun.com",
+			LastSuccess: true,
+			Message:     "ntp sync succeeded",
+		},
+	}
+	handler.SetExactTimeService(exactTimeSvc)
+
+	manager := storage.NewIdleGreetingManager(filepath.Join(t.TempDir(), "idle-greetings"))
+	service := NewIdleGreetingService(handler, manager, exactTimeSvc)
+	handler.SetIdleGreetingService(service)
+
+	return handler, configManager, chatMgr, service, manager, exactTimeSvc
+}
+
+func TestBuildIdleGreetingCandidateRanges_TimeWindowIntersection(t *testing.T) {
+	location := time.FixedZone("CST", 8*3600)
+	lastUserAt := time.Date(2026, 4, 5, 10, 0, 0, 0, location)
+	ranges := buildIdleGreetingCandidateRanges(lastUserAt, config.IdleGreetingConfig{
+		Enabled: true,
+		TimeWindows: []config.IdleGreetingTimeWindow{
+			{Start: "11:30", End: "12:30"},
+			{Start: "13:00", End: "14:00"},
+		},
+		IdleMinMinutes: 100,
+		IdleMaxMinutes: 240,
+	}, location)
+
+	if len(ranges) != 2 {
+		t.Fatalf("ranges len = %d, want 2", len(ranges))
+	}
+	if !ranges[0].Start.Equal(time.Date(2026, 4, 5, 11, 40, 0, 0, location)) {
+		t.Fatalf("ranges[0].Start = %s, want 2026-04-05T11:40:00+08:00", ranges[0].Start.Format(time.RFC3339))
+	}
+	if !ranges[0].End.Equal(time.Date(2026, 4, 5, 12, 30, 0, 0, location)) {
+		t.Fatalf("ranges[0].End = %s, want 2026-04-05T12:30:00+08:00", ranges[0].End.Format(time.RFC3339))
+	}
+	if !ranges[1].Start.Equal(time.Date(2026, 4, 5, 13, 0, 0, 0, location)) {
+		t.Fatalf("ranges[1].Start = %s, want 2026-04-05T13:00:00+08:00", ranges[1].Start.Format(time.RFC3339))
+	}
+	if !ranges[1].End.Equal(time.Date(2026, 4, 5, 14, 0, 0, 0, location)) {
+		t.Fatalf("ranges[1].End = %s, want 2026-04-05T14:00:00+08:00", ranges[1].End.Format(time.RFC3339))
+	}
+}
+
+func TestBuildIdleGreetingCandidateRanges_CrossMidnightWindow(t *testing.T) {
+	location := time.FixedZone("CST", 8*3600)
+	lastUserAt := time.Date(2026, 4, 5, 21, 30, 0, 0, location)
+	ranges := buildIdleGreetingCandidateRanges(lastUserAt, config.IdleGreetingConfig{
+		Enabled: true,
+		TimeWindows: []config.IdleGreetingTimeWindow{
+			{Start: "22:00", End: "02:00"},
+		},
+		IdleMinMinutes: 100,
+		IdleMaxMinutes: 180,
+	}, location)
+
+	if len(ranges) != 1 {
+		t.Fatalf("ranges len = %d, want 1", len(ranges))
+	}
+	if !ranges[0].Start.Equal(time.Date(2026, 4, 5, 23, 10, 0, 0, location)) {
+		t.Fatalf("ranges[0].Start = %s, want 2026-04-05T23:10:00+08:00", ranges[0].Start.Format(time.RFC3339))
+	}
+	if !ranges[0].End.Equal(time.Date(2026, 4, 6, 0, 30, 0, 0, location)) {
+		t.Fatalf("ranges[0].End = %s, want 2026-04-06T00:30:00+08:00", ranges[0].End.Format(time.RFC3339))
+	}
+}
+
+func TestBuildIdleGreetingCandidateRanges_NoIntersectionSkips(t *testing.T) {
+	location := time.FixedZone("CST", 8*3600)
+	lastUserAt := time.Date(2026, 4, 5, 21, 30, 0, 0, location)
+	ranges := buildIdleGreetingCandidateRanges(lastUserAt, config.IdleGreetingConfig{
+		Enabled: true,
+		TimeWindows: []config.IdleGreetingTimeWindow{
+			{Start: "09:00", End: "22:00"},
+		},
+		IdleMinMinutes: 100,
+		IdleMaxMinutes: 120,
+	}, location)
+
+	if len(ranges) != 0 {
+		t.Fatalf("ranges len = %d, want 0", len(ranges))
+	}
+}
+
+func TestIdleGreetingService_Rebuild_NoIntersectionSkipsAndClearsPending(t *testing.T) {
+	handler, configManager, _, service, manager, _ := newIdleGreetingTestHarness(t, "http://example.invalid")
+	cfg := configManager.Get()
+	cfg.IdleGreeting.TimeWindows = []config.IdleGreetingTimeWindow{
+		{Start: "09:00", End: "22:00"},
+	}
+	cfg.IdleGreeting.IdleMinMinutes = 100
+	cfg.IdleGreeting.IdleMaxMinutes = 120
+	if err := configManager.Update(cfg); err != nil {
+		t.Fatalf("Update config failed: %v", err)
+	}
+
+	lastUserAt := time.Date(2026, 4, 5, 21, 30, 0, 0, time.FixedZone("CST", 8*3600))
+	if _, err := manager.UpsertPending(storage.IdleGreetingTask{
+		Channel:    storage.ReminderChannelWeb,
+		SessionID:  "session-1",
+		PromptID:   "prompt-1",
+		PromptName: "Alice",
+		Target: storage.ReminderTarget{
+			Kind: storage.ReminderTargetKindSession,
+		},
+		DueAt:      lastUserAt.Add(2 * time.Hour),
+		LastUserAt: lastUserAt.Add(-time.Hour),
+	}); err != nil {
+		t.Fatalf("UpsertPending failed: %v", err)
+	}
+
+	task, err := service.Rebuild(idleGreetingScheduleRequest{
+		Channel:    storage.ReminderChannelWeb,
+		SessionID:  "session-1",
+		PromptID:   "prompt-1",
+		PromptName: "Alice",
+		Target: storage.ReminderTarget{
+			Kind: storage.ReminderTargetKindSession,
+		},
+		LastUserAt: lastUserAt,
+	})
+	if err != nil {
+		t.Fatalf("Rebuild failed: %v", err)
+	}
+	if task != nil {
+		t.Fatalf("task = %#v, want nil when no intersection", task)
+	}
+	if tasks := manager.List(); len(tasks) != 0 {
+		t.Fatalf("manager tasks len = %d, want 0 after skip", len(tasks))
+	}
+	if handler.idleGreetingService == nil {
+		t.Fatal("handler idleGreetingService should be configured")
+	}
+}
+
+func TestIdleGreetingService_Rebuild_ReplacesExistingPendingTask(t *testing.T) {
+	handler, configManager, _, service, manager, _ := newIdleGreetingTestHarness(t, "http://example.invalid")
+	cfg := configManager.Get()
+	cfg.IdleGreeting.IdleMinMinutes = 100
+	cfg.IdleGreeting.IdleMaxMinutes = 100
+	if err := configManager.Update(cfg); err != nil {
+		t.Fatalf("Update config failed: %v", err)
+	}
+
+	location := time.FixedZone("CST", 8*3600)
+	firstUserAt := time.Date(2026, 4, 5, 20, 0, 0, 0, location)
+	secondUserAt := firstUserAt.Add(10 * time.Minute)
+
+	task1, err := service.Rebuild(idleGreetingScheduleRequest{
+		Channel:    storage.ReminderChannelWeb,
+		SessionID:  "session-1",
+		PromptID:   "prompt-1",
+		PromptName: "Alice",
+		Target: storage.ReminderTarget{
+			Kind: storage.ReminderTargetKindSession,
+		},
+		LastUserAt: firstUserAt,
+	})
+	if err != nil {
+		t.Fatalf("Rebuild(1) failed: %v", err)
+	}
+	if task1 == nil {
+		t.Fatal("task1 is nil, want scheduled task")
+	}
+
+	task2, err := service.Rebuild(idleGreetingScheduleRequest{
+		Channel:    storage.ReminderChannelWeb,
+		SessionID:  "session-1",
+		PromptID:   "prompt-1",
+		PromptName: "Alice",
+		Target: storage.ReminderTarget{
+			Kind: storage.ReminderTargetKindSession,
+		},
+		LastUserAt: secondUserAt,
+	})
+	if err != nil {
+		t.Fatalf("Rebuild(2) failed: %v", err)
+	}
+	if task2 == nil {
+		t.Fatal("task2 is nil, want scheduled task")
+	}
+
+	tasks := manager.List()
+	if len(tasks) != 1 {
+		t.Fatalf("manager tasks len = %d, want 1 after replacement", len(tasks))
+	}
+	if tasks[0].ID != task2.ID {
+		t.Fatalf("remaining task id = %s, want %s", tasks[0].ID, task2.ID)
+	}
+	if !tasks[0].LastUserAt.Equal(secondUserAt) {
+		t.Fatalf("remaining task last_user_at = %s, want %s", tasks[0].LastUserAt.Format(time.RFC3339), secondUserAt.Format(time.RFC3339))
+	}
+	expectedDueAt := secondUserAt.Add(100 * time.Minute)
+	if !tasks[0].DueAt.Equal(expectedDueAt) {
+		t.Fatalf("remaining task due_at = %s, want %s", tasks[0].DueAt.Format(time.RFC3339), expectedDueAt.Format(time.RFC3339))
+	}
+	if _, ok := manager.Get(task1.ID); ok {
+		t.Fatalf("old task %s should be removed after rebuild", task1.ID)
+	}
+	if handler.idleGreetingService == nil {
+		t.Fatal("handler idleGreetingService should be configured")
+	}
+}
+
+func TestIdleGreetingService_FireTask_SkipsWhenSessionHasNewerUserMessage(t *testing.T) {
+	var requestCount int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	handler, _, chatMgr, service, manager, exactTimeSvc := newIdleGreetingTestHarness(t, server.URL)
+
+	if _, err := chatMgr.CreateSession("session-1", "Alice", "prompt-1", "Alice"); err != nil {
+		t.Fatalf("CreateSession failed: %v", err)
+	}
+	firstUserAt := exactTimeSvc.now.Add(-2 * time.Hour)
+	secondUserAt := firstUserAt.Add(5 * time.Minute)
+	if err := chatMgr.AddMessages("session-1", []storage.ChatMessage{
+		{Role: "user", Content: "第一条", Timestamp: firstUserAt},
+		{Role: "user", Content: "第二条", Timestamp: secondUserAt},
+	}); err != nil {
+		t.Fatalf("AddMessages failed: %v", err)
+	}
+
+	task, err := manager.UpsertPending(storage.IdleGreetingTask{
+		Channel:    storage.ReminderChannelWeb,
+		SessionID:  "session-1",
+		PromptID:   "prompt-1",
+		PromptName: "Alice",
+		Target: storage.ReminderTarget{
+			Kind: storage.ReminderTargetKindSession,
+		},
+		DueAt:      exactTimeSvc.now.Add(-time.Minute),
+		LastUserAt: firstUserAt,
+	})
+	if err != nil {
+		t.Fatalf("UpsertPending failed: %v", err)
+	}
+
+	if err := service.fireTask(context.Background(), task.ID); err != nil {
+		t.Fatalf("fireTask failed: %v", err)
+	}
+
+	record, ok := chatMgr.GetSession("session-1")
+	if !ok {
+		t.Fatal("session not found")
+	}
+	if len(record.Messages) != 2 {
+		t.Fatalf("message count = %d, want 2 unchanged user messages", len(record.Messages))
+	}
+	if requestCount != 0 {
+		t.Fatalf("request count = %d, want 0", requestCount)
+	}
+	if tasks := manager.List(); len(tasks) != 0 {
+		t.Fatalf("manager tasks len = %d, want 0 after skip", len(tasks))
+	}
+	if handler.idleGreetingService == nil {
+		t.Fatal("handler idleGreetingService should be configured")
+	}
+}
+
+func TestIdleGreetingService_FireTask_SkipsWhenDisabledAtFireTime(t *testing.T) {
+	var requestCount int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/chat/completions" {
+			requestCount++
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	_, configManager, chatMgr, service, manager, exactTimeSvc := newIdleGreetingTestHarness(t, server.URL)
+
+	if _, err := chatMgr.CreateSession("session-1", "Alice", "prompt-1", "Alice"); err != nil {
+		t.Fatalf("CreateSession failed: %v", err)
+	}
+	lastUserAt := exactTimeSvc.now.Add(-2 * time.Hour)
+	if err := chatMgr.AddMessages("session-1", []storage.ChatMessage{
+		{Role: "user", Content: "第一条", Timestamp: lastUserAt},
+	}); err != nil {
+		t.Fatalf("AddMessages failed: %v", err)
+	}
+
+	task, err := manager.UpsertPending(storage.IdleGreetingTask{
+		Channel:    storage.ReminderChannelWeb,
+		SessionID:  "session-1",
+		PromptID:   "prompt-1",
+		PromptName: "Alice",
+		Target: storage.ReminderTarget{
+			Kind: storage.ReminderTargetKindSession,
+		},
+		DueAt:      exactTimeSvc.now.Add(-time.Minute),
+		LastUserAt: lastUserAt,
+	})
+	if err != nil {
+		t.Fatalf("UpsertPending failed: %v", err)
+	}
+
+	cfg := configManager.Get()
+	cfg.IdleGreeting.Enabled = false
+	if err := configManager.Update(cfg); err != nil {
+		t.Fatalf("Update config failed: %v", err)
+	}
+
+	if err := service.fireTask(context.Background(), task.ID); err != nil {
+		t.Fatalf("fireTask failed: %v", err)
+	}
+
+	record, ok := chatMgr.GetSession("session-1")
+	if !ok {
+		t.Fatal("session not found")
+	}
+	if len(record.Messages) != 1 {
+		t.Fatalf("message count = %d, want 1 unchanged user message", len(record.Messages))
+	}
+	if requestCount != 0 {
+		t.Fatalf("request count = %d, want 0", requestCount)
+	}
+	if len(manager.List()) != 0 {
+		t.Fatalf("manager tasks len = %d, want 0 after skip", len(manager.List()))
+	}
+}
+
+func TestIdleGreetingService_FireTask_WebPersistsFinalAssistantOnly(t *testing.T) {
+	var state struct {
+		mu       sync.Mutex
+		requests []struct {
+			Messages []struct {
+				Role    string      `json:"role"`
+				Content interface{} `json:"content"`
+			} `json:"messages"`
+			Tools []struct {
+				Function struct {
+					Name string `json:"name"`
+				} `json:"function"`
+			} `json:"tools"`
+		}
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/chat/completions":
+			var req struct {
+				Messages []struct {
+					Role    string      `json:"role"`
+					Content interface{} `json:"content"`
+				} `json:"messages"`
+				Tools []struct {
+					Function struct {
+						Name string `json:"name"`
+					} `json:"function"`
+				} `json:"tools"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode chat request failed: %v", err)
+			}
+
+			state.mu.Lock()
+			index := len(state.requests)
+			state.requests = append(state.requests, req)
+			state.mu.Unlock()
+
+			w.Header().Set("Content-Type", "application/json")
+			if index == 0 {
+				_ = json.NewEncoder(w).Encode(client.ChatResponse{
+					ID:      "chatcmpl-test-1",
+					Object:  "chat.completion",
+					Created: time.Now().Unix(),
+					Model:   "gpt-test",
+					Choices: []client.Choice{
+						{
+							Index: 0,
+							Message: client.Message{
+								Role: "assistant",
+								ToolCalls: []client.ToolCall{
+									{
+										ID:   "call_time_1",
+										Type: "function",
+										Function: client.ToolCallFunction{
+											Name:      "get_time",
+											Arguments: `{}`,
+										},
+									},
+								},
+							},
+							FinishReason: "tool_calls",
+						},
+					},
+				})
+				return
+			}
+
+			_ = json.NewEncoder(w).Encode(client.ChatResponse{
+				ID:      "chatcmpl-test-2",
+				Object:  "chat.completion",
+				Created: time.Now().Unix(),
+				Model:   "gpt-test",
+				Choices: []client.Choice{
+					{
+						Index: 0,
+						Message: client.Message{
+							Role:    "assistant",
+							Content: "晚上好，忙完记得早点休息。",
+						},
+						FinishReason: "stop",
+					},
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	_, configManager, chatMgr, service, manager, exactTimeSvc := newIdleGreetingTestHarness(t, server.URL)
+	cfg := configManager.Get()
+	cfg.ToolToggles["no_reply"] = false
+	cfg.ToolToggles["get_time"] = true
+	cfg.ToolToggles["get_weather"] = false
+	if err := configManager.Update(cfg); err != nil {
+		t.Fatalf("Update config failed: %v", err)
+	}
+
+	if _, err := chatMgr.CreateSession("session-1", "Alice", "prompt-1", "Alice"); err != nil {
+		t.Fatalf("CreateSession failed: %v", err)
+	}
+	lastUserAt := exactTimeSvc.now.Add(-2 * time.Hour)
+	if err := chatMgr.AddMessages("session-1", []storage.ChatMessage{
+		{Role: "user", Content: "今天有点累", Timestamp: lastUserAt},
+	}); err != nil {
+		t.Fatalf("AddMessages failed: %v", err)
+	}
+
+	task, err := manager.UpsertPending(storage.IdleGreetingTask{
+		Channel:    storage.ReminderChannelWeb,
+		SessionID:  "session-1",
+		PromptID:   "prompt-1",
+		PromptName: "Alice",
+		Target: storage.ReminderTarget{
+			Kind: storage.ReminderTargetKindSession,
+		},
+		DueAt:      exactTimeSvc.now.Add(-time.Minute),
+		LastUserAt: lastUserAt,
+	})
+	if err != nil {
+		t.Fatalf("UpsertPending failed: %v", err)
+	}
+
+	if err := service.fireTask(context.Background(), task.ID); err != nil {
+		t.Fatalf("fireTask failed: %v", err)
+	}
+
+	record, ok := chatMgr.GetSession("session-1")
+	if !ok {
+		t.Fatal("session not found")
+	}
+	if len(record.Messages) != 2 {
+		t.Fatalf("message count = %d, want 2", len(record.Messages))
+	}
+	if record.Messages[1].Role != "assistant" || record.Messages[1].Content != "晚上好，忙完记得早点休息。" {
+		t.Fatalf("assistant message = %#v, want final idle greeting", record.Messages[1])
+	}
+	for _, msg := range record.Messages {
+		if msg.Role == "tool" || len(msg.ToolCalls) > 0 {
+			t.Fatalf("tool trace leaked into chat history: %#v", record.Messages)
+		}
+		if strings.Contains(msg.Content, "内部主动问候检查") {
+			t.Fatalf("internal prompt leaked into chat history: %#v", record.Messages)
+		}
+	}
+
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if len(state.requests) != 2 {
+		t.Fatalf("provider request count = %d, want 2", len(state.requests))
+	}
+	toolNames := make(map[string]bool)
+	for _, tool := range state.requests[0].Tools {
+		toolNames[tool.Function.Name] = true
+	}
+	if !toolNames["no_reply"] {
+		t.Fatal("no_reply tool missing in idle greeting request")
+	}
+	if !toolNames["get_time"] {
+		t.Fatal("get_time tool missing in idle greeting request")
+	}
+	if toolNames["get_weather"] {
+		t.Fatal("get_weather tool should be absent when toggle is off")
+	}
+	for _, forbidden := range []string{"schedule_reminder", "write_memory", "send_red_packet", "send_pat", "red_packet_received", "web_search"} {
+		if toolNames[forbidden] {
+			t.Fatalf("forbidden idle greeting tool %q exposed to model", forbidden)
+		}
+	}
+	foundInternalPrompt := false
+	for _, msg := range state.requests[0].Messages {
+		content, _ := msg.Content.(string)
+		if msg.Role == "user" && strings.Contains(content, "内部主动问候检查") {
+			foundInternalPrompt = true
+			break
+		}
+	}
+	if !foundInternalPrompt {
+		t.Fatal("internal idle greeting prompt missing from provider request")
+	}
+	if tasks := manager.List(); len(tasks) != 0 {
+		t.Fatalf("manager tasks len = %d, want 0 after success", len(tasks))
+	}
+}
+
+func TestIdleGreetingService_FireTask_NoReplySilentSuccess(t *testing.T) {
+	var toolNames []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+
+		var req struct {
+			Tools []struct {
+				Function struct {
+					Name string `json:"name"`
+				} `json:"function"`
+			} `json:"tools"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode chat request failed: %v", err)
+		}
+		toolNames = toolNames[:0]
+		for _, tool := range req.Tools {
+			toolNames = append(toolNames, tool.Function.Name)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(client.ChatResponse{
+			ID:      "chatcmpl-test",
+			Object:  "chat.completion",
+			Created: time.Now().Unix(),
+			Model:   "gpt-test",
+			Choices: []client.Choice{
+				{
+					Index: 0,
+					Message: client.Message{
+						Role: "assistant",
+						ToolCalls: []client.ToolCall{
+							{
+								ID:   "call_no_reply_1",
+								Type: "function",
+								Function: client.ToolCallFunction{
+									Name:      "no_reply",
+									Arguments: `{"reason":"现在不适合打扰"}`,
+								},
+							},
+						},
+					},
+					FinishReason: "tool_calls",
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	_, configManager, chatMgr, service, manager, exactTimeSvc := newIdleGreetingTestHarness(t, server.URL)
+	cfg := configManager.Get()
+	cfg.ToolToggles["no_reply"] = false
+	cfg.ToolToggles["get_time"] = false
+	cfg.ToolToggles["get_weather"] = false
+	if err := configManager.Update(cfg); err != nil {
+		t.Fatalf("Update config failed: %v", err)
+	}
+
+	if _, err := chatMgr.CreateSession("session-1", "Alice", "prompt-1", "Alice"); err != nil {
+		t.Fatalf("CreateSession failed: %v", err)
+	}
+	lastUserAt := exactTimeSvc.now.Add(-2 * time.Hour)
+	if err := chatMgr.AddMessages("session-1", []storage.ChatMessage{
+		{Role: "user", Content: "晚点聊", Timestamp: lastUserAt},
+	}); err != nil {
+		t.Fatalf("AddMessages failed: %v", err)
+	}
+
+	task, err := manager.UpsertPending(storage.IdleGreetingTask{
+		Channel:    storage.ReminderChannelWeb,
+		SessionID:  "session-1",
+		PromptID:   "prompt-1",
+		PromptName: "Alice",
+		Target: storage.ReminderTarget{
+			Kind: storage.ReminderTargetKindSession,
+		},
+		DueAt:      exactTimeSvc.now.Add(-time.Minute),
+		LastUserAt: lastUserAt,
+	})
+	if err != nil {
+		t.Fatalf("UpsertPending failed: %v", err)
+	}
+
+	if err := service.fireTask(context.Background(), task.ID); err != nil {
+		t.Fatalf("fireTask failed: %v", err)
+	}
+
+	record, ok := chatMgr.GetSession("session-1")
+	if !ok {
+		t.Fatal("session not found")
+	}
+	if len(record.Messages) != 1 {
+		t.Fatalf("message count = %d, want 1 unchanged user message", len(record.Messages))
+	}
+	if len(manager.List()) != 0 {
+		t.Fatalf("manager tasks len = %d, want 0 after no_reply", len(manager.List()))
+	}
+
+	seenNoReply := false
+	for _, name := range toolNames {
+		if name == "no_reply" {
+			seenNoReply = true
+			break
+		}
+	}
+	if !seenNoReply {
+		t.Fatalf("tools = %#v, want no_reply exposed even when global toggle is off", toolNames)
+	}
+}
+
+func TestIdleGreetingService_FireTask_FailureReturnsPendingForRetry(t *testing.T) {
+	var requestCount int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+		requestCount++
+		http.Error(w, "upstream failed", http.StatusBadGateway)
+	}))
+	defer server.Close()
+
+	_, _, chatMgr, service, manager, exactTimeSvc := newIdleGreetingTestHarness(t, server.URL)
+
+	if _, err := chatMgr.CreateSession("session-1", "Alice", "prompt-1", "Alice"); err != nil {
+		t.Fatalf("CreateSession failed: %v", err)
+	}
+	lastUserAt := exactTimeSvc.now.Add(-2 * time.Hour)
+	if err := chatMgr.AddMessages("session-1", []storage.ChatMessage{
+		{Role: "user", Content: "你在吗", Timestamp: lastUserAt},
+	}); err != nil {
+		t.Fatalf("AddMessages failed: %v", err)
+	}
+
+	task, err := manager.UpsertPending(storage.IdleGreetingTask{
+		Channel:    storage.ReminderChannelWeb,
+		SessionID:  "session-1",
+		PromptID:   "prompt-1",
+		PromptName: "Alice",
+		Target: storage.ReminderTarget{
+			Kind: storage.ReminderTargetKindSession,
+		},
+		DueAt:      exactTimeSvc.now.Add(-time.Minute),
+		LastUserAt: lastUserAt,
+	})
+	if err != nil {
+		t.Fatalf("UpsertPending failed: %v", err)
+	}
+
+	if err := service.fireTask(context.Background(), task.ID); err != nil {
+		t.Fatalf("fireTask failed: %v", err)
+	}
+
+	record, ok := chatMgr.GetSession("session-1")
+	if !ok {
+		t.Fatal("session not found")
+	}
+	if len(record.Messages) != 1 {
+		t.Fatalf("message count = %d, want 1 unchanged user message", len(record.Messages))
+	}
+
+	tasks := manager.List()
+	if len(tasks) != 1 {
+		t.Fatalf("manager tasks len = %d, want 1 pending retry task", len(tasks))
+	}
+	if tasks[0].Status != storage.IdleGreetingStatusPending {
+		t.Fatalf("task status = %s, want %s", tasks[0].Status, storage.IdleGreetingStatusPending)
+	}
+	if tasks[0].Attempts != 1 {
+		t.Fatalf("task attempts = %d, want 1", tasks[0].Attempts)
+	}
+	if strings.TrimSpace(tasks[0].LastError) == "" {
+		t.Fatal("task last_error is empty, want retained failure reason")
+	}
+	if requestCount != 1 {
+		t.Fatalf("request count = %d, want 1", requestCount)
+	}
+}
+
+func TestIdleGreetingService_FireTask_DeletesAfterExhaustingRetries(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+		http.Error(w, "upstream failed", http.StatusBadGateway)
+	}))
+	defer server.Close()
+
+	_, _, chatMgr, service, manager, exactTimeSvc := newIdleGreetingTestHarness(t, server.URL)
+
+	if _, err := chatMgr.CreateSession("session-1", "Alice", "prompt-1", "Alice"); err != nil {
+		t.Fatalf("CreateSession failed: %v", err)
+	}
+	lastUserAt := exactTimeSvc.now.Add(-2 * time.Hour)
+	if err := chatMgr.AddMessages("session-1", []storage.ChatMessage{
+		{Role: "user", Content: "你在吗", Timestamp: lastUserAt},
+	}); err != nil {
+		t.Fatalf("AddMessages failed: %v", err)
+	}
+
+	task, err := manager.UpsertPending(storage.IdleGreetingTask{
+		Channel:    storage.ReminderChannelWeb,
+		SessionID:  "session-1",
+		PromptID:   "prompt-1",
+		PromptName: "Alice",
+		Target: storage.ReminderTarget{
+			Kind: storage.ReminderTargetKindSession,
+		},
+		DueAt:      exactTimeSvc.now.Add(-time.Minute),
+		LastUserAt: lastUserAt,
+	})
+	if err != nil {
+		t.Fatalf("UpsertPending failed: %v", err)
+	}
+
+	for attempt := 1; attempt <= idleGreetingMaxRetries; attempt++ {
+		if err := service.fireTask(context.Background(), task.ID); err != nil {
+			t.Fatalf("fireTask attempt %d failed unexpectedly: %v", attempt, err)
+		}
+		tasks := manager.List()
+		if len(tasks) != 1 {
+			t.Fatalf("after attempt %d manager tasks len = %d, want 1", attempt, len(tasks))
+		}
+		if tasks[0].Attempts != attempt {
+			t.Fatalf("after attempt %d task attempts = %d, want %d", attempt, tasks[0].Attempts, attempt)
+		}
+	}
+
+	if err := service.fireTask(context.Background(), task.ID); err == nil {
+		t.Fatal("final fireTask err = nil, want failure after retries exhausted")
+	}
+	if tasks := manager.List(); len(tasks) != 0 {
+		t.Fatalf("manager tasks len = %d, want 0 after retries exhausted", len(tasks))
+	}
+}
+
+func TestIdleGreetingService_FireTask_ClawBotSendsAndPersists(t *testing.T) {
+	var state struct {
+		mu        sync.Mutex
+		sendTexts []string
+		sendUsers []string
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/chat/completions":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(client.ChatResponse{
+				ID:      "chatcmpl-test",
+				Object:  "chat.completion",
+				Created: time.Now().Unix(),
+				Model:   "gpt-test",
+				Choices: []client.Choice{
+					{
+						Index: 0,
+						Message: client.Message{
+							Role:    "assistant",
+							Content: "晚上好，微信上来打个招呼。",
+						},
+						FinishReason: "stop",
+					},
+				},
+			})
+		case "/ilink/bot/sendmessage":
+			var req client.ClawBotSendMessageRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode sendmessage request failed: %v", err)
+			}
+			text := ""
+			if len(req.Msg.ItemList) > 0 && req.Msg.ItemList[0].TextItem != nil {
+				text = req.Msg.ItemList[0].TextItem.Text
+			}
+			state.mu.Lock()
+			state.sendTexts = append(state.sendTexts, text)
+			state.sendUsers = append(state.sendUsers, req.Msg.ToUserID)
+			state.mu.Unlock()
+			_ = json.NewEncoder(w).Encode(client.ClawBotSendMessageResponse{Ret: 0})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	handler, configManager, chatMgr, service, manager, exactTimeSvc := newIdleGreetingTestHarness(t, server.URL)
+	clawCfg := configManager.GetClawBotConfig()
+	clawCfg.Enabled = true
+	clawCfg.BaseURL = server.URL
+	clawCfg.BotToken = "bot-token"
+	if err := configManager.UpdateClawBotConfig(clawCfg); err != nil {
+		t.Fatalf("UpdateClawBotConfig failed: %v", err)
+	}
+	handler.SetClawBotService(&ClawBotService{
+		handler:        handler,
+		client:         client.NewClawBotClient(),
+		qrSessions:     make(map[string]clawBotQRCodeSession),
+		activeSessions: make(map[string]*clawBotActiveSession),
+		pendingReplies: make(map[string]*clawBotPendingReply),
+		contextTokens:  make(map[string]string),
+		wechatUIN:      "wechat-uin",
+	})
+
+	if _, err := chatMgr.CreateSession("session-1", "Alice", "prompt-1", "Alice"); err != nil {
+		t.Fatalf("CreateSession failed: %v", err)
+	}
+	lastUserAt := exactTimeSvc.now.Add(-2 * time.Hour)
+	if err := chatMgr.AddMessages("session-1", []storage.ChatMessage{
+		{Role: "user", Content: "微信里在吗", Timestamp: lastUserAt},
+	}); err != nil {
+		t.Fatalf("AddMessages failed: %v", err)
+	}
+
+	task, err := manager.UpsertPending(storage.IdleGreetingTask{
+		Channel:    storage.ReminderChannelClawBot,
+		SessionID:  "session-1",
+		PromptID:   "prompt-1",
+		PromptName: "Alice",
+		Target: storage.ReminderTarget{
+			Kind:   storage.ReminderTargetKindUser,
+			UserID: "wx-user",
+		},
+		DueAt:      exactTimeSvc.now.Add(-time.Minute),
+		LastUserAt: lastUserAt,
+	})
+	if err != nil {
+		t.Fatalf("UpsertPending failed: %v", err)
+	}
+
+	if err := service.fireTask(context.Background(), task.ID); err != nil {
+		t.Fatalf("fireTask failed: %v", err)
+	}
+
+	state.mu.Lock()
+	if len(state.sendTexts) != 1 || state.sendTexts[0] != "晚上好，微信上来打个招呼。" {
+		t.Fatalf("sendTexts = %#v, want final clawbot reply", state.sendTexts)
+	}
+	if len(state.sendUsers) != 1 || state.sendUsers[0] != "wx-user" {
+		t.Fatalf("sendUsers = %#v, want wx-user", state.sendUsers)
+	}
+	state.mu.Unlock()
+
+	record, ok := chatMgr.GetSession("session-1")
+	if !ok {
+		t.Fatal("session not found")
+	}
+	if len(record.Messages) != 2 {
+		t.Fatalf("message count = %d, want 2", len(record.Messages))
+	}
+	if record.Messages[1].Role != "assistant" || record.Messages[1].Content != "晚上好，微信上来打个招呼。" {
+		t.Fatalf("assistant message = %#v, want final clawbot idle greeting", record.Messages[1])
+	}
+}
+
+func TestIdleGreetingService_FireTask_NapCatSendsAndPersists(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(client.ChatResponse{
+			ID:      "chatcmpl-test",
+			Object:  "chat.completion",
+			Created: time.Now().Unix(),
+			Model:   "gpt-test",
+			Choices: []client.Choice{
+				{
+					Index: 0,
+					Message: client.Message{
+						Role:    "assistant",
+						Content: "晚上好，QQ 上来问候一下。",
+					},
+					FinishReason: "stop",
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	handler, configManager, chatMgr, service, manager, exactTimeSvc := newIdleGreetingTestHarness(t, server.URL)
+	napCfg := configManager.GetNapCatConfig()
+	napCfg.Enabled = true
+	napCfg.AllowPrivate = true
+	napCfg.AccessToken = "test-token"
+	if err := configManager.UpdateNapCatConfig(napCfg); err != nil {
+		t.Fatalf("UpdateNapCatConfig failed: %v", err)
+	}
+
+	var sendTexts []string
+	napCatService := newNapCatTestService(t, handler, func(req napCatActionRequest) napCatActionResponse {
+		switch req.Action {
+		case "get_login_info":
+			return napCatActionResponse{
+				Status:  "ok",
+				RetCode: 0,
+				Data: mustJSONRawMessage(t, map[string]interface{}{
+					"user_id":  20002,
+					"nickname": "CornerStoneBot",
+				}),
+			}
+		case "send_private_msg":
+			if params, ok := req.Params.(map[string]interface{}); ok {
+				if text, ok := params["message"].(string); ok {
+					sendTexts = append(sendTexts, text)
+				}
+			}
+			return napCatActionResponse{
+				Status:  "ok",
+				RetCode: 0,
+				Data:    mustJSONRawMessage(t, map[string]interface{}{"message_id": 1}),
+			}
+		default:
+			return napCatActionResponse{
+				Status:  "failed",
+				RetCode: 1,
+				Message: "unsupported action",
+			}
+		}
+	})
+	handler.SetNapCatService(napCatService)
+
+	if _, err := chatMgr.CreateSession("session-1", "Alice", "prompt-1", "Alice"); err != nil {
+		t.Fatalf("CreateSession failed: %v", err)
+	}
+	lastUserAt := exactTimeSvc.now.Add(-2 * time.Hour)
+	if err := chatMgr.AddMessages("session-1", []storage.ChatMessage{
+		{Role: "user", Content: "QQ 在吗", Timestamp: lastUserAt},
+	}); err != nil {
+		t.Fatalf("AddMessages failed: %v", err)
+	}
+
+	task, err := manager.UpsertPending(storage.IdleGreetingTask{
+		Channel:    storage.ReminderChannelNapCat,
+		SessionID:  "session-1",
+		PromptID:   "prompt-1",
+		PromptName: "Alice",
+		Target: storage.ReminderTarget{
+			Kind:      storage.ReminderTargetKindUser,
+			UserID:    "10001",
+			BotSelfID: "20002",
+		},
+		DueAt:      exactTimeSvc.now.Add(-time.Minute),
+		LastUserAt: lastUserAt,
+	})
+	if err != nil {
+		t.Fatalf("UpsertPending failed: %v", err)
+	}
+
+	if err := service.fireTask(context.Background(), task.ID); err != nil {
+		t.Fatalf("fireTask failed: %v", err)
+	}
+
+	if len(sendTexts) != 1 || sendTexts[0] != "晚上好，QQ 上来问候一下。" {
+		t.Fatalf("sendTexts = %#v, want final napcat reply", sendTexts)
+	}
+
+	record, ok := chatMgr.GetSession("session-1")
+	if !ok {
+		t.Fatal("session not found")
+	}
+	if len(record.Messages) != 2 {
+		t.Fatalf("message count = %d, want 2", len(record.Messages))
+	}
+	if record.Messages[1].Role != "assistant" || record.Messages[1].Content != "晚上好，QQ 上来问候一下。" {
+		t.Fatalf("assistant message = %#v, want final napcat idle greeting", record.Messages[1])
+	}
+}

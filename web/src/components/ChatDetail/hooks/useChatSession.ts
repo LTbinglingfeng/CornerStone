@@ -21,7 +21,7 @@ interface UseChatSessionReturn {
     userInfo: UserInfo | null
     loading: boolean
     imageCapable: boolean
-    reload: () => Promise<void>
+    reload: (options?: { silent?: boolean }) => Promise<void>
     loadOlder: () => Promise<boolean>
 }
 
@@ -48,55 +48,61 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
         setPrompt(null)
     }, [])
 
-    const reload = useCallback(async () => {
-        const requestToken = requestTokenRef.current + 1
-        requestTokenRef.current = requestToken
-        setLoading(true)
+    const reload = useCallback(
+        async (options?: { silent?: boolean }) => {
+            const requestToken = requestTokenRef.current + 1
+            requestTokenRef.current = requestToken
+            const silent = options?.silent === true
+            if (!silent) {
+                setLoading(true)
+            }
 
-        try {
-            const data = await getSessionMessagesPage(sessionId, { limit: pageSize })
-            if (requestToken !== requestTokenRef.current) return
+            try {
+                const data = await getSessionMessagesPage(sessionId, { limit: pageSize })
+                if (requestToken !== requestTokenRef.current) return
 
-            if (!data) {
-                resetSessionState()
-            } else {
-                setSession(data)
-                const pageMessages = data.messages || []
-                const total = typeof data.messages_total === 'number' ? data.messages_total : pageMessages.length
-                const offset =
-                    typeof data.messages_offset === 'number'
-                        ? data.messages_offset
-                        : Math.max(0, total - pageMessages.length)
-                setMessages(pageMessages)
-                setMessagesOffset(offset)
-                setMessagesTotal(total)
+                if (!data) {
+                    resetSessionState()
+                } else {
+                    setSession(data)
+                    const pageMessages = data.messages || []
+                    const total = typeof data.messages_total === 'number' ? data.messages_total : pageMessages.length
+                    const offset =
+                        typeof data.messages_offset === 'number'
+                            ? data.messages_offset
+                            : Math.max(0, total - pageMessages.length)
+                    setMessages(pageMessages)
+                    setMessagesOffset(offset)
+                    setMessagesTotal(total)
 
-                const effectivePromptId = promptId || data.prompt_id
-                if (effectivePromptId) {
-                    try {
-                        const promptData = await getPrompt(effectivePromptId)
-                        if (requestToken !== requestTokenRef.current) return
-                        setPrompt(promptData)
-                    } catch {
-                        if (requestToken !== requestTokenRef.current) return
+                    const effectivePromptId = promptId || data.prompt_id
+                    if (effectivePromptId) {
+                        try {
+                            const promptData = await getPrompt(effectivePromptId)
+                            if (requestToken !== requestTokenRef.current) return
+                            setPrompt(promptData)
+                        } catch {
+                            if (requestToken !== requestTokenRef.current) return
+                            setPrompt(null)
+                        }
+                    } else {
                         setPrompt(null)
                     }
-                } else {
-                    setPrompt(null)
+                }
+
+                const [user, provider] = await Promise.all([getUserInfo(), getActiveProvider()])
+                if (requestToken !== requestTokenRef.current) return
+
+                setUserInfo(user || null)
+                setImageCapable(!!provider?.image_capable)
+            } finally {
+                if (!silent && requestToken === requestTokenRef.current) {
+                    setLoading(false)
                 }
             }
-
-            const [user, provider] = await Promise.all([getUserInfo(), getActiveProvider()])
-            if (requestToken !== requestTokenRef.current) return
-
-            setUserInfo(user || null)
-            setImageCapable(!!provider?.image_capable)
-        } finally {
-            if (requestToken === requestTokenRef.current) {
-                setLoading(false)
-            }
-        }
-    }, [pageSize, promptId, resetSessionState, sessionId])
+        },
+        [pageSize, promptId, resetSessionState, sessionId]
+    )
 
     const loadOlder = useCallback(async () => {
         if (loading || loadingOlder) return false

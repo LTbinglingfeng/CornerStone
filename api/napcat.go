@@ -1381,6 +1381,44 @@ func (s *NapCatService) processIncomingBatch(ctx context.Context, cfg config.Nap
 		_ = s.sendPrivateText(ctx, source.UserID, "暂时无法处理你的消息，请稍后再试。")
 		return
 	}
+	if s.handler.idleGreetingService != nil {
+		promptID := strings.TrimSpace(session.PromptID)
+		if promptID == "" {
+			promptID = strings.TrimSpace(cfg.PromptID)
+		}
+		promptName := strings.TrimSpace(session.PromptName)
+		if promptName == "" && promptID != "" && s.handler.promptManager != nil {
+			if prompt, ok := s.handler.promptManager.Get(promptID); ok && prompt != nil {
+				promptName = strings.TrimSpace(prompt.Name)
+			}
+		}
+
+		targetSelfID := source.SelfID
+		if targetSelfID == 0 {
+			s.mu.RLock()
+			targetSelfID = s.selfID
+			s.mu.RUnlock()
+		}
+
+		target := storage.ReminderTarget{
+			Kind:   storage.ReminderTargetKindUser,
+			UserID: fmt.Sprintf("%d", source.UserID),
+		}
+		if targetSelfID != 0 {
+			target.BotSelfID = fmt.Sprintf("%d", targetSelfID)
+		}
+
+		if _, errIdleGreeting := s.handler.idleGreetingService.Rebuild(idleGreetingScheduleRequest{
+			Channel:    storage.ReminderChannelNapCat,
+			SessionID:  session.SessionID,
+			PromptID:   promptID,
+			PromptName: promptName,
+			Target:     target,
+			LastUserAt: storageMessages[len(storageMessages)-1].Timestamp,
+		}); errIdleGreeting != nil {
+			logging.Warnf("rebuild idle greeting failed: channel=napcat session=%s user=%d err=%v", session.SessionID, source.UserID, errIdleGreeting)
+		}
+	}
 
 	generatedReply, err := s.generateReply(ctx, source, session.SessionID, cfg.PromptID)
 	if err != nil {

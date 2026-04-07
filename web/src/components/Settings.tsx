@@ -12,7 +12,7 @@ import { napCatService, type NapCatSettings } from '../services/napcatService'
 import { reminderService } from '../services/reminderService'
 import { webSearchService, type WebSearchSettings } from '../services/webSearchService'
 import { localeNames, type Locale } from '../i18n'
-import type { Provider, WeatherCity } from '../types/chat'
+import type { IdleGreetingConfig, Provider, WeatherCity } from '../types/chat'
 import type { Reminder } from '../types/reminder'
 import {
     getReplyWaitWindowConfig,
@@ -44,6 +44,7 @@ import {
 } from '../constants/toolControls'
 import ToolSettingsPanel from './ToolSettings'
 import ReminderSettingsPanel from './ReminderSettings'
+import IdleGreetingSettingsPanel from './IdleGreetingSettings'
 import './Settings.css'
 
 interface SettingsProps {
@@ -51,6 +52,31 @@ interface SettingsProps {
 }
 
 const DEFAULT_TIME_ZONE = 'Asia/Shanghai'
+const DEFAULT_IDLE_GREETING_CONFIG: IdleGreetingConfig = {
+    enabled: false,
+    time_windows: [{ start: '09:00', end: '22:00' }],
+    idle_min_minutes: 100,
+    idle_max_minutes: 120,
+}
+
+const normalizeIdleGreetingConfig = (config?: IdleGreetingConfig | null): IdleGreetingConfig => ({
+    enabled: !!config?.enabled,
+    time_windows:
+        Array.isArray(config?.time_windows) && config.time_windows.length > 0
+            ? config.time_windows.map((window) => ({
+                  start: (window.start || '').trim(),
+                  end: (window.end || '').trim(),
+              }))
+            : DEFAULT_IDLE_GREETING_CONFIG.time_windows,
+    idle_min_minutes:
+        typeof config?.idle_min_minutes === 'number' && config.idle_min_minutes > 0
+            ? Math.round(config.idle_min_minutes)
+            : DEFAULT_IDLE_GREETING_CONFIG.idle_min_minutes,
+    idle_max_minutes:
+        typeof config?.idle_max_minutes === 'number' && config.idle_max_minutes > 0
+            ? Math.round(config.idle_max_minutes)
+            : DEFAULT_IDLE_GREETING_CONFIG.idle_max_minutes,
+})
 
 const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     const { t, locale, setLocale } = useT()
@@ -107,6 +133,10 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     const [toolToggles, setToolToggles] = useState<Record<string, boolean>>(() => createDefaultToolToggles())
     const [showToolSettings, setShowToolSettings] = useState(false)
     const [showReminderSettings, setShowReminderSettings] = useState(false)
+    const [idleGreetingConfig, setIdleGreetingConfig] = useState<IdleGreetingConfig>(() =>
+        normalizeIdleGreetingConfig()
+    )
+    const [showIdleGreetingSettings, setShowIdleGreetingSettings] = useState(false)
     const [reminders, setReminders] = useState<Reminder[]>([])
     const [showPromptModal, setShowPromptModal] = useState(false)
     const [replyWaitConfig, setReplyWaitConfigState] = useState<ReplyWaitWindowConfig>(() => getReplyWaitWindowConfig())
@@ -202,6 +232,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         if (providersData) {
             setSystemPrompt(providersData.system_prompt)
             setTimeZone((providersData.time_zone || DEFAULT_TIME_ZONE).trim() || DEFAULT_TIME_ZONE)
+            setIdleGreetingConfig(normalizeIdleGreetingConfig(providersData.idle_greeting))
             setDefaultWeatherCity(providersData.weather_default_city || null)
             setToolToggles(normalizeToolToggles(providersData.tool_toggles))
             if (
@@ -688,6 +719,10 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         setShowReminderSettings(false)
     }
 
+    const handleIdleGreetingSettingsBack = () => {
+        setShowIdleGreetingSettings(false)
+    }
+
     const getPromptPreview = () => {
         if (!systemPrompt) return t('common.notSet')
         if (systemPrompt.length <= 20) return systemPrompt
@@ -750,6 +785,26 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         return {
             title: defaultWeatherCity.name,
             detail: defaultWeatherCity.affiliation || defaultWeatherCity.location_key,
+        }
+    }
+
+    const getIdleGreetingPreview = () => {
+        if (!idleGreetingConfig.enabled) {
+            return {
+                title: t('common.disabled'),
+                detail: t('settings.idleGreetingHint'),
+            }
+        }
+
+        const windowPreview = idleGreetingConfig.time_windows
+            .map((window) => `${window.start}-${window.end}`)
+            .join(' · ')
+        return {
+            title: t('settings.idleGreetingPreview', {
+                min: idleGreetingConfig.idle_min_minutes,
+                max: idleGreetingConfig.idle_max_minutes,
+            }),
+            detail: windowPreview,
         }
     }
 
@@ -875,6 +930,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     const reminderPreview = getReminderPreview()
     const timeZonePreview = getTimeZonePreview()
     const defaultWeatherCityPreview = getDefaultWeatherCityPreview()
+    const idleGreetingPreview = getIdleGreetingPreview()
     const localeOptions = Object.entries(localeNames) as [Locale, string][]
 
     return (
@@ -1043,6 +1099,23 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                                 <span className="settings-entry-value">{timeZonePreview.title}</span>
                                 {timeZonePreview.detail && (
                                     <span className="settings-entry-subvalue">{timeZonePreview.detail}</span>
+                                )}
+                            </div>
+                            <svg className="settings-entry-arrow" viewBox="0 0 24 24">
+                                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                            </svg>
+                        </button>
+
+                        <button
+                            className="settings-entry-btn"
+                            onClick={() => setShowIdleGreetingSettings(true)}
+                            style={{ marginTop: 12 }}
+                        >
+                            <div className="settings-entry-info">
+                                <span className="settings-entry-label">{t('settings.idleGreeting')}</span>
+                                <span className="settings-entry-value">{idleGreetingPreview.title}</span>
+                                {idleGreetingPreview.detail && (
+                                    <span className="settings-entry-subvalue">{idleGreetingPreview.detail}</span>
                                 )}
                             </div>
                             <svg className="settings-entry-arrow" viewBox="0 0 24 24">
@@ -1283,6 +1356,16 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
 
             <AnimatePresence onExitComplete={() => void loadData({ showLoading: false })}>
                 {showReminderSettings && <ReminderSettingsPanel onBack={handleReminderSettingsBack} />}
+            </AnimatePresence>
+
+            <AnimatePresence onExitComplete={() => void loadData({ showLoading: false })}>
+                {showIdleGreetingSettings && (
+                    <IdleGreetingSettingsPanel
+                        config={idleGreetingConfig}
+                        onBack={handleIdleGreetingSettingsBack}
+                        onSaved={(nextConfig) => setIdleGreetingConfig(normalizeIdleGreetingConfig(nextConfig))}
+                    />
+                )}
             </AnimatePresence>
 
             <AnimatePresence>

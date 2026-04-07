@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import type { ChatMessage, ToolCall } from '../../types/chat'
 import {
     appendQueryParam,
     deleteSessionMessage,
     getChatImageUrl,
+    getSessionMessagesPage,
     getPromptAvatarUrl,
     getUserAvatarUrl,
     openSessionRedPacket,
@@ -46,6 +47,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         messages,
         setMessages,
         messagesOffset,
+        messagesTotal,
         setMessagesTotal,
         loadingOlder,
         loadOlder,
@@ -53,6 +55,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         userInfo,
         loading,
         imageCapable,
+        reload,
     } = useChatSession({
         sessionId,
         promptId,
@@ -110,7 +113,72 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     const redPacketOpenTimeoutRef = useRef<number | null>(null)
     const lastPatAtRef = useRef(0)
 
+    const messagesRef = useRef(messages)
+    const messagesTotalRef = useRef(messagesTotal)
+    const pollInFlightRef = useRef(false)
+    const pollBusyRef = useRef(true)
+    const lastPollBusyRef = useRef(true)
+
     useKeyboardOffset({ containerRef, messageListRef })
+
+    useEffect(() => {
+        messagesRef.current = messages
+    }, [messages])
+
+    useEffect(() => {
+        messagesTotalRef.current = messagesTotal
+    }, [messagesTotal])
+
+    const pollLatestAssistant = useCallback(async () => {
+        if (pollInFlightRef.current) return
+        if (pollBusyRef.current) return
+        if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
+
+        pollInFlightRef.current = true
+        try {
+            const latestPage = await getSessionMessagesPage(sessionId, { limit: 1 })
+            if (!latestPage) return
+
+            const total =
+                typeof latestPage.messages_total === 'number'
+                    ? latestPage.messages_total
+                    : latestPage.messages?.length || 0
+            if (total <= messagesTotalRef.current) return
+
+            const latestMessage = latestPage.messages?.[latestPage.messages.length - 1]
+            if (!latestMessage || latestMessage.role !== 'assistant') {
+                await reload({ silent: true })
+                return
+            }
+
+            const alreadyVisible = messagesRef.current.some((message) => message.timestamp === latestMessage.timestamp)
+            if (alreadyVisible) {
+                messagesTotalRef.current = total
+                setMessagesTotal(total)
+                return
+            }
+
+            if (total - messagesTotalRef.current === 1) {
+                messagesTotalRef.current = total
+                messagesRef.current = [...messagesRef.current, latestMessage]
+                setMessages((current) => [...current, latestMessage])
+                setMessagesTotal(total)
+                setSession((current) =>
+                    current
+                        ? {
+                              ...current,
+                              updated_at: latestPage.updated_at || current.updated_at,
+                          }
+                        : current
+                )
+                return
+            }
+
+            await reload({ silent: true })
+        } finally {
+            pollInFlightRef.current = false
+        }
+    }, [reload, sessionId, setMessages, setMessagesTotal, setSession])
 
     useEffect(() => {
         if (!showAttachmentMenu) return
@@ -150,6 +218,40 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         setActiveRedPacket(null)
         setPacketStep('idle')
     }, [sessionId])
+
+    useEffect(() => {
+        const busy = sending || loading || loadingOlder
+        pollBusyRef.current = busy
+
+        const wasBusy = lastPollBusyRef.current
+        lastPollBusyRef.current = busy
+        if (wasBusy && !busy) {
+            void pollLatestAssistant()
+        }
+    }, [loading, loadingOlder, pollLatestAssistant, sending])
+
+    useEffect(() => {
+        const timer = window.setInterval(() => {
+            void pollLatestAssistant()
+        }, 10000)
+
+        return () => {
+            window.clearInterval(timer)
+        }
+    }, [pollLatestAssistant])
+
+    useEffect(() => {
+        const handleVisibilityChange = () => {
+            if (typeof document === 'undefined') return
+            if (document.visibilityState !== 'visible') return
+            void pollLatestAssistant()
+        }
+
+        document.addEventListener('visibilitychange', handleVisibilityChange)
+        return () => {
+            document.removeEventListener('visibilitychange', handleVisibilityChange)
+        }
+    }, [pollLatestAssistant])
 
     const scrollToBottom = () => {
         if (messageListRef.current) {

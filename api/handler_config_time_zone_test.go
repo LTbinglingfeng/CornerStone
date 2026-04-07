@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"cornerstone/config"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -183,5 +184,124 @@ func TestHandleConfig_ToolTogglesRoundTripAndProvidersExposeThem(t *testing.T) {
 	}
 	if !providersResp.Data.ToolToggles["get_weather"] {
 		t.Fatal("providers get_weather toggle = false, want true")
+	}
+}
+
+func TestHandleConfig_IdleGreetingRoundTripAndProvidersExposeIt(t *testing.T) {
+	handler := &Handler{configManager: newTestProviderConfigManager(t, newTestProvider("provider-1"))}
+
+	body, err := json.Marshal(map[string]interface{}{
+		"idle_greeting": map[string]interface{}{
+			"enabled": true,
+			"time_windows": []map[string]string{
+				{"start": "08:30", "end": "12:00"},
+				{"start": "22:00", "end": "01:30"},
+			},
+			"idle_min_minutes": 90,
+			"idle_max_minutes": 150,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Marshal request failed: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPut, "/management/config", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	handler.handleConfig(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PUT status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	saved := handler.configManager.Get().IdleGreeting
+	if !saved.Enabled {
+		t.Fatal("saved idle_greeting.enabled = false, want true")
+	}
+	if saved.IdleMinMinutes != 90 || saved.IdleMaxMinutes != 150 {
+		t.Fatalf("saved idle_greeting minutes = %d-%d, want 90-150", saved.IdleMinMinutes, saved.IdleMaxMinutes)
+	}
+	if len(saved.TimeWindows) != 2 {
+		t.Fatalf("saved time_windows len = %d, want 2", len(saved.TimeWindows))
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/management/config", nil)
+	getRec := httptest.NewRecorder()
+	handler.handleConfig(getRec, getReq)
+
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("GET status = %d, want %d", getRec.Code, http.StatusOK)
+	}
+
+	var configResp struct {
+		Success bool `json:"success"`
+		Data    struct {
+			IdleGreeting config.IdleGreetingConfig `json:"idle_greeting"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(getRec.Body).Decode(&configResp); err != nil {
+		t.Fatalf("Decode config response failed: %v", err)
+	}
+	if !configResp.Success {
+		t.Fatalf("config response success = false, body=%s", getRec.Body.String())
+	}
+	if !configResp.Data.IdleGreeting.Enabled {
+		t.Fatal("GET idle_greeting.enabled = false, want true")
+	}
+	if configResp.Data.IdleGreeting.IdleMinMinutes != 90 || configResp.Data.IdleGreeting.IdleMaxMinutes != 150 {
+		t.Fatalf(
+			"GET idle_greeting minutes = %d-%d, want 90-150",
+			configResp.Data.IdleGreeting.IdleMinMinutes,
+			configResp.Data.IdleGreeting.IdleMaxMinutes,
+		)
+	}
+
+	providersReq := httptest.NewRequest(http.MethodGet, "/management/providers", nil)
+	providersRec := httptest.NewRecorder()
+	handler.handleProviders(providersRec, providersReq)
+
+	if providersRec.Code != http.StatusOK {
+		t.Fatalf("providers status = %d, want %d", providersRec.Code, http.StatusOK)
+	}
+
+	var providersResp struct {
+		Success bool `json:"success"`
+		Data    struct {
+			IdleGreeting config.IdleGreetingConfig `json:"idle_greeting"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(providersRec.Body).Decode(&providersResp); err != nil {
+		t.Fatalf("Decode providers response failed: %v", err)
+	}
+	if !providersResp.Success {
+		t.Fatalf("providers response success = false, body=%s", providersRec.Body.String())
+	}
+	if len(providersResp.Data.IdleGreeting.TimeWindows) != 2 {
+		t.Fatalf("providers idle_greeting.time_windows len = %d, want 2", len(providersResp.Data.IdleGreeting.TimeWindows))
+	}
+}
+
+func TestHandleConfig_IdleGreetingRejectsInvalidValue(t *testing.T) {
+	handler := &Handler{configManager: newTestProviderConfigManager(t, newTestProvider("provider-1"))}
+
+	body, err := json.Marshal(map[string]interface{}{
+		"idle_greeting": map[string]interface{}{
+			"enabled": true,
+			"time_windows": []map[string]string{
+				{"start": "09:00", "end": "09:00"},
+			},
+			"idle_min_minutes": 200,
+			"idle_max_minutes": 100,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Marshal request failed: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPut, "/management/config", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	handler.handleConfig(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
 	}
 }

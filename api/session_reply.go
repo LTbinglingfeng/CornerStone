@@ -12,9 +12,17 @@ import (
 
 type generatedSessionReply struct {
 	Text            string
+	NoReply         bool
 	StorageMessages []storage.ChatMessage
 	MemSession      *storage.MemorySession
 }
+
+type sessionReplyPersistMode string
+
+const (
+	sessionReplyPersistAll                sessionReplyPersistMode = "all"
+	sessionReplyPersistFinalAssistantOnly sessionReplyPersistMode = "final_assistant_only"
+)
 
 type sessionReplyOptions struct {
 	Session           *storage.ChatRecord
@@ -26,6 +34,7 @@ type sessionReplyOptions struct {
 	ToolOptions       chatToolOptions
 	ExtraSystemGuides []string
 	EphemeralMessages []client.Message
+	PersistMode       sessionReplyPersistMode
 }
 
 func buildChatRequestForProvider(
@@ -120,7 +129,11 @@ func (h *Handler) generateSessionReply(ctx context.Context, options sessionReply
 
 	availableTools := getChatTools(options.ToolOptions)
 	availableToolNames := buildToolNameSet(availableTools)
-	allowedToolNames := buildAllowedToolNameSet(availableTools, currentConfig.ToolToggles)
+	toolToggles := currentConfig.ToolToggles
+	if options.ToolOptions.ToolToggles != nil {
+		toolToggles = options.ToolOptions.ToolToggles
+	}
+	allowedToolNames := buildAllowedToolNameSet(availableTools, toolToggles)
 
 	history := convertChatMessages(options.Session.Messages)
 	history = mergeTrailingUserMessages(history, availableToolNames)
@@ -182,14 +195,67 @@ func (h *Handler) generateSessionReply(ctx context.Context, options sessionReply
 	if loopResult != nil && loopResult.FinalResponse != nil && len(loopResult.FinalResponse.Choices) > 0 {
 		text = strings.TrimSpace(loopResult.FinalResponse.Choices[0].Message.Content)
 	}
-
-	storageCapacity := 0
+	noReplySelected := false
 	if loopResult != nil {
-		storageCapacity = len(loopResult.NewMessages)
+		noReplySelected = containsNoReplyToolCall(loopResult.NewMessages)
 	}
-	storageMessages := make([]storage.ChatMessage, 0, storageCapacity)
-	if loopResult != nil && len(loopResult.NewMessages) > 0 {
-		baseTime := time.Now()
+
+	storageMessages := buildGeneratedReplyStorageMessages(loopResult, text, options.PersistMode)
+
+	return &generatedSessionReply{
+		Text:            text,
+		NoReply:         noReplySelected,
+		StorageMessages: storageMessages,
+		MemSession:      memSession,
+	}, nil
+}
+
+func containsNoReplyToolCall(messages []client.Message) bool {
+	for _, msg := range messages {
+		if len(msg.ToolCalls) == 0 {
+			continue
+		}
+		for _, toolCall := range msg.ToolCalls {
+			if strings.TrimSpace(toolCall.Function.Name) == "no_reply" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func buildGeneratedReplyStorageMessages(
+	loopResult *toolLoopResult,
+	text string,
+	persistMode sessionReplyPersistMode,
+) []storage.ChatMessage {
+	if persistMode == "" {
+		persistMode = sessionReplyPersistAll
+	}
+
+	baseTime := time.Now()
+	switch persistMode {
+	case sessionReplyPersistFinalAssistantOnly:
+		text = strings.TrimSpace(text)
+		if text == "" {
+			return nil
+		}
+		return []storage.ChatMessage{
+			{
+				Role:      "assistant",
+				Content:   text,
+				Timestamp: baseTime,
+			},
+		}
+	default:
+		storageCapacity := 0
+		if loopResult != nil {
+			storageCapacity = len(loopResult.NewMessages)
+		}
+		storageMessages := make([]storage.ChatMessage, 0, storageCapacity)
+		if loopResult == nil || len(loopResult.NewMessages) == 0 {
+			return storageMessages
+		}
 		for index, msg := range loopResult.NewMessages {
 			storageMessages = append(storageMessages, storage.ChatMessage{
 				Role:             msg.Role,
@@ -202,11 +268,6 @@ func (h *Handler) generateSessionReply(ctx context.Context, options sessionReply
 				Timestamp:        baseTime.Add(time.Millisecond * time.Duration(index)),
 			})
 		}
+		return storageMessages
 	}
-
-	return &generatedSessionReply{
-		Text:            text,
-		StorageMessages: storageMessages,
-		MemSession:      memSession,
-	}, nil
 }
