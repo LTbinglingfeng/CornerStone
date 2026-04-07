@@ -66,9 +66,11 @@ const IdleGreetingSettingsPanel: React.FC<IdleGreetingSettingsProps> = ({ config
     const [message, setMessage] = useState('')
     const [messageType, setMessageType] = useState<'success' | 'error'>('success')
     const [draft, setDraft] = useState<IdleGreetingConfig>(() => normalizeIdleGreetingConfig(config))
+    const [showValidationErrors, setShowValidationErrors] = useState(false)
 
     useEffect(() => {
         setDraft(normalizeIdleGreetingConfig(config))
+        setShowValidationErrors(false)
     }, [config])
 
     const showMessageToast = (nextMessage: string, type: 'success' | 'error' = 'success') => {
@@ -113,7 +115,7 @@ const IdleGreetingSettingsPanel: React.FC<IdleGreetingSettingsProps> = ({ config
     const handleAddWindow = () => {
         setDraft((current) => ({
             ...current,
-            time_windows: [...current.time_windows, EMPTY_WINDOW],
+            time_windows: [...current.time_windows, { ...EMPTY_WINDOW }],
         }))
     }
 
@@ -126,6 +128,7 @@ const IdleGreetingSettingsPanel: React.FC<IdleGreetingSettingsProps> = ({ config
 
     const handleSave = async () => {
         if (saving) return
+        setShowValidationErrors(true)
         if (validationError) {
             showMessageToast(validationError, 'error')
             return
@@ -239,7 +242,7 @@ const IdleGreetingSettingsPanel: React.FC<IdleGreetingSettingsProps> = ({ config
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                         {draft.time_windows.map((window, index) => (
                             <div
-                                key={`${index}-${window.start}-${window.end}`}
+                                key={index}
                                 style={{
                                     display: 'grid',
                                     gridTemplateColumns: '1fr 1fr auto',
@@ -299,7 +302,7 @@ const IdleGreetingSettingsPanel: React.FC<IdleGreetingSettingsProps> = ({ config
                     </button>
                 </div>
 
-                {validationError && <div className="settings-message error">{validationError}</div>}
+                {showValidationErrors && validationError && <div className="settings-message error">{validationError}</div>}
 
                 <button className="settings-save-btn" onClick={handleSave} disabled={saving}>
                     {saving ? t('common.saving') : t('common.save')}
