@@ -7,6 +7,7 @@ import (
 	"cornerstone/exacttime"
 	"cornerstone/storage"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -246,6 +247,19 @@ func TestSplitClawBotReplyMessages(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestBuildChannelFailureReply_IncludesRawErrorDetail(t *testing.T) {
+	err := fmt.Errorf(`Post "https://ilinkai.weixin.qq.com/ilink/bot/sendmessage": net/http: TLS handshake timeout`)
+
+	got := buildChannelFailureReply("暂时无法处理你的消息，请稍后再试", err)
+
+	if !strings.Contains(got, "暂时无法处理你的消息，请稍后再试") {
+		t.Fatalf("reply = %q, want base message", got)
+	}
+	if !strings.Contains(got, err.Error()) {
+		t.Fatalf("reply = %q, want raw error detail %q", got, err.Error())
+	}
 }
 
 func TestGetOrCreateActiveSessionRespectsPrompt(t *testing.T) {
@@ -730,6 +744,61 @@ func TestHandleIncomingMessage_DisabledCommandReturnsHint(t *testing.T) {
 	}
 	if !strings.Contains(state.sendTexts[0], "命令已禁用") || !strings.Contains(state.sendTexts[0], "/rename") {
 		t.Fatalf("disabled command reply = %q, want disabled hint", state.sendTexts[0])
+	}
+}
+
+func TestProcessIncomingBatch_GenerateFailureReturnsRawErrorDetail(t *testing.T) {
+	server, state := newClawBotTestServer(t, "unused")
+	defer server.Close()
+
+	service := newTestClawBotService(t, server.URL)
+	cfgAll := service.handler.configManager.Get()
+	cfgAll.Providers[0].BaseURL = "http://127.0.0.1:1"
+	if err := service.handler.configManager.Update(cfgAll); err != nil {
+		t.Fatalf("Update config failed: %v", err)
+	}
+
+	cfg := service.handler.configManager.GetClawBotConfig()
+	service.processIncomingBatch(context.Background(), cfg, "wx-user", []clawBotPendingMessage{{Text: "hello"}})
+
+	state.mu.Lock()
+	defer state.mu.Unlock()
+
+	if len(state.sendTexts) != 1 {
+		t.Fatalf("send text count = %d, want 1", len(state.sendTexts))
+	}
+	if !strings.Contains(state.sendTexts[0], "暂时无法处理你的消息，请稍后再试") {
+		t.Fatalf("reply = %q, want failure prefix", state.sendTexts[0])
+	}
+	if !strings.Contains(state.sendTexts[0], "connect: connection refused") {
+		t.Fatalf("reply = %q, want raw generation error detail", state.sendTexts[0])
+	}
+
+	settings, err := service.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings err = %v", err)
+	}
+	if !strings.Contains(settings.LastError, "生成回复失败") {
+		t.Fatalf("last_error = %q, want generate failure stage", settings.LastError)
+	}
+	if !strings.Contains(settings.LastError, "connect: connection refused") {
+		t.Fatalf("last_error = %q, want raw generation error detail", settings.LastError)
+	}
+
+	// 生成失败时，错误详情可以展示给用户，但不应作为 assistant 历史持久化。
+	sessions := service.handler.chatManager.ListSessions()
+	if len(sessions) != 1 {
+		t.Fatalf("session count = %d, want 1", len(sessions))
+	}
+	record, ok := service.handler.chatManager.GetSession(sessions[0].ID)
+	if !ok {
+		t.Fatalf("session not found: %s", sessions[0].ID)
+	}
+	if len(record.Messages) != 1 {
+		t.Fatalf("message count = %d, want 1", len(record.Messages))
+	}
+	if record.Messages[0].Role != "user" || record.Messages[0].Content != "hello" {
+		t.Fatalf("first message = %#v, want user hello", record.Messages[0])
 	}
 }
 

@@ -356,7 +356,7 @@ func (s *NapCatService) setLastError(err error) {
 	if err == nil {
 		return
 	}
-	msg := strings.TrimSpace(err.Error())
+	msg := formatChannelLastError(err)
 	if msg == "" {
 		return
 	}
@@ -1423,8 +1423,15 @@ func (s *NapCatService) processIncomingBatch(ctx context.Context, cfg config.Nap
 	generatedReply, err := s.generateReply(ctx, source, session.SessionID, cfg.PromptID)
 	if err != nil {
 		logging.Errorf("napcat generate reply failed: source=%+v session=%s err=%v", source, session.SessionID, err)
-		s.setLastError(err)
-		generatedReply = &napCatGeneratedReply{Text: "暂时无法处理你的消息，请稍后再试。"}
+		visibleErr := fmt.Errorf("生成回复失败: %w", err)
+		s.setLastError(visibleErr)
+		// 允许对用户展示错误详情，但失败提示不写入会话历史（避免错误详情持久化并进入下一轮模型上下文）。
+		reply := buildChannelFailureReply("暂时无法处理你的消息，请稍后再试", err)
+		if errSend := s.sendPrivateText(ctx, source.UserID, reply); errSend != nil {
+			s.setLastError(fmt.Errorf("发送回复失败: %w", errSend))
+			logging.Errorf("napcat send reply failure message failed: source=%+v session=%s err=%v", source, session.SessionID, errSend)
+		}
+		return
 	}
 	s.sendAndPersistReply(ctx, source, session.SessionID, generatedReply)
 }
@@ -1570,7 +1577,7 @@ func (s *NapCatService) sendAndPersistReply(ctx context.Context, source napCatCh
 	reply := strings.TrimSpace(generatedReply.Text)
 	if reply != "" {
 		if err := s.sendPrivateText(ctx, source.UserID, reply); err != nil {
-			s.setLastError(err)
+			s.setLastError(fmt.Errorf("发送回复失败: %w", err))
 			logging.Errorf("napcat send reply failed: source=%+v session=%s err=%v", source, sessionID, err)
 			return
 		}
@@ -1590,7 +1597,7 @@ func (s *NapCatService) sendAndPersistReply(ctx context.Context, source napCatCh
 	if len(messages) > 0 {
 		if err := s.handler.chatManager.AddMessages(sessionID, messages); err != nil {
 			logging.Errorf("napcat save reply batch failed: source=%+v session=%s err=%v", source, sessionID, err)
-			s.setLastError(err)
+			s.setLastError(fmt.Errorf("保存回复失败: %w", err))
 			return
 		}
 	}

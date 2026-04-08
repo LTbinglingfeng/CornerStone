@@ -807,8 +807,9 @@ func (s *ClawBotService) processRegenerateCommand(ctx context.Context, cfg confi
 	generatedReply, err := s.generateReplyForSession(ctx, snapshot.Session, cfg.PromptID, userID)
 	if err != nil {
 		logging.Errorf("clawbot regenerate reply failed: user=%s session=%s err=%v", userID, session.SessionID, err)
-		s.setLastError(err)
-		s.sendCommandReply(ctx, cfg, userID, "暂时无法重新生成，请稍后再试。", "regenerate reply failure")
+		visibleErr := fmt.Errorf("重新生成失败: %w", err)
+		s.setLastError(visibleErr)
+		s.sendCommandReply(ctx, cfg, userID, buildChannelFailureReply("暂时无法重新生成，请稍后再试", err), "regenerate reply failure")
 		return
 	}
 	if generatedReply == nil || strings.TrimSpace(generatedReply.Text) == "" {
@@ -885,8 +886,15 @@ func (s *ClawBotService) processIncomingBatch(ctx context.Context, cfg config.Cl
 	generatedReply, err := s.generateReply(ctx, session.SessionID, cfg.PromptID, userID)
 	if err != nil {
 		logging.Errorf("clawbot generate reply failed: user=%s session=%s err=%v", userID, session.SessionID, err)
-		s.setLastError(err)
-		generatedReply = &clawBotGeneratedReply{Text: "暂时无法处理你的消息，请稍后再试。"}
+		visibleErr := fmt.Errorf("生成回复失败: %w", err)
+		s.setLastError(visibleErr)
+		// 允许对用户展示错误详情，但失败提示不写入会话历史（避免错误详情持久化并进入下一轮模型上下文）。
+		reply := buildChannelFailureReply("暂时无法处理你的消息，请稍后再试", err)
+		if errSend := s.sendTextReply(ctx, cfg, userID, reply); errSend != nil {
+			s.setLastError(fmt.Errorf("发送回复失败: %w", errSend))
+			logging.Errorf("clawbot send reply failure message failed: user=%s session=%s err=%v", userID, session.SessionID, errSend)
+		}
+		return
 	}
 	s.sendAndPersistReply(ctx, cfg, userID, session.SessionID, generatedReply, "reply")
 }
@@ -1284,7 +1292,7 @@ func (s *ClawBotService) sendAndPersistReply(ctx context.Context, cfg config.Cla
 	reply := strings.TrimSpace(generatedReply.Text)
 	if reply != "" {
 		if err := s.sendTextReply(ctx, cfg, userID, reply); err != nil {
-			s.setLastError(err)
+			s.setLastError(fmt.Errorf("发送回复失败: %w", err))
 			logging.Errorf("clawbot send %s failed: user=%s session=%s err=%v", action, userID, sessionID, err)
 			return
 		}
@@ -1304,7 +1312,7 @@ func (s *ClawBotService) sendAndPersistReply(ctx context.Context, cfg config.Cla
 	if len(messages) > 0 {
 		if err := s.handler.chatManager.AddMessages(sessionID, messages); err != nil {
 			logging.Errorf("clawbot save reply batch failed: user=%s session=%s err=%v", userID, sessionID, err)
-			s.setLastError(err)
+			s.setLastError(fmt.Errorf("保存回复失败: %w", err))
 			return
 		}
 	}
@@ -1322,7 +1330,7 @@ func (s *ClawBotService) sendAndReplaceTrailingReply(ctx context.Context, cfg co
 	reply := strings.TrimSpace(generatedReply.Text)
 	if reply != "" {
 		if err := s.sendTextReply(ctx, cfg, userID, reply); err != nil {
-			s.setLastError(err)
+			s.setLastError(fmt.Errorf("发送回复失败: %w", err))
 			logging.Errorf("clawbot send %s failed: user=%s session=%s err=%v", action, userID, sessionID, err)
 			return
 		}
@@ -1341,7 +1349,7 @@ func (s *ClawBotService) sendAndReplaceTrailingReply(ctx context.Context, cfg co
 	if len(replacement) > 0 {
 		if err := s.handler.chatManager.ReplaceTrailingResponseBatch(sessionID, expectedTail, replacement); err != nil {
 			logging.Errorf("clawbot replace trailing response batch failed: user=%s session=%s err=%v", userID, sessionID, err)
-			s.setLastError(err)
+			s.setLastError(fmt.Errorf("替换回复失败: %w", err))
 			return
 		}
 	}
@@ -1772,8 +1780,12 @@ func (s *ClawBotService) setLastError(err error) {
 	if err == nil {
 		return
 	}
+	msg := formatChannelLastError(err)
+	if msg == "" {
+		return
+	}
 	s.mu.Lock()
-	s.lastError = err.Error()
+	s.lastError = msg
 	s.lastErrorAt = time.Now()
 	s.mu.Unlock()
 }
