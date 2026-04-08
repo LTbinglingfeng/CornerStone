@@ -132,8 +132,8 @@ func TestGetChatTools_IncludesTimeAndClawBotKeepsReadOnlyTools(t *testing.T) {
 			break
 		}
 	}
-	if !foundTime {
-		t.Fatalf("get_time should remain exposed even when toggle is off: %#v", disabledTimeTools)
+	if foundTime {
+		t.Fatalf("get_time should be hidden when toggle is off: %#v", disabledTimeTools)
 	}
 
 	clawBotTools = getChatTools(chatToolOptions{
@@ -142,8 +142,8 @@ func TestGetChatTools_IncludesTimeAndClawBotKeepsReadOnlyTools(t *testing.T) {
 			"get_weather": false,
 		},
 	})
-	if len(clawBotTools) != 4 {
-		t.Fatalf("clawbot tools len with get_weather toggle disabled = %d, want 4", len(clawBotTools))
+	if len(clawBotTools) != 3 {
+		t.Fatalf("clawbot tools len with get_weather toggle disabled = %d, want 3", len(clawBotTools))
 	}
 	names = make(map[string]struct{}, len(clawBotTools))
 	for _, tool := range clawBotTools {
@@ -152,8 +152,8 @@ func TestGetChatTools_IncludesTimeAndClawBotKeepsReadOnlyTools(t *testing.T) {
 	if _, ok := names["get_time"]; !ok {
 		t.Fatalf("clawbot tools = %#v, want get_time", clawBotTools)
 	}
-	if _, ok := names["get_weather"]; !ok {
-		t.Fatalf("clawbot tools = %#v, want get_weather even when toggle is off", clawBotTools)
+	if _, ok := names["get_weather"]; ok {
+		t.Fatalf("clawbot tools = %#v, want get_weather hidden when toggle is off", clawBotTools)
 	}
 	if _, ok := names["schedule_reminder"]; !ok {
 		t.Fatalf("clawbot tools = %#v, want schedule_reminder", clawBotTools)

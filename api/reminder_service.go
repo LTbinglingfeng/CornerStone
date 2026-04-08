@@ -397,6 +397,7 @@ func (s *ReminderService) generateReminderReply(
 		Channel:    channel,
 		Target:     reminder.Target,
 		ToolOptions: chatToolOptions{
+			ToolToggles:      currentConfig.ToolToggles,
 			Channel:          channel,
 			WebSearchEnabled: isWebSearchConfigured(currentConfig),
 			ReminderFiring:   true,

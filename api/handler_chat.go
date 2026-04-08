@@ -201,6 +201,7 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 	normalizedToolToggles := config.NormalizeToolToggles(currentConfig.ToolToggles)
 	availableTools := getChatTools(chatToolOptions{
+		ToolToggles:        normalizedToolToggles,
 		WebSearchEnabled:   isWebSearchConfigured(currentConfig),
 		WriteMemoryEnabled: memSession != nil && isToolEnabledByToggle(normalizedToolToggles, "write_memory"),
 	})
@@ -1205,10 +1206,7 @@ func getChatTools(options ...chatToolOptions) []client.Tool {
 				filtered = append(filtered, tool)
 			}
 		}
-		if len(filtered) == 0 {
-			return nil
-		}
-		return filtered
+		tools = filtered
 	}
 
 	if channel == chatToolChannelClawBot {
@@ -1219,10 +1217,7 @@ func getChatTools(options ...chatToolOptions) []client.Tool {
 				filtered = append(filtered, tool)
 			}
 		}
-		if len(filtered) == 0 {
-			return nil
-		}
-		return filtered
+		tools = filtered
 	}
 
 	if channel == chatToolChannelNapCat {
@@ -1233,10 +1228,7 @@ func getChatTools(options ...chatToolOptions) []client.Tool {
 				filtered = append(filtered, tool)
 			}
 		}
-		if len(filtered) == 0 {
-			return nil
-		}
-		return filtered
+		tools = filtered
 	}
 
 	if len(options) > 0 && len(options[0].RestrictToolNames) > 0 {
@@ -1249,10 +1241,11 @@ func getChatTools(options ...chatToolOptions) []client.Tool {
 		tools = filtered
 	}
 
-	if len(options) > 0 && options[0].StrictToggleFilter && options[0].ToolToggles != nil {
+	if len(options) > 0 && options[0].ToolToggles != nil {
+		normalizedToolToggles := config.NormalizeToolToggles(options[0].ToolToggles)
 		filtered := make([]client.Tool, 0, len(tools))
 		for _, tool := range tools {
-			if isToolEnabledByToggle(options[0].ToolToggles, tool.Function.Name) {
+			if isToolEnabledByToggle(normalizedToolToggles, tool.Function.Name) {
 				filtered = append(filtered, tool)
 			}
 		}

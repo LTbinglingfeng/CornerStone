@@ -927,6 +927,7 @@ func (s *ClawBotService) generateReplyForSession(ctx context.Context, session *s
 	memSession := s.handler.getOrCreateMemorySession(validPromptID, session.SessionID)
 	writeMemoryEnabled := memSession != nil && isToolEnabledByToggle(normalizedToolToggles, "write_memory")
 	availableTools := getChatTools(chatToolOptions{
+		ToolToggles:        normalizedToolToggles,
 		Channel:            chatToolChannelClawBot,
 		WebSearchEnabled:   isWebSearchConfigured(currentConfig),
 		WriteMemoryEnabled: writeMemoryEnabled,
@@ -998,6 +999,7 @@ write_memory 只能用于极为重要的长期记忆。
 			UserID: strings.TrimSpace(userID),
 		},
 		ToolOptions: chatToolOptions{
+			ToolToggles:        normalizedToolToggles,
 			Channel:            chatToolChannelClawBot,
 			WebSearchEnabled:   isWebSearchConfigured(currentConfig),
 			WriteMemoryEnabled: writeMemoryEnabled,

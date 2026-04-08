@@ -1466,6 +1466,7 @@ func (s *NapCatService) generateReplyForSession(ctx context.Context, source napC
 	memSession := s.handler.getOrCreateMemorySession(validPromptID, session.SessionID)
 	writeMemoryEnabled := memSession != nil && isToolEnabledByToggle(normalizedToolToggles, "write_memory")
 	availableTools := getChatTools(chatToolOptions{
+		ToolToggles:        normalizedToolToggles,
 		Channel:            chatToolChannelNapCat,
 		WebSearchEnabled:   isWebSearchConfigured(currentConfig),
 		WriteMemoryEnabled: writeMemoryEnabled,
@@ -1540,6 +1541,7 @@ write_memory 只能用于极为重要的长期记忆，禁止写入敏感信息�
 		Channel:    chatToolChannelNapCat,
 		Target:     target,
 		ToolOptions: chatToolOptions{
+			ToolToggles:        normalizedToolToggles,
 			Channel:            chatToolChannelNapCat,
 			WebSearchEnabled:   isWebSearchConfigured(currentConfig),
 			WriteMemoryEnabled: writeMemoryEnabled,

@@ -69,8 +69,8 @@ func TestGetChatTools_WebSearchOnlyIncludedWhenEnabled(t *testing.T) {
 			break
 		}
 	}
-	if !found {
-		t.Fatalf("web_search should remain exposed when disabled by toggle: %#v", disabledByToggleTools)
+	if found {
+		t.Fatalf("web_search should be hidden when disabled by toggle: %#v", disabledByToggleTools)
 	}
 }
 

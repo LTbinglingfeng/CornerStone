@@ -127,11 +127,16 @@ func (h *Handler) generateSessionReply(ctx context.Context, options sessionReply
 		currentConfig = h.configManager.Get()
 	}
 
-	availableTools := getChatTools(options.ToolOptions)
+	effectiveToolOptions := options.ToolOptions
+	if effectiveToolOptions.ToolToggles == nil {
+		effectiveToolOptions.ToolToggles = currentConfig.ToolToggles
+	}
+
+	availableTools := getChatTools(effectiveToolOptions)
 	availableToolNames := buildToolNameSet(availableTools)
 	toolToggles := currentConfig.ToolToggles
-	if options.ToolOptions.ToolToggles != nil {
-		toolToggles = options.ToolOptions.ToolToggles
+	if effectiveToolOptions.ToolToggles != nil {
+		toolToggles = effectiveToolOptions.ToolToggles
 	}
 	allowedToolNames := buildAllowedToolNameSet(availableTools, toolToggles)
 
