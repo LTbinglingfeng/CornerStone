@@ -55,12 +55,12 @@ func buildChatRequestForProvider(
 
 	req := client.ChatRequest{
 		Model:       provider.Model,
-		Messages:    messages,
+		Messages:    normalizeLegacyToolIdentifiersInMessages(messages),
 		Stream:      stream,
 		Temperature: temperature,
 		TopP:        provider.TopP,
 		MaxTokens:   maxTokens,
-		Tools:       tools,
+		Tools:       normalizeLegacyToolIdentifiersInTools(tools),
 	}
 
 	switch provider.Type {
@@ -164,6 +164,7 @@ func (h *Handler) generateSessionReply(ctx context.Context, options sessionReply
 	if errResolve != nil {
 		return nil, errResolve
 	}
+	resolvedMessages = ensureToolResultMessagesForReplay(resolvedMessages)
 
 	req := buildChatRequestForProvider(provider, resolvedMessages, availableTools, false, 0, nil)
 
@@ -174,7 +175,7 @@ func (h *Handler) generateSessionReply(ctx context.Context, options sessionReply
 	toolExecutor.exactTimeService = h.exactTimeService
 	toolExecutor.reminderService = h.reminderService
 	if h.configManager != nil {
-		toolExecutor.webSearch = newWebSearchOrchestrator(h.configManager.Get())
+		toolExecutor.cornerstoneWebSearch = newCornerstoneWebSearchOrchestrator(h.configManager.Get())
 	}
 
 	loopResult, err := runChatWithToolLoop(

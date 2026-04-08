@@ -87,7 +87,7 @@ func (o *Orchestrator) Search(ctx context.Context, providerID string, providerCf
 	}
 
 	logging.Infof(
-		"web_search start: provider=%s query=%q max_results=%d fetch_results=%d exclude_domains=%d with_time=%v",
+		"cornerstone_web_search start: provider=%s query=%q max_results=%d fetch_results=%d exclude_domains=%d with_time=%v",
 		strings.TrimSpace(provider.Info().ID),
 		logging.Truncate(trimmedQuery, 160),
 		normalizedCfg.MaxResults,
@@ -100,7 +100,7 @@ func (o *Orchestrator) Search(ctx context.Context, providerID string, providerCf
 	if errSearch != nil {
 		duration := time.Since(startedAt)
 		if errors.Is(errSearch, context.DeadlineExceeded) || errors.Is(ctxSearch.Err(), context.DeadlineExceeded) {
-			logging.Warnf("web_search timeout: provider=%s duration=%s err=%v", strings.TrimSpace(provider.Info().ID), duration, errSearch)
+			logging.Warnf("cornerstone_web_search timeout: provider=%s duration=%s err=%v", strings.TrimSpace(provider.Info().ID), duration, errSearch)
 			return nil, &Error{
 				Kind:       ErrKindTimeout,
 				ProviderID: strings.TrimSpace(provider.Info().ID),
@@ -108,7 +108,7 @@ func (o *Orchestrator) Search(ctx context.Context, providerID string, providerCf
 				Cause:      errSearch,
 			}
 		}
-		logging.Errorf("web_search failed: provider=%s duration=%s err=%v", strings.TrimSpace(provider.Info().ID), duration, errSearch)
+		logging.Errorf("cornerstone_web_search failed: provider=%s duration=%s err=%v", strings.TrimSpace(provider.Info().ID), duration, errSearch)
 		return nil, errSearch
 	}
 
@@ -128,7 +128,7 @@ func (o *Orchestrator) Search(ctx context.Context, providerID string, providerCf
 	}
 
 	logging.Infof(
-		"web_search done: provider=%s duration=%s results=%d",
+		"cornerstone_web_search done: provider=%s duration=%s results=%d",
 		strings.TrimSpace(provider.Info().ID),
 		time.Since(startedAt),
 		len(resp.Results),

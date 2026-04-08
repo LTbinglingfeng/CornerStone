@@ -927,10 +927,10 @@ func (s *ClawBotService) generateReplyForSession(ctx context.Context, session *s
 	memSession := s.handler.getOrCreateMemorySession(validPromptID, session.SessionID)
 	writeMemoryEnabled := memSession != nil && isToolEnabledByToggle(normalizedToolToggles, "write_memory")
 	availableTools := getChatTools(chatToolOptions{
-		ToolToggles:        normalizedToolToggles,
-		Channel:            chatToolChannelClawBot,
-		WebSearchEnabled:   isWebSearchConfigured(currentConfig),
-		WriteMemoryEnabled: writeMemoryEnabled,
+		ToolToggles:                 normalizedToolToggles,
+		Channel:                     chatToolChannelClawBot,
+		CornerstoneWebSearchEnabled: isCornerstoneWebSearchConfigured(currentConfig),
+		WriteMemoryEnabled:          writeMemoryEnabled,
 	})
 	availableToolNames := buildToolNameSet(availableTools)
 
@@ -944,7 +944,7 @@ func (s *ClawBotService) generateReplyForSession(ctx context.Context, session *s
 		channelGuideLines = append(channelGuideLines, "如果你决定已读不回，调用 no_reply（可与其它工具一同调用），且不要输出任何可见文本。")
 	}
 	clawBotToolNames := make([]string, 0, 6)
-	for _, name := range []string{"get_time", "get_weather", "web_search", "schedule_reminder", "write_memory", "no_reply"} {
+	for _, name := range []string{"get_time", "get_weather", cornerstoneWebSearchToolName, "schedule_reminder", "write_memory", "no_reply"} {
 		if isToolAvailable(availableToolNames, name) {
 			clawBotToolNames = append(clawBotToolNames, name)
 		}
@@ -999,10 +999,10 @@ write_memory 只能用于极为重要的长期记忆。
 			UserID: strings.TrimSpace(userID),
 		},
 		ToolOptions: chatToolOptions{
-			ToolToggles:        normalizedToolToggles,
-			Channel:            chatToolChannelClawBot,
-			WebSearchEnabled:   isWebSearchConfigured(currentConfig),
-			WriteMemoryEnabled: writeMemoryEnabled,
+			ToolToggles:                 normalizedToolToggles,
+			Channel:                     chatToolChannelClawBot,
+			CornerstoneWebSearchEnabled: isCornerstoneWebSearchConfigured(currentConfig),
+			WriteMemoryEnabled:          writeMemoryEnabled,
 		},
 		ExtraSystemGuides: systemGuides,
 	})

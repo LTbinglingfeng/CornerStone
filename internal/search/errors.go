@@ -43,7 +43,7 @@ func (e *Error) Error() string {
 	if msg == "" {
 		msg = "search failed"
 	}
-	return fmt.Sprintf("web_search error kind=%s%s%s: %s", e.Kind, providerPart, statusPart, msg)
+	return fmt.Sprintf("cornerstone_web_search error kind=%s%s%s: %s", e.Kind, providerPart, statusPart, msg)
 }
 
 func (e *Error) Unwrap() error {

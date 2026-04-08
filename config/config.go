@@ -93,6 +93,11 @@ type IdleGreetingConfig struct {
 	IdleMaxMinutes int                      `json:"idle_max_minutes"`
 }
 
+const (
+	CornerstoneWebSearchKey = "cornerstone_web_search"
+	LegacyWebSearchKey      = "web_search"
+)
+
 type WebSearchProvider struct {
 	APIKey            string `json:"api_key,omitempty"`
 	APIHost           string `json:"api_host,omitempty"`
@@ -165,7 +170,7 @@ var defaultToolToggleKeys = []string{
 	"get_weather",
 	"schedule_reminder",
 	"write_memory",
-	"web_search",
+	CornerstoneWebSearchKey,
 }
 
 func DefaultClawBotCommandPermissions() map[string]bool {
@@ -199,6 +204,11 @@ func NormalizeToolToggles(toggles map[string]bool) map[string]bool {
 	for _, key := range defaultToolToggleKeys {
 		if value, ok := toggles[key]; ok {
 			normalized[key] = value
+		}
+	}
+	if _, ok := toggles[CornerstoneWebSearchKey]; !ok {
+		if value, ok := toggles[LegacyWebSearchKey]; ok {
+			normalized[CornerstoneWebSearchKey] = value
 		}
 	}
 	return normalized
@@ -443,7 +453,7 @@ type Config struct {
 	IdleGreeting           IdleGreetingConfig `json:"idle_greeting,omitempty"`   //
 	WeatherDefaultCity     *WeatherCity       `json:"weather_default_city,omitempty"`
 	ToolToggles            map[string]bool    `json:"tool_toggles,omitempty"` // 模型可用工具开关
-	WebSearch              WebSearchConfig    `json:"web_search,omitempty"`
+	CornerstoneWebSearch   WebSearchConfig    `json:"cornerstone_web_search,omitempty"`
 	TLSCertPath            string             `json:"tls_cert_path,omitempty"` // TLS证书路径(PEM)，留空禁用HTTPS
 	TLSKeyPath             string             `json:"tls_key_path,omitempty"`  // TLS私钥路径(PEM)，留空禁用HTTPS
 	ClawBot                ClawBotConfig      `json:"clawbot"`                 // 微信 iLink ClawBot 配置
@@ -498,7 +508,7 @@ func DefaultConfig() Config {
 		IdleGreeting:           DefaultIdleGreetingConfig(),
 		WeatherDefaultCity:     nil,
 		ToolToggles:            DefaultToolToggles(),
-		WebSearch: WebSearchConfig{
+		CornerstoneWebSearch: WebSearchConfig{
 			ActiveProviderID: "",
 			Providers:        map[string]WebSearchProvider{},
 			MaxResults:       DefaultWebSearchMaxResults,
@@ -552,6 +562,13 @@ func (m *Manager) Load() error {
 	// 兼容 Windows 编辑器写入的 UTF-8 BOM（EF BB BF）
 	data = bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF})
 
+	// Reset maps that need clean unmarshalling so legacy aliases do not coexist with
+	// canonical default keys inside the same map.
+	baseConfig := DefaultConfig()
+	baseConfig.ToolToggles = nil
+	baseConfig.ClawBot.CommandPermissions = nil
+	m.config = baseConfig
+
 	// 尝试解析新格式
 	if err := json.Unmarshal(data, &m.config); err != nil {
 		logging.Errorf("config parse failed: path=%s err=%v", m.configPath, err)
@@ -562,6 +579,19 @@ func (m *Manager) Load() error {
 		Providers []map[string]json.RawMessage `json:"providers"`
 	}
 	_ = json.Unmarshal(data, &rawProviders)
+	var rawConfig map[string]json.RawMessage
+	_ = json.Unmarshal(data, &rawConfig)
+
+	migratedLegacyCornerstoneWebSearch := false
+	if _, ok := rawConfig[CornerstoneWebSearchKey]; !ok {
+		if legacyRaw, legacyOK := rawConfig[LegacyWebSearchKey]; legacyOK && len(bytes.TrimSpace(legacyRaw)) > 0 && string(bytes.TrimSpace(legacyRaw)) != "null" {
+			var legacy WebSearchConfig
+			if err := json.Unmarshal(legacyRaw, &legacy); err == nil {
+				m.config.CornerstoneWebSearch = legacy
+				migratedLegacyCornerstoneWebSearch = true
+			}
+		}
+	}
 
 	// 检查是否是旧格式配置（没有providers字段）
 	// 如果 Providers 为空，尝试从旧格式迁移
@@ -612,12 +642,15 @@ func (m *Manager) Load() error {
 		if m.applyConfigDefaults() {
 			changed = true
 		}
+		if migratedLegacyCornerstoneWebSearch {
+			changed = true
+		}
 		if changed {
 			if errSave := m.saveUnsafe(); errSave != nil {
 				return errSave
 			}
 		}
-	} else if m.applyConfigDefaults() {
+	} else if m.applyConfigDefaults() || migratedLegacyCornerstoneWebSearch {
 		if errSave := m.saveUnsafe(); errSave != nil {
 			return errSave
 		}
@@ -738,48 +771,48 @@ func (m *Manager) applyConfigDefaults() bool {
 		changed = true
 	}
 
-	if m.config.WebSearch.MaxResults <= 0 {
-		m.config.WebSearch.MaxResults = DefaultWebSearchMaxResults
+	if m.config.CornerstoneWebSearch.MaxResults <= 0 {
+		m.config.CornerstoneWebSearch.MaxResults = DefaultWebSearchMaxResults
 		changed = true
 	}
-	if m.config.WebSearch.MaxResults > MaxWebSearchMaxResults {
-		m.config.WebSearch.MaxResults = MaxWebSearchMaxResults
+	if m.config.CornerstoneWebSearch.MaxResults > MaxWebSearchMaxResults {
+		m.config.CornerstoneWebSearch.MaxResults = MaxWebSearchMaxResults
 		changed = true
 	}
-	if m.config.WebSearch.FetchResults <= 0 {
-		m.config.WebSearch.FetchResults = m.config.WebSearch.MaxResults
+	if m.config.CornerstoneWebSearch.FetchResults <= 0 {
+		m.config.CornerstoneWebSearch.FetchResults = m.config.CornerstoneWebSearch.MaxResults
 		changed = true
 	}
-	if m.config.WebSearch.FetchResults > MaxWebSearchMaxResults {
-		m.config.WebSearch.FetchResults = MaxWebSearchMaxResults
+	if m.config.CornerstoneWebSearch.FetchResults > MaxWebSearchMaxResults {
+		m.config.CornerstoneWebSearch.FetchResults = MaxWebSearchMaxResults
 		changed = true
 	}
-	if m.config.WebSearch.FetchResults < m.config.WebSearch.MaxResults {
-		m.config.WebSearch.FetchResults = m.config.WebSearch.MaxResults
+	if m.config.CornerstoneWebSearch.FetchResults < m.config.CornerstoneWebSearch.MaxResults {
+		m.config.CornerstoneWebSearch.FetchResults = m.config.CornerstoneWebSearch.MaxResults
 		changed = true
 	}
-	if m.config.WebSearch.TimeoutSeconds <= 0 {
-		m.config.WebSearch.TimeoutSeconds = DefaultWebSearchTimeoutSeconds
+	if m.config.CornerstoneWebSearch.TimeoutSeconds <= 0 {
+		m.config.CornerstoneWebSearch.TimeoutSeconds = DefaultWebSearchTimeoutSeconds
 		changed = true
 	}
-	if m.config.WebSearch.TimeoutSeconds > MaxWebSearchTimeoutSeconds {
-		m.config.WebSearch.TimeoutSeconds = MaxWebSearchTimeoutSeconds
+	if m.config.CornerstoneWebSearch.TimeoutSeconds > MaxWebSearchTimeoutSeconds {
+		m.config.CornerstoneWebSearch.TimeoutSeconds = MaxWebSearchTimeoutSeconds
 		changed = true
 	}
 
-	webSearchProviderID := normalizeWebSearchProviderID(m.config.WebSearch.ActiveProviderID)
-	if webSearchProviderID != m.config.WebSearch.ActiveProviderID {
-		m.config.WebSearch.ActiveProviderID = webSearchProviderID
+	webSearchProviderID := normalizeWebSearchProviderID(m.config.CornerstoneWebSearch.ActiveProviderID)
+	if webSearchProviderID != m.config.CornerstoneWebSearch.ActiveProviderID {
+		m.config.CornerstoneWebSearch.ActiveProviderID = webSearchProviderID
 		changed = true
 	}
-	excludeDomains := normalizeWebSearchExcludeDomains(m.config.WebSearch.ExcludeDomains)
-	if !stringSliceEqual(m.config.WebSearch.ExcludeDomains, excludeDomains) {
-		m.config.WebSearch.ExcludeDomains = excludeDomains
+	excludeDomains := normalizeWebSearchExcludeDomains(m.config.CornerstoneWebSearch.ExcludeDomains)
+	if !stringSliceEqual(m.config.CornerstoneWebSearch.ExcludeDomains, excludeDomains) {
+		m.config.CornerstoneWebSearch.ExcludeDomains = excludeDomains
 		changed = true
 	}
-	providers, providersChanged := normalizeWebSearchProviders(m.config.WebSearch.Providers)
+	providers, providersChanged := normalizeWebSearchProviders(m.config.CornerstoneWebSearch.Providers)
 	if providersChanged {
-		m.config.WebSearch.Providers = providers
+		m.config.CornerstoneWebSearch.Providers = providers
 		changed = true
 	}
 	return changed

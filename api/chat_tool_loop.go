@@ -80,6 +80,7 @@ func runChatWithToolLoop(
 		// Ensure every tool call has a stable ID so tool results can be matched.
 		if len(assistant.ToolCalls) > 0 {
 			for i := range assistant.ToolCalls {
+				assistant.ToolCalls[i].Function.Name = canonicalToolName(assistant.ToolCalls[i].Function.Name)
 				id := strings.TrimSpace(assistant.ToolCalls[i].ID)
 				if id != "" {
 					continue
@@ -125,7 +126,7 @@ func runChatWithToolLoop(
 			if callID == "" {
 				callID = fmt.Sprintf("call_%d_%d", toolStepsUsed, index)
 			}
-			toolName := strings.TrimSpace(tc.Function.Name)
+			toolName := canonicalToolName(tc.Function.Name)
 
 			result := chatToolResult{}
 			if _, dup := executedToolCallIDs[callID]; dup {

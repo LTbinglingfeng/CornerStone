@@ -1715,7 +1715,7 @@ func TestIdleGreetingService_FireTask_WebPersistsFinalAssistantOnly(t *testing.T
 	if toolNames["get_weather"] {
 		t.Fatal("get_weather tool should be absent when toggle is off")
 	}
-	for _, forbidden := range []string{"schedule_reminder", "write_memory", "send_red_packet", "send_pat", "red_packet_received", "web_search"} {
+	for _, forbidden := range []string{"schedule_reminder", "write_memory", "send_red_packet", "send_pat", "red_packet_received", cornerstoneWebSearchToolName} {
 		if toolNames[forbidden] {
 			t.Fatalf("forbidden idle greeting tool %q exposed to model", forbidden)
 		}

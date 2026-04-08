@@ -46,3 +46,27 @@ func TestEnsureToolResultMessagesForReplay_MissingToolResultIsSyntheticFailure(t
 		t.Fatalf("data.synthetic=%v, want true", data["synthetic"])
 	}
 }
+
+func TestNormalizeLegacyToolIdentifiersInMessages_RewritesWebSearchHistory(t *testing.T) {
+	in := []client.Message{
+		assistantMessage(
+			"",
+			toolCall("", legacyWebSearchToolName, `{"query":"hello"}`),
+		),
+		{
+			Role:       "tool",
+			ToolCallID: "call_1",
+			Content:    `{"ok":true,"tool":"web_search","data":{"query":"hello"},"error":""}`,
+		},
+	}
+
+	out := normalizeLegacyToolIdentifiersInMessages(in)
+	if out[0].ToolCalls[0].Function.Name != cornerstoneWebSearchToolName {
+		t.Fatalf("assistant tool name=%q, want %q", out[0].ToolCalls[0].Function.Name, cornerstoneWebSearchToolName)
+	}
+
+	payload := parseToolResult(t, out[1].Content)
+	if tool, _ := payload["tool"].(string); tool != cornerstoneWebSearchToolName {
+		t.Fatalf("tool=%v, want %s", payload["tool"], cornerstoneWebSearchToolName)
+	}
+}

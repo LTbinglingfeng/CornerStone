@@ -10,11 +10,11 @@ import (
 	"testing"
 )
 
-func TestHandleWebSearchSettings_CanClearSecretsWithExplicitEmptyStrings(t *testing.T) {
+func TestHandleCornerstoneWebSearchSettings_CanClearSecretsWithExplicitEmptyStrings(t *testing.T) {
 	cm := config.NewManager(filepath.Join(t.TempDir(), "config.json"))
 	cfg := config.DefaultConfig()
-	cfg.WebSearch.ActiveProviderID = "tavily"
-	cfg.WebSearch.Providers = map[string]config.WebSearchProvider{
+	cfg.CornerstoneWebSearch.ActiveProviderID = "tavily"
+	cfg.CornerstoneWebSearch.Providers = map[string]config.WebSearchProvider{
 		"tavily": {
 			APIKey:            "secret-key",
 			APIHost:           "https://api.tavily.com",
@@ -40,17 +40,17 @@ func TestHandleWebSearchSettings_CanClearSecretsWithExplicitEmptyStrings(t *test
 		t.Fatalf("Marshal request failed: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPut, "/api/settings/web-search", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPut, cornerstoneWebSearchSettingsPath, bytes.NewReader(body))
 	rec := httptest.NewRecorder()
 
-	handler.handleWebSearchSettings(rec, req)
+	handler.handleCornerstoneWebSearchSettings(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
 	updated := cm.Get()
-	providerCfg, ok := updated.WebSearch.Providers["tavily"]
+	providerCfg, ok := updated.CornerstoneWebSearch.Providers["tavily"]
 	if !ok {
 		t.Fatalf("provider settings missing after update")
 	}
@@ -66,16 +66,16 @@ func TestHandleWebSearchSettings_CanClearSecretsWithExplicitEmptyStrings(t *test
 	if providerCfg.BasicAuthUsername != "alice" {
 		t.Fatalf("BasicAuthUsername = %q, want preserved", providerCfg.BasicAuthUsername)
 	}
-	if updated.WebSearch.FetchResults != 12 {
-		t.Fatalf("FetchResults = %d, want 12", updated.WebSearch.FetchResults)
+	if updated.CornerstoneWebSearch.FetchResults != 12 {
+		t.Fatalf("FetchResults = %d, want 12", updated.CornerstoneWebSearch.FetchResults)
 	}
 }
 
-func TestHandleWebSearchSettings_MaxResultsOnlyUpdateAlignsFetchResults(t *testing.T) {
+func TestHandleCornerstoneWebSearchSettings_MaxResultsOnlyUpdateAlignsFetchResults(t *testing.T) {
 	cm := config.NewManager(filepath.Join(t.TempDir(), "config.json"))
 	cfg := config.DefaultConfig()
-	cfg.WebSearch.MaxResults = 5
-	cfg.WebSearch.FetchResults = 12
+	cfg.CornerstoneWebSearch.MaxResults = 5
+	cfg.CornerstoneWebSearch.FetchResults = 12
 	if err := cm.Update(cfg); err != nil {
 		t.Fatalf("Update config failed: %v", err)
 	}
@@ -88,29 +88,29 @@ func TestHandleWebSearchSettings_MaxResultsOnlyUpdateAlignsFetchResults(t *testi
 		t.Fatalf("Marshal request failed: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPut, "/api/settings/web-search", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPut, cornerstoneWebSearchSettingsPath, bytes.NewReader(body))
 	rec := httptest.NewRecorder()
 
-	handler.handleWebSearchSettings(rec, req)
+	handler.handleCornerstoneWebSearchSettings(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
 	updated := cm.Get()
-	if updated.WebSearch.MaxResults != 1 {
-		t.Fatalf("MaxResults = %d, want 1", updated.WebSearch.MaxResults)
+	if updated.CornerstoneWebSearch.MaxResults != 1 {
+		t.Fatalf("MaxResults = %d, want 1", updated.CornerstoneWebSearch.MaxResults)
 	}
-	if updated.WebSearch.FetchResults != 1 {
-		t.Fatalf("FetchResults = %d, want 1", updated.WebSearch.FetchResults)
+	if updated.CornerstoneWebSearch.FetchResults != 1 {
+		t.Fatalf("FetchResults = %d, want 1", updated.CornerstoneWebSearch.FetchResults)
 	}
 }
 
-func TestHandleWebSearchSettings_ZhipuSearchEngineUpdate(t *testing.T) {
+func TestHandleCornerstoneWebSearchSettings_ZhipuSearchEngineUpdate(t *testing.T) {
 	cm := config.NewManager(filepath.Join(t.TempDir(), "config.json"))
 	cfg := config.DefaultConfig()
-	cfg.WebSearch.ActiveProviderID = "zhipu"
-	cfg.WebSearch.Providers = map[string]config.WebSearchProvider{
+	cfg.CornerstoneWebSearch.ActiveProviderID = "zhipu"
+	cfg.CornerstoneWebSearch.Providers = map[string]config.WebSearchProvider{
 		"zhipu": {
 			APIKey:       "secret-key",
 			SearchEngine: "search_std",
@@ -132,17 +132,17 @@ func TestHandleWebSearchSettings_ZhipuSearchEngineUpdate(t *testing.T) {
 		t.Fatalf("Marshal request failed: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPut, "/api/settings/web-search", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPut, cornerstoneWebSearchSettingsPath, bytes.NewReader(body))
 	rec := httptest.NewRecorder()
 
-	handler.handleWebSearchSettings(rec, req)
+	handler.handleCornerstoneWebSearchSettings(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
 	updated := cm.Get()
-	providerCfg, ok := updated.WebSearch.Providers["zhipu"]
+	providerCfg, ok := updated.CornerstoneWebSearch.Providers["zhipu"]
 	if !ok {
 		t.Fatalf("provider settings missing after update")
 	}
@@ -151,10 +151,10 @@ func TestHandleWebSearchSettings_ZhipuSearchEngineUpdate(t *testing.T) {
 	}
 }
 
-func TestHandleWebSearchSettings_ZhipuSearchEngineRejectsInvalidValue(t *testing.T) {
+func TestHandleCornerstoneWebSearchSettings_ZhipuSearchEngineRejectsInvalidValue(t *testing.T) {
 	cm := config.NewManager(filepath.Join(t.TempDir(), "config.json"))
 	cfg := config.DefaultConfig()
-	cfg.WebSearch.Providers = map[string]config.WebSearchProvider{
+	cfg.CornerstoneWebSearch.Providers = map[string]config.WebSearchProvider{
 		"zhipu": {
 			APIKey: "secret-key",
 		},
@@ -175,10 +175,10 @@ func TestHandleWebSearchSettings_ZhipuSearchEngineRejectsInvalidValue(t *testing
 		t.Fatalf("Marshal request failed: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPut, "/api/settings/web-search", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPut, cornerstoneWebSearchSettingsPath, bytes.NewReader(body))
 	rec := httptest.NewRecorder()
 
-	handler.handleWebSearchSettings(rec, req)
+	handler.handleCornerstoneWebSearchSettings(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())

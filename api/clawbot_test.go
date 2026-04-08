@@ -1132,7 +1132,7 @@ func TestProcessIncomingBatch_ClawBotRunsWebSearchToolLoopWhenConfigured(t *test
 							ID:   "call_search_1",
 							Type: "function",
 							Function: client.ToolCallFunction{
-								Name:      "web_search",
+								Name:      cornerstoneWebSearchToolName,
 								Arguments: `{"query":"CornerStone app 是什么"}`,
 							},
 						},
@@ -1195,11 +1195,11 @@ func TestProcessIncomingBatch_ClawBotRunsWebSearchToolLoopWhenConfigured(t *test
 
 	service := newTestClawBotService(t, server.URL)
 	cfgAll := service.handler.configManager.Get()
-	cfgAll.WebSearch.ActiveProviderID = "tavily"
-	cfgAll.WebSearch.MaxResults = 3
-	cfgAll.WebSearch.FetchResults = 3
-	cfgAll.WebSearch.TimeoutSeconds = 5
-	cfgAll.WebSearch.Providers = map[string]config.WebSearchProvider{
+	cfgAll.CornerstoneWebSearch.ActiveProviderID = "tavily"
+	cfgAll.CornerstoneWebSearch.MaxResults = 3
+	cfgAll.CornerstoneWebSearch.FetchResults = 3
+	cfgAll.CornerstoneWebSearch.TimeoutSeconds = 5
+	cfgAll.CornerstoneWebSearch.Providers = map[string]config.WebSearchProvider{
 		"tavily": {
 			APIKey:  "test-search-key",
 			APIHost: server.URL,
@@ -1236,8 +1236,8 @@ func TestProcessIncomingBatch_ClawBotRunsWebSearchToolLoopWhenConfigured(t *test
 	if _, ok := names["get_weather"]; !ok {
 		t.Fatalf("first request tools = %#v, want get_weather", firstReq.Tools)
 	}
-	if _, ok := names["web_search"]; !ok {
-		t.Fatalf("first request tools = %#v, want web_search", firstReq.Tools)
+	if _, ok := names[cornerstoneWebSearchToolName]; !ok {
+		t.Fatalf("first request tools = %#v, want %s", firstReq.Tools, cornerstoneWebSearchToolName)
 	}
 	if _, ok := names["schedule_reminder"]; !ok {
 		t.Fatalf("first request tools = %#v, want schedule_reminder", firstReq.Tools)
@@ -1250,13 +1250,13 @@ func TestProcessIncomingBatch_ClawBotRunsWebSearchToolLoopWhenConfigured(t *test
 	foundToolResult := false
 	for _, msg := range secondReq.Messages {
 		content, _ := msg.Content.(string)
-		if msg.Role == "tool" && msg.ToolCallID == "call_search_1" && strings.Contains(content, `"tool":"web_search"`) {
+		if msg.Role == "tool" && msg.ToolCallID == "call_search_1" && strings.Contains(content, `"tool":"cornerstone_web_search"`) {
 			foundToolResult = true
 			break
 		}
 	}
 	if !foundToolResult {
-		t.Fatalf("second request missing web_search tool result: %#v", secondReq.Messages)
+		t.Fatalf("second request missing %s tool result: %#v", cornerstoneWebSearchToolName, secondReq.Messages)
 	}
 
 	sessionID, ok := service.getActiveSessionID("wx-user")
@@ -1270,8 +1270,8 @@ func TestProcessIncomingBatch_ClawBotRunsWebSearchToolLoopWhenConfigured(t *test
 	if len(record.Messages) != 4 {
 		t.Fatalf("message count = %d, want 4", len(record.Messages))
 	}
-	if record.Messages[1].Role != "assistant" || len(record.Messages[1].ToolCalls) != 1 || record.Messages[1].ToolCalls[0].Function.Name != "web_search" {
-		t.Fatalf("assistant tool call message = %#v, want web_search tool call", record.Messages[1])
+	if record.Messages[1].Role != "assistant" || len(record.Messages[1].ToolCalls) != 1 || record.Messages[1].ToolCalls[0].Function.Name != cornerstoneWebSearchToolName {
+		t.Fatalf("assistant tool call message = %#v, want %s tool call", record.Messages[1], cornerstoneWebSearchToolName)
 	}
 	if record.Messages[2].Role != "tool" || record.Messages[2].ToolCallID != "call_search_1" {
 		t.Fatalf("tool message = %#v, want tool result for call_search_1", record.Messages[2])

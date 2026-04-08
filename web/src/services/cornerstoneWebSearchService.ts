@@ -2,7 +2,7 @@ import type { ApiResponse } from '../types/chat'
 import { translate } from '../i18n'
 import { apiFetchJson } from './api'
 
-export interface WebSearchProviderInfo {
+export interface CornerstoneWebSearchProviderInfo {
     id: string
     name: string
     requires_api_key: boolean
@@ -13,7 +13,7 @@ export interface WebSearchProviderInfo {
     supports_max_results: boolean
 }
 
-export interface WebSearchProviderConfig {
+export interface CornerstoneWebSearchProviderConfig {
     api_key?: string
     api_host?: string
     search_engine?: string
@@ -21,20 +21,22 @@ export interface WebSearchProviderConfig {
     basic_auth_password?: string
 }
 
-export interface WebSearchSettings {
+export interface CornerstoneWebSearchSettings {
     active_provider_id: string
-    providers: Record<string, WebSearchProviderConfig>
+    providers: Record<string, CornerstoneWebSearchProviderConfig>
     max_results: number
     fetch_results: number
     exclude_domains: string[]
     search_with_time: boolean
     timeout_seconds: number
-    available_providers: WebSearchProviderInfo[]
+    available_providers: CornerstoneWebSearchProviderInfo[]
 }
 
-export const webSearchService = {
-    async getSettings(): Promise<WebSearchSettings> {
-        const data = await apiFetchJson<ApiResponse<WebSearchSettings>>('/api/settings/web-search')
+export const cornerstoneWebSearchService = {
+    async getSettings(): Promise<CornerstoneWebSearchSettings> {
+        const data = await apiFetchJson<ApiResponse<CornerstoneWebSearchSettings>>(
+            '/api/settings/cornerstone-web-search'
+        )
         if (!data.success || !data.data) {
             throw new Error(data.error || translate('service.getWebSearchSettingsFailed'))
         }
@@ -42,9 +44,11 @@ export const webSearchService = {
     },
 
     async updateSettings(
-        patch: Partial<WebSearchSettings> & { providers?: Record<string, WebSearchProviderConfig> }
-    ): Promise<WebSearchSettings> {
-        const data = await apiFetchJson<ApiResponse<{ ok: boolean }>>('/api/settings/web-search', {
+        patch: Partial<CornerstoneWebSearchSettings> & {
+            providers?: Record<string, CornerstoneWebSearchProviderConfig>
+        }
+    ): Promise<CornerstoneWebSearchSettings> {
+        const data = await apiFetchJson<ApiResponse<{ ok: boolean }>>('/api/settings/cornerstone-web-search', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(patch),
@@ -52,6 +56,6 @@ export const webSearchService = {
         if (!data.success) {
             throw new Error(data.error || translate('service.saveWebSearchSettingsFailed'))
         }
-        return webSearchService.getSettings()
+        return cornerstoneWebSearchService.getSettings()
     },
 }

@@ -201,9 +201,9 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 	normalizedToolToggles := config.NormalizeToolToggles(currentConfig.ToolToggles)
 	availableTools := getChatTools(chatToolOptions{
-		ToolToggles:        normalizedToolToggles,
-		WebSearchEnabled:   isWebSearchConfigured(currentConfig),
-		WriteMemoryEnabled: memSession != nil && isToolEnabledByToggle(normalizedToolToggles, "write_memory"),
+		ToolToggles:                 normalizedToolToggles,
+		CornerstoneWebSearchEnabled: isCornerstoneWebSearchConfigured(currentConfig),
+		WriteMemoryEnabled:          memSession != nil && isToolEnabledByToggle(normalizedToolToggles, "write_memory"),
 	})
 	availableToolNames := buildToolNameSet(availableTools)
 	allowedToolNames := buildAllowedToolNameSet(availableTools, normalizedToolToggles)
@@ -313,7 +313,7 @@ func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiCli
 	toolExecutor.exactTimeService = h.exactTimeService
 	toolExecutor.reminderService = h.reminderService
 	if h.configManager != nil {
-		toolExecutor.webSearch = newWebSearchOrchestrator(h.configManager.Get())
+		toolExecutor.cornerstoneWebSearch = newCornerstoneWebSearchOrchestrator(h.configManager.Get())
 	}
 	loopResult, errLoop := runChatWithToolLoop(
 		ctxAI,
@@ -475,7 +475,7 @@ func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiCli
 	toolExecutor.exactTimeService = h.exactTimeService
 	toolExecutor.reminderService = h.reminderService
 	if h.configManager != nil {
-		toolExecutor.webSearch = newWebSearchOrchestrator(h.configManager.Get())
+		toolExecutor.cornerstoneWebSearch = newCornerstoneWebSearchOrchestrator(h.configManager.Get())
 	}
 
 	baseTime := time.Now()
@@ -949,24 +949,24 @@ const (
 )
 
 type chatToolOptions struct {
-	Channel            chatToolChannel
-	WebSearchEnabled   bool
-	WriteMemoryEnabled bool
-	ReminderFiring     bool
-	ToolToggles        map[string]bool
-	RestrictToolNames  map[string]bool
-	StrictToggleFilter bool
+	Channel                     chatToolChannel
+	CornerstoneWebSearchEnabled bool
+	WriteMemoryEnabled          bool
+	ReminderFiring              bool
+	ToolToggles                 map[string]bool
+	RestrictToolNames           map[string]bool
+	StrictToggleFilter          bool
 }
 
 func getChatTools(options ...chatToolOptions) []client.Tool {
 	channel := chatToolChannelDefault
-	webSearchEnabled := false
+	cornerstoneWebSearchEnabled := false
 	writeMemoryEnabled := false
 	if len(options) > 0 && options[0].Channel != "" {
 		channel = options[0].Channel
 	}
 	if len(options) > 0 {
-		webSearchEnabled = options[0].WebSearchEnabled
+		cornerstoneWebSearchEnabled = options[0].CornerstoneWebSearchEnabled
 		writeMemoryEnabled = options[0].WriteMemoryEnabled
 	}
 	tools := []client.Tool{
@@ -1177,11 +1177,11 @@ func getChatTools(options ...chatToolOptions) []client.Tool {
 			},
 		})
 	}
-	if webSearchEnabled {
+	if cornerstoneWebSearchEnabled {
 		tools = append(tools, client.Tool{
 			Type: "function",
 			Function: client.ToolFunction{
-				Name:        "web_search",
+				Name:        cornerstoneWebSearchToolName,
 				Description: "使用外部搜索 API 查询网络信息。当需要查事实、资料、百科、新闻等外部信息时使用此工具。",
 				Parameters: map[string]interface{}{
 					"type": "object",
@@ -1201,8 +1201,8 @@ func getChatTools(options ...chatToolOptions) []client.Tool {
 	if len(options) > 0 && options[0].ReminderFiring {
 		filtered := make([]client.Tool, 0, 3)
 		for _, tool := range tools {
-			switch strings.TrimSpace(tool.Function.Name) {
-			case "get_time", "get_weather", "web_search":
+			switch canonicalToolName(tool.Function.Name) {
+			case "get_time", "get_weather", cornerstoneWebSearchToolName:
 				filtered = append(filtered, tool)
 			}
 		}
@@ -1212,8 +1212,8 @@ func getChatTools(options ...chatToolOptions) []client.Tool {
 	if channel == chatToolChannelClawBot {
 		filtered := make([]client.Tool, 0, 6)
 		for _, tool := range tools {
-			switch strings.TrimSpace(tool.Function.Name) {
-			case "get_time", "get_weather", "web_search", "schedule_reminder", "write_memory", "no_reply":
+			switch canonicalToolName(tool.Function.Name) {
+			case "get_time", "get_weather", cornerstoneWebSearchToolName, "schedule_reminder", "write_memory", "no_reply":
 				filtered = append(filtered, tool)
 			}
 		}
@@ -1223,8 +1223,8 @@ func getChatTools(options ...chatToolOptions) []client.Tool {
 	if channel == chatToolChannelNapCat {
 		filtered := make([]client.Tool, 0, 5)
 		for _, tool := range tools {
-			switch strings.TrimSpace(tool.Function.Name) {
-			case "get_time", "get_weather", "web_search", "schedule_reminder", "write_memory":
+			switch canonicalToolName(tool.Function.Name) {
+			case "get_time", "get_weather", cornerstoneWebSearchToolName, "schedule_reminder", "write_memory":
 				filtered = append(filtered, tool)
 			}
 		}
@@ -1261,7 +1261,7 @@ func buildToolNameSet(tools []client.Tool) map[string]bool {
 	}
 	names := make(map[string]bool, len(tools))
 	for _, tool := range tools {
-		name := strings.TrimSpace(tool.Function.Name)
+		name := canonicalToolName(tool.Function.Name)
 		if name == "" {
 			continue
 		}
@@ -1278,7 +1278,7 @@ func buildAllowedToolNameSet(tools []client.Tool, toolToggles map[string]bool) m
 
 	allowed := make(map[string]bool, len(tools))
 	for _, tool := range tools {
-		name := strings.TrimSpace(tool.Function.Name)
+		name := canonicalToolName(tool.Function.Name)
 		if name == "" || !isToolEnabledByToggle(normalizedToolToggles, name) {
 			continue
 		}
@@ -1288,27 +1288,27 @@ func buildAllowedToolNameSet(tools []client.Tool, toolToggles map[string]bool) m
 }
 
 func isToolAvailable(toolNames map[string]bool, name string) bool {
-	return toolNames[strings.TrimSpace(name)]
+	return toolNames[canonicalToolName(name)]
 }
 
 func isToolEnabledByToggle(toolToggles map[string]bool, name string) bool {
-	return toolToggles[strings.TrimSpace(name)]
+	return toolToggles[canonicalToolName(name)]
 }
 
-func isWebSearchConfigured(cfg config.Config) bool {
-	providerID := strings.TrimSpace(cfg.WebSearch.ActiveProviderID)
+func isCornerstoneWebSearchConfigured(cfg config.Config) bool {
+	providerID := strings.TrimSpace(cfg.CornerstoneWebSearch.ActiveProviderID)
 	if providerID == "" {
 		return false
 	}
 
-	providerCfg, ok := cfg.WebSearch.Providers[providerID]
+	providerCfg, ok := cfg.CornerstoneWebSearch.Providers[providerID]
 	if !ok {
 		return false
 	}
 
 	reg := search.NewRegistry()
 	if err := providers.RegisterAll(reg); err != nil {
-		logging.Errorf("web_search register providers failed: %v", err)
+		logging.Errorf("%s register providers failed: %v", cornerstoneWebSearchToolName, err)
 		return false
 	}
 

@@ -116,7 +116,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	h.registerProtectedRoute(mux, "/api/settings/napcat", h.handleNapCatSettings)
 	h.registerProtectedRoute(mux, "/api/settings/reminders", h.handleReminders)
 	h.registerProtectedRoute(mux, "/api/settings/reminders/", h.handleReminderByID)
-	h.registerProtectedRoute(mux, "/api/settings/web-search", h.handleWebSearchSettings)
+	h.registerProtectedRoute(mux, cornerstoneWebSearchSettingsPath, h.handleCornerstoneWebSearchSettings)
+	h.registerProtectedRoute(mux, legacyCornerstoneWebSearchSettingsPath, h.handleCornerstoneWebSearchSettings)
 
 	// 配置接口 (使用 /management 前缀)
 	h.registerProtectedRoute(mux, "/management/config", h.handleConfig)

@@ -10,7 +10,10 @@ import { ttsService, type TTSProviderConfig } from '../services/ttsService'
 import { clawBotService, type ClawBotSettings } from '../services/clawbotService'
 import { napCatService, type NapCatSettings } from '../services/napcatService'
 import { reminderService } from '../services/reminderService'
-import { webSearchService, type WebSearchSettings } from '../services/webSearchService'
+import {
+    cornerstoneWebSearchService,
+    type CornerstoneWebSearchSettings,
+} from '../services/cornerstoneWebSearchService'
 import { localeNames, type Locale } from '../i18n'
 import type { IdleGreetingConfig, Provider, WeatherCity } from '../types/chat'
 import type { Reminder } from '../types/reminder'
@@ -26,7 +29,7 @@ import MemoryProviderSettings from './MemoryProviderSettings'
 import ImageProviderSettings from './ImageProviderSettings'
 import ClawBotSettingsPanel from './ClawBotSettings'
 import NapCatSettingsPanel from './NapCatSettings'
-import WebSearchSettingsPanel from './WebSearchSettings'
+import CornerstoneWebSearchSettingsPanel from './CornerstoneWebSearchSettings'
 import { useT } from '../contexts/I18nContext'
 import { useToast } from '../contexts/ToastContext'
 import {
@@ -128,8 +131,9 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     const [showMemoryProviderSettings, setShowMemoryProviderSettings] = useState(false)
     const [showClawBotSettings, setShowClawBotSettings] = useState(false)
     const [showNapCatSettings, setShowNapCatSettings] = useState(false)
-    const [webSearchSettings, setWebSearchSettings] = useState<WebSearchSettings | null>(null)
-    const [showWebSearchSettings, setShowWebSearchSettings] = useState(false)
+    const [cornerstoneWebSearchSettings, setCornerstoneWebSearchSettings] =
+        useState<CornerstoneWebSearchSettings | null>(null)
+    const [showCornerstoneWebSearchSettings, setShowCornerstoneWebSearchSettings] = useState(false)
     const [toolToggles, setToolToggles] = useState<Record<string, boolean>>(() => createDefaultToolToggles())
     const [showToolSettings, setShowToolSettings] = useState(false)
     const [showReminderSettings, setShowReminderSettings] = useState(false)
@@ -309,10 +313,10 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
             setNapCatSettings(null)
         }
         try {
-            const settings = await webSearchService.getSettings()
-            setWebSearchSettings(settings)
+            const settings = await cornerstoneWebSearchService.getSettings()
+            setCornerstoneWebSearchSettings(settings)
         } catch {
-            setWebSearchSettings(null)
+            setCornerstoneWebSearchSettings(null)
         }
         try {
             const reminderList = await reminderService.listReminders()
@@ -707,8 +711,8 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         setShowNapCatSettings(false)
     }
 
-    const handleWebSearchSettingsBack = () => {
-        setShowWebSearchSettings(false)
+    const handleCornerstoneWebSearchSettingsBack = () => {
+        setShowCornerstoneWebSearchSettings(false)
     }
 
     const handleToolSettingsBack = () => {
@@ -871,18 +875,23 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         return { title, detail }
     }
 
-    const getWebSearchPreview = () => {
-        if (!webSearchSettings) return { title: t('common.notConfigured'), detail: '' }
-        const activeId = (webSearchSettings.active_provider_id || '').trim()
+    const getCornerstoneWebSearchPreview = () => {
+        if (!cornerstoneWebSearchSettings) return { title: t('common.notConfigured'), detail: '' }
+        const activeId = (cornerstoneWebSearchSettings.active_provider_id || '').trim()
         if (!activeId) return { title: t('common.notConfigured'), detail: '' }
-        const info = (webSearchSettings.available_providers || []).find((p) => p.id === activeId)
+        const info = (cornerstoneWebSearchSettings.available_providers || []).find((p) => p.id === activeId)
         const title = info?.name || activeId
         const detailParts = []
-        if (webSearchSettings.max_results) {
-            detailParts.push(`${t('settings.webSearchMaxResults')}: ${webSearchSettings.max_results}`)
+        if (cornerstoneWebSearchSettings.max_results) {
+            detailParts.push(`${t('settings.webSearchMaxResults')}: ${cornerstoneWebSearchSettings.max_results}`)
         }
-        if (webSearchSettings.fetch_results && webSearchSettings.fetch_results !== webSearchSettings.max_results) {
-            detailParts.push(`${t('settings.webSearchFetchResults')}: ${webSearchSettings.fetch_results}`)
+        if (
+            cornerstoneWebSearchSettings.fetch_results &&
+            cornerstoneWebSearchSettings.fetch_results !== cornerstoneWebSearchSettings.max_results
+        ) {
+            detailParts.push(
+                `${t('settings.webSearchFetchResults')}: ${cornerstoneWebSearchSettings.fetch_results}`
+            )
         }
         const detail = detailParts.join(' · ')
         return { title, detail }
@@ -925,7 +934,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     const ttsProviderPreview = getTTSProviderPreview()
     const clawBotPreview = getClawBotPreview()
     const napCatPreview = getNapCatPreview()
-    const webSearchPreview = getWebSearchPreview()
+    const cornerstoneWebSearchPreview = getCornerstoneWebSearchPreview()
     const toolControlPreview = getToolControlPreview()
     const reminderPreview = getReminderPreview()
     const timeZonePreview = getTimeZonePreview()
@@ -981,14 +990,14 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
 
                         <button
                             className="settings-entry-btn"
-                            onClick={() => setShowWebSearchSettings(true)}
+                            onClick={() => setShowCornerstoneWebSearchSettings(true)}
                             style={{ marginTop: 12 }}
                         >
                             <div className="settings-entry-info">
                                 <span className="settings-entry-label">{t('settings.webSearch')}</span>
-                                <span className="settings-entry-value">{webSearchPreview.title}</span>
-                                {webSearchPreview.detail && (
-                                    <span className="settings-entry-subvalue">{webSearchPreview.detail}</span>
+                                <span className="settings-entry-value">{cornerstoneWebSearchPreview.title}</span>
+                                {cornerstoneWebSearchPreview.detail && (
+                                    <span className="settings-entry-subvalue">{cornerstoneWebSearchPreview.detail}</span>
                                 )}
                             </div>
                             <svg className="settings-entry-arrow" viewBox="0 0 24 24">
@@ -1347,7 +1356,9 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
             </AnimatePresence>
 
             <AnimatePresence onExitComplete={() => void loadData({ showLoading: false })}>
-                {showWebSearchSettings && <WebSearchSettingsPanel onBack={handleWebSearchSettingsBack} />}
+                {showCornerstoneWebSearchSettings && (
+                    <CornerstoneWebSearchSettingsPanel onBack={handleCornerstoneWebSearchSettingsBack} />
+                )}
             </AnimatePresence>
 
             <AnimatePresence onExitComplete={() => void loadData({ showLoading: false })}>

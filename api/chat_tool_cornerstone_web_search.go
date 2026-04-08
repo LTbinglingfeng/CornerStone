@@ -9,19 +9,19 @@ import (
 	"time"
 )
 
-type chatToolWebSearchArgs struct {
+type chatToolCornerstoneWebSearchArgs struct {
 	Query string `json:"query"`
 }
 
-func (e *chatToolExecutor) handleWebSearch(ctx context.Context, toolCall client.ToolCall, toolCtx chatToolContext) chatToolResult {
-	if e.webSearch == nil {
+func (e *chatToolExecutor) handleCornerstoneWebSearch(ctx context.Context, toolCall client.ToolCall, toolCtx chatToolContext) chatToolResult {
+	if e.cornerstoneWebSearch == nil {
 		return chatToolResult{OK: false, Data: nil, Error: "web search not configured"}
 	}
 	if e.configManager == nil {
 		return chatToolResult{OK: false, Data: nil, Error: "config manager not configured"}
 	}
 
-	var args chatToolWebSearchArgs
+	var args chatToolCornerstoneWebSearchArgs
 	if errUnmarshal := decodeToolArguments(toolCall.Function.Arguments, &args); errUnmarshal != nil {
 		return chatToolResult{OK: false, Data: nil, Error: "invalid arguments"}
 	}
@@ -31,7 +31,7 @@ func (e *chatToolExecutor) handleWebSearch(ctx context.Context, toolCall client.
 	}
 
 	cfg := e.configManager.Get()
-	settings := cfg.WebSearch
+	settings := cfg.CornerstoneWebSearch
 	providerID := strings.TrimSpace(settings.ActiveProviderID)
 	if providerID == "" {
 		return chatToolResult{OK: false, Data: nil, Error: "web search provider not configured"}
@@ -50,7 +50,7 @@ func (e *chatToolExecutor) handleWebSearch(ctx context.Context, toolCall client.
 
 	if e.emitEvent != nil {
 		e.emitEvent(map[string]interface{}{
-			"type":          "web_search_started",
+			"type":          cornerstoneWebSearchStartedEventType,
 			"provider_id":   providerID,
 			"query":         query,
 			"max_results":   settings.MaxResults,
@@ -59,7 +59,7 @@ func (e *chatToolExecutor) handleWebSearch(ctx context.Context, toolCall client.
 	}
 
 	startedAt := time.Now()
-	resp, errSearch := e.webSearch.Search(
+	resp, errSearch := e.cornerstoneWebSearch.Search(
 		ctxSearch,
 		providerID,
 		search.ProviderConfig{
@@ -81,7 +81,7 @@ func (e *chatToolExecutor) handleWebSearch(ctx context.Context, toolCall client.
 	duration := time.Since(startedAt)
 	if e.emitEvent != nil {
 		payload := map[string]interface{}{
-			"type":        "web_search_completed",
+			"type":        cornerstoneWebSearchCompletedEventType,
 			"provider_id": providerID,
 			"query":       query,
 			"duration_ms": duration.Milliseconds(),
@@ -100,7 +100,7 @@ func (e *chatToolExecutor) handleWebSearch(ctx context.Context, toolCall client.
 		return chatToolResult{
 			OK:    false,
 			Data:  nil,
-			Error: fmt.Sprintf("web_search failed: %s", search.PublicMessage(errSearch)),
+			Error: fmt.Sprintf("%s failed: %s", cornerstoneWebSearchToolName, search.PublicMessage(errSearch)),
 		}
 	}
 

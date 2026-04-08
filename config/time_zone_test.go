@@ -102,3 +102,60 @@ func TestManagerLoadNormalizesIdleGreetingConfig(t *testing.T) {
 		t.Fatalf("IdleGreeting.TimeWindows[0] = %#v, want 22:00-02:00", got.TimeWindows[0])
 	}
 }
+
+func TestManagerLoadMigratesLegacyWebSearchConfigKey(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+
+	raw := []byte(`{
+  "providers": [{"id":"default","name":"OpenAI","type":"openai","base_url":"https://api.openai.com/v1","api_key":"","model":"gpt-4o-mini"}],
+  "active_provider_id": "default",
+  "tool_toggles": {
+    "get_time": true,
+    "web_search": false
+  },
+  "web_search": {
+    "active_provider_id": "tavily",
+    "providers": {
+      "tavily": {
+        "api_key": "secret-key"
+      }
+    },
+    "max_results": 3,
+    "fetch_results": 4,
+    "timeout_seconds": 9
+  }
+}`)
+	if err := os.WriteFile(configPath, raw, 0600); err != nil {
+		t.Fatalf("Write config failed: %v", err)
+	}
+
+	manager := NewManager(configPath)
+	got := manager.Get()
+	if got.CornerstoneWebSearch.ActiveProviderID != "tavily" {
+		t.Fatalf("CornerstoneWebSearch.ActiveProviderID = %q, want tavily", got.CornerstoneWebSearch.ActiveProviderID)
+	}
+	if got.CornerstoneWebSearch.Providers["tavily"].APIKey != "secret-key" {
+		t.Fatalf("CornerstoneWebSearch provider API key missing after migration: %#v", got.CornerstoneWebSearch.Providers)
+	}
+	if got.ToolToggles[CornerstoneWebSearchKey] {
+		t.Fatalf("ToolToggles[%q] = true, want false", CornerstoneWebSearchKey)
+	}
+	if _, ok := got.ToolToggles[LegacyWebSearchKey]; ok {
+		t.Fatalf("legacy toggle key %q unexpectedly preserved", LegacyWebSearchKey)
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("Read migrated config failed: %v", err)
+	}
+	var persisted map[string]json.RawMessage
+	if err := json.Unmarshal(data, &persisted); err != nil {
+		t.Fatalf("Unmarshal migrated config failed: %v", err)
+	}
+	if _, ok := persisted[LegacyWebSearchKey]; ok {
+		t.Fatalf("migrated config still contains legacy key: %s", string(data))
+	}
+	if _, ok := persisted[CornerstoneWebSearchKey]; !ok {
+		t.Fatalf("migrated config missing canonical key: %s", string(data))
+	}
+}

@@ -43,13 +43,13 @@ type chatToolHandler func(ctx context.Context, toolCall client.ToolCall, toolCtx
 type chatToolExecutor struct {
 	handlers map[string]chatToolHandler
 
-	memoryManager    *storage.MemoryManager
-	configManager    *config.Manager
-	weatherService   weatherService
-	exactTimeService exactTimeProvider
-	webSearch        *search.Orchestrator
-	reminderService  *ReminderService
-	emitEvent        func(payload interface{})
+	memoryManager        *storage.MemoryManager
+	configManager        *config.Manager
+	weatherService       weatherService
+	exactTimeService     exactTimeProvider
+	cornerstoneWebSearch *search.Orchestrator
+	reminderService      *ReminderService
+	emitEvent            func(payload interface{})
 }
 
 func newChatToolExecutor() *chatToolExecutor {
@@ -63,7 +63,8 @@ func newChatToolExecutor() *chatToolExecutor {
 	executor.handlers["no_reply"] = executor.handleNoReply
 	executor.handlers["get_weather"] = executor.handleGetWeather
 	executor.handlers["get_time"] = executor.handleGetTime
-	executor.handlers["web_search"] = executor.handleWebSearch
+	executor.handlers[cornerstoneWebSearchToolName] = executor.handleCornerstoneWebSearch
+	executor.handlers[legacyWebSearchToolName] = executor.handleCornerstoneWebSearch
 	executor.handlers["write_memory"] = executor.handleWriteMemory
 	executor.handlers["schedule_reminder"] = executor.handleScheduleReminder
 
@@ -71,7 +72,7 @@ func newChatToolExecutor() *chatToolExecutor {
 }
 
 func (e *chatToolExecutor) ExecuteResult(ctx context.Context, toolCall client.ToolCall, toolCtx chatToolContext) chatToolResult {
-	toolName := strings.TrimSpace(toolCall.Function.Name)
+	toolName := canonicalToolName(toolCall.Function.Name)
 	if toolName == "" {
 		return chatToolResult{
 			OK:    false,
@@ -91,6 +92,7 @@ func (e *chatToolExecutor) ExecuteResult(ctx context.Context, toolCall client.To
 		}
 	}
 
+	toolCall.Function.Name = toolName
 	result := handler(ctx, toolCall, toolCtx)
 	result.Tool = toolName
 	if result.OK {

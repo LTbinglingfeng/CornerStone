@@ -1,4 +1,6 @@
 export type ToolControlSection = 'interaction' | 'realtime'
+export const CORNERSTONE_WEB_SEARCH_TOOL_KEY = 'cornerstone_web_search'
+const LEGACY_WEB_SEARCH_TOOL_KEY = 'web_search'
 export type ToolControlSectionTitleKey = 'settings.toolSectionInteraction' | 'settings.toolSectionRealtime'
 export type ToolControlTitleKey =
     | 'settings.toolSendRedPacket'
@@ -85,7 +87,7 @@ export const TOOL_CONTROL_DEFINITIONS: ToolControlDefinition[] = [
         descriptionKey: 'settings.toolWriteMemoryDescription',
     },
     {
-        key: 'web_search',
+        key: CORNERSTONE_WEB_SEARCH_TOOL_KEY,
         section: 'realtime',
         titleKey: 'settings.toolWebSearch',
         descriptionKey: 'settings.toolWebSearchDescription',
@@ -107,6 +109,12 @@ export function normalizeToolToggles(toolToggles?: Record<string, boolean> | nul
         if (typeof toolToggles[tool.key] === 'boolean') {
             normalized[tool.key] = toolToggles[tool.key]
         }
+    }
+    if (
+        typeof toolToggles[CORNERSTONE_WEB_SEARCH_TOOL_KEY] !== 'boolean' &&
+        typeof toolToggles[LEGACY_WEB_SEARCH_TOOL_KEY] === 'boolean'
+    ) {
+        normalized[CORNERSTONE_WEB_SEARCH_TOOL_KEY] = toolToggles[LEGACY_WEB_SEARCH_TOOL_KEY]
     }
 
     return normalized

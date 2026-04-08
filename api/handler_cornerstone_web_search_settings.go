@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-type webSearchProviderPatch struct {
+type cornerstoneWebSearchProviderPatch struct {
 	APIKey            *string `json:"api_key,omitempty"`
 	APIHost           *string `json:"api_host,omitempty"`
 	SearchEngine      *string `json:"search_engine,omitempty"`
@@ -16,17 +16,17 @@ type webSearchProviderPatch struct {
 	BasicAuthPassword *string `json:"basic_auth_password,omitempty"`
 }
 
-type webSearchSettingsPatch struct {
-	ActiveProviderID *string                           `json:"active_provider_id,omitempty"`
-	MaxResults       *int                              `json:"max_results,omitempty"`
-	FetchResults     *int                              `json:"fetch_results,omitempty"`
-	ExcludeDomains   *[]string                         `json:"exclude_domains,omitempty"`
-	SearchWithTime   *bool                             `json:"search_with_time,omitempty"`
-	TimeoutSeconds   *int                              `json:"timeout_seconds,omitempty"`
-	Providers        map[string]webSearchProviderPatch `json:"providers,omitempty"`
+type cornerstoneWebSearchSettingsPatch struct {
+	ActiveProviderID *string                                      `json:"active_provider_id,omitempty"`
+	MaxResults       *int                                         `json:"max_results,omitempty"`
+	FetchResults     *int                                         `json:"fetch_results,omitempty"`
+	ExcludeDomains   *[]string                                    `json:"exclude_domains,omitempty"`
+	SearchWithTime   *bool                                        `json:"search_with_time,omitempty"`
+	TimeoutSeconds   *int                                         `json:"timeout_seconds,omitempty"`
+	Providers        map[string]cornerstoneWebSearchProviderPatch `json:"providers,omitempty"`
 }
 
-func (h *Handler) handleWebSearchSettings(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) handleCornerstoneWebSearchSettings(w http.ResponseWriter, r *http.Request) {
 	if h.configManager == nil {
 		h.jsonResponse(w, http.StatusNotImplemented, Response{Success: false, Error: "Config manager not configured"})
 		return
@@ -50,7 +50,7 @@ func (h *Handler) handleWebSearchSettings(w http.ResponseWriter, r *http.Request
 	switch r.Method {
 	case http.MethodGet:
 		cfg := h.configManager.Get()
-		settings := cfg.WebSearch
+		settings := cfg.CornerstoneWebSearch
 		maskedProviders := make(map[string]config.WebSearchProvider, len(settings.Providers))
 		for id, providerCfg := range settings.Providers {
 			copyCfg := providerCfg
@@ -78,13 +78,13 @@ func (h *Handler) handleWebSearchSettings(w http.ResponseWriter, r *http.Request
 		return
 
 	case http.MethodPut:
-		var req webSearchSettingsPatch
+		var req cornerstoneWebSearchSettingsPatch
 		if !h.decodeJSON(w, r, &req) {
 			return
 		}
 
 		cfg := h.configManager.Get()
-		settings := cfg.WebSearch
+		settings := cfg.CornerstoneWebSearch
 
 		if req.ActiveProviderID != nil {
 			id := strings.ToLower(strings.TrimSpace(*req.ActiveProviderID))
@@ -163,7 +163,7 @@ func (h *Handler) handleWebSearchSettings(w http.ResponseWriter, r *http.Request
 			}
 		}
 
-		cfg.WebSearch = settings
+		cfg.CornerstoneWebSearch = settings
 		if errUpdate := h.configManager.Update(cfg); errUpdate != nil {
 			h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: errUpdate.Error()})
 			return

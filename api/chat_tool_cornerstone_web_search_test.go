@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-func decodeWebSearchToolResult(t *testing.T, raw string) (chatToolResult, search.SearchResponse) {
+func decodeCornerstoneWebSearchToolResult(t *testing.T, raw string) (chatToolResult, search.SearchResponse) {
 	t.Helper()
 
 	var result chatToolResult
@@ -36,76 +36,88 @@ func decodeWebSearchToolResult(t *testing.T, raw string) (chatToolResult, search
 	return result, payload
 }
 
-func TestGetChatTools_WebSearchOnlyIncludedWhenEnabled(t *testing.T) {
+func TestGetChatTools_CornerstoneWebSearchOnlyIncludedWhenEnabled(t *testing.T) {
 	defaultTools := getChatTools()
 	for _, tool := range defaultTools {
-		if tool.Function.Name == "web_search" {
-			t.Fatalf("web_search unexpectedly registered without configuration")
+		if tool.Function.Name == cornerstoneWebSearchToolName {
+			t.Fatalf("%s unexpectedly registered without configuration", cornerstoneWebSearchToolName)
 		}
 	}
 
-	enabledTools := getChatTools(chatToolOptions{WebSearchEnabled: true})
+	enabledTools := getChatTools(chatToolOptions{CornerstoneWebSearchEnabled: true})
 	found := false
 	for _, tool := range enabledTools {
-		if tool.Function.Name == "web_search" {
+		if tool.Function.Name == cornerstoneWebSearchToolName {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Fatal("web_search tool not registered when enabled")
+		t.Fatalf("%s tool not registered when enabled", cornerstoneWebSearchToolName)
 	}
 
 	disabledByToggleTools := getChatTools(chatToolOptions{
-		WebSearchEnabled: true,
+		CornerstoneWebSearchEnabled: true,
 		ToolToggles: map[string]bool{
-			"web_search": false,
+			cornerstoneWebSearchToolName: false,
 		},
 	})
 	found = false
 	for _, tool := range disabledByToggleTools {
-		if tool.Function.Name == "web_search" {
+		if tool.Function.Name == cornerstoneWebSearchToolName {
 			found = true
 			break
 		}
 	}
 	if found {
-		t.Fatalf("web_search should be hidden when disabled by toggle: %#v", disabledByToggleTools)
+		t.Fatalf("%s should be hidden when disabled by toggle: %#v", cornerstoneWebSearchToolName, disabledByToggleTools)
+	}
+
+	disabledByLegacyToggleTools := getChatTools(chatToolOptions{
+		CornerstoneWebSearchEnabled: true,
+		ToolToggles: map[string]bool{
+			legacyWebSearchToolName: false,
+		},
+	})
+	for _, tool := range disabledByLegacyToggleTools {
+		if tool.Function.Name == cornerstoneWebSearchToolName {
+			t.Fatalf("%s should also be hidden by legacy toggle key: %#v", cornerstoneWebSearchToolName, disabledByLegacyToggleTools)
+		}
 	}
 }
 
-func TestIsWebSearchConfigured_RequiresProviderSpecificSettings(t *testing.T) {
+func TestIsCornerstoneWebSearchConfigured_RequiresProviderSpecificSettings(t *testing.T) {
 	cfg := config.DefaultConfig()
-	if isWebSearchConfigured(cfg) {
+	if isCornerstoneWebSearchConfigured(cfg) {
 		t.Fatal("expected web search to be disabled without an active provider")
 	}
 
-	cfg.WebSearch.ActiveProviderID = "tavily"
-	cfg.WebSearch.Providers = map[string]config.WebSearchProvider{
+	cfg.CornerstoneWebSearch.ActiveProviderID = "tavily"
+	cfg.CornerstoneWebSearch.Providers = map[string]config.WebSearchProvider{
 		"tavily": {},
 	}
-	if isWebSearchConfigured(cfg) {
+	if isCornerstoneWebSearchConfigured(cfg) {
 		t.Fatal("expected tavily to require an API key")
 	}
 
-	cfg.WebSearch.Providers["tavily"] = config.WebSearchProvider{APIKey: "secret-key"}
-	if !isWebSearchConfigured(cfg) {
+	cfg.CornerstoneWebSearch.Providers["tavily"] = config.WebSearchProvider{APIKey: "secret-key"}
+	if !isCornerstoneWebSearchConfigured(cfg) {
 		t.Fatal("expected tavily to be enabled once its API key is configured")
 	}
 
-	cfg.WebSearch.ActiveProviderID = "searxng"
-	cfg.WebSearch.Providers["searxng"] = config.WebSearchProvider{}
-	if isWebSearchConfigured(cfg) {
+	cfg.CornerstoneWebSearch.ActiveProviderID = "searxng"
+	cfg.CornerstoneWebSearch.Providers["searxng"] = config.WebSearchProvider{}
+	if isCornerstoneWebSearchConfigured(cfg) {
 		t.Fatal("expected searxng to require an API host")
 	}
 
-	cfg.WebSearch.Providers["searxng"] = config.WebSearchProvider{APIHost: "https://search.example.com"}
-	if !isWebSearchConfigured(cfg) {
+	cfg.CornerstoneWebSearch.Providers["searxng"] = config.WebSearchProvider{APIHost: "https://search.example.com"}
+	if !isCornerstoneWebSearchConfigured(cfg) {
 		t.Fatal("expected searxng to be enabled once its API host is configured")
 	}
 }
 
-func TestChatTool_WebSearch_Integration(t *testing.T) {
+func TestChatTool_CornerstoneWebSearch_Integration(t *testing.T) {
 	var gotReq map[string]interface{}
 	var gotAuth string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -126,10 +138,10 @@ func TestChatTool_WebSearch_Integration(t *testing.T) {
 
 	cm := config.NewManager(filepath.Join(t.TempDir(), "config.json"))
 	cfg := cm.Get()
-	cfg.WebSearch.ActiveProviderID = "tavily"
-	cfg.WebSearch.MaxResults = 3
-	cfg.WebSearch.TimeoutSeconds = 5
-	cfg.WebSearch.Providers = map[string]config.WebSearchProvider{
+	cfg.CornerstoneWebSearch.ActiveProviderID = "tavily"
+	cfg.CornerstoneWebSearch.MaxResults = 3
+	cfg.CornerstoneWebSearch.TimeoutSeconds = 5
+	cfg.CornerstoneWebSearch.Providers = map[string]config.WebSearchProvider{
 		"tavily": {
 			APIKey:  "test_key",
 			APIHost: srv.URL,
@@ -147,20 +159,23 @@ func TestChatTool_WebSearch_Integration(t *testing.T) {
 
 	executor := newChatToolExecutor()
 	executor.configManager = cm
-	executor.webSearch = orch
+	executor.cornerstoneWebSearch = orch
 
 	raw := executor.Execute(context.Background(), client.ToolCall{
 		ID:   "call_1",
 		Type: "function",
 		Function: client.ToolCallFunction{
-			Name:      "web_search",
+			Name:      cornerstoneWebSearchToolName,
 			Arguments: `{"query":"hello"}`,
 		},
 	}, chatToolContext{})
 
-	result, payload := decodeWebSearchToolResult(t, raw)
+	result, payload := decodeCornerstoneWebSearchToolResult(t, raw)
 	if !result.OK {
 		t.Fatalf("tool ok=false error=%q", result.Error)
+	}
+	if result.Tool != cornerstoneWebSearchToolName {
+		t.Fatalf("result.tool=%q want %q", result.Tool, cornerstoneWebSearchToolName)
 	}
 	if payload.Query != "hello" {
 		t.Fatalf("payload.query=%q want hello", payload.Query)
@@ -173,5 +188,24 @@ func TestChatTool_WebSearch_Integration(t *testing.T) {
 	}
 	if gotReq["query"] != "hello" {
 		t.Fatalf("req.query=%v want hello", gotReq["query"])
+	}
+}
+
+func TestChatTool_CornerstoneWebSearch_LegacyToolNameAlias(t *testing.T) {
+	executor := newChatToolExecutor()
+	executor.configManager = config.NewManager(filepath.Join(t.TempDir(), "config.json"))
+	executor.cornerstoneWebSearch = search.NewOrchestrator(search.NewRegistry(), nil)
+
+	result := executor.ExecuteResult(context.Background(), client.ToolCall{
+		ID:   "call_legacy",
+		Type: "function",
+		Function: client.ToolCallFunction{
+			Name:      legacyWebSearchToolName,
+			Arguments: `{"query":"hello"}`,
+		},
+	}, chatToolContext{})
+
+	if result.Tool != cornerstoneWebSearchToolName {
+		t.Fatalf("result.Tool=%q want %q", result.Tool, cornerstoneWebSearchToolName)
 	}
 }

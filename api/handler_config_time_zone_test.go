@@ -104,9 +104,9 @@ func TestHandleConfig_ToolTogglesRoundTripAndProvidersExposeThem(t *testing.T) {
 
 	body, err := json.Marshal(map[string]interface{}{
 		"tool_toggles": map[string]bool{
-			"get_time":            false,
-			"web_search":          false,
-			"red_packet_received": false,
+			"get_time":              false,
+			legacyWebSearchToolName: false,
+			"red_packet_received":   false,
 		},
 	})
 	if err != nil {
@@ -125,8 +125,11 @@ func TestHandleConfig_ToolTogglesRoundTripAndProvidersExposeThem(t *testing.T) {
 	if saved["get_time"] {
 		t.Fatal("saved get_time toggle = true, want false")
 	}
-	if saved["web_search"] {
-		t.Fatal("saved web_search toggle = true, want false")
+	if saved[cornerstoneWebSearchToolName] {
+		t.Fatalf("saved %s toggle = true, want false", cornerstoneWebSearchToolName)
+	}
+	if _, ok := saved[legacyWebSearchToolName]; ok {
+		t.Fatalf("saved legacy toggle %q unexpectedly preserved", legacyWebSearchToolName)
 	}
 	if !saved["send_pat"] {
 		t.Fatal("saved send_pat toggle = false, want true by default")
@@ -155,6 +158,9 @@ func TestHandleConfig_ToolTogglesRoundTripAndProvidersExposeThem(t *testing.T) {
 	if configResp.Data.ToolToggles["get_time"] {
 		t.Fatal("GET get_time toggle = true, want false")
 	}
+	if configResp.Data.ToolToggles[cornerstoneWebSearchToolName] {
+		t.Fatalf("GET %s toggle = true, want false", cornerstoneWebSearchToolName)
+	}
 	if !configResp.Data.ToolToggles["send_red_packet"] {
 		t.Fatal("GET send_red_packet toggle = false, want true")
 	}
@@ -179,8 +185,8 @@ func TestHandleConfig_ToolTogglesRoundTripAndProvidersExposeThem(t *testing.T) {
 	if !providersResp.Success {
 		t.Fatalf("providers response success = false, body=%s", providersRec.Body.String())
 	}
-	if providersResp.Data.ToolToggles["web_search"] {
-		t.Fatal("providers web_search toggle = true, want false")
+	if providersResp.Data.ToolToggles[cornerstoneWebSearchToolName] {
+		t.Fatalf("providers %s toggle = true, want false", cornerstoneWebSearchToolName)
 	}
 	if !providersResp.Data.ToolToggles["get_weather"] {
 		t.Fatal("providers get_weather toggle = false, want true")

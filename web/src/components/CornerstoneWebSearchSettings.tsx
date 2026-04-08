@@ -1,18 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import {
-    webSearchService,
-    type WebSearchProviderConfig,
-    type WebSearchProviderInfo,
-    type WebSearchSettings,
-} from '../services/webSearchService'
+    cornerstoneWebSearchService,
+    type CornerstoneWebSearchProviderConfig,
+    type CornerstoneWebSearchProviderInfo,
+    type CornerstoneWebSearchSettings,
+} from '../services/cornerstoneWebSearchService'
 import { useT } from '../contexts/I18nContext'
 import { NumericInput } from './NumericInput'
 import { CustomSelect, type SelectOption } from './provider'
 import { centerModalVariants, drawerVariants, overlayVariants } from '../utils/motion'
 import './ProviderSettings.css'
 
-interface WebSearchSettingsProps {
+interface CornerstoneWebSearchSettingsProps {
     onBack: () => void
 }
 
@@ -29,7 +29,7 @@ const ZHIPU_SEARCH_ENGINE_OPTIONS: SelectOption[] = [
     { value: 'search_pro_quark', label: 'search_pro_quark' },
 ]
 
-const WebSearchSettingsPanel: React.FC<WebSearchSettingsProps> = ({ onBack }) => {
+const CornerstoneWebSearchSettingsPanel: React.FC<CornerstoneWebSearchSettingsProps> = ({ onBack }) => {
     const { t } = useT()
 
     const [loading, setLoading] = useState(true)
@@ -37,8 +37,8 @@ const WebSearchSettingsPanel: React.FC<WebSearchSettingsProps> = ({ onBack }) =>
     const [message, setMessage] = useState('')
     const [messageType, setMessageType] = useState<'success' | 'error'>('success')
 
-    const [availableProviders, setAvailableProviders] = useState<WebSearchProviderInfo[]>([])
-    const [providers, setProviders] = useState<Record<string, WebSearchProviderConfig>>({})
+    const [availableProviders, setAvailableProviders] = useState<CornerstoneWebSearchProviderInfo[]>([])
+    const [providers, setProviders] = useState<Record<string, CornerstoneWebSearchProviderConfig>>({})
 
     const [activeProviderId, setActiveProviderId] = useState('')
     const [maxResults, setMaxResults] = useState(5)
@@ -93,7 +93,10 @@ const WebSearchSettingsPanel: React.FC<WebSearchSettingsProps> = ({ onBack }) =>
         }, 2000)
     }
 
-    const syncActiveProviderFields = (id: string, allProviders: Record<string, WebSearchProviderConfig>) => {
+    const syncActiveProviderFields = (
+        id: string,
+        allProviders: Record<string, CornerstoneWebSearchProviderConfig>
+    ) => {
         const cfg = allProviders[id] || {}
         setApiHost(cfg.api_host || '')
         setSearchEngine(id === 'zhipu' ? cfg.search_engine || 'search_std' : 'search_std')
@@ -107,7 +110,7 @@ const WebSearchSettingsPanel: React.FC<WebSearchSettingsProps> = ({ onBack }) =>
     const loadData = async () => {
         setLoading(true)
         try {
-            const settings = await webSearchService.getSettings()
+            const settings = await cornerstoneWebSearchService.getSettings()
             setAvailableProviders(settings.available_providers || [])
             setProviders(settings.providers || {})
             setActiveProviderId(settings.active_provider_id || '')
@@ -137,9 +140,9 @@ const WebSearchSettingsPanel: React.FC<WebSearchSettingsProps> = ({ onBack }) =>
         if (saving) return
         setSaving(true)
         try {
-            const providersPatch: Record<string, WebSearchProviderConfig> = {}
+            const providersPatch: Record<string, CornerstoneWebSearchProviderConfig> = {}
             if (activeProviderId.trim() !== '') {
-                const providerPatch: WebSearchProviderConfig = {}
+                const providerPatch: CornerstoneWebSearchProviderConfig = {}
                 if (showApiHostField) {
                     providerPatch.api_host = apiHost.trim()
                 }
@@ -160,7 +163,7 @@ const WebSearchSettingsPanel: React.FC<WebSearchSettingsProps> = ({ onBack }) =>
                 }
             }
 
-            const settingsPatch: Partial<WebSearchSettings> = {
+            const settingsPatch: Partial<CornerstoneWebSearchSettings> = {
                 active_provider_id: activeProviderId,
                 max_results: maxResults,
                 exclude_domains: splitExcludeDomains(excludeDomainsText),
@@ -170,7 +173,7 @@ const WebSearchSettingsPanel: React.FC<WebSearchSettingsProps> = ({ onBack }) =>
                 ...(Object.keys(providersPatch).length > 0 ? { providers: providersPatch } : {}),
             }
 
-            const updated = await webSearchService.updateSettings(settingsPatch)
+            const updated = await cornerstoneWebSearchService.updateSettings(settingsPatch)
 
             setAvailableProviders(updated.available_providers || [])
             setProviders(updated.providers || {})
@@ -413,4 +416,4 @@ const WebSearchSettingsPanel: React.FC<WebSearchSettingsProps> = ({ onBack }) =>
     )
 }
 
-export default WebSearchSettingsPanel
+export default CornerstoneWebSearchSettingsPanel

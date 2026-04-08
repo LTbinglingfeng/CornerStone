@@ -96,8 +96,8 @@ func TestGetChatTools_IncludesTimeAndClawBotKeepsReadOnlyTools(t *testing.T) {
 	}
 
 	clawBotTools = getChatTools(chatToolOptions{
-		Channel:          chatToolChannelClawBot,
-		WebSearchEnabled: true,
+		Channel:                     chatToolChannelClawBot,
+		CornerstoneWebSearchEnabled: true,
 	})
 	if len(clawBotTools) != 5 {
 		t.Fatalf("clawbot tools len with web search = %d, want 5", len(clawBotTools))
@@ -107,14 +107,14 @@ func TestGetChatTools_IncludesTimeAndClawBotKeepsReadOnlyTools(t *testing.T) {
 	for _, tool := range clawBotTools {
 		names[tool.Function.Name] = struct{}{}
 	}
-	if _, ok := names["web_search"]; !ok {
-		t.Fatalf("clawbot tools = %#v, want web_search when enabled", clawBotTools)
+	if _, ok := names[cornerstoneWebSearchToolName]; !ok {
+		t.Fatalf("clawbot tools = %#v, want %s when enabled", clawBotTools, cornerstoneWebSearchToolName)
 	}
 
 	clawBotTools = getChatTools(chatToolOptions{
-		Channel:            chatToolChannelClawBot,
-		WebSearchEnabled:   true,
-		WriteMemoryEnabled: true,
+		Channel:                     chatToolChannelClawBot,
+		CornerstoneWebSearchEnabled: true,
+		WriteMemoryEnabled:          true,
 	})
 	if len(clawBotTools) != 6 {
 		t.Fatalf("clawbot tools len with web search and write memory = %d, want 6", len(clawBotTools))
