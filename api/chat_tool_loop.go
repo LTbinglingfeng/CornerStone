@@ -91,6 +91,19 @@ func runChatWithToolLoop(
 
 		resp.Choices[0].Message = assistant
 
+		if len(assistant.ToolCalls) == 0 &&
+			strings.TrimSpace(assistant.Content) == "" &&
+			strings.TrimSpace(assistant.ReasoningContent) == "" &&
+			len(assistant.ImagePaths) == 0 &&
+			len(assistant.TTSAudioPaths) == 0 {
+			logging.Errorf("tool loop received empty assistant response: model=%s resp=%s", baseReq.Model, resp.ID)
+			return &toolLoopResult{
+				FinalResponse: resp,
+				NewMessages:   newMessages,
+				ToolStepsUsed: toolStepsUsed,
+			}, fmt.Errorf("empty assistant response")
+		}
+
 		conversation = append(conversation, assistant)
 		newMessages = append(newMessages, assistant)
 

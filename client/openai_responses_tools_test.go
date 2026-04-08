@@ -1,6 +1,10 @@
 package client
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -65,5 +69,90 @@ func TestBuildOpenAIResponsesRequest_EncodesToolMessages(t *testing.T) {
 	}
 	if !foundOutput {
 		t.Fatalf("expected function_call_output item")
+	}
+}
+
+func TestOpenAIResponsesClientChat_ParsesSSEBody(t *testing.T) {
+	sse := strings.Join([]string{
+		"event: response.created",
+		`data: {"type":"response.created","response":{"id":"resp_test","created_at":123,"model":"gpt-test"}}`,
+		"",
+		"event: response.output_text.delta",
+		`data: {"type":"response.output_text.delta","delta":"hello"}`,
+		"",
+		"event: response.output_text.done",
+		`data: {"type":"response.output_text.done","text":"hello"}`,
+		"",
+		"event: response.completed",
+		`data: {"type":"response.completed","response":{"id":"resp_test","created_at":123,"model":"gpt-test","status":"completed"}}`,
+		"",
+		"data: [DONE]",
+		"",
+	}, "\n")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(sse))
+	}))
+	defer srv.Close()
+
+	c := NewResponsesClient(srv.URL, "test")
+	resp, err := c.Chat(context.Background(), ChatRequest{
+		Model:    "gpt-test",
+		Messages: []Message{{Role: "user", Content: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("Chat err: %v", err)
+	}
+	if resp == nil || len(resp.Choices) == 0 {
+		t.Fatalf("expected non-empty response")
+	}
+	if got := resp.Choices[0].Message.Content; got != "hello" {
+		t.Fatalf("content = %q, want %q", got, "hello")
+	}
+	if got := resp.ID; got != "resp_test" {
+		t.Fatalf("resp id = %q, want %q", got, "resp_test")
+	}
+}
+
+func TestOpenAIResponsesClientChat_ParsesSSEBodyEvenWhenContentTypeIsJSON(t *testing.T) {
+	sse := strings.Join([]string{
+		"event: response.created",
+		`data: {"type":"response.created","response":{"id":"resp_test","created_at":123,"model":"gpt-test"}}`,
+		"",
+		"event: response.output_text.done",
+		`data: {"type":"response.output_text.done","text":"hello"}`,
+		"",
+		"data: [DONE]",
+		"",
+	}, "\n")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(sse))
+	}))
+	defer srv.Close()
+
+	c := NewResponsesClient(srv.URL, "test")
+	resp, err := c.Chat(context.Background(), ChatRequest{
+		Model:    "gpt-test",
+		Messages: []Message{{Role: "user", Content: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("Chat err: %v", err)
+	}
+	if resp == nil || len(resp.Choices) == 0 {
+		t.Fatalf("expected non-empty response")
+	}
+	if got := resp.Choices[0].Message.Content; got != "hello" {
+		t.Fatalf("content = %q, want %q", got, "hello")
 	}
 }

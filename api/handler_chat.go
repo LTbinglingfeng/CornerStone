@@ -625,6 +625,9 @@ func convertChatMessages(messages []storage.ChatMessage) []client.Message {
 	}
 	converted := make([]client.Message, 0, len(messages))
 	for _, msg := range messages {
+		if shouldDropEmptyAssistantStorageMessage(msg) {
+			continue
+		}
 		content, imagePaths := buildChatMessageModelInput(msg)
 		converted = append(converted, client.Message{
 			Role:             msg.Role,
@@ -636,6 +639,28 @@ func convertChatMessages(messages []storage.ChatMessage) []client.Message {
 		})
 	}
 	return converted
+}
+
+func shouldDropEmptyAssistantStorageMessage(msg storage.ChatMessage) bool {
+	if strings.TrimSpace(msg.Role) != "assistant" {
+		return false
+	}
+	if strings.TrimSpace(msg.Content) != "" {
+		return false
+	}
+	if strings.TrimSpace(msg.ReasoningContent) != "" {
+		return false
+	}
+	if len(msg.ToolCalls) > 0 {
+		return false
+	}
+	if len(msg.ImagePaths) > 0 {
+		return false
+	}
+	if len(msg.TTSAudioPaths) > 0 {
+		return false
+	}
+	return true
 }
 
 func buildChatMessageModelInput(msg storage.ChatMessage) (string, []string) {

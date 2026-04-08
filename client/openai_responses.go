@@ -13,6 +13,8 @@ import (
 	"strings"
 )
 
+const maxChatBodyBytes = 50 << 20 // 50MB
+
 type openAIResponsesRequest struct {
 	Model           string                    `json:"model"`
 	Input           interface{}               `json:"input"`
@@ -142,6 +144,21 @@ type openAIResponsesStreamTextDeltaEvent struct {
 	Delta string `json:"delta"`
 }
 
+type openAIResponsesStreamTextDoneEvent struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+type openAIResponsesStreamResponseEvent struct {
+	Type     string `json:"type"`
+	Response struct {
+		ID        string `json:"id"`
+		CreatedAt int64  `json:"created_at"`
+		Model     string `json:"model"`
+		Status    string `json:"status"`
+	} `json:"response"`
+}
+
 type openAIResponsesToolCallState struct {
 	CallID             string
 	ItemID             string
@@ -213,10 +230,33 @@ func (c *OpenAIResponsesClient) Chat(ctx context.Context, req ChatRequest) (*Cha
 		return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(bodyBytes))
 	}
 
+	bodyBytes, errReadBody := io.ReadAll(io.LimitReader(resp.Body, maxChatBodyBytes+1))
+	if errReadBody != nil {
+		logging.Errorf("openai_responses response read failed: model=%s err=%v", req.Model, errReadBody)
+		return nil, fmt.Errorf("read response: %w", errReadBody)
+	}
+	if len(bodyBytes) > maxChatBodyBytes {
+		logging.Errorf("openai_responses response too large: model=%s bytes=%d", req.Model, len(bodyBytes))
+		return nil, fmt.Errorf("response too large")
+	}
+
+	contentType := strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Type")))
+	looksLikeSSE := strings.Contains(contentType, "text/event-stream") || bodyLooksLikeSSE(bodyBytes)
+	if looksLikeSSE {
+		if !strings.Contains(contentType, "text/event-stream") {
+			logging.Warnf("openai_responses Chat got SSE body with Content-Type=%q: model=%s", resp.Header.Get("Content-Type"), req.Model)
+		}
+		parsed, errParse := parseOpenAIResponsesSSEToChatResponse(bytes.NewReader(bodyBytes), req.Model)
+		if errParse == nil {
+			return parsed, nil
+		}
+		logging.Warnf("openai_responses SSE parse failed, falling back to JSON: model=%s err=%v", req.Model, errParse)
+	}
+
 	var rawResp openAIResponsesResponse
-	if errDecode := json.NewDecoder(resp.Body).Decode(&rawResp); errDecode != nil {
-		logging.Errorf("openai_responses response decode failed: model=%s err=%v", req.Model, errDecode)
-		return nil, fmt.Errorf("decode response: %w", errDecode)
+	if errUnmarshal := json.Unmarshal(bodyBytes, &rawResp); errUnmarshal != nil {
+		logging.Errorf("openai_responses response decode failed: model=%s err=%v body=%s", req.Model, errUnmarshal, logging.Truncate(string(bodyBytes), 200))
+		return nil, fmt.Errorf("decode response: %w", errUnmarshal)
 	}
 	if rawResp.Error != nil {
 		logging.Errorf(
@@ -452,6 +492,277 @@ func (c *OpenAIResponsesClient) ChatStream(ctx context.Context, req ChatRequest,
 	}
 
 	return scanner.Err()
+}
+
+func bodyLooksLikeSSE(body []byte) bool {
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) == 0 {
+		return false
+	}
+	return bytes.HasPrefix(trimmed, []byte("event:")) || bytes.HasPrefix(trimmed, []byte("data:"))
+}
+
+func parseOpenAIResponsesSSEToChatResponse(r io.Reader, fallbackModel string) (*ChatResponse, error) {
+	scanner := bufio.NewScanner(r)
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, maxStreamLineBytes)
+
+	type toolCallAgg struct {
+		OutputIndex int
+		CallID      string
+		ItemID      string
+		Name        string
+		ArgsDelta   strings.Builder
+		ArgsDone    string
+	}
+	toolCalls := make(map[int]*toolCallAgg)
+
+	responseID := ""
+	createdAt := int64(0)
+	model := ""
+
+	var textDelta strings.Builder
+	textDone := ""
+	textFromItemDone := ""
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "event:") {
+			continue
+		}
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+
+		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if data == "" {
+			continue
+		}
+		if data == "[DONE]" {
+			break
+		}
+
+		var baseEvent openAIResponsesStreamEvent
+		if errUnmarshal := json.Unmarshal([]byte(data), &baseEvent); errUnmarshal != nil {
+			logging.Warnf("openai_responses sse event unmarshal failed: model=%s data=%s err=%v", fallbackModel, logging.Truncate(data, 200), errUnmarshal)
+			continue
+		}
+
+		switch baseEvent.Type {
+		case "response.created", "response.completed":
+			var ev openAIResponsesStreamResponseEvent
+			if errUnmarshal := json.Unmarshal([]byte(data), &ev); errUnmarshal != nil {
+				continue
+			}
+			if responseID == "" && strings.TrimSpace(ev.Response.ID) != "" {
+				responseID = strings.TrimSpace(ev.Response.ID)
+			}
+			if createdAt == 0 && ev.Response.CreatedAt != 0 {
+				createdAt = ev.Response.CreatedAt
+			}
+			if model == "" && strings.TrimSpace(ev.Response.Model) != "" {
+				model = strings.TrimSpace(ev.Response.Model)
+			}
+
+		case "response.output_text.delta":
+			var ev openAIResponsesStreamTextDeltaEvent
+			if errUnmarshal := json.Unmarshal([]byte(data), &ev); errUnmarshal != nil {
+				continue
+			}
+			textDelta.WriteString(ev.Delta)
+
+		case "response.output_text.done":
+			var ev openAIResponsesStreamTextDoneEvent
+			if errUnmarshal := json.Unmarshal([]byte(data), &ev); errUnmarshal != nil {
+				continue
+			}
+			if strings.TrimSpace(ev.Text) != "" {
+				textDone = ev.Text
+			}
+
+		case "response.output_item.added", "response.output_item.done":
+			var ev openAIResponsesStreamOutputItemEvent
+			if errUnmarshal := json.Unmarshal([]byte(data), &ev); errUnmarshal != nil {
+				continue
+			}
+
+			var itemType struct {
+				Type string `json:"type"`
+				Role string `json:"role"`
+			}
+			if errUnmarshal := json.Unmarshal(ev.Item, &itemType); errUnmarshal != nil {
+				continue
+			}
+
+			switch itemType.Type {
+			case "function_call":
+				var item openAIResponsesOutputItem
+				if errUnmarshal := json.Unmarshal(ev.Item, &item); errUnmarshal != nil {
+					continue
+				}
+				state := toolCalls[ev.OutputIndex]
+				if state == nil {
+					state = &toolCallAgg{OutputIndex: ev.OutputIndex}
+					toolCalls[ev.OutputIndex] = state
+				}
+				if state.CallID == "" && strings.TrimSpace(item.CallID) != "" {
+					state.CallID = strings.TrimSpace(item.CallID)
+				}
+				if state.Name == "" && strings.TrimSpace(item.Name) != "" {
+					state.Name = strings.TrimSpace(item.Name)
+				}
+				if strings.TrimSpace(item.Arguments) != "" && strings.TrimSpace(state.ArgsDone) == "" && state.ArgsDelta.Len() == 0 {
+					state.ArgsDone = item.Arguments
+				}
+
+			case "message":
+				if baseEvent.Type != "response.output_item.done" || strings.TrimSpace(itemType.Role) != "assistant" {
+					continue
+				}
+				var item openAIResponsesOutputItem
+				if errUnmarshal := json.Unmarshal(ev.Item, &item); errUnmarshal != nil {
+					continue
+				}
+				var b strings.Builder
+				for _, part := range item.Content {
+					if part.Type == "output_text" {
+						b.WriteString(part.Text)
+					}
+				}
+				if strings.TrimSpace(b.String()) != "" {
+					textFromItemDone = b.String()
+				}
+			}
+
+		case "response.function_call_arguments.delta":
+			var ev openAIResponsesStreamFunctionArgsDeltaEvent
+			if errUnmarshal := json.Unmarshal([]byte(data), &ev); errUnmarshal != nil {
+				continue
+			}
+			state := toolCalls[ev.OutputIndex]
+			if state == nil {
+				state = &toolCallAgg{OutputIndex: ev.OutputIndex}
+				toolCalls[ev.OutputIndex] = state
+			}
+			if state.ItemID == "" && strings.TrimSpace(ev.ItemID) != "" {
+				state.ItemID = strings.TrimSpace(ev.ItemID)
+			}
+			state.ArgsDelta.WriteString(ev.Delta)
+
+		case "response.function_call_arguments.done":
+			var ev openAIResponsesStreamFunctionArgsDoneEvent
+			if errUnmarshal := json.Unmarshal([]byte(data), &ev); errUnmarshal != nil {
+				continue
+			}
+			state := toolCalls[ev.OutputIndex]
+			if state == nil {
+				state = &toolCallAgg{OutputIndex: ev.OutputIndex}
+				toolCalls[ev.OutputIndex] = state
+			}
+			if state.ItemID == "" && strings.TrimSpace(ev.ItemID) != "" {
+				state.ItemID = strings.TrimSpace(ev.ItemID)
+			}
+			if state.Name == "" && strings.TrimSpace(ev.Name) != "" {
+				state.Name = strings.TrimSpace(ev.Name)
+			}
+			if strings.TrimSpace(ev.Arguments) != "" {
+				state.ArgsDone = ev.Arguments
+			}
+
+		case "error":
+			var ev openAIResponsesStreamErrorEvent
+			if errUnmarshal := json.Unmarshal([]byte(data), &ev); errUnmarshal != nil {
+				return nil, fmt.Errorf("stream error")
+			}
+			code := ""
+			if ev.Code != nil {
+				code = strings.TrimSpace(*ev.Code)
+			}
+			if code == "" {
+				return nil, fmt.Errorf("stream error: %s", ev.Message)
+			}
+			return nil, fmt.Errorf("stream error (%s): %s", code, ev.Message)
+		}
+	}
+
+	if errScan := scanner.Err(); errScan != nil {
+		return nil, errScan
+	}
+
+	finalText := ""
+	switch {
+	case strings.TrimSpace(textFromItemDone) != "":
+		finalText = textFromItemDone
+	case strings.TrimSpace(textDone) != "":
+		finalText = textDone
+	default:
+		finalText = textDelta.String()
+	}
+
+	indexes := make([]int, 0, len(toolCalls))
+	for index := range toolCalls {
+		indexes = append(indexes, index)
+	}
+	sort.Ints(indexes)
+	mergedToolCalls := make([]ToolCall, 0, len(indexes))
+	for _, index := range indexes {
+		state := toolCalls[index]
+		if state == nil {
+			continue
+		}
+		name := strings.TrimSpace(state.Name)
+		if name == "" {
+			continue
+		}
+		id := strings.TrimSpace(state.CallID)
+		if id == "" {
+			id = strings.TrimSpace(state.ItemID)
+		}
+		if id == "" {
+			id = fmt.Sprintf("call_%d", index)
+		}
+		args := state.ArgsDelta.String()
+		if strings.TrimSpace(state.ArgsDone) != "" {
+			args = state.ArgsDone
+		}
+		mergedToolCalls = append(mergedToolCalls, ToolCall{
+			ID:   id,
+			Type: "function",
+			Function: ToolCallFunction{
+				Name:      name,
+				Arguments: args,
+			},
+		})
+	}
+
+	if strings.TrimSpace(model) == "" {
+		model = fallbackModel
+	}
+	finishReason := "stop"
+	if len(mergedToolCalls) > 0 {
+		finishReason = "tool_calls"
+	}
+	return &ChatResponse{
+		ID:      responseID,
+		Object:  "chat.completion",
+		Created: createdAt,
+		Model:   model,
+		Choices: []Choice{
+			{
+				Index: 0,
+				Message: Message{
+					Role:      "assistant",
+					Content:   finalText,
+					ToolCalls: mergedToolCalls,
+				},
+				FinishReason: finishReason,
+			},
+		},
+		Usage: Usage{},
+	}, nil
 }
 
 func handleResponsesOutputItemAdded(ev openAIResponsesStreamOutputItemEvent, toolCalls map[int]*openAIResponsesToolCallState, model string, callback func(chunk StreamChunk) error) error {

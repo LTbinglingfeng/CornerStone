@@ -262,7 +262,13 @@ func buildGeneratedReplyStorageMessages(
 		if loopResult == nil || len(loopResult.NewMessages) == 0 {
 			return storageMessages
 		}
+		keepNoReplySilentAssistant := containsNoReplyToolCall(loopResult.NewMessages)
+		lastIndex := len(loopResult.NewMessages) - 1
+		storedIndex := 0
 		for index, msg := range loopResult.NewMessages {
+			if shouldDropEmptyAssistantClientMessage(msg) && !(keepNoReplySilentAssistant && index == lastIndex) {
+				continue
+			}
 			storageMessages = append(storageMessages, storage.ChatMessage{
 				Role:             msg.Role,
 				Content:          msg.Content,
@@ -271,9 +277,35 @@ func buildGeneratedReplyStorageMessages(
 				ToolCallID:       msg.ToolCallID,
 				ImagePaths:       msg.ImagePaths,
 				TTSAudioPaths:    msg.TTSAudioPaths,
-				Timestamp:        baseTime.Add(time.Millisecond * time.Duration(index)),
+				Timestamp:        baseTime.Add(time.Millisecond * time.Duration(storedIndex)),
 			})
+			storedIndex++
 		}
 		return storageMessages
 	}
+}
+
+func shouldDropEmptyAssistantClientMessage(msg client.Message) bool {
+	if strings.TrimSpace(msg.Role) != "assistant" {
+		return false
+	}
+	if strings.TrimSpace(msg.Content) != "" {
+		return false
+	}
+	if strings.TrimSpace(msg.ReasoningContent) != "" {
+		return false
+	}
+	if len(msg.ToolCalls) > 0 {
+		return false
+	}
+	if strings.TrimSpace(msg.ToolCallID) != "" {
+		return false
+	}
+	if len(msg.ImagePaths) > 0 {
+		return false
+	}
+	if len(msg.TTSAudioPaths) > 0 {
+		return false
+	}
+	return true
 }
