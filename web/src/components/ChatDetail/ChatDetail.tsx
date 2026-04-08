@@ -116,8 +116,8 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     const messagesRef = useRef(messages)
     const messagesTotalRef = useRef(messagesTotal)
     const pollInFlightRef = useRef(false)
-    const pollBusyRef = useRef(true)
-    const lastPollBusyRef = useRef(true)
+    const pollBusyRef = useRef(false)
+    const lastPollBusyRef = useRef(false)
 
     useKeyboardOffset({ containerRef, messageListRef })
 
@@ -217,6 +217,10 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         setSelectTextState(null)
         setActiveRedPacket(null)
         setPacketStep('idle')
+        messagesRef.current = []
+        messagesTotalRef.current = 0
+        pollBusyRef.current = false
+        lastPollBusyRef.current = false
     }, [sessionId])
 
     useEffect(() => {
