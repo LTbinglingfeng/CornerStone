@@ -290,6 +290,13 @@ func (h *Handler) SetExactTimeService(service exactTimeProvider) {
 	h.exactTimeService = service
 }
 
+func (h *Handler) now() time.Time {
+	if h == nil || h.exactTimeService == nil {
+		return time.Now()
+	}
+	return h.exactTimeService.Now()
+}
+
 func (h *Handler) SetReminderService(service *ReminderService) {
 	h.reminderService = service
 }

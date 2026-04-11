@@ -833,7 +833,7 @@ func (s *ClawBotService) processIncomingBatch(ctx context.Context, cfg config.Cl
 		return
 	}
 
-	now := time.Now()
+	now := s.handler.now()
 	storageMessages := make([]storage.ChatMessage, 0, len(messages))
 	for index, pendingMessage := range messages {
 		trimmed := strings.TrimSpace(pendingMessage.Text)

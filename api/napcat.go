@@ -1336,7 +1336,7 @@ func (s *NapCatService) processIncomingBatch(ctx context.Context, cfg config.Nap
 		return
 	}
 
-	now := time.Now()
+	now := s.handler.now()
 	storageMessages := make([]storage.ChatMessage, 0, len(messages))
 	for index, pendingMessage := range messages {
 		quote, errQuote := s.resolveQuotedMessage(ctx, source, pendingMessage.ReplyMessageID)

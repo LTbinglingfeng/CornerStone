@@ -206,7 +206,7 @@ func (h *Handler) generateSessionReply(ctx context.Context, options sessionReply
 		noReplySelected = containsNoReplyToolCall(loopResult.NewMessages)
 	}
 
-	storageMessages := buildGeneratedReplyStorageMessages(loopResult, text, options.PersistMode)
+	storageMessages := buildGeneratedReplyStorageMessages(loopResult, text, options.PersistMode, h.now())
 
 	return &generatedSessionReply{
 		Text:            text,
@@ -234,12 +234,15 @@ func buildGeneratedReplyStorageMessages(
 	loopResult *toolLoopResult,
 	text string,
 	persistMode sessionReplyPersistMode,
+	baseTime time.Time,
 ) []storage.ChatMessage {
 	if persistMode == "" {
 		persistMode = sessionReplyPersistAll
 	}
 
-	baseTime := time.Now()
+	if baseTime.IsZero() {
+		baseTime = time.Now()
+	}
 	switch persistMode {
 	case sessionReplyPersistFinalAssistantOnly:
 		text = strings.TrimSpace(text)

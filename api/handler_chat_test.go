@@ -1549,6 +1549,185 @@ func TestIdleGreetingService_FireTask_SkipsWhenDisabledAtFireTime(t *testing.T) 
 	}
 }
 
+func TestIdleGreetingService_FireTask_SkipsWhenTooLateAfterDueAt(t *testing.T) {
+	var requestCount int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/chat/completions" {
+			requestCount++
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	_, _, chatMgr, service, manager, exactTimeSvc := newIdleGreetingTestHarness(t, server.URL)
+
+	if _, err := chatMgr.CreateSession("session-1", "Alice", "prompt-1", "Alice"); err != nil {
+		t.Fatalf("CreateSession failed: %v", err)
+	}
+	lastUserAt := exactTimeSvc.now.Add(-2 * time.Hour)
+	if err := chatMgr.AddMessages("session-1", []storage.ChatMessage{
+		{Role: "user", Content: "第一条", Timestamp: lastUserAt},
+	}); err != nil {
+		t.Fatalf("AddMessages failed: %v", err)
+	}
+
+	task, err := manager.UpsertPending(storage.IdleGreetingTask{
+		Channel:    storage.ReminderChannelWeb,
+		SessionID:  "session-1",
+		PromptID:   "prompt-1",
+		PromptName: "Alice",
+		Target: storage.ReminderTarget{
+			Kind: storage.ReminderTargetKindSession,
+		},
+		DueAt:      exactTimeSvc.now.Add(-idleGreetingMaxFireLag - 2*time.Second),
+		LastUserAt: lastUserAt,
+	})
+	if err != nil {
+		t.Fatalf("UpsertPending failed: %v", err)
+	}
+
+	if err := service.fireTask(context.Background(), task.ID); err != nil {
+		t.Fatalf("fireTask failed: %v", err)
+	}
+
+	record, ok := chatMgr.GetSession("session-1")
+	if !ok {
+		t.Fatal("session not found")
+	}
+	if len(record.Messages) != 1 {
+		t.Fatalf("message count = %d, want 1 unchanged user message", len(record.Messages))
+	}
+	if requestCount != 0 {
+		t.Fatalf("request count = %d, want 0", requestCount)
+	}
+	if len(manager.List()) != 0 {
+		t.Fatalf("manager tasks len = %d, want 0 after skip", len(manager.List()))
+	}
+}
+
+func TestIdleGreetingService_FireTask_SkipsWhenOutsideTimeWindowsAtFireTime(t *testing.T) {
+	var requestCount int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/chat/completions" {
+			requestCount++
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	_, configManager, chatMgr, service, manager, exactTimeSvc := newIdleGreetingTestHarness(t, server.URL)
+
+	location := time.FixedZone("CST", 8*3600)
+	exactTimeSvc.now = time.Date(2026, 4, 5, 22, 0, 10, 0, location)
+
+	cfg := configManager.Get()
+	cfg.IdleGreeting.TimeWindows = []config.IdleGreetingTimeWindow{
+		{Start: "09:00", End: "22:00"},
+	}
+	if err := configManager.Update(cfg); err != nil {
+		t.Fatalf("Update config failed: %v", err)
+	}
+
+	if _, err := chatMgr.CreateSession("session-1", "Alice", "prompt-1", "Alice"); err != nil {
+		t.Fatalf("CreateSession failed: %v", err)
+	}
+	lastUserAt := exactTimeSvc.now.Add(-2 * time.Hour)
+	if err := chatMgr.AddMessages("session-1", []storage.ChatMessage{
+		{Role: "user", Content: "第一条", Timestamp: lastUserAt},
+	}); err != nil {
+		t.Fatalf("AddMessages failed: %v", err)
+	}
+
+	task, err := manager.UpsertPending(storage.IdleGreetingTask{
+		Channel:    storage.ReminderChannelWeb,
+		SessionID:  "session-1",
+		PromptID:   "prompt-1",
+		PromptName: "Alice",
+		Target: storage.ReminderTarget{
+			Kind: storage.ReminderTargetKindSession,
+		},
+		DueAt:      exactTimeSvc.now.Add(-40 * time.Second),
+		LastUserAt: lastUserAt,
+	})
+	if err != nil {
+		t.Fatalf("UpsertPending failed: %v", err)
+	}
+
+	if err := service.fireTask(context.Background(), task.ID); err != nil {
+		t.Fatalf("fireTask failed: %v", err)
+	}
+
+	record, ok := chatMgr.GetSession("session-1")
+	if !ok {
+		t.Fatal("session not found")
+	}
+	if len(record.Messages) != 1 {
+		t.Fatalf("message count = %d, want 1 unchanged user message", len(record.Messages))
+	}
+	if requestCount != 0 {
+		t.Fatalf("request count = %d, want 0", requestCount)
+	}
+	if len(manager.List()) != 0 {
+		t.Fatalf("manager tasks len = %d, want 0 after skip", len(manager.List()))
+	}
+}
+
+func TestIdleGreetingService_Start_DropsOverdueTasks(t *testing.T) {
+	var requestCount int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/chat/completions" {
+			requestCount++
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	_, _, chatMgr, service, manager, exactTimeSvc := newIdleGreetingTestHarness(t, server.URL)
+
+	if _, err := chatMgr.CreateSession("session-1", "Alice", "prompt-1", "Alice"); err != nil {
+		t.Fatalf("CreateSession failed: %v", err)
+	}
+	lastUserAt := exactTimeSvc.now.Add(-2 * time.Hour)
+	if err := chatMgr.AddMessages("session-1", []storage.ChatMessage{
+		{Role: "user", Content: "第一条", Timestamp: lastUserAt},
+	}); err != nil {
+		t.Fatalf("AddMessages failed: %v", err)
+	}
+
+	if _, err := manager.UpsertPending(storage.IdleGreetingTask{
+		Channel:    storage.ReminderChannelWeb,
+		SessionID:  "session-1",
+		PromptID:   "prompt-1",
+		PromptName: "Alice",
+		Target: storage.ReminderTarget{
+			Kind: storage.ReminderTargetKindSession,
+		},
+		DueAt:      exactTimeSvc.now.Add(-time.Minute),
+		LastUserAt: lastUserAt,
+	}); err != nil {
+		t.Fatalf("UpsertPending failed: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	service.Start(ctx)
+
+	if len(manager.List()) != 0 {
+		t.Fatalf("manager tasks len = %d, want 0 after start drop", len(manager.List()))
+	}
+
+	record, ok := chatMgr.GetSession("session-1")
+	if !ok {
+		t.Fatal("session not found")
+	}
+	if len(record.Messages) != 1 {
+		t.Fatalf("message count = %d, want 1 unchanged user message", len(record.Messages))
+	}
+	if requestCount != 0 {
+		t.Fatalf("request count = %d, want 0", requestCount)
+	}
+}
+
 func TestIdleGreetingService_FireTask_WebPersistsFinalAssistantOnly(t *testing.T) {
 	var state struct {
 		mu       sync.Mutex
@@ -1966,6 +2145,7 @@ func TestIdleGreetingService_FireTask_DeletesAfterExhaustingRetries(t *testing.T
 		if tasks[0].Attempts != attempt {
 			t.Fatalf("after attempt %d task attempts = %d, want %d", attempt, tasks[0].Attempts, attempt)
 		}
+		exactTimeSvc.now = tasks[0].DueAt.Add(time.Second)
 	}
 
 	if err := service.fireTask(context.Background(), task.ID); err == nil {

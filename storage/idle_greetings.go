@@ -225,6 +225,17 @@ func (m *IdleGreetingManager) DeletePendingByKey(key string) error {
 	return m.saveLocked()
 }
 
+func (m *IdleGreetingManager) Clear() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if len(m.tasks) == 0 {
+		return nil
+	}
+	m.tasks = make(map[string]*IdleGreetingTask)
+	return m.saveLocked()
+}
+
 func (m *IdleGreetingManager) HasNewerTaskForKey(key string, lastUserAt time.Time, excludeID string) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -296,7 +307,7 @@ func (m *IdleGreetingManager) TryMarkFiring(id string, updatedAt time.Time) (*Id
 	return cloneIdleGreetingTask(task), true, nil
 }
 
-func (m *IdleGreetingManager) MarkPending(id string, updatedAt time.Time, lastError string) (*IdleGreetingTask, error) {
+func (m *IdleGreetingManager) MarkPending(id string, updatedAt time.Time, lastError string, nextDueAt time.Time) (*IdleGreetingTask, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -315,6 +326,9 @@ func (m *IdleGreetingManager) MarkPending(id string, updatedAt time.Time, lastEr
 
 	task.Status = IdleGreetingStatusPending
 	task.LastError = lastError
+	if !nextDueAt.IsZero() {
+		task.DueAt = nextDueAt
+	}
 	task.UpdatedAt = updatedAt
 
 	if errSave := m.saveLocked(); errSave != nil {

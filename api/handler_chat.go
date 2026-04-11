@@ -151,7 +151,7 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 			messagesToSave = req.Messages[existingMessageCount:]
 		}
 
-		now := time.Now()
+		now := h.now()
 		storageMessages := make([]storage.ChatMessage, 0, len(messagesToSave))
 		for index, msg := range messagesToSave {
 			if msg.Role != "user" {
@@ -335,7 +335,7 @@ func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiCli
 		// This closes the "side effects happened but history missing" gap when tool execution succeeded
 		// but a later model hop failed.
 		if saveHistory && loopResult != nil && len(loopResult.NewMessages) > 0 {
-			now := time.Now()
+			now := h.now()
 			storageMessages := make([]storage.ChatMessage, 0, len(loopResult.NewMessages))
 			for index, msg := range loopResult.NewMessages {
 				storageMessages = append(storageMessages, storage.ChatMessage{
@@ -388,7 +388,7 @@ func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiCli
 	}
 
 	// Prepare messages for persistence and frontend rendering.
-	now := time.Now()
+	now := h.now()
 	storageMessages := make([]storage.ChatMessage, 0, len(loopResult.NewMessages))
 	for index, msg := range loopResult.NewMessages {
 		storageMessages = append(storageMessages, storage.ChatMessage{
@@ -478,7 +478,7 @@ func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiCli
 		toolExecutor.cornerstoneWebSearch = newCornerstoneWebSearchOrchestrator(h.configManager.Get())
 	}
 
-	baseTime := time.Now()
+	baseTime := h.now()
 	messageCounter := 0
 	createdMessages := make([]storage.ChatMessage, 0, 4)
 	finalAssistantTimestamp := ""
@@ -980,7 +980,6 @@ type chatToolOptions struct {
 	ReminderFiring              bool
 	ToolToggles                 map[string]bool
 	RestrictToolNames           map[string]bool
-	StrictToggleFilter          bool
 }
 
 func getChatTools(options ...chatToolOptions) []client.Tool {

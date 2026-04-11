@@ -21,6 +21,12 @@ const (
 	idleGreetingScanInterval  = 30 * time.Second
 	idleGreetingProcessTimout = 2 * time.Minute
 	idleGreetingMaxRetries    = 3
+	// If we cannot fire a task close to its scheduled DueAt (e.g., process restart / machine sleep),
+	// treat it as missed and do not "catch up" by sending it later.
+	idleGreetingMaxFireLag = 2 * idleGreetingScanInterval
+
+	idleGreetingWorkerCount   = 4
+	idleGreetingTaskQueueSize = 128
 )
 
 type idleGreetingScheduleRequest struct {
@@ -45,9 +51,13 @@ type IdleGreetingService struct {
 	randomReader      io.Reader
 	scanInterval      time.Duration
 	processTimeout    time.Duration
+	maxFireLag        time.Duration
 
 	mu        sync.RWMutex
 	workerCtx context.Context
+
+	startOnce sync.Once
+	taskQueue chan string
 }
 
 func NewIdleGreetingService(handler *Handler, manager *storage.IdleGreetingManager, exactTimeService exactTimeProvider) *IdleGreetingService {
@@ -58,6 +68,7 @@ func NewIdleGreetingService(handler *Handler, manager *storage.IdleGreetingManag
 		randomReader:      rand.Reader,
 		scanInterval:      idleGreetingScanInterval,
 		processTimeout:    idleGreetingProcessTimout,
+		maxFireLag:        idleGreetingMaxFireLag,
 	}
 }
 
@@ -73,7 +84,63 @@ func (s *IdleGreetingService) Start(ctx context.Context) {
 	s.workerCtx = ctx
 	s.mu.Unlock()
 
+	s.startOnce.Do(func() {
+		s.mu.Lock()
+		if s.taskQueue == nil {
+			s.taskQueue = make(chan string, idleGreetingTaskQueueSize)
+		}
+		s.mu.Unlock()
+		for i := 0; i < idleGreetingWorkerCount; i++ {
+			go s.workerLoop(ctx)
+		}
+	})
+
+	// Do not fire any already-overdue tasks when starting up (restart safety).
+	s.dropDueTasksOnStart()
+
 	go s.run(ctx)
+}
+
+func (s *IdleGreetingService) workerLoop(ctx context.Context) {
+	if s == nil {
+		return
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case taskID := <-s.taskQueue:
+			if strings.TrimSpace(taskID) == "" {
+				continue
+			}
+			if err := s.fireTask(ctx, taskID); err != nil {
+				logging.Errorf("fire idle greeting failed: id=%s err=%v", taskID, err)
+			}
+		}
+	}
+}
+
+func (s *IdleGreetingService) dropDueTasksOnStart() {
+	if s == nil || s.manager == nil {
+		return
+	}
+
+	due := s.manager.ListDuePending(s.now())
+	if len(due) == 0 {
+		return
+	}
+
+	dropped := 0
+	for _, task := range due {
+		if err := s.manager.Delete(task.ID); err != nil && !errorsIsNotExist(err) {
+			logging.Warnf("drop idle greeting due task on start failed: id=%s err=%v", task.ID, err)
+			continue
+		}
+		dropped++
+	}
+	if dropped > 0 {
+		logging.Infof("dropped %d overdue idle greeting tasks on start", dropped)
+	}
 }
 
 func (s *IdleGreetingService) run(ctx context.Context) {
@@ -169,6 +236,15 @@ func (s *IdleGreetingService) scanDueTasks(ctx context.Context) {
 		return
 	}
 
+	currentConfig := config.DefaultConfig()
+	if s.handler != nil && s.handler.configManager != nil {
+		currentConfig = s.handler.configManager.Get()
+	}
+	if !currentConfig.IdleGreeting.Enabled {
+		_ = s.manager.Clear()
+		return
+	}
+
 	dueTasks := s.manager.ListDuePending(s.now())
 	for _, task := range dueTasks {
 		s.fireTaskAsync(ctx, task.ID)
@@ -190,6 +266,19 @@ func (s *IdleGreetingService) fireTaskAsync(ctx context.Context, taskID string) 
 		return
 	}
 
+	s.mu.RLock()
+	queue := s.taskQueue
+	s.mu.RUnlock()
+	if queue != nil {
+		select {
+		case queue <- strings.TrimSpace(taskID):
+		default:
+			// Queue is full; keep the task pending and let next scan pick it up.
+		}
+		return
+	}
+
+	// Fallback (mainly for tests that don't call Start).
 	go func() {
 		if err := s.fireTask(ctx, taskID); err != nil {
 			logging.Errorf("fire idle greeting failed: id=%s err=%v", taskID, err)
@@ -225,7 +314,8 @@ func (s *IdleGreetingService) fireTask(ctx context.Context, taskID string) error
 	if errProcess != nil {
 		failedAt := s.now()
 		if task.Attempts <= idleGreetingMaxRetries {
-			if _, errMark := s.manager.MarkPending(task.ID, failedAt, errProcess.Error()); errMark != nil {
+			nextDueAt := failedAt.Add(idleGreetingRetryBackoff(task.Attempts))
+			if _, errMark := s.manager.MarkPending(task.ID, failedAt, errProcess.Error(), nextDueAt); errMark != nil {
 				logging.Errorf("mark idle greeting pending for retry failed: id=%s err=%v", task.ID, errMark)
 				return errMark
 			}
@@ -276,6 +366,30 @@ func (s *IdleGreetingService) processTask(ctx context.Context, task *storage.Idl
 	if !currentConfig.IdleGreeting.Enabled {
 		return nil
 	}
+
+	firedAt := s.now()
+	if s.maxFireLag > 0 && !task.DueAt.IsZero() && firedAt.After(task.DueAt.Add(s.maxFireLag)) {
+		logging.Infof(
+			"idle greeting skipped late task: id=%s lag=%s channel=%s session=%s",
+			task.ID,
+			firedAt.Sub(task.DueAt).Truncate(time.Second),
+			task.Channel,
+			task.SessionID,
+		)
+		return nil
+	}
+	location := loadIdleGreetingLocation(currentConfig.TimeZone)
+	if !isIdleGreetingFireTimeAllowed(firedAt, currentConfig.IdleGreeting, location) {
+		logging.Infof(
+			"idle greeting skipped task outside time windows: id=%s channel=%s session=%s now=%s",
+			task.ID,
+			task.Channel,
+			task.SessionID,
+			firedAt.In(location).Format(time.RFC3339),
+		)
+		return nil
+	}
+
 	if s.manager != nil && s.manager.HasNewerTaskForKey(task.Key, task.LastUserAt, task.ID) {
 		return nil
 	}
@@ -334,10 +448,9 @@ func (s *IdleGreetingService) generateReply(
 		Channel:    reminderChannelToChatToolChannel(task.Channel),
 		Target:     task.Target,
 		ToolOptions: chatToolOptions{
-			Channel:            chatToolChannelDefault,
-			ToolToggles:        toolToggles,
-			RestrictToolNames:  restrictToolNames,
-			StrictToggleFilter: true,
+			Channel:           chatToolChannelDefault,
+			ToolToggles:       toolToggles,
+			RestrictToolNames: restrictToolNames,
 		},
 		ExtraSystemGuides: buildIdleGreetingSystemGuides(task.Channel, toolToggles),
 		EphemeralMessages: []client.Message{
@@ -582,6 +695,24 @@ func randomDurationBelow(limit time.Duration, reader io.Reader) (time.Duration, 
 	return time.Duration(n.Int64()), nil
 }
 
+func idleGreetingRetryBackoff(attempt int) time.Duration {
+	// attempt is already incremented in TryMarkFiring (first failure => attempt=1).
+	if attempt <= 1 {
+		return idleGreetingScanInterval
+	}
+
+	shift := attempt - 1
+	if shift > 6 {
+		shift = 6
+	}
+	delay := idleGreetingScanInterval * time.Duration(1<<shift)
+	maxDelay := 5 * time.Minute
+	if delay > maxDelay {
+		return maxDelay
+	}
+	return delay
+}
+
 func buildConcreteIdleGreetingWindow(
 	day time.Time,
 	window config.IdleGreetingTimeWindow,
@@ -664,6 +795,29 @@ func mergeIdleGreetingRanges(ranges []idleGreetingTimeRange) []idleGreetingTimeR
 func idleGreetingDayStart(value time.Time, location *time.Location) time.Time {
 	localValue := value.In(location)
 	return time.Date(localValue.Year(), localValue.Month(), localValue.Day(), 0, 0, 0, 0, location)
+}
+
+func isIdleGreetingFireTimeAllowed(now time.Time, idleConfig config.IdleGreetingConfig, location *time.Location) bool {
+	if now.IsZero() || location == nil || len(idleConfig.TimeWindows) == 0 {
+		return false
+	}
+
+	localNow := now.In(location)
+	dayStart := idleGreetingDayStart(localNow, location)
+	// Cross-midnight windows require checking both the current day and the previous day.
+	for _, day := range []time.Time{dayStart, dayStart.AddDate(0, 0, -1)} {
+		for _, window := range idleConfig.TimeWindows {
+			windowRange, ok := buildConcreteIdleGreetingWindow(day, window, location)
+			if !ok {
+				continue
+			}
+			// Inclusive start, exclusive end, consistent with pickIdleGreetingDueAt() semantics.
+			if !localNow.Before(windowRange.Start) && localNow.Before(windowRange.End) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func resolveIdleGreetingPrompt(
