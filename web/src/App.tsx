@@ -17,6 +17,7 @@ import {
     createSession,
     getErrorMessage,
     getAuthStatus,
+    getConfig,
     getPromptAvatarUrl,
     getSession,
     getSessions,
@@ -28,6 +29,10 @@ import { splitAssistantMessageContent } from './components/ChatDetail/utils'
 import { useToast } from './contexts/ToastContext'
 import { useT } from './contexts/I18nContext'
 import { formatNotificationBody, getNotificationsEnabled, isNotificationSupported } from './utils/notifications'
+import {
+    DEFAULT_ASSISTANT_MESSAGE_SPLIT_TOKEN,
+    resolveAssistantMessageSplitToken,
+} from './utils/assistantMessageSplit'
 import { slideTransition } from './utils/motion'
 import { buildChatRoute, getRouteState, normalizePathname, tabOrder, tabRoutes } from './utils/routes'
 import { logoBlackDataUrl } from 'virtual:cornerstone-logos'
@@ -61,6 +66,9 @@ function App() {
     const [showPromptSelector, setShowPromptSelector] = useState(false)
     const [editingPromptId, setEditingPromptId] = useState<string | null>(null)
     const [contactsRefreshToken, setContactsRefreshToken] = useState(0)
+    const [assistantMessageSplitToken, setAssistantMessageSplitToken] = useState(
+        DEFAULT_ASSISTANT_MESSAGE_SPLIT_TOKEN
+    )
     const selectedSessionIdRef = useRef<string | null>(null)
     const openSessionHandlerRef = useRef<(id: string, promptId?: string) => void>(() => {})
     const sessionUpdatedAtRef = useRef<Map<string, string>>(new Map())
@@ -225,6 +233,21 @@ function App() {
     }, [])
 
     useEffect(() => {
+        if (authMode !== 'ready') return
+
+        let cancelled = false
+        void (async () => {
+            const cfg = await getConfig()
+            if (cancelled || !cfg) return
+            setAssistantMessageSplitToken(resolveAssistantMessageSplitToken(cfg.assistant_message_split_token))
+        })()
+
+        return () => {
+            cancelled = true
+        }
+    }, [authMode])
+
+    useEffect(() => {
         selectedSessionIdRef.current = selectedSessionId
     }, [selectedSessionId])
 
@@ -372,7 +395,10 @@ function App() {
                         ? appendQueryParam(getPromptAvatarUrl(record.prompt_id), 't', Date.now())
                         : logoBlackDataUrl
 
-                    const messageParts = splitAssistantMessageContent(lastMessage.content || '')
+                    const messageParts = splitAssistantMessageContent(
+                        lastMessage.content || '',
+                        assistantMessageSplitToken
+                    )
                     const bodies =
                         messageParts.length > 0
                             ? messageParts
@@ -410,7 +436,7 @@ function App() {
             cancelled = true
             window.clearInterval(intervalId)
         }
-    }, [authMode, t])
+    }, [assistantMessageSplitToken, authMode, t])
 
     const handleSetup = useCallback(
         async (username: string, password: string) => {
@@ -504,7 +530,10 @@ function App() {
                 </div>
 
                 <div className="view-page">
-                    <ProfilePage />
+                    <ProfilePage
+                        assistantMessageSplitToken={assistantMessageSplitToken}
+                        onAssistantMessageSplitTokenChange={setAssistantMessageSplitToken}
+                    />
                 </div>
             </motion.div>
 
@@ -516,6 +545,7 @@ function App() {
                         key="chat-detail"
                         sessionId={selectedSessionId}
                         promptId={selectedPromptId}
+                        assistantMessageSplitToken={assistantMessageSplitToken}
                         onBack={handleBack}
                         onSwitchSession={handleSwitchSession}
                     />

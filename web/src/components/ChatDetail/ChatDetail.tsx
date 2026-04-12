@@ -36,7 +36,13 @@ import { getRecalledMessageSuffix } from './constants'
 import { drawerVariants } from '../../utils/motion'
 import './ChatDetail.css'
 
-const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, onSwitchSession }) => {
+const ChatDetail: React.FC<ChatDetailProps> = ({
+    sessionId,
+    promptId,
+    assistantMessageSplitToken,
+    onBack,
+    onSwitchSession,
+}) => {
     const { showToast } = useToast()
     const { confirm } = useConfirm()
     const { t } = useT()
@@ -76,6 +82,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         promptId: effectivePromptId,
         messages,
         setMessages,
+        assistantMessageSplitToken,
     })
 
     const displayItems = useDisplayItems({
@@ -84,6 +91,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         streamingTimestamp,
         revealingTimestamp,
         visibleSegments: assistantVisibleSegments,
+        assistantMessageSplitToken,
     })
 
     const openedRedPacketKeys = useMemo(() => collectOpenedRedPacketKeys(messages), [messages])

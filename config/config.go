@@ -132,23 +132,24 @@ func isImageGenProviderType(providerType ProviderType) bool {
 }
 
 const (
-	DefaultProviderTemperature     = 0.8
-	DefaultProviderTopP            = 1.0
-	DefaultProviderContextMessages = 64
-	DefaultMemoryExtractionRounds  = 5
-	DefaultMemoryRefreshInterval   = 5
-	MaxMemoryRefreshInterval       = 99
-	DefaultClawBotBaseURL          = "https://ilinkai.weixin.qq.com"
-	DefaultReplyWaitWindowSeconds  = 2
-	MaxReplyWaitWindowSeconds      = 120
-	DefaultTimeZone                = "Asia/Shanghai"
-	DefaultIdleGreetingMinMinutes  = 100
-	DefaultIdleGreetingMaxMinutes  = 120
-	MaxIdleGreetingMinutes         = 7 * 24 * 60
-	DefaultWebSearchMaxResults     = 5
-	MaxWebSearchMaxResults         = 50
-	DefaultWebSearchTimeoutSeconds = 20
-	MaxWebSearchTimeoutSeconds     = 120
+	DefaultProviderTemperature        = 0.8
+	DefaultProviderTopP               = 1.0
+	DefaultProviderContextMessages    = 64
+	DefaultAssistantMessageSplitToken = "→"
+	DefaultMemoryExtractionRounds     = 5
+	DefaultMemoryRefreshInterval      = 5
+	MaxMemoryRefreshInterval          = 99
+	DefaultClawBotBaseURL             = "https://ilinkai.weixin.qq.com"
+	DefaultReplyWaitWindowSeconds     = 2
+	MaxReplyWaitWindowSeconds         = 120
+	DefaultTimeZone                   = "Asia/Shanghai"
+	DefaultIdleGreetingMinMinutes     = 100
+	DefaultIdleGreetingMaxMinutes     = 120
+	MaxIdleGreetingMinutes            = 7 * 24 * 60
+	DefaultWebSearchMaxResults        = 5
+	MaxWebSearchMaxResults            = 50
+	DefaultWebSearchTimeoutSeconds    = 20
+	MaxWebSearchTimeoutSeconds        = 120
 )
 
 var defaultClawBotCommandPermissionKeys = []string{
@@ -436,28 +437,29 @@ type Provider struct {
 
 // Config 存储应用配置信息
 type Config struct {
-	Providers              []Provider         `json:"providers"`                 // 供应商列表
-	ActiveProviderID       string             `json:"active_provider_id"`        // 当前激活的供应商ID
-	ImageProviderID        string             `json:"image_provider_id"`         // 生图供应商ID（gemini_image）
-	MemoryProviderID       string             `json:"memory_provider_id"`        // 记忆提取模型（供应商ID）
-	MemoryProvider         *Provider          `json:"memory_provider"`           // 记忆提取模型（独立配置）
-	MemoryEnabled          bool               `json:"memory_enabled"`            // 记忆功能开关
-	MemoryExtractionRounds int                `json:"memory_extraction_rounds"`  // 记忆提取上传的对话轮数（每轮从用户发言开始，直到下一轮用户发言前结束）
-	MemoryRefreshInterval  int                `json:"memory_refresh_interval"`   // 记忆刷新间隔（按对话轮数）
-	TTSEnabled             bool               `json:"tts_enabled"`               // TTS开关
-	TTSProvider            *TTSProvider       `json:"tts_provider,omitempty"`    // TTS提供商（仅支持 MiniMax）
-	SystemPrompt           string             `json:"system_prompt"`             // 全局系统提示词
-	ReplyWaitWindowMode    string             `json:"reply_wait_window_mode"`    // 回复等候窗口模式 (fixed/sliding)
-	ReplyWaitWindowSeconds int                `json:"reply_wait_window_seconds"` // 回复等候窗口秒数
-	TimeZone               string             `json:"time_zone"`                 // Agent 时间工具使用的时区
-	IdleGreeting           IdleGreetingConfig `json:"idle_greeting,omitempty"`   //
-	WeatherDefaultCity     *WeatherCity       `json:"weather_default_city,omitempty"`
-	ToolToggles            map[string]bool    `json:"tool_toggles,omitempty"` // 模型可用工具开关
-	CornerstoneWebSearch   WebSearchConfig    `json:"cornerstone_web_search,omitempty"`
-	TLSCertPath            string             `json:"tls_cert_path,omitempty"` // TLS证书路径(PEM)，留空禁用HTTPS
-	TLSKeyPath             string             `json:"tls_key_path,omitempty"`  // TLS私钥路径(PEM)，留空禁用HTTPS
-	ClawBot                ClawBotConfig      `json:"clawbot"`                 // 微信 iLink ClawBot 配置
-	NapCat                 NapCatConfig       `json:"napcat"`                  // QQ NapCat 配置
+	Providers                  []Provider         `json:"providers"`                     // 供应商列表
+	ActiveProviderID           string             `json:"active_provider_id"`            // 当前激活的供应商ID
+	ImageProviderID            string             `json:"image_provider_id"`             // 生图供应商ID（gemini_image）
+	MemoryProviderID           string             `json:"memory_provider_id"`            // 记忆提取模型（供应商ID）
+	MemoryProvider             *Provider          `json:"memory_provider"`               // 记忆提取模型（独立配置）
+	MemoryEnabled              bool               `json:"memory_enabled"`                // 记忆功能开关
+	MemoryExtractionRounds     int                `json:"memory_extraction_rounds"`      // 记忆提取上传的对话轮数（每轮从用户发言开始，直到下一轮用户发言前结束）
+	MemoryRefreshInterval      int                `json:"memory_refresh_interval"`       // 记忆刷新间隔（按对话轮数）
+	TTSEnabled                 bool               `json:"tts_enabled"`                   // TTS开关
+	TTSProvider                *TTSProvider       `json:"tts_provider,omitempty"`        // TTS提供商（仅支持 MiniMax）
+	SystemPrompt               string             `json:"system_prompt"`                 // 全局系统提示词
+	AssistantMessageSplitToken string             `json:"assistant_message_split_token"` // AI 回复拆分符；留空表示关闭拆分
+	ReplyWaitWindowMode        string             `json:"reply_wait_window_mode"`        // 回复等候窗口模式 (fixed/sliding)
+	ReplyWaitWindowSeconds     int                `json:"reply_wait_window_seconds"`     // 回复等候窗口秒数
+	TimeZone                   string             `json:"time_zone"`                     // Agent 时间工具使用的时区
+	IdleGreeting               IdleGreetingConfig `json:"idle_greeting,omitempty"`       //
+	WeatherDefaultCity         *WeatherCity       `json:"weather_default_city,omitempty"`
+	ToolToggles                map[string]bool    `json:"tool_toggles,omitempty"` // 模型可用工具开关
+	CornerstoneWebSearch       WebSearchConfig    `json:"cornerstone_web_search,omitempty"`
+	TLSCertPath                string             `json:"tls_cert_path,omitempty"` // TLS证书路径(PEM)，留空禁用HTTPS
+	TLSKeyPath                 string             `json:"tls_key_path,omitempty"`  // TLS私钥路径(PEM)，留空禁用HTTPS
+	ClawBot                    ClawBotConfig      `json:"clawbot"`                 // 微信 iLink ClawBot 配置
+	NapCat                     NapCatConfig       `json:"napcat"`                  // QQ NapCat 配置
 }
 
 // Manager 配置管理器
@@ -491,23 +493,24 @@ func DefaultProvider() Provider {
 // DefaultConfig 返回默认配置
 func DefaultConfig() Config {
 	return Config{
-		Providers:              []Provider{DefaultProvider()},
-		ActiveProviderID:       "default",
-		ImageProviderID:        "",
-		MemoryProviderID:       "",
-		MemoryProvider:         nil,
-		MemoryEnabled:          false,
-		MemoryExtractionRounds: DefaultMemoryExtractionRounds,
-		MemoryRefreshInterval:  DefaultMemoryRefreshInterval,
-		TTSEnabled:             false,
-		TTSProvider:            nil,
-		SystemPrompt:           "You are a helpful assistant.",
-		ReplyWaitWindowMode:    string(ReplyWaitWindowModeSliding),
-		ReplyWaitWindowSeconds: DefaultReplyWaitWindowSeconds,
-		TimeZone:               DefaultTimeZone,
-		IdleGreeting:           DefaultIdleGreetingConfig(),
-		WeatherDefaultCity:     nil,
-		ToolToggles:            DefaultToolToggles(),
+		Providers:                  []Provider{DefaultProvider()},
+		ActiveProviderID:           "default",
+		ImageProviderID:            "",
+		MemoryProviderID:           "",
+		MemoryProvider:             nil,
+		MemoryEnabled:              false,
+		MemoryExtractionRounds:     DefaultMemoryExtractionRounds,
+		MemoryRefreshInterval:      DefaultMemoryRefreshInterval,
+		TTSEnabled:                 false,
+		TTSProvider:                nil,
+		SystemPrompt:               "You are a helpful assistant.",
+		AssistantMessageSplitToken: DefaultAssistantMessageSplitToken,
+		ReplyWaitWindowMode:        string(ReplyWaitWindowModeSliding),
+		ReplyWaitWindowSeconds:     DefaultReplyWaitWindowSeconds,
+		TimeZone:                   DefaultTimeZone,
+		IdleGreeting:               DefaultIdleGreetingConfig(),
+		WeatherDefaultCity:         nil,
+		ToolToggles:                DefaultToolToggles(),
 		CornerstoneWebSearch: WebSearchConfig{
 			ActiveProviderID: "",
 			Providers:        map[string]WebSearchProvider{},
@@ -620,13 +623,14 @@ func (m *Manager) Load() error {
 						ContextMessages: DefaultProviderContextMessages,
 					},
 				},
-				ActiveProviderID:       "default",
-				MemoryProviderID:       "",
-				MemoryProvider:         nil,
-				MemoryEnabled:          false,
-				MemoryExtractionRounds: DefaultMemoryExtractionRounds,
-				MemoryRefreshInterval:  DefaultMemoryRefreshInterval,
-				SystemPrompt:           oldConfig.SystemPrompt,
+				ActiveProviderID:           "default",
+				MemoryProviderID:           "",
+				MemoryProvider:             nil,
+				MemoryEnabled:              false,
+				MemoryExtractionRounds:     DefaultMemoryExtractionRounds,
+				MemoryRefreshInterval:      DefaultMemoryRefreshInterval,
+				SystemPrompt:               oldConfig.SystemPrompt,
+				AssistantMessageSplitToken: DefaultAssistantMessageSplitToken,
 			}
 			m.applyConfigDefaults()
 			// 保存新格式
@@ -668,6 +672,11 @@ func (m *Manager) applyConfigDefaults() bool {
 	replyWaitSeconds := normalizeReplyWaitWindowSeconds(m.config.ReplyWaitWindowSeconds)
 	if replyWaitSeconds != m.config.ReplyWaitWindowSeconds {
 		m.config.ReplyWaitWindowSeconds = replyWaitSeconds
+		changed = true
+	}
+	assistantMessageSplitToken := normalizeAssistantMessageSplitToken(m.config.AssistantMessageSplitToken)
+	if assistantMessageSplitToken != m.config.AssistantMessageSplitToken {
+		m.config.AssistantMessageSplitToken = assistantMessageSplitToken
 		changed = true
 	}
 	timeZone := normalizeTimeZone(m.config.TimeZone)
@@ -1171,6 +1180,10 @@ func normalizeReplyWaitWindowSeconds(seconds int) int {
 		return 0
 	}
 	return seconds
+}
+
+func normalizeAssistantMessageSplitToken(value string) string {
+	return strings.TrimSpace(value)
 }
 
 func normalizeTimeZone(value string) string {

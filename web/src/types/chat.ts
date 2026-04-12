@@ -129,6 +129,7 @@ export interface ProvidersResponse {
     providers: Provider[]
     active_provider_id: string
     system_prompt: string
+    assistant_message_split_token?: string
     reply_wait_window_mode?: 'fixed' | 'sliding' | string
     reply_wait_window_seconds?: number
     time_zone?: string
@@ -147,6 +148,7 @@ export interface AppConfig {
     api_key: string
     model: string
     system_prompt: string
+    assistant_message_split_token?: string
     reply_wait_window_mode?: 'fixed' | 'sliding' | string
     reply_wait_window_seconds?: number
     time_zone?: string

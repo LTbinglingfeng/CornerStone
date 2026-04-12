@@ -12,6 +12,7 @@ interface UseMessageStreamOptions {
     promptId?: string
     messages: ChatMessage[]
     setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>
+    assistantMessageSplitToken: string
     onError?: (error: string) => void
 }
 
@@ -27,7 +28,7 @@ interface UseMessageStreamReturn {
 }
 
 export function useMessageStream(options: UseMessageStreamOptions): UseMessageStreamReturn {
-    const { sessionId, promptId, messages, setMessages, onError } = options
+    const { sessionId, promptId, messages, setMessages, assistantMessageSplitToken, onError } = options
 
     const [sending, setSending] = useState(false)
     const [assistantResponseDone, setAssistantResponseDone] = useState(false)
@@ -52,6 +53,7 @@ export function useMessageStream(options: UseMessageStreamOptions): UseMessageSt
         setRevealingTimestamp,
         assistantVisibleSegments,
         setAssistantVisibleSegments,
+        assistantMessageSplitToken,
         onSendingFinished: () => setSending(false),
     })
 

@@ -1608,7 +1608,11 @@ func (s *NapCatService) sendAndPersistReply(ctx context.Context, source napCatCh
 }
 
 func (s *NapCatService) sendPrivateText(ctx context.Context, userID int64, text string) error {
-	chunks := splitAssistantReplyMessages(text, napCatReplyChunkMaxRune)
+	var configManager *config.Manager
+	if s != nil && s.handler != nil {
+		configManager = s.handler.configManager
+	}
+	chunks := splitAssistantReplyMessages(text, configuredAssistantMessageSplitToken(configManager), napCatReplyChunkMaxRune)
 	if len(chunks) == 0 {
 		return nil
 	}

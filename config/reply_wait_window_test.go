@@ -38,3 +38,21 @@ func TestNormalizeReplyWaitWindowSeconds(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalizeAssistantMessageSplitToken(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{input: DefaultAssistantMessageSplitToken, want: DefaultAssistantMessageSplitToken},
+		{input: "  <sep>  ", want: "<sep>"},
+		{input: "   ", want: ""},
+		{input: "", want: ""},
+	}
+
+	for _, tc := range tests {
+		if got := normalizeAssistantMessageSplitToken(tc.input); got != tc.want {
+			t.Fatalf("normalizeAssistantMessageSplitToken(%q) = %q, want %q", tc.input, got, tc.want)
+		}
+	}
+}

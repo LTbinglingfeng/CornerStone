@@ -210,7 +210,7 @@ func TestResolveClawBotPromptSelector(t *testing.T) {
 
 func TestSplitClawBotReplyMessages(t *testing.T) {
 	t.Run("split by assistant token", func(t *testing.T) {
-		chunks := splitClawBotReplyMessages("第一句→第二句→第三句", 2000)
+		chunks := splitClawBotReplyMessages("第一句→第二句→第三句", "→", 2000)
 		want := []string{"第一句", "第二句", "第三句"}
 		if len(chunks) != len(want) {
 			t.Fatalf("splitClawBotReplyMessages len = %d, want %d", len(chunks), len(want))
@@ -223,7 +223,7 @@ func TestSplitClawBotReplyMessages(t *testing.T) {
 	})
 
 	t.Run("split token segments still obey max runes", func(t *testing.T) {
-		chunks := splitClawBotReplyMessages("12345→67890", 3)
+		chunks := splitClawBotReplyMessages("12345→67890", "→", 3)
 		want := []string{"123", "45", "678", "90"}
 		if len(chunks) != len(want) {
 			t.Fatalf("splitClawBotReplyMessages len = %d, want %d", len(chunks), len(want))
@@ -236,8 +236,21 @@ func TestSplitClawBotReplyMessages(t *testing.T) {
 	})
 
 	t.Run("fallback without split token", func(t *testing.T) {
-		chunks := splitClawBotReplyMessages("abcdef", 4)
+		chunks := splitClawBotReplyMessages("abcdef", "→", 4)
 		want := []string{"abcd", "ef"}
+		if len(chunks) != len(want) {
+			t.Fatalf("splitClawBotReplyMessages len = %d, want %d", len(chunks), len(want))
+		}
+		for i := range want {
+			if chunks[i] != want[i] {
+				t.Fatalf("splitClawBotReplyMessages[%d] = %q, want %q", i, chunks[i], want[i])
+			}
+		}
+	})
+
+	t.Run("empty token disables split", func(t *testing.T) {
+		chunks := splitClawBotReplyMessages("第一句→第二句", "", 2000)
+		want := []string{"第一句→第二句"}
 		if len(chunks) != len(want) {
 			t.Fatalf("splitClawBotReplyMessages len = %d, want %d", len(chunks), len(want))
 		}

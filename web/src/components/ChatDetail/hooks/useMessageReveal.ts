@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 import type { ChatMessage } from '../../../types/chat'
-import { ASSISTANT_BUBBLE_INTERVAL_MS, ASSISTANT_MESSAGE_SPLIT_TOKEN } from '../constants'
+import { resolveAssistantMessageSplitToken } from '../../../utils/assistantMessageSplit'
+import { ASSISTANT_BUBBLE_INTERVAL_MS } from '../constants'
 import { normalizeAssistantContent, splitAssistantMessageContent } from '../utils'
 
 interface UseMessageRevealOptions {
@@ -13,6 +14,7 @@ interface UseMessageRevealOptions {
     setRevealingTimestamp: React.Dispatch<React.SetStateAction<string | null>>
     assistantVisibleSegments: number
     setAssistantVisibleSegments: React.Dispatch<React.SetStateAction<number>>
+    assistantMessageSplitToken: string
     onSendingFinished: () => void
 }
 
@@ -31,6 +33,7 @@ export function useMessageReveal(options: UseMessageRevealOptions): UseMessageRe
         setRevealingTimestamp,
         assistantVisibleSegments,
         setAssistantVisibleSegments,
+        assistantMessageSplitToken,
         onSendingFinished,
     } = options
 
@@ -57,10 +60,11 @@ export function useMessageReveal(options: UseMessageRevealOptions): UseMessageRe
         if (!currentAssistantMessage) return
 
         const isStreamingAssistantMessage = streamingTimestamp === revealingTimestamp
-        let assistantSegments = splitAssistantMessageContent(currentAssistantMessage.content)
+        const resolvedSplitToken = resolveAssistantMessageSplitToken(assistantMessageSplitToken)
+        let assistantSegments = splitAssistantMessageContent(currentAssistantMessage.content, resolvedSplitToken)
         const normalizedContent = normalizeAssistantContent(currentAssistantMessage.content)
-        const hasSplitToken = normalizedContent.includes(ASSISTANT_MESSAGE_SPLIT_TOKEN)
-        const endsWithSplitToken = normalizedContent.trimEnd().endsWith(ASSISTANT_MESSAGE_SPLIT_TOKEN)
+        const hasSplitToken = resolvedSplitToken !== '' && normalizedContent.includes(resolvedSplitToken)
+        const endsWithSplitToken = resolvedSplitToken !== '' && normalizedContent.trimEnd().endsWith(resolvedSplitToken)
 
         const shouldHoldTrailingSegment =
             isStreamingAssistantMessage && hasSplitToken && !endsWithSplitToken && assistantSegments.length > 1
@@ -82,6 +86,7 @@ export function useMessageReveal(options: UseMessageRevealOptions): UseMessageRe
         }, delay)
     }, [
         assistantVisibleSegments,
+        assistantMessageSplitToken,
         messages,
         revealingTimestamp,
         sending,

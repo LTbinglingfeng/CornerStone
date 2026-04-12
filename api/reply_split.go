@@ -39,8 +39,8 @@ func splitTextByMaxRunes(text string, maxRunes int) []string {
 	return chunks
 }
 
-func splitAssistantReplyMessages(text string, maxRunes int) []string {
-	segments := splitAssistantMessageContent(text)
+func splitAssistantReplyMessages(text string, splitToken string, maxRunes int) []string {
+	segments := splitAssistantMessageContent(text, splitToken)
 	if len(segments) == 0 {
 		return splitTextByMaxRunes(text, maxRunes)
 	}

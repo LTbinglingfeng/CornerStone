@@ -31,16 +31,17 @@ func normalizeProviderBaseURL(providerType config.ProviderType, baseURL string) 
 
 // ConfigUpdateRequest 配置更新请求
 type ConfigUpdateRequest struct {
-	BaseURL                *string                    `json:"base_url,omitempty"`
-	APIKey                 *string                    `json:"api_key,omitempty"`
-	Model                  *string                    `json:"model,omitempty"`
-	SystemPrompt           *string                    `json:"system_prompt,omitempty"`
-	ReplyWaitWindowMode    *string                    `json:"reply_wait_window_mode,omitempty"`
-	ReplyWaitWindowSeconds *int                       `json:"reply_wait_window_seconds,omitempty"`
-	TimeZone               *string                    `json:"time_zone,omitempty"`
-	IdleGreeting           *config.IdleGreetingConfig `json:"idle_greeting,omitempty"`
-	WeatherDefaultCity     json.RawMessage            `json:"weather_default_city,omitempty"`
-	ToolToggles            *map[string]bool           `json:"tool_toggles,omitempty"`
+	BaseURL                    *string                    `json:"base_url,omitempty"`
+	APIKey                     *string                    `json:"api_key,omitempty"`
+	Model                      *string                    `json:"model,omitempty"`
+	SystemPrompt               *string                    `json:"system_prompt,omitempty"`
+	AssistantMessageSplitToken *string                    `json:"assistant_message_split_token,omitempty"`
+	ReplyWaitWindowMode        *string                    `json:"reply_wait_window_mode,omitempty"`
+	ReplyWaitWindowSeconds     *int                       `json:"reply_wait_window_seconds,omitempty"`
+	TimeZone                   *string                    `json:"time_zone,omitempty"`
+	IdleGreeting               *config.IdleGreetingConfig `json:"idle_greeting,omitempty"`
+	WeatherDefaultCity         json.RawMessage            `json:"weather_default_city,omitempty"`
+	ToolToggles                *map[string]bool           `json:"tool_toggles,omitempty"`
 }
 
 // ProviderRequest 供应商请求
@@ -87,32 +88,35 @@ func (h *Handler) handleConfig(w http.ResponseWriter, r *http.Request) {
 			h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: "No active provider"})
 			return
 		}
+		currentConfig := h.configManager.Get()
 		// 返回兼容旧格式的配置
-		cfg := struct {
-			BaseURL                string                    `json:"base_url"`
-			APIKey                 string                    `json:"api_key"`
-			Model                  string                    `json:"model"`
-			SystemPrompt           string                    `json:"system_prompt"`
-			ReplyWaitWindowMode    string                    `json:"reply_wait_window_mode"`
-			ReplyWaitWindowSeconds int                       `json:"reply_wait_window_seconds"`
-			TimeZone               string                    `json:"time_zone"`
-			IdleGreeting           config.IdleGreetingConfig `json:"idle_greeting"`
-			WeatherDefaultCity     *config.WeatherCity       `json:"weather_default_city,omitempty"`
-			ToolToggles            map[string]bool           `json:"tool_toggles,omitempty"`
+		configResp := struct {
+			BaseURL                    string                    `json:"base_url"`
+			APIKey                     string                    `json:"api_key"`
+			Model                      string                    `json:"model"`
+			SystemPrompt               string                    `json:"system_prompt"`
+			AssistantMessageSplitToken string                    `json:"assistant_message_split_token"`
+			ReplyWaitWindowMode        string                    `json:"reply_wait_window_mode"`
+			ReplyWaitWindowSeconds     int                       `json:"reply_wait_window_seconds"`
+			TimeZone                   string                    `json:"time_zone"`
+			IdleGreeting               config.IdleGreetingConfig `json:"idle_greeting"`
+			WeatherDefaultCity         *config.WeatherCity       `json:"weather_default_city,omitempty"`
+			ToolToggles                map[string]bool           `json:"tool_toggles,omitempty"`
 		}{
-			BaseURL:                provider.BaseURL,
-			APIKey:                 provider.APIKey,
-			Model:                  provider.Model,
-			SystemPrompt:           h.configManager.GetSystemPrompt(),
-			ReplyWaitWindowMode:    h.configManager.Get().ReplyWaitWindowMode,
-			ReplyWaitWindowSeconds: h.configManager.Get().ReplyWaitWindowSeconds,
-			TimeZone:               h.configManager.Get().TimeZone,
-			IdleGreeting:           h.configManager.Get().IdleGreeting,
-			WeatherDefaultCity:     h.configManager.GetWeatherDefaultCity(),
-			ToolToggles:            h.configManager.Get().ToolToggles,
+			BaseURL:                    provider.BaseURL,
+			APIKey:                     provider.APIKey,
+			Model:                      provider.Model,
+			SystemPrompt:               h.configManager.GetSystemPrompt(),
+			AssistantMessageSplitToken: currentConfig.AssistantMessageSplitToken,
+			ReplyWaitWindowMode:        currentConfig.ReplyWaitWindowMode,
+			ReplyWaitWindowSeconds:     currentConfig.ReplyWaitWindowSeconds,
+			TimeZone:                   currentConfig.TimeZone,
+			IdleGreeting:               currentConfig.IdleGreeting,
+			WeatherDefaultCity:         h.configManager.GetWeatherDefaultCity(),
+			ToolToggles:                currentConfig.ToolToggles,
 		}
-		cfg.APIKey = maskAPIKey(cfg.APIKey)
-		h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: cfg})
+		configResp.APIKey = maskAPIKey(configResp.APIKey)
+		h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: configResp})
 
 	case "PUT", "POST":
 		var req ConfigUpdateRequest
@@ -139,8 +143,11 @@ func (h *Handler) handleConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if req.TimeZone != nil || req.ReplyWaitWindowMode != nil || req.ReplyWaitWindowSeconds != nil || req.IdleGreeting != nil || req.WeatherDefaultCity != nil || req.ToolToggles != nil {
+		if req.AssistantMessageSplitToken != nil || req.TimeZone != nil || req.ReplyWaitWindowMode != nil || req.ReplyWaitWindowSeconds != nil || req.IdleGreeting != nil || req.WeatherDefaultCity != nil || req.ToolToggles != nil {
 			cfg := h.configManager.Get()
+			if req.AssistantMessageSplitToken != nil {
+				cfg.AssistantMessageSplitToken = *req.AssistantMessageSplitToken
+			}
 			if req.TimeZone != nil {
 				trimmedTimeZone := strings.TrimSpace(*req.TimeZone)
 				if trimmedTimeZone != "" {
@@ -232,19 +239,20 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 			memoryProvider = &clone
 		}
 		result := map[string]interface{}{
-			"providers":                 providers,
-			"active_provider_id":        activeID,
-			"system_prompt":             h.configManager.GetSystemPrompt(),
-			"reply_wait_window_mode":    cfg.ReplyWaitWindowMode,
-			"reply_wait_window_seconds": cfg.ReplyWaitWindowSeconds,
-			"time_zone":                 cfg.TimeZone,
-			"idle_greeting":             cfg.IdleGreeting,
-			"weather_default_city":      h.configManager.GetWeatherDefaultCity(),
-			"tool_toggles":              cfg.ToolToggles,
-			"image_provider_id":         cfg.ImageProviderID,
-			"memory_provider_id":        cfg.MemoryProviderID,
-			"memory_provider":           memoryProvider,
-			"memory_enabled":            cfg.MemoryEnabled,
+			"providers":                     providers,
+			"active_provider_id":            activeID,
+			"system_prompt":                 h.configManager.GetSystemPrompt(),
+			"assistant_message_split_token": cfg.AssistantMessageSplitToken,
+			"reply_wait_window_mode":        cfg.ReplyWaitWindowMode,
+			"reply_wait_window_seconds":     cfg.ReplyWaitWindowSeconds,
+			"time_zone":                     cfg.TimeZone,
+			"idle_greeting":                 cfg.IdleGreeting,
+			"weather_default_city":          h.configManager.GetWeatherDefaultCity(),
+			"tool_toggles":                  cfg.ToolToggles,
+			"image_provider_id":             cfg.ImageProviderID,
+			"memory_provider_id":            cfg.MemoryProviderID,
+			"memory_provider":               memoryProvider,
+			"memory_enabled":                cfg.MemoryEnabled,
 		}
 		h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: result})
 

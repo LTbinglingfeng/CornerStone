@@ -30,15 +30,22 @@ func normalizeAssistantContent(content string) string {
 	return thinkCloseRegexp.ReplaceAllString(withoutBlocks, "")
 }
 
-func splitAssistantMessageContent(content string) []string {
+func configuredAssistantMessageSplitToken(cm *config.Manager) string {
+	if cm == nil {
+		return config.DefaultAssistantMessageSplitToken
+	}
+	return cm.Get().AssistantMessageSplitToken
+}
+
+func splitAssistantMessageContent(content string, splitToken string) []string {
 	normalized := normalizeAssistantContent(content)
 	normalized = strings.TrimSpace(normalized)
 	if normalized == "" {
 		return nil
 	}
 
-	const token = "→"
-	if !strings.Contains(normalized, token) {
+	token := strings.TrimSpace(splitToken)
+	if token == "" || !strings.Contains(normalized, token) {
 		return []string{normalized}
 	}
 
@@ -80,7 +87,7 @@ func (h *Handler) maybeGenerateTTSAudio(ctx context.Context, assistantContent st
 		return nil
 	}
 
-	segments := splitAssistantMessageContent(assistantContent)
+	segments := splitAssistantMessageContent(assistantContent, configuredAssistantMessageSplitToken(h.configManager))
 	if len(segments) == 0 {
 		return nil
 	}

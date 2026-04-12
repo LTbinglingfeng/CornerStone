@@ -1,7 +1,7 @@
 import type { ChatMessage } from '../../types/chat'
 import { translate } from '../../i18n'
+import { resolveAssistantMessageSplitToken } from '../../utils/assistantMessageSplit'
 import {
-    ASSISTANT_MESSAGE_SPLIT_TOKEN,
     QUOTE_PREFIX_CANDIDATES,
     RECALLED_MESSAGE_SUFFIX_CANDIDATES,
     getQuotedMessagePrefix,
@@ -47,15 +47,16 @@ export const normalizeAssistantContent = (content: string): string => {
     return withoutBlocks.replace(/<\/think\s*>/gi, '')
 }
 
-export const splitAssistantMessageContent = (content: string): string[] => {
+export const splitAssistantMessageContent = (content: string, splitToken?: string | null): string[] => {
     const normalized = normalizeAssistantContent(content)
     if (!normalized) return []
-    if (!normalized.includes(ASSISTANT_MESSAGE_SPLIT_TOKEN)) {
+    const resolvedSplitToken = resolveAssistantMessageSplitToken(splitToken)
+    if (!resolvedSplitToken || !normalized.includes(resolvedSplitToken)) {
         return normalized.trim() ? [normalized] : []
     }
 
     return normalized
-        .split(ASSISTANT_MESSAGE_SPLIT_TOKEN)
+        .split(resolvedSplitToken)
         .map((part) => part.trim())
         .filter((part) => part !== '')
 }

@@ -23,6 +23,10 @@ import {
     formatReplyWaitWindowConfig,
     type ReplyWaitWindowConfig,
 } from '../utils/replyWaitWindow'
+import {
+    DEFAULT_ASSISTANT_MESSAGE_SPLIT_TOKEN,
+    resolveAssistantMessageSplitToken,
+} from '../utils/assistantMessageSplit'
 import { NumericInput } from './NumericInput'
 import ProviderSettings from './ProviderSettings'
 import MemoryProviderSettings from './MemoryProviderSettings'
@@ -52,6 +56,8 @@ import './Settings.css'
 
 interface SettingsProps {
     onBack: () => void
+    assistantMessageSplitToken: string
+    onAssistantMessageSplitTokenChange: (token: string) => void
 }
 
 const DEFAULT_TIME_ZONE = 'Asia/Shanghai'
@@ -81,7 +87,11 @@ const normalizeIdleGreetingConfig = (config?: IdleGreetingConfig | null): IdleGr
             : DEFAULT_IDLE_GREETING_CONFIG.idle_max_minutes,
 })
 
-const Settings: React.FC<SettingsProps> = ({ onBack }) => {
+const Settings: React.FC<SettingsProps> = ({
+    onBack,
+    assistantMessageSplitToken: initialAssistantMessageSplitToken,
+    onAssistantMessageSplitTokenChange,
+}) => {
     const { t, locale, setLocale } = useT()
     const { showToast } = useToast()
     const appVersion = __CORNERSTONE_VERSION__.trim() || 'dev'
@@ -149,6 +159,14 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     )
     const [showReplyWaitModal, setShowReplyWaitModal] = useState(false)
     const [savingReplyWaitConfig, setSavingReplyWaitConfig] = useState(false)
+    const [assistantMessageSplitToken, setAssistantMessageSplitTokenState] = useState(() =>
+        resolveAssistantMessageSplitToken(initialAssistantMessageSplitToken)
+    )
+    const [editingAssistantMessageSplitToken, setEditingAssistantMessageSplitToken] = useState(() =>
+        resolveAssistantMessageSplitToken(initialAssistantMessageSplitToken)
+    )
+    const [showAssistantMessageSplitTokenModal, setShowAssistantMessageSplitTokenModal] = useState(false)
+    const [savingAssistantMessageSplitToken, setSavingAssistantMessageSplitToken] = useState(false)
     const [timeZone, setTimeZone] = useState(DEFAULT_TIME_ZONE)
     const [editingTimeZone, setEditingTimeZone] = useState(DEFAULT_TIME_ZONE)
     const [showTimeZoneModal, setShowTimeZoneModal] = useState(false)
@@ -185,6 +203,12 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         setNotificationPermission(supported ? Notification.permission : 'unsupported')
         setNotificationsEnabledState(getNotificationsEnabled())
     }, [])
+
+    useEffect(() => {
+        const resolvedToken = resolveAssistantMessageSplitToken(initialAssistantMessageSplitToken)
+        setAssistantMessageSplitTokenState(resolvedToken)
+        setEditingAssistantMessageSplitToken(resolvedToken)
+    }, [initialAssistantMessageSplitToken])
 
     useEffect(() => {
         if (!showWeatherCityModal) {
@@ -235,6 +259,12 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         const providersData = await getProviders()
         if (providersData) {
             setSystemPrompt(providersData.system_prompt)
+            const nextAssistantMessageSplitToken = resolveAssistantMessageSplitToken(
+                providersData.assistant_message_split_token
+            )
+            setAssistantMessageSplitTokenState(nextAssistantMessageSplitToken)
+            setEditingAssistantMessageSplitToken(nextAssistantMessageSplitToken)
+            onAssistantMessageSplitTokenChange(nextAssistantMessageSplitToken)
             setTimeZone((providersData.time_zone || DEFAULT_TIME_ZONE).trim() || DEFAULT_TIME_ZONE)
             setIdleGreetingConfig(normalizeIdleGreetingConfig(providersData.idle_greeting))
             setDefaultWeatherCity(providersData.weather_default_city || null)
@@ -348,6 +378,15 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
 
     const handleCloseReplyWaitModal = () => {
         setShowReplyWaitModal(false)
+    }
+
+    const handleOpenAssistantMessageSplitTokenModal = () => {
+        setEditingAssistantMessageSplitToken(assistantMessageSplitToken)
+        setShowAssistantMessageSplitTokenModal(true)
+    }
+
+    const handleCloseAssistantMessageSplitTokenModal = () => {
+        setShowAssistantMessageSplitTokenModal(false)
     }
 
     const handleOpenTimeZoneModal = () => {
@@ -504,6 +543,29 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
             handleCloseReplyWaitModal()
         } finally {
             setSavingReplyWaitConfig(false)
+        }
+    }
+
+    const handleSaveAssistantMessageSplitToken = async () => {
+        if (savingAssistantMessageSplitToken) return
+
+        setSavingAssistantMessageSplitToken(true)
+        try {
+            const nextToken = resolveAssistantMessageSplitToken(editingAssistantMessageSplitToken)
+            const success = await updateConfig({
+                assistant_message_split_token: nextToken,
+            })
+            if (!success) {
+                showToast(t('common.saveFailed'), 'error')
+                return
+            }
+
+            setAssistantMessageSplitTokenState(nextToken)
+            onAssistantMessageSplitTokenChange(nextToken)
+            showToast(t('settings.assistantMessageSplitTokenSaved'), 'success')
+            handleCloseAssistantMessageSplitTokenModal()
+        } finally {
+            setSavingAssistantMessageSplitToken(false)
         }
     }
 
@@ -755,6 +817,23 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
         return formatReplyWaitWindowConfig(replyWaitConfig)
     }
 
+    const getAssistantMessageSplitTokenPreview = () => {
+        if (assistantMessageSplitToken === '') {
+            return {
+                title: t('common.disabled'),
+                detail: t('settings.assistantMessageSplitTokenHint'),
+            }
+        }
+
+        return {
+            title: assistantMessageSplitToken,
+            detail:
+                assistantMessageSplitToken === DEFAULT_ASSISTANT_MESSAGE_SPLIT_TOKEN
+                    ? `${t('common.default')} · ${t('settings.assistantMessageSplitTokenHint')}`
+                    : t('settings.assistantMessageSplitTokenHint'),
+        }
+    }
+
     const getTimeZonePreview = () => {
         const resolvedTimeZone = (timeZone || DEFAULT_TIME_ZONE).trim() || DEFAULT_TIME_ZONE
 
@@ -937,6 +1016,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     const cornerstoneWebSearchPreview = getCornerstoneWebSearchPreview()
     const toolControlPreview = getToolControlPreview()
     const reminderPreview = getReminderPreview()
+    const assistantMessageSplitTokenPreview = getAssistantMessageSplitTokenPreview()
     const timeZonePreview = getTimeZonePreview()
     const defaultWeatherCityPreview = getDefaultWeatherCityPreview()
     const idleGreetingPreview = getIdleGreetingPreview()
@@ -1078,6 +1158,25 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                             <div className="settings-entry-info">
                                 <span className="settings-entry-label">{t('settings.defaultSystemPrompt')}</span>
                                 <span className="settings-entry-value">{getPromptPreview()}</span>
+                            </div>
+                            <svg className="settings-entry-arrow" viewBox="0 0 24 24">
+                                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                            </svg>
+                        </button>
+
+                        <button
+                            className="settings-entry-btn"
+                            onClick={handleOpenAssistantMessageSplitTokenModal}
+                            style={{ marginTop: 12 }}
+                        >
+                            <div className="settings-entry-info">
+                                <span className="settings-entry-label">{t('settings.assistantMessageSplitToken')}</span>
+                                <span className="settings-entry-value">{assistantMessageSplitTokenPreview.title}</span>
+                                {assistantMessageSplitTokenPreview.detail && (
+                                    <span className="settings-entry-subvalue">
+                                        {assistantMessageSplitTokenPreview.detail}
+                                    </span>
+                                )}
                             </div>
                             <svg className="settings-entry-arrow" viewBox="0 0 24 24">
                                 <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
@@ -1427,6 +1526,72 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
                                     disabled={saving}
                                 >
                                     {saving ? t('common.saving') : t('common.save')}
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+                {showAssistantMessageSplitTokenModal && (
+                    <motion.div
+                        className="prompt-modal-overlay"
+                        initial="hidden"
+                        animate="visible"
+                        exit="hidden"
+                        variants={overlayVariants}
+                        onClick={handleCloseAssistantMessageSplitTokenModal}
+                    >
+                        <motion.div
+                            className="prompt-modal-card"
+                            initial="hidden"
+                            animate="visible"
+                            exit="hidden"
+                            variants={centerModalVariants}
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="prompt-modal-header">
+                                <h3>{t('settings.assistantMessageSplitToken')}</h3>
+                                <button
+                                    className="prompt-modal-close"
+                                    onClick={handleCloseAssistantMessageSplitTokenModal}
+                                >
+                                    <svg viewBox="0 0 24 24">
+                                        <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                                    </svg>
+                                </button>
+                            </div>
+
+                            <div className="prompt-modal-body">
+                                <p className="prompt-modal-hint">{t('settings.assistantMessageSplitTokenHint')}</p>
+
+                                <div className="settings-group">
+                                    <label className="settings-label">{t('settings.splitToken')}</label>
+                                    <input
+                                        className="settings-input"
+                                        type="text"
+                                        value={editingAssistantMessageSplitToken}
+                                        onChange={(e) => setEditingAssistantMessageSplitToken(e.target.value)}
+                                        placeholder={t('settings.assistantMessageSplitTokenPlaceholder')}
+                                        maxLength={64}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="prompt-modal-footer">
+                                <button
+                                    className="prompt-modal-btn cancel"
+                                    onClick={handleCloseAssistantMessageSplitTokenModal}
+                                >
+                                    {t('common.cancel')}
+                                </button>
+                                <button
+                                    className="prompt-modal-btn save"
+                                    onClick={() => void handleSaveAssistantMessageSplitToken()}
+                                    disabled={savingAssistantMessageSplitToken}
+                                >
+                                    {t('common.save')}
                                 </button>
                             </div>
                         </motion.div>

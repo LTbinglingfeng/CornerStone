@@ -7,7 +7,15 @@ import Settings from './Settings'
 import { centerModalVariants, drawerVariants, overlayVariants } from '../utils/motion'
 import './ProfilePage.css'
 
-const ProfilePage: React.FC = () => {
+interface ProfilePageProps {
+    assistantMessageSplitToken: string
+    onAssistantMessageSplitTokenChange: (token: string) => void
+}
+
+const ProfilePage: React.FC<ProfilePageProps> = ({
+    assistantMessageSplitToken,
+    onAssistantMessageSplitTokenChange,
+}) => {
     const { t } = useT()
     const [userInfo, setUserInfo] = useState<UserInfo | null>(null)
     const [loading, setLoading] = useState(true)
@@ -173,7 +181,11 @@ const ProfilePage: React.FC = () => {
                         exit="hidden"
                         variants={drawerVariants}
                     >
-                        <Settings onBack={handleCloseSettings} />
+                        <Settings
+                            onBack={handleCloseSettings}
+                            assistantMessageSplitToken={assistantMessageSplitToken}
+                            onAssistantMessageSplitTokenChange={onAssistantMessageSplitTokenChange}
+                        />
                     </motion.div>
                 )}
             </AnimatePresence>

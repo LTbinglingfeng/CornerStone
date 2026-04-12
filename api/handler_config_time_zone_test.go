@@ -99,6 +99,81 @@ func TestHandleConfig_TimeZoneRejectsInvalidValue(t *testing.T) {
 	}
 }
 
+func TestHandleConfig_AssistantMessageSplitTokenRoundTripAndProvidersExposeIt(t *testing.T) {
+	handler := &Handler{configManager: newTestProviderConfigManager(t, newTestProvider("provider-1"))}
+
+	body, err := json.Marshal(map[string]interface{}{
+		"assistant_message_split_token": "  <sep>  ",
+	})
+	if err != nil {
+		t.Fatalf("Marshal request failed: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPut, "/management/config", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	handler.handleConfig(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PUT status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	if got := handler.configManager.Get().AssistantMessageSplitToken; got != "<sep>" {
+		t.Fatalf("saved assistant_message_split_token = %q, want %q", got, "<sep>")
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/management/config", nil)
+	getRec := httptest.NewRecorder()
+	handler.handleConfig(getRec, getReq)
+
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("GET status = %d, want %d", getRec.Code, http.StatusOK)
+	}
+
+	var configResp struct {
+		Success bool `json:"success"`
+		Data    struct {
+			AssistantMessageSplitToken string `json:"assistant_message_split_token"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(getRec.Body).Decode(&configResp); err != nil {
+		t.Fatalf("Decode config response failed: %v", err)
+	}
+	if !configResp.Success {
+		t.Fatalf("config response success = false, body=%s", getRec.Body.String())
+	}
+	if configResp.Data.AssistantMessageSplitToken != "<sep>" {
+		t.Fatalf("GET assistant_message_split_token = %q, want %q", configResp.Data.AssistantMessageSplitToken, "<sep>")
+	}
+
+	providersReq := httptest.NewRequest(http.MethodGet, "/management/providers", nil)
+	providersRec := httptest.NewRecorder()
+	handler.handleProviders(providersRec, providersReq)
+
+	if providersRec.Code != http.StatusOK {
+		t.Fatalf("providers status = %d, want %d", providersRec.Code, http.StatusOK)
+	}
+
+	var providersResp struct {
+		Success bool `json:"success"`
+		Data    struct {
+			AssistantMessageSplitToken string `json:"assistant_message_split_token"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(providersRec.Body).Decode(&providersResp); err != nil {
+		t.Fatalf("Decode providers response failed: %v", err)
+	}
+	if !providersResp.Success {
+		t.Fatalf("providers response success = false, body=%s", providersRec.Body.String())
+	}
+	if providersResp.Data.AssistantMessageSplitToken != "<sep>" {
+		t.Fatalf(
+			"providers assistant_message_split_token = %q, want %q",
+			providersResp.Data.AssistantMessageSplitToken,
+			"<sep>",
+		)
+	}
+}
+
 func TestHandleConfig_ToolTogglesRoundTripAndProvidersExposeThem(t *testing.T) {
 	handler := &Handler{configManager: newTestProviderConfigManager(t, newTestProvider("provider-1"))}
 

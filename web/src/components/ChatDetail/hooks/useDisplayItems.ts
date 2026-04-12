@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import type { ChatMessage } from '../../../types/chat'
-import { ASSISTANT_MESSAGE_SPLIT_TOKEN } from '../constants'
+import { resolveAssistantMessageSplitToken } from '../../../utils/assistantMessageSplit'
 import type { DisplayItem } from '../types'
 import { isRecalledMessage, normalizeAssistantContent, splitAssistantMessageContent } from '../utils'
 
@@ -10,14 +10,17 @@ interface UseDisplayItemsOptions {
     streamingTimestamp: string | null
     revealingTimestamp: string | null
     visibleSegments: number
+    assistantMessageSplitToken: string
 }
 
 export function useDisplayItems(options: UseDisplayItemsOptions): DisplayItem[] {
-    const { messages, sending, streamingTimestamp, revealingTimestamp, visibleSegments } = options
+    const { messages, sending, streamingTimestamp, revealingTimestamp, visibleSegments, assistantMessageSplitToken } =
+        options
 
     return useMemo(() => {
         const items: DisplayItem[] = []
         const successfulNoReplyToolCallIds = new Set<string>()
+        const resolvedSplitToken = resolveAssistantMessageSplitToken(assistantMessageSplitToken)
 
         messages.forEach((message) => {
             if (message.role !== 'tool' || !message.tool_call_id) return
@@ -50,12 +53,14 @@ export function useDisplayItems(options: UseDisplayItemsOptions): DisplayItem[] 
                 isAssistant && sending && streamingTimestamp !== null && message.timestamp === streamingTimestamp
 
             let assistantSegments =
-                isAssistant && !isAssistantToolCallMessage ? splitAssistantMessageContent(message.content) : []
+                isAssistant && !isAssistantToolCallMessage
+                    ? splitAssistantMessageContent(message.content, resolvedSplitToken)
+                    : []
             const normalizedContent =
                 isAssistant && !isAssistantToolCallMessage ? normalizeAssistantContent(message.content) : ''
-            const hasSplitToken = isAssistant && normalizedContent.includes(ASSISTANT_MESSAGE_SPLIT_TOKEN)
+            const hasSplitToken = isAssistant && resolvedSplitToken !== '' && normalizedContent.includes(resolvedSplitToken)
             const endsWithSplitToken =
-                isAssistant && normalizedContent.trimEnd().endsWith(ASSISTANT_MESSAGE_SPLIT_TOKEN)
+                isAssistant && resolvedSplitToken !== '' && normalizedContent.trimEnd().endsWith(resolvedSplitToken)
 
             const shouldHoldTrailingSegment =
                 isStreamingAssistantMessage && hasSplitToken && !endsWithSplitToken && assistantSegments.length > 1
@@ -170,5 +175,5 @@ export function useDisplayItems(options: UseDisplayItemsOptions): DisplayItem[] 
             }
         })
         return items
-    }, [messages, sending, streamingTimestamp, revealingTimestamp, visibleSegments])
+    }, [assistantMessageSplitToken, messages, sending, streamingTimestamp, revealingTimestamp, visibleSegments])
 }
