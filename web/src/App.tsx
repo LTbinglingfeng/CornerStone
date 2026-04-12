@@ -29,10 +29,7 @@ import { splitAssistantMessageContent } from './components/ChatDetail/utils'
 import { useToast } from './contexts/ToastContext'
 import { useT } from './contexts/I18nContext'
 import { formatNotificationBody, getNotificationsEnabled, isNotificationSupported } from './utils/notifications'
-import {
-    DEFAULT_ASSISTANT_MESSAGE_SPLIT_TOKEN,
-    resolveAssistantMessageSplitToken,
-} from './utils/assistantMessageSplit'
+import { DEFAULT_ASSISTANT_MESSAGE_SPLIT_TOKEN, resolveAssistantMessageSplitToken } from './utils/assistantMessageSplit'
 import { slideTransition } from './utils/motion'
 import { buildChatRoute, getRouteState, normalizePathname, tabOrder, tabRoutes } from './utils/routes'
 import { logoBlackDataUrl } from 'virtual:cornerstone-logos'
@@ -66,9 +63,8 @@ function App() {
     const [showPromptSelector, setShowPromptSelector] = useState(false)
     const [editingPromptId, setEditingPromptId] = useState<string | null>(null)
     const [contactsRefreshToken, setContactsRefreshToken] = useState(0)
-    const [assistantMessageSplitToken, setAssistantMessageSplitToken] = useState(
-        DEFAULT_ASSISTANT_MESSAGE_SPLIT_TOKEN
-    )
+    const [assistantMessageSplitToken, setAssistantMessageSplitToken] = useState(DEFAULT_ASSISTANT_MESSAGE_SPLIT_TOKEN)
+    const [assistantMessageSplitTokenLoaded, setAssistantMessageSplitTokenLoaded] = useState(false)
     const selectedSessionIdRef = useRef<string | null>(null)
     const openSessionHandlerRef = useRef<(id: string, promptId?: string) => void>(() => {})
     const sessionUpdatedAtRef = useRef<Map<string, string>>(new Map())
@@ -233,13 +229,23 @@ function App() {
     }, [])
 
     useEffect(() => {
-        if (authMode !== 'ready') return
+        if (authMode !== 'ready') {
+            setAssistantMessageSplitToken(DEFAULT_ASSISTANT_MESSAGE_SPLIT_TOKEN)
+            setAssistantMessageSplitTokenLoaded(false)
+            return
+        }
 
         let cancelled = false
+        setAssistantMessageSplitToken(DEFAULT_ASSISTANT_MESSAGE_SPLIT_TOKEN)
+        setAssistantMessageSplitTokenLoaded(false)
         void (async () => {
             const cfg = await getConfig()
-            if (cancelled || !cfg) return
-            setAssistantMessageSplitToken(resolveAssistantMessageSplitToken(cfg.assistant_message_split_token))
+            if (cancelled) return
+
+            if (cfg) {
+                setAssistantMessageSplitToken(resolveAssistantMessageSplitToken(cfg.assistant_message_split_token))
+            }
+            setAssistantMessageSplitTokenLoaded(true)
         })()
 
         return () => {
@@ -278,7 +284,7 @@ function App() {
     }, [authMode, location.hash, location.pathname, location.search, navigate, routeState])
 
     useEffect(() => {
-        if (authMode !== 'ready') return
+        if (authMode !== 'ready' || !assistantMessageSplitTokenLoaded) return
 
         let cancelled = false
 
@@ -436,7 +442,7 @@ function App() {
             cancelled = true
             window.clearInterval(intervalId)
         }
-    }, [assistantMessageSplitToken, authMode, t])
+    }, [assistantMessageSplitToken, assistantMessageSplitTokenLoaded, authMode, t])
 
     const handleSetup = useCallback(
         async (username: string, password: string) => {
@@ -545,7 +551,6 @@ function App() {
                         key="chat-detail"
                         sessionId={selectedSessionId}
                         promptId={selectedPromptId}
-                        assistantMessageSplitToken={assistantMessageSplitToken}
                         onBack={handleBack}
                         onSwitchSession={handleSwitchSession}
                     />

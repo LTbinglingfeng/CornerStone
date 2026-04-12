@@ -19,15 +19,16 @@ import (
 
 // ChatMessage 聊天消息
 type ChatMessage struct {
-	Role             string            `json:"role"`
-	Content          string            `json:"content"`
-	ReasoningContent string            `json:"reasoning_content,omitempty"` // 思考模型的推理内容
-	ToolCalls        []client.ToolCall `json:"tool_calls,omitempty"`        // 工具调用
-	ToolCallID       string            `json:"tool_call_id,omitempty"`      // 工具调用ID (用于tool角色消息)
-	Quote            *QuotedMessage    `json:"quote,omitempty"`             // 被引用消息上下文
-	ImagePaths       []string          `json:"image_paths,omitempty"`       // 图片路径
-	TTSAudioPaths    []string          `json:"tts_audio_paths,omitempty"`   // TTS音频路径
-	Timestamp        time.Time         `json:"timestamp"`
+	Role                       string            `json:"role"`
+	Content                    string            `json:"content"`
+	ReasoningContent           string            `json:"reasoning_content,omitempty"`             // 思考模型的推理内容
+	ToolCalls                  []client.ToolCall `json:"tool_calls,omitempty"`                    // 工具调用
+	ToolCallID                 string            `json:"tool_call_id,omitempty"`                  // 工具调用ID (用于tool角色消息)
+	Quote                      *QuotedMessage    `json:"quote,omitempty"`                         // 被引用消息上下文
+	ImagePaths                 []string          `json:"image_paths,omitempty"`                   // 图片路径
+	TTSAudioPaths              []string          `json:"tts_audio_paths,omitempty"`               // TTS音频路径
+	AssistantMessageSplitToken *string           `json:"assistant_message_split_token,omitempty"` // 该 assistant 消息生成时使用的拆分符
+	Timestamp                  time.Time         `json:"timestamp"`
 }
 
 type QuotedMessage struct {

@@ -349,6 +349,7 @@ func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiCli
 					Timestamp:        now.Add(time.Millisecond * time.Duration(index)),
 				})
 			}
+			ensureAssistantMessageSplitToken(storageMessages, configuredAssistantMessageSplitToken(h.configManager))
 
 			if errSaveHistory := h.chatManager.AddMessages(sessionID, storageMessages); errSaveHistory != nil {
 				logging.Errorf("save tool-loop partial history error: %v", errSaveHistory)
@@ -373,11 +374,13 @@ func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiCli
 		return
 	}
 
+	assistantMessageSplitToken := configuredAssistantMessageSplitToken(h.configManager)
+
 	// Generate TTS only for the final assistant message.
 	ttsAudioPaths := []string(nil)
 	if loopResult != nil && loopResult.FinalResponse != nil && len(loopResult.FinalResponse.Choices) > 0 {
 		finalMessage := loopResult.FinalResponse.Choices[0].Message
-		ttsAudioPaths = h.maybeGenerateTTSAudio(ctxAI, finalMessage.Content)
+		ttsAudioPaths = h.maybeGenerateTTSAudio(ctxAI, finalMessage.Content, assistantMessageSplitToken)
 		if len(ttsAudioPaths) > 0 {
 			finalMessage.TTSAudioPaths = ttsAudioPaths
 			loopResult.FinalResponse.Choices[0].Message = finalMessage
@@ -402,6 +405,7 @@ func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiCli
 			Timestamp:        now.Add(time.Millisecond * time.Duration(index)),
 		})
 	}
+	ensureAssistantMessageSplitToken(storageMessages, assistantMessageSplitToken)
 
 	// Save assistant/tool messages as a batch (user messages are saved earlier).
 	if saveHistory && len(storageMessages) > 0 {
@@ -478,6 +482,7 @@ func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiCli
 		toolExecutor.cornerstoneWebSearch = newCornerstoneWebSearchOrchestrator(h.configManager.Get())
 	}
 
+	assistantMessageSplitToken := configuredAssistantMessageSplitToken(h.configManager)
 	baseTime := h.now()
 	messageCounter := 0
 	createdMessages := make([]storage.ChatMessage, 0, 4)
@@ -515,6 +520,9 @@ func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiCli
 			ImagePaths:       msg.ImagePaths,
 			TTSAudioPaths:    msg.TTSAudioPaths,
 			Timestamp:        ts,
+		}
+		if strings.TrimSpace(stored.Role) == "assistant" {
+			stored.AssistantMessageSplitToken = assistantMessageSplitTokenPtr(assistantMessageSplitToken)
 		}
 		createdMessages = append(createdMessages, stored)
 		sendEvent(map[string]interface{}{
@@ -573,7 +581,7 @@ func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiCli
 		ttsAudioPaths := []string(nil)
 		if loopResult != nil && loopResult.FinalResponse != nil && len(loopResult.FinalResponse.Choices) > 0 {
 			finalMessage := loopResult.FinalResponse.Choices[0].Message
-			ttsAudioPaths = h.maybeGenerateTTSAudio(ctxAI, finalMessage.Content)
+			ttsAudioPaths = h.maybeGenerateTTSAudio(ctxAI, finalMessage.Content, assistantMessageSplitToken)
 			if len(ttsAudioPaths) > 0 {
 				finalMessage.TTSAudioPaths = ttsAudioPaths
 				loopResult.FinalResponse.Choices[0].Message = finalMessage

@@ -478,6 +478,7 @@ func (s *IdleGreetingService) persistWebReply(task *storage.IdleGreetingTask, re
 			},
 		}
 	}
+	ensureAssistantMessageSplitToken(messages, configuredAssistantMessageSplitToken(s.handler.configManager))
 	if err := s.handler.chatManager.AddMessages(task.SessionID, messages); err != nil {
 		return err
 	}
@@ -525,6 +526,7 @@ func (s *IdleGreetingService) sendClawBotReply(
 			},
 		}
 	}
+	ensureAssistantMessageSplitToken(messages, configuredAssistantMessageSplitToken(s.handler.configManager))
 	if err := s.handler.chatManager.AddMessages(task.SessionID, messages); err != nil {
 		return err
 	}
@@ -562,6 +564,7 @@ func (s *IdleGreetingService) sendNapCatReply(
 			},
 		}
 	}
+	ensureAssistantMessageSplitToken(messages, configuredAssistantMessageSplitToken(s.handler.configManager))
 	if err := s.handler.chatManager.AddMessages(task.SessionID, messages); err != nil {
 		return err
 	}

@@ -1,11 +1,10 @@
 import type { ChatMessage } from '../../types/chat'
 import { translate } from '../../i18n'
-import { resolveAssistantMessageSplitToken } from '../../utils/assistantMessageSplit'
 import {
-    QUOTE_PREFIX_CANDIDATES,
-    RECALLED_MESSAGE_SUFFIX_CANDIDATES,
-    getQuotedMessagePrefix,
-} from './constants'
+    DEFAULT_ASSISTANT_MESSAGE_SPLIT_TOKEN,
+    resolveAssistantMessageSplitToken,
+} from '../../utils/assistantMessageSplit'
+import { QUOTE_PREFIX_CANDIDATES, RECALLED_MESSAGE_SUFFIX_CANDIDATES, getQuotedMessagePrefix } from './constants'
 
 export const isRecalledMessage = (message: ChatMessage): boolean => {
     if (message.role !== 'user') return false
@@ -59,6 +58,13 @@ export const splitAssistantMessageContent = (content: string, splitToken?: strin
         .split(resolvedSplitToken)
         .map((part) => part.trim())
         .filter((part) => part !== '')
+}
+
+export const getAssistantMessageSplitToken = (message: ChatMessage): string => {
+    if (message.assistant_message_split_token !== undefined) {
+        return resolveAssistantMessageSplitToken(message.assistant_message_split_token)
+    }
+    return DEFAULT_ASSISTANT_MESSAGE_SPLIT_TOKEN
 }
 
 export const buildQuoteLineFromMessage = (

@@ -3,7 +3,6 @@ import type { ChatMessage, RedPacketParams, ToolCall } from '../../types/chat'
 export interface ChatDetailProps {
     sessionId: string
     promptId?: string
-    assistantMessageSplitToken: string
     onBack: () => void
     onSwitchSession?: (sessionId: string, promptId?: string) => void
 }

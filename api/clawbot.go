@@ -1312,6 +1312,7 @@ func (s *ClawBotService) sendAndPersistReply(ctx context.Context, cfg config.Cla
 			},
 		}
 	}
+	ensureAssistantMessageSplitToken(messages, configuredAssistantMessageSplitToken(s.handler.configManager))
 
 	if len(messages) > 0 {
 		if err := s.handler.chatManager.AddMessages(sessionID, messages); err != nil {
@@ -1350,6 +1351,7 @@ func (s *ClawBotService) sendAndReplaceTrailingReply(ctx context.Context, cfg co
 			},
 		}
 	}
+	ensureAssistantMessageSplitToken(replacement, configuredAssistantMessageSplitToken(s.handler.configManager))
 	if len(replacement) > 0 {
 		if err := s.handler.chatManager.ReplaceTrailingResponseBatch(sessionID, expectedTail, replacement); err != nil {
 			logging.Errorf("clawbot replace trailing response batch failed: user=%s session=%s err=%v", userID, sessionID, err)

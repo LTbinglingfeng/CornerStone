@@ -207,6 +207,7 @@ func (h *Handler) generateSessionReply(ctx context.Context, options sessionReply
 	}
 
 	storageMessages := buildGeneratedReplyStorageMessages(loopResult, text, options.PersistMode, h.now())
+	ensureAssistantMessageSplitToken(storageMessages, currentConfig.AssistantMessageSplitToken)
 
 	return &generatedSessionReply{
 		Text:            text,

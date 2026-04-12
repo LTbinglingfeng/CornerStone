@@ -1593,6 +1593,7 @@ func (s *NapCatService) sendAndPersistReply(ctx context.Context, source napCatCh
 			},
 		}
 	}
+	ensureAssistantMessageSplitToken(messages, configuredAssistantMessageSplitToken(s.handler.configManager))
 
 	if len(messages) > 0 {
 		if err := s.handler.chatManager.AddMessages(sessionID, messages); err != nil {

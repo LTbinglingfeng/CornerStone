@@ -439,6 +439,7 @@ func (s *ReminderService) persistWebReminderReply(reminder *storage.Reminder, re
 			},
 		}
 	}
+	ensureAssistantMessageSplitToken(messages, configuredAssistantMessageSplitToken(s.handler.configManager))
 
 	if err := s.handler.chatManager.AddMessages(reminder.SessionID, messages); err != nil {
 		return err
@@ -489,6 +490,7 @@ func (s *ReminderService) sendClawBotReminderReply(
 			},
 		}
 	}
+	ensureAssistantMessageSplitToken(messages, configuredAssistantMessageSplitToken(s.handler.configManager))
 	if err := s.handler.chatManager.AddMessages(reminder.SessionID, messages); err != nil {
 		s.handler.clawBotService.setLastError(err)
 		return err
@@ -528,6 +530,7 @@ func (s *ReminderService) sendNapCatReminderReply(
 			},
 		}
 	}
+	ensureAssistantMessageSplitToken(messages, configuredAssistantMessageSplitToken(s.handler.configManager))
 	if err := s.handler.chatManager.AddMessages(reminder.SessionID, messages); err != nil {
 		s.handler.napCatService.setLastError(err)
 		return err

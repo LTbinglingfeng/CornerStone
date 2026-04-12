@@ -8,6 +8,7 @@ export interface ChatMessage {
     image_paths?: string[]
     tts_audio_paths?: string[]
     tts_audio_path?: string
+    assistant_message_split_token?: string
 }
 
 // 工具调用

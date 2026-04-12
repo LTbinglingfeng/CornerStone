@@ -64,7 +64,7 @@ func splitAssistantMessageContent(content string, splitToken string) []string {
 	return segments
 }
 
-func (h *Handler) maybeGenerateTTSAudio(ctx context.Context, assistantContent string) []string {
+func (h *Handler) maybeGenerateTTSAudio(ctx context.Context, assistantContent string, splitToken string) []string {
 	cfg := h.configManager.Get()
 	if !cfg.TTSEnabled || cfg.TTSProvider == nil {
 		return nil
@@ -87,7 +87,7 @@ func (h *Handler) maybeGenerateTTSAudio(ctx context.Context, assistantContent st
 		return nil
 	}
 
-	segments := splitAssistantMessageContent(assistantContent, configuredAssistantMessageSplitToken(h.configManager))
+	segments := splitAssistantMessageContent(assistantContent, splitToken)
 	if len(segments) == 0 {
 		return nil
 	}
