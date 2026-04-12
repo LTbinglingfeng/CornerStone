@@ -10,6 +10,7 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -78,7 +79,7 @@ func printStartupBanner(appVersion string) {
 	fmt.Println()
 }
 
-func printStartupSummary(scheme string, port int, distDir, baseDir, logPath string, tlsEnabled bool, tlsSource string) {
+func printStartupSummary(scheme string, port int, distDir, baseDir, logPath string, tlsEnabled bool, tlsSource string, bootstrapLocked bool) {
 	const (
 		cyan   = "\033[36m"
 		green  = "\033[32m"
@@ -102,15 +103,78 @@ func printStartupSummary(scheme string, port int, distDir, baseDir, logPath stri
 	} else {
 		fmt.Printf("    %s▸%s TLS     %sdisabled%s\n", cyan, reset, dim, reset)
 	}
+	if bootstrapLocked {
+		fmt.Printf("    %s▸%s Setup   %slocalhost only until the first account is created%s\n", yellow, reset, yellow, reset)
+	}
 	fmt.Println()
 }
 
-func registerFrontend(mux *http.ServeMux, distDir string) {
+func normalizeLoopbackHost(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	if host, _, err := net.SplitHostPort(trimmed); err == nil && strings.TrimSpace(host) != "" {
+		trimmed = strings.TrimSpace(host)
+	}
+	trimmed = strings.TrimPrefix(trimmed, "[")
+	trimmed = strings.TrimSuffix(trimmed, "]")
+	return strings.ToLower(strings.TrimSpace(trimmed))
+}
+
+func isLoopbackRequest(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	if !isLoopbackHost(r.RemoteAddr) {
+		return false
+	}
+	if !forwardedLoopbackOnly(r.Header.Values("X-Forwarded-For")) {
+		return false
+	}
+	if !forwardedLoopbackOnly(r.Header.Values("X-Real-IP")) {
+		return false
+	}
+	return true
+}
+
+func isLoopbackHost(value string) bool {
+	host := normalizeLoopbackHost(value)
+	if host == "" {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+func forwardedLoopbackOnly(values []string) bool {
+	for _, value := range values {
+		for _, part := range strings.Split(value, ",") {
+			trimmed := strings.TrimSpace(part)
+			if trimmed == "" {
+				continue
+			}
+			if !isLoopbackHost(trimmed) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func registerFrontend(mux *http.ServeMux, distDir string, authManager *storage.AuthManager) {
 	fileSystem := http.Dir(distDir)
 	fileServer := http.FileServer(fileSystem)
 	indexPath := filepath.Join(distDir, "index.html")
 
 	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if authManager != nil && !authManager.IsSetup() && !isLoopbackRequest(r) {
+			http.Error(w, "Initial setup is only available from localhost", http.StatusForbidden)
+			return
+		}
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			http.NotFound(w, r)
 			return
@@ -300,13 +364,13 @@ func main() {
 		}
 	}
 	if distDir != "" && fileExists(filepath.Join(distDir, "index.html")) {
-		registerFrontend(mux, distDir)
+		registerFrontend(mux, distDir, authManager)
 	}
 
 	// 启动服务
 	addr := fmt.Sprintf(":%d", *port)
 	printStartupBanner(appVersion)
-	printStartupSummary(scheme, *port, distDir, baseDir, logPath, tlsEnabled, tlsSource)
+	printStartupSummary(scheme, *port, distDir, baseDir, logPath, tlsEnabled, tlsSource, !authManager.IsSetup())
 
 	server := &http.Server{
 		Addr:              addr,

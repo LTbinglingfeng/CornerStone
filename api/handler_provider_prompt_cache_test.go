@@ -219,3 +219,61 @@ func TestHandleMemoryProvider_PromptCachingCanDisableExplicitly(t *testing.T) {
 		t.Fatalf("PromptCacheTTL = %q, want %q", cfg.MemoryProvider.PromptCacheTTL, "1h")
 	}
 }
+
+func TestHandleProviderByID_PutResponseMasksReusedAPIKey(t *testing.T) {
+	provider := config.DefaultProvider()
+	provider.ID = "provider-1"
+	provider.Name = "Test Provider"
+	provider.Type = config.ProviderTypeOpenAI
+	provider.BaseURL = "https://api.example.com/v1"
+	provider.APIKey = "SECRET123456"
+	provider.Model = "gpt-4o-mini"
+
+	handler := &Handler{configManager: newTestProviderConfigManager(t, provider)}
+
+	body, err := json.Marshal(map[string]interface{}{
+		"name":          "Test Provider Updated",
+		"type":          "openai",
+		"base_url":      "https://api.example.com/v1",
+		"api_key":       "****",
+		"model":         "gpt-4o-mini",
+		"stream":        false,
+		"image_capable": false,
+	})
+	if err != nil {
+		t.Fatalf("Marshal request failed: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPut, "/management/providers/provider-1", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	handler.handleProviderByID(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var resp struct {
+		Success bool `json:"success"`
+		Data    struct {
+			APIKey string `json:"api_key"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("Decode response failed: %v", err)
+	}
+	if !resp.Success {
+		t.Fatalf("response success = false, body=%s", rec.Body.String())
+	}
+	if resp.Data.APIKey != "SECR****3456" {
+		t.Fatalf("response api_key = %q, want %q", resp.Data.APIKey, "SECR****3456")
+	}
+
+	updated := handler.configManager.GetProvider("provider-1")
+	if updated == nil {
+		t.Fatalf("provider not found after update")
+	}
+	if updated.APIKey != "SECRET123456" {
+		t.Fatalf("stored api_key = %q, want %q", updated.APIKey, "SECRET123456")
+	}
+}

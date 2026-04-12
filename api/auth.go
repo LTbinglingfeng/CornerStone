@@ -6,7 +6,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -124,6 +126,105 @@ func setAuthTokenCookie(w http.ResponseWriter, r *http.Request, token string) {
 	})
 }
 
+func normalizeHost(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	if strings.Contains(trimmed, "://") {
+		if parsed, err := url.Parse(trimmed); err == nil && parsed != nil && strings.TrimSpace(parsed.Host) != "" {
+			trimmed = strings.TrimSpace(parsed.Host)
+		}
+	}
+	if host, _, err := net.SplitHostPort(trimmed); err == nil && strings.TrimSpace(host) != "" {
+		trimmed = strings.TrimSpace(host)
+	}
+	trimmed = strings.TrimPrefix(trimmed, "[")
+	trimmed = strings.TrimSuffix(trimmed, "]")
+	return strings.ToLower(strings.TrimSpace(trimmed))
+}
+
+func isLoopbackHost(value string) bool {
+	host := normalizeHost(value)
+	if host == "" {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+func isLoopbackRequest(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	if !isLoopbackHost(r.RemoteAddr) {
+		return false
+	}
+	if !forwardedLoopbackOnly(r.Header.Values("X-Forwarded-For")) {
+		return false
+	}
+	if !forwardedLoopbackOnly(r.Header.Values("X-Real-IP")) {
+		return false
+	}
+	return true
+}
+
+func forwardedLoopbackOnly(values []string) bool {
+	for _, value := range values {
+		for _, part := range strings.Split(value, ",") {
+			trimmed := strings.TrimSpace(part)
+			if trimmed == "" {
+				continue
+			}
+			if !isLoopbackHost(trimmed) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func isTrustedBootstrapOrigin(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "" {
+		return true
+	}
+
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed == nil || strings.TrimSpace(parsed.Host) == "" {
+		return false
+	}
+
+	originHost := strings.ToLower(strings.TrimSpace(parsed.Host))
+	requestHost := strings.ToLower(strings.TrimSpace(r.Host))
+	if originHost == requestHost {
+		return true
+	}
+
+	return isLoopbackHost(originHost) && isLoopbackHost(requestHost)
+}
+
+func (h *Handler) requireLocalBootstrapAccess(w http.ResponseWriter, r *http.Request) bool {
+	if h == nil || h.authManager == nil || h.authManager.IsSetup() {
+		return true
+	}
+	if !isLoopbackRequest(r) {
+		h.jsonResponse(w, http.StatusForbidden, Response{Success: false, Error: "Initial setup is only available from localhost"})
+		return false
+	}
+	if !isTrustedBootstrapOrigin(r) {
+		h.jsonResponse(w, http.StatusForbidden, Response{Success: false, Error: "Initial setup must be performed from the local Web UI"})
+		return false
+	}
+	return true
+}
+
 func (h *Handler) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if h.authManager == nil || h.tokenStore == nil {
@@ -153,6 +254,9 @@ func (h *Handler) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 func (h *Handler) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		h.jsonResponse(w, http.StatusMethodNotAllowed, Response{Success: false, Error: "Method not allowed"})
+		return
+	}
+	if !h.requireLocalBootstrapAccess(w, r) {
 		return
 	}
 
@@ -187,6 +291,9 @@ func (h *Handler) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleAuthSetup(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		h.jsonResponse(w, http.StatusMethodNotAllowed, Response{Success: false, Error: "Method not allowed"})
+		return
+	}
+	if !h.requireLocalBootstrapAccess(w, r) {
 		return
 	}
 

@@ -111,10 +111,7 @@ func (h *Handler) handleConfig(w http.ResponseWriter, r *http.Request) {
 			WeatherDefaultCity:     h.configManager.GetWeatherDefaultCity(),
 			ToolToggles:            h.configManager.Get().ToolToggles,
 		}
-		// 隐藏完整API密钥
-		if len(cfg.APIKey) > 8 {
-			cfg.APIKey = cfg.APIKey[:4] + "****" + cfg.APIKey[len(cfg.APIKey)-4:]
-		}
+		cfg.APIKey = maskAPIKey(cfg.APIKey)
 		h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: cfg})
 
 	case "PUT", "POST":
@@ -403,7 +400,9 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		h.jsonResponse(w, http.StatusCreated, Response{Success: true, Data: provider})
+		maskedProvider := provider
+		maskedProvider.APIKey = maskAPIKey(maskedProvider.APIKey)
+		h.jsonResponse(w, http.StatusCreated, Response{Success: true, Data: maskedProvider})
 
 	default:
 		h.jsonResponse(w, http.StatusMethodNotAllowed, Response{Success: false, Error: "Method not allowed"})
@@ -658,7 +657,9 @@ func (h *Handler) handleProviderByID(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		}
-		h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: provider})
+		maskedProvider := provider
+		maskedProvider.APIKey = maskAPIKey(maskedProvider.APIKey)
+		h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: maskedProvider})
 
 	case "DELETE":
 		if err := h.configManager.DeleteProvider(id); err != nil {
