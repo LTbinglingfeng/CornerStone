@@ -52,11 +52,6 @@ jobs:
           rm -rf release-assets
           mkdir -p release-assets/staging
 
-          (
-            cd web
-            zip -qr "../release-assets/cornerstone-web-dist-${tag}.zip" dist
-          )
-
           while read -r goos goarch archive; do
             asset_name="cornerstone-${goos}-${goarch}-${tag}"
             stage_dir="release-assets/staging/${asset_name}"
@@ -82,11 +77,18 @@ jobs:
           done <<'TARGETS'
           linux amd64 tar.gz
           linux arm64 tar.gz
+          darwin amd64 tar.gz
+          darwin arm64 tar.gz
           windows amd64 zip
           windows arm64 zip
           TARGETS
 
           rm -rf release-assets/staging
+
+          (
+            cd release-assets
+            sha256sum cornerstone-* > checksum.txt
+          )
 
       - name: Generate release notes
         run: |
@@ -117,8 +119,7 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            release-assets/cornerstone-web-dist-*.zip
-            release-assets/cornerstone-linux-*.tar.gz
-            release-assets/cornerstone-windows-*.zip
+            release-assets/cornerstone-*
+            release-assets/checksum.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
