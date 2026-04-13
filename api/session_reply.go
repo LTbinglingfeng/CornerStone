@@ -270,12 +270,14 @@ func buildGeneratedReplyStorageMessages(
 		lastIndex := len(loopResult.NewMessages) - 1
 		storedIndex := 0
 		for index, msg := range loopResult.NewMessages {
-			if shouldDropEmptyAssistantClientMessage(msg) && !(keepNoReplySilentAssistant && index == lastIndex) {
-				continue
-			}
 			content := msg.Content
 			if strings.TrimSpace(msg.Role) == "assistant" {
 				content = strings.TrimSpace(normalizeAssistantContent(content))
+			}
+			msgForDrop := msg
+			msgForDrop.Content = content
+			if shouldDropEmptyAssistantClientMessage(msgForDrop) && !(keepNoReplySilentAssistant && index == lastIndex) {
+				continue
 			}
 			storageMessages = append(storageMessages, storage.ChatMessage{
 				Role:             msg.Role,
