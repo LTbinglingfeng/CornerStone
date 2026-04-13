@@ -1023,6 +1023,96 @@ func TestReminderService_FireReminder_WebPersistsAssistantMessageWithoutInternal
 	}
 }
 
+func TestReminderService_FireReminder_WebStripsThinkBlocksFromAssistantMessage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(client.ChatResponse{
+			ID:      "chatcmpl-test",
+			Object:  "chat.completion",
+			Created: time.Now().Unix(),
+			Model:   "gpt-test",
+			Choices: []client.Choice{
+				{
+					Index: 0,
+					Message: client.Message{
+						Role:    "assistant",
+						Content: "<think>先想想怎么提醒</think>\n该喝水了。",
+					},
+					FinishReason: "stop",
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	provider := newTestProvider("provider-1")
+	provider.BaseURL = server.URL
+	configManager := newTestProviderConfigManager(t, provider)
+	promptManager := newTestPromptManager(t)
+	chatMgr := storage.NewChatManager(t.TempDir())
+	if _, err := chatMgr.CreateSession("session-1", "Alice", "prompt-1", "Alice"); err != nil {
+		t.Fatalf("CreateSession failed: %v", err)
+	}
+	if err := chatMgr.AddMessage("session-1", "user", "记得提醒我喝水"); err != nil {
+		t.Fatalf("AddMessage failed: %v", err)
+	}
+
+	exactTimeSvc := &stubExactTimeService{
+		now: time.Date(2026, 4, 5, 19, 30, 0, 0, time.FixedZone("CST", 8*3600)),
+		status: exacttime.Status{
+			Server:      "ntp.aliyun.com",
+			LastSuccess: true,
+			Message:     "ntp sync succeeded",
+		},
+	}
+	handler := &Handler{
+		configManager: configManager,
+		promptManager: promptManager,
+		chatManager:   chatMgr,
+		userManager:   newTestUserManager(t),
+		cleanupDone:   make(chan struct{}),
+	}
+	handler.SetExactTimeService(exactTimeSvc)
+	reminderSvc := NewReminderService(handler, storage.NewReminderManager(filepath.Join(t.TempDir(), "reminders")), exactTimeSvc)
+	handler.SetReminderService(reminderSvc)
+
+	reminder, err := reminderSvc.Create(reminderCreateRequest{
+		Channel:        storage.ReminderChannelWeb,
+		SessionID:      "session-1",
+		PromptID:       "prompt-1",
+		PromptName:     "Alice",
+		Title:          "喝水提醒",
+		ReminderPrompt: "到时间后提醒用户喝水。",
+		DueAt:          time.Date(2026, 4, 5, 19, 29, 0, 0, time.FixedZone("CST", 8*3600)),
+	})
+	if err != nil {
+		t.Fatalf("Create reminder failed: %v", err)
+	}
+
+	if err := reminderSvc.fireReminder(context.Background(), reminder.ID); err != nil {
+		t.Fatalf("fireReminder failed: %v", err)
+	}
+
+	record, ok := chatMgr.GetSession("session-1")
+	if !ok {
+		t.Fatal("session not found")
+	}
+	if len(record.Messages) != 2 {
+		t.Fatalf("message count = %d, want 2", len(record.Messages))
+	}
+	if got := record.Messages[1].Content; got != "该喝水了。" {
+		t.Fatalf("assistant content = %q, want %q", got, "该喝水了。")
+	}
+	if strings.Contains(strings.ToLower(record.Messages[1].Content), "<think") {
+		t.Fatalf("assistant content leaked think block: %#v", record.Messages[1])
+	}
+}
+
 func TestReminderService_FireReminder_NapCatRetryableSendRequeuesPending(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/chat/completions" {
@@ -2269,6 +2359,128 @@ func TestIdleGreetingService_FireTask_ClawBotSendsAndPersists(t *testing.T) {
 	}
 	if record.Messages[1].Role != "assistant" || record.Messages[1].Content != "晚上好，微信上来打个招呼。" {
 		t.Fatalf("assistant message = %#v, want final clawbot idle greeting", record.Messages[1])
+	}
+}
+
+func TestIdleGreetingService_FireTask_ClawBotStripsThinkBlocksBeforeSendAndPersist(t *testing.T) {
+	var state struct {
+		mu        sync.Mutex
+		sendTexts []string
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/chat/completions":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(client.ChatResponse{
+				ID:      "chatcmpl-test",
+				Object:  "chat.completion",
+				Created: time.Now().Unix(),
+				Model:   "gpt-test",
+				Choices: []client.Choice{
+					{
+						Index: 0,
+						Message: client.Message{
+							Role:    "assistant",
+							Content: "<think>先组织一下措辞</think>\n晚上好→微信上来打个招呼。",
+						},
+						FinishReason: "stop",
+					},
+				},
+			})
+		case "/ilink/bot/sendmessage":
+			var req client.ClawBotSendMessageRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode sendmessage request failed: %v", err)
+			}
+			text := ""
+			if len(req.Msg.ItemList) > 0 && req.Msg.ItemList[0].TextItem != nil {
+				text = req.Msg.ItemList[0].TextItem.Text
+			}
+			state.mu.Lock()
+			state.sendTexts = append(state.sendTexts, text)
+			state.mu.Unlock()
+			_ = json.NewEncoder(w).Encode(client.ClawBotSendMessageResponse{Ret: 0})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	handler, configManager, chatMgr, service, manager, exactTimeSvc := newIdleGreetingTestHarness(t, server.URL)
+	clawCfg := configManager.GetClawBotConfig()
+	clawCfg.Enabled = true
+	clawCfg.BaseURL = server.URL
+	clawCfg.BotToken = "bot-token"
+	if err := configManager.UpdateClawBotConfig(clawCfg); err != nil {
+		t.Fatalf("UpdateClawBotConfig failed: %v", err)
+	}
+	handler.SetClawBotService(&ClawBotService{
+		handler:        handler,
+		client:         client.NewClawBotClient(),
+		qrSessions:     make(map[string]clawBotQRCodeSession),
+		activeSessions: make(map[string]*clawBotActiveSession),
+		pendingReplies: make(map[string]*clawBotPendingReply),
+		contextTokens:  make(map[string]string),
+		wechatUIN:      "wechat-uin",
+	})
+
+	if _, err := chatMgr.CreateSession("session-1", "Alice", "prompt-1", "Alice"); err != nil {
+		t.Fatalf("CreateSession failed: %v", err)
+	}
+	lastUserAt := exactTimeSvc.now.Add(-2 * time.Hour)
+	if err := chatMgr.AddMessages("session-1", []storage.ChatMessage{
+		{Role: "user", Content: "微信里在吗", Timestamp: lastUserAt},
+	}); err != nil {
+		t.Fatalf("AddMessages failed: %v", err)
+	}
+
+	task, err := manager.UpsertPending(storage.IdleGreetingTask{
+		Channel:    storage.ReminderChannelClawBot,
+		SessionID:  "session-1",
+		PromptID:   "prompt-1",
+		PromptName: "Alice",
+		Target: storage.ReminderTarget{
+			Kind:   storage.ReminderTargetKindUser,
+			UserID: "wx-user",
+		},
+		DueAt:      exactTimeSvc.now.Add(-time.Minute),
+		LastUserAt: lastUserAt,
+	})
+	if err != nil {
+		t.Fatalf("UpsertPending failed: %v", err)
+	}
+
+	if err := service.fireTask(context.Background(), task.ID); err != nil {
+		t.Fatalf("fireTask failed: %v", err)
+	}
+
+	state.mu.Lock()
+	wantTexts := []string{"晚上好", "微信上来打个招呼。"}
+	if len(state.sendTexts) != len(wantTexts) {
+		state.mu.Unlock()
+		t.Fatalf("sendTexts len = %d, want %d", len(state.sendTexts), len(wantTexts))
+	}
+	for i := range wantTexts {
+		if state.sendTexts[i] != wantTexts[i] {
+			state.mu.Unlock()
+			t.Fatalf("sendTexts[%d] = %q, want %q", i, state.sendTexts[i], wantTexts[i])
+		}
+	}
+	state.mu.Unlock()
+
+	record, ok := chatMgr.GetSession("session-1")
+	if !ok {
+		t.Fatal("session not found")
+	}
+	if len(record.Messages) != 2 {
+		t.Fatalf("message count = %d, want 2", len(record.Messages))
+	}
+	if got := record.Messages[1].Content; got != "晚上好→微信上来打个招呼。" {
+		t.Fatalf("assistant content = %q, want %q", got, "晚上好→微信上来打个招呼。")
+	}
+	if strings.Contains(strings.ToLower(record.Messages[1].Content), "<think") {
+		t.Fatalf("assistant content leaked think block: %#v", record.Messages[1])
 	}
 }
 

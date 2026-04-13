@@ -199,7 +199,7 @@ func (h *Handler) generateSessionReply(ctx context.Context, options sessionReply
 	}
 	text := ""
 	if loopResult != nil && loopResult.FinalResponse != nil && len(loopResult.FinalResponse.Choices) > 0 {
-		text = strings.TrimSpace(loopResult.FinalResponse.Choices[0].Message.Content)
+		text = strings.TrimSpace(normalizeAssistantContent(loopResult.FinalResponse.Choices[0].Message.Content))
 	}
 	noReplySelected := false
 	if loopResult != nil {
@@ -273,9 +273,13 @@ func buildGeneratedReplyStorageMessages(
 			if shouldDropEmptyAssistantClientMessage(msg) && !(keepNoReplySilentAssistant && index == lastIndex) {
 				continue
 			}
+			content := msg.Content
+			if strings.TrimSpace(msg.Role) == "assistant" {
+				content = strings.TrimSpace(normalizeAssistantContent(content))
+			}
 			storageMessages = append(storageMessages, storage.ChatMessage{
 				Role:             msg.Role,
-				Content:          msg.Content,
+				Content:          content,
 				ReasoningContent: msg.ReasoningContent,
 				ToolCalls:        msg.ToolCalls,
 				ToolCallID:       msg.ToolCallID,
