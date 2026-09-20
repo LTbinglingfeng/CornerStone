@@ -199,6 +199,16 @@ function App() {
     }, [handleOpenSessionFromNotification])
 
     useEffect(() => {
+        const handleExpiredSession = () => {
+            setAuthMode('login')
+            setShowPromptSelector(false)
+            sessionUpdatedAtRef.current.clear()
+        }
+        window.addEventListener('cornerstone:auth-expired', handleExpiredSession)
+        return () => window.removeEventListener('cornerstone:auth-expired', handleExpiredSession)
+    }, [])
+
+    useEffect(() => {
         const checkAuth = async () => {
             const status = await getAuthStatus()
             if (!status) {

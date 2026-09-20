@@ -55,6 +55,13 @@ async function apiFetch(url: string, init: RequestInit = {}): Promise<Response> 
     const res = await fetch(url, { ...init, headers })
     if (res.ok) return res
 
+    // A server restart invalidates in-memory sessions. Do not let a late response
+    // from an old request invalidate a newly authenticated session.
+    if (res.status === 401 && token && getAuthToken() === token && !url.startsWith(`${MANAGEMENT_BASE}/auth/`)) {
+        setAuthToken(null)
+        window.dispatchEvent(new Event('cornerstone:auth-expired'))
+    }
+
     let message = `${res.status} ${res.statusText}`.trim()
     try {
         const contentType = res.headers.get('Content-Type') || ''
