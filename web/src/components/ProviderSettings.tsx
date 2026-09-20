@@ -294,13 +294,18 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
             variants={drawerVariants}
         >
             <div className="provider-settings-header">
-                <button className="back-button" onClick={handleBack}>
+                <button className="back-button" onClick={handleBack} aria-label={t('common.back')}>
                     <svg viewBox="0 0 24 24">
                         <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
                     </svg>
                 </button>
                 <div className="provider-settings-title">{t('provider.title')}</div>
-                <button className="header-add-button" onClick={handleAddNew} title={t('provider.addProvider')}>
+                <button
+                    className="header-add-button"
+                    onClick={handleAddNew}
+                    title={t('provider.addProvider')}
+                    aria-label={t('provider.addProvider')}
+                >
                     <svg viewBox="0 0 24 24">
                         <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
                     </svg>
@@ -458,6 +463,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                 <div className="modal-group">
                                     <label className="modal-label">{t('provider.id')}</label>
                                     <input
+                                        aria-label={t('provider.id')}
                                         type="text"
                                         className="modal-input"
                                         value={editingProvider.id}
@@ -470,6 +476,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                 <div className="modal-group">
                                     <label className="modal-label">{t('provider.displayName')}</label>
                                     <input
+                                        aria-label={t('provider.displayName')}
                                         type="text"
                                         className="modal-input"
                                         value={editingProvider.name}
@@ -491,6 +498,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                 <div className="modal-group">
                                     <label className="modal-label">{t('provider.apiUrl')}</label>
                                     <input
+                                        aria-label={t('provider.apiUrl')}
                                         type="text"
                                         className="modal-input"
                                         value={editingProvider.base_url}
@@ -502,6 +510,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                 <div className="modal-group">
                                     <label className="modal-label">{t('provider.apiKey')}</label>
                                     <input
+                                        aria-label={t('provider.apiKey')}
                                         type="password"
                                         className="modal-input"
                                         value={editingProvider.api_key}
@@ -511,22 +520,24 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                 </div>
 
                                 <div className="modal-group">
-                                    <label className="modal-label">{t('provider.model')}</label>
-                                    <ModelSelect
-                                        value={editingProvider.model}
-                                        providerId={editingProvider.id}
-                                        providerType={editingProvider.type}
-                                        baseUrl={editingProvider.base_url}
-                                        apiKey={editingProvider.api_key}
-                                        isNewProvider={isAddingNew}
-                                        placeholder={
-                                            editingProvider.type === 'gemini_image'
-                                                ? 'nano banana / nanobanana Pro'
-                                                : 'gpt-4'
-                                        }
-                                        onChange={(value) => handleProviderChange('model', value)}
-                                        onError={(message) => showToast(message, 'error')}
-                                    />
+                                    <label>
+                                        <span className="modal-label">{t('provider.model')}</span>
+                                        <ModelSelect
+                                            value={editingProvider.model}
+                                            providerId={editingProvider.id}
+                                            providerType={editingProvider.type}
+                                            baseUrl={editingProvider.base_url}
+                                            apiKey={editingProvider.api_key}
+                                            isNewProvider={isAddingNew}
+                                            placeholder={
+                                                editingProvider.type === 'gemini_image'
+                                                    ? 'nano banana / nanobanana Pro'
+                                                    : 'gpt-4'
+                                            }
+                                            onChange={(value) => handleProviderChange('model', value)}
+                                            onError={(message) => showToast(message, 'error')}
+                                        />
+                                    </label>
                                 </div>
 
                                 {editingProvider.type === 'gemini_image' && (
@@ -534,6 +545,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                         <div className="modal-group">
                                             <label className="modal-label">{t('provider.imageAspectRatio')}</label>
                                             <select
+                                                aria-label={t('provider.imageAspectRatio')}
                                                 className="modal-input modal-select"
                                                 value={editingProvider.gemini_image_aspect_ratio || '1:1'}
                                                 onChange={(e) =>
@@ -551,6 +563,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                         <div className="modal-group">
                                             <label className="modal-label">{t('provider.imageResolution')}</label>
                                             <select
+                                                aria-label={t('provider.imageResolution')}
                                                 className="modal-input modal-select"
                                                 value={editingProvider.gemini_image_size || ''}
                                                 onChange={(e) =>
@@ -568,6 +581,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                         <div className="modal-group">
                                             <label className="modal-label">{t('provider.imageQuantity')}</label>
                                             <NumericInput
+                                                aria-label={t('provider.imageQuantity')}
                                                 className="modal-input"
                                                 min={1}
                                                 max={8}
@@ -584,6 +598,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                         <div className="modal-group">
                                             <label className="modal-label">{t('provider.outputFormat')}</label>
                                             <select
+                                                aria-label={t('provider.outputFormat')}
                                                 className="modal-input modal-select"
                                                 value={editingProvider.gemini_image_output_mime_type || 'image/jpeg'}
                                                 onChange={(e) =>
@@ -607,6 +622,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                     <div className="modal-group">
                                         <label className="modal-label">{t('provider.temperature')}</label>
                                         <NumericInput
+                                            aria-label={t('provider.temperature')}
                                             className="modal-input"
                                             min={0}
                                             max={2}
@@ -624,6 +640,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                     <div className="modal-group">
                                         <label className="modal-label">{t('provider.topP')}</label>
                                         <NumericInput
+                                            aria-label={t('provider.topP')}
                                             className="modal-input"
                                             min={0}
                                             max={1}
@@ -667,6 +684,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                             <label className="modal-label">{t('provider.thinkingLevelBudget')}</label>
                                             {editingProvider.gemini_thinking_mode === 'thinking_level' && (
                                                 <select
+                                                    aria-label={t('provider.thinkingLevelBudget')}
                                                     className="modal-input modal-select"
                                                     value={editingProvider.gemini_thinking_level}
                                                     onChange={(e) =>
@@ -682,6 +700,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                             )}
                                             {editingProvider.gemini_thinking_mode === 'thinking_budget' && (
                                                 <NumericInput
+                                                    aria-label={t('provider.thinkingLevelBudget')}
                                                     className="modal-input"
                                                     min={getGeminiThinkingBudgetRange(editingProvider.model).min}
                                                     max={getGeminiThinkingBudgetRange(editingProvider.model).max}
@@ -696,6 +715,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                             )}
                                             {editingProvider.gemini_thinking_mode === 'none' && (
                                                 <input
+                                                    aria-label={t('provider.thinkingLevelBudget')}
                                                     type="text"
                                                     className="modal-input"
                                                     value={t('common.disabled')}
@@ -711,6 +731,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                         <div className="modal-group">
                                             <label className="modal-label">{t('memoryProvider.thinkingBudget')}</label>
                                             <NumericInput
+                                                aria-label={t('memoryProvider.thinkingBudget')}
                                                 className="modal-input"
                                                 min={0}
                                                 step={1}
@@ -728,6 +749,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                             <div className="modal-toggle-wrapper">
                                                 <label className="toggle-switch">
                                                     <input
+                                                        aria-label={t('provider.promptCaching')}
                                                         type="checkbox"
                                                         checked={editingProvider.prompt_caching}
                                                         onChange={(e) =>
@@ -765,6 +787,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                         <div className="modal-group">
                                             <label className="modal-label">{t('provider.contextRounds')}</label>
                                             <NumericInput
+                                                aria-label={t('provider.contextRounds')}
                                                 className="modal-input"
                                                 min={1}
                                                 step={1}
@@ -782,6 +805,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                             <div className="modal-toggle-wrapper">
                                                 <label className="toggle-switch">
                                                     <input
+                                                        aria-label={t('provider.streamingOutput')}
                                                         type="checkbox"
                                                         checked={editingProvider.stream}
                                                         onChange={(e) =>
@@ -801,6 +825,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                             <div className="modal-toggle-wrapper">
                                                 <label className="toggle-switch">
                                                     <input
+                                                        aria-label={t('provider.visionSupport')}
                                                         type="checkbox"
                                                         checked={editingProvider.image_capable}
                                                         onChange={(e) =>
