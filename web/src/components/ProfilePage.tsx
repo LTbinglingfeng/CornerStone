@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { Link } from 'react-router-dom'
+import { ModalOverlay } from './ModalOverlay'
 import { getUserInfo, updateUserInfo, uploadUserAvatar, getUserAvatarUrl, appendQueryParam } from '../services/api'
 import { useT } from '../contexts/I18nContext'
 import type { UserInfo } from '../types/chat'
@@ -163,13 +164,14 @@ const ProfilePage: React.FC = () => {
             {/* 用户信息编辑弹窗 */}
             <AnimatePresence>
                 {showUserModal && (
-                    <motion.div
+                    <ModalOverlay
+                        aria-label={t('profile.personalInfo')}
+                        onDismiss={handleCloseUserModal}
                         className="profile-modal-overlay"
                         initial="hidden"
                         animate="visible"
                         exit="hidden"
                         variants={overlayVariants}
-                        onClick={handleCloseUserModal}
                     >
                         <motion.div
                             className="profile-modal-card"
@@ -254,7 +256,7 @@ const ProfilePage: React.FC = () => {
                                 </button>
                             </div>
                         </motion.div>
-                    </motion.div>
+                    </ModalOverlay>
                 )}
             </AnimatePresence>
         </div>

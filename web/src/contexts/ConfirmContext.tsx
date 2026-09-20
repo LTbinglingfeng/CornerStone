@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useT } from './I18nContext'
+import { ModalOverlay } from '../components/ModalOverlay'
 import './ConfirmModal.css'
 
 interface ConfirmOptions {
@@ -59,7 +60,11 @@ export const ConfirmProvider: React.FC<{ children: ReactNode }> = ({ children })
             {children}
             {isOpen &&
                 createPortal(
-                    <div className="confirm-modal-overlay" onClick={handleCancel}>
+                    <ModalOverlay
+                        className="confirm-modal-overlay"
+                        aria-label={options.title || t('common.confirm')}
+                        onDismiss={handleCancel}
+                    >
                         <div className="confirm-modal-card" onClick={(e) => e.stopPropagation()}>
                             <div className="confirm-modal-header">
                                 <div className="confirm-modal-title">{options.title || t('common.confirm')}</div>
@@ -77,7 +82,7 @@ export const ConfirmProvider: React.FC<{ children: ReactNode }> = ({ children })
                                 </button>
                             </div>
                         </div>
-                    </div>,
+                    </ModalOverlay>,
                     document.body
                 )}
         </ConfirmContext.Provider>

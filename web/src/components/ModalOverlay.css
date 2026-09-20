@@ -29,3 +29,11 @@ dialog.native-modal-overlay > * {
 dialog.native-modal-overlay:not([open]) {
     display: none;
 }
+
+@media (prefers-reduced-motion: reduce) {
+    dialog.native-modal-overlay,
+    dialog.native-modal-overlay * {
+        animation-duration: 0s !important;
+        transition-duration: 0s !important;
+    }
+}
