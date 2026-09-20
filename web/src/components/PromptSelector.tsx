@@ -4,6 +4,7 @@ import { getPrompts, getPromptAvatarUrl, appendQueryParam, getErrorMessage } fro
 import { useT } from '../contexts/I18nContext'
 import type { Prompt } from '../types/chat'
 import { centerModalVariants, overlayVariants } from '../utils/motion'
+import { ModalOverlay } from './ModalOverlay'
 import './PromptSelector.css'
 
 interface PromptSelectorProps {
@@ -47,16 +48,18 @@ const PromptSelector: React.FC<PromptSelectorProps> = ({ onSelect, onClose }) =>
     }
 
     return (
-        <motion.div
+        <ModalOverlay
+            aria-label={t('promptSelector.title')}
+            onDismiss={onClose}
             className="prompt-selector-overlay"
             initial="hidden"
             animate="visible"
             exit="hidden"
             variants={overlayVariants}
-            onClick={onClose}
         >
             <motion.div
                 className="prompt-selector-modal"
+                style={{ maxHeight: 'min(80vh, calc(100dvh - 40px))' }}
                 initial="hidden"
                 animate="visible"
                 exit="hidden"
@@ -65,7 +68,7 @@ const PromptSelector: React.FC<PromptSelectorProps> = ({ onSelect, onClose }) =>
             >
                 <div className="prompt-selector-header">
                     <h3>{t('promptSelector.title')}</h3>
-                    <button className="prompt-selector-close" onClick={onClose}>
+                    <button className="prompt-selector-close" onClick={onClose} aria-label={t('common.close')}>
                         <svg viewBox="0 0 24 24">
                             <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
                         </svg>
@@ -91,6 +94,14 @@ const PromptSelector: React.FC<PromptSelectorProps> = ({ onSelect, onClose }) =>
                                 <div
                                     key={prompt.id}
                                     className="prompt-selector-item"
+                                    role="button"
+                                    tabIndex={0}
+                                    onKeyDown={(event) => {
+                                        if (event.key === 'Enter' || event.key === ' ') {
+                                            event.preventDefault()
+                                            handleSelect(prompt)
+                                        }
+                                    }}
                                     onClick={() => handleSelect(prompt)}
                                 >
                                     <div className="prompt-selector-avatar">
@@ -116,7 +127,7 @@ const PromptSelector: React.FC<PromptSelectorProps> = ({ onSelect, onClose }) =>
                     )}
                 </div>
             </motion.div>
-        </motion.div>
+        </ModalOverlay>
     )
 }
 
