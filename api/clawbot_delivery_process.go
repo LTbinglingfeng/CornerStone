@@ -98,28 +98,93 @@ func (s *ClawBotService) prepareDeliveryInput(ctx context.Context, cfg config.Cl
 	// orphan collection can safely distinguish unreferenced attachments later.
 	if len(job.InputMessages) == 0 {
 		for index, msg := range job.Inputs {
-			msg = s.restoreClawBotReferences(cfg, msg)
+			original := msg
+			msg, cached := s.prepareClawBotReferences(cfg, msg)
+			var local []storage.ClawBotReferenceMedia
 			text := strings.TrimSpace(client.ExtractTextFromClawBotMessage(msg))
 			if literal, ok := unescapeClawBotLiteralCommandText(text); ok {
 				text = literal
 			}
 			images := []string(nil)
-			for _, item := range client.ExtractImageItemsFromClawBotMessage(msg) {
-				data, err := s.client.DownloadImageItem(ctx, item)
-				if err != nil {
-					text = strings.TrimSpace(text + "\n[图片下载失败，内容不可用。]")
-					continue
+			var attachments []storage.ChatAttachment
+			budget := &clawBotAttachmentBudget{}
+			// Process each original item independently so failed downloads cannot
+			// shift the index of successfully cached local metadata.
+			for itemIndex, item := range original.ItemList {
+				single := original
+				single.ItemList = []client.ClawBotIncomingMessageItem{item}
+				if item.Type == 2 && item.ImageItem != nil {
+					data, err := s.client.DownloadImageItem(ctx, item.ImageItem)
+					if err != nil {
+						text += "\n[图片下载失败，内容不可用。]"
+						continue
+					}
+					path, err := s.handler.saveCachePhotoBytes(data)
+					if err != nil {
+						text += "\n[图片校验或保存失败，内容不可用。]"
+						continue
+					}
+					images = append(images, path)
+					local = append(local, storage.ClawBotReferenceMedia{ItemIndex: itemIndex, Attachment: storage.ChatAttachment{Path: path, Kind: "image"}})
+				} else {
+					if item.Type == 3 && item.VoiceItem != nil {
+						transcript := strings.TrimSpace(item.VoiceItem.Text)
+						if transcript != "" && transcript != strings.TrimSpace(client.ExtractTextFromClawBotMessage(original)) {
+							text += "\n" + transcript
+						}
+					}
+					received, notice := s.receiveClawBotAttachments(ctx, single, budget)
+					attachments = append(attachments, received...)
+					if notice != "" {
+						text = strings.TrimSpace(text + "\n" + notice)
+					}
+					for _, a := range received {
+						local = append(local, storage.ClawBotReferenceMedia{ItemIndex: itemIndex, Attachment: a})
+					}
 				}
-				path, err := s.handler.saveCachePhotoBytes(data)
-				if err != nil {
-					text = strings.TrimSpace(text + "\n[图片校验或保存失败，内容不可用。]")
-					continue
-				}
-				images = append(images, path)
 			}
-			attachments, notice := s.receiveClawBotAttachments(ctx, msg)
-			if notice != "" {
-				text = strings.TrimSpace(text + "\n" + notice)
+			s.saveClawBotLocalReference(cfg, original, local)
+			for _, a := range cached {
+				if a.Kind != "image" {
+					budget.Count++
+					if budget.Count > 16 || budget.Bytes+a.Size > storage.MaxAttachmentBytes {
+						text += "\n[引用附件数量或总大小超限。]"
+						continue
+					}
+					budget.Bytes += a.Size
+				}
+				if a.Kind == "image" {
+					images = append(images, a.Path)
+				} else {
+					attachments = append(attachments, a)
+					text += fmt.Sprintf("\n[引用附件 %s 已保存；当前模型无法读取此附件内容，不要声称已读取。]", a.Name)
+				}
+			}
+			// Missing local files fall back to the original CDN payload. Quote
+			// failures degrade to notices rather than blocking this delivery.
+			for _, item := range msg.ItemList {
+				if !item.IsReference {
+					continue
+				}
+				if item.Type == 2 && item.ImageItem != nil {
+					data, err := s.client.DownloadImageItem(ctx, item.ImageItem)
+					if err == nil {
+						path, saveErr := s.handler.saveCachePhotoBytes(data)
+						if saveErr == nil {
+							images = append(images, path)
+							continue
+						}
+					}
+					text += "\n[引用图片不可用。]"
+				} else {
+					single := msg
+					single.ItemList = []client.ClawBotIncomingMessageItem{item}
+					received, notice := s.receiveClawBotAttachments(ctx, single, budget)
+					attachments = append(attachments, received...)
+					if notice != "" {
+						text = strings.TrimSpace(text + "\n" + notice)
+					}
+				}
 			}
 			if text == "" && len(images) == 0 && len(attachments) == 0 {
 				continue

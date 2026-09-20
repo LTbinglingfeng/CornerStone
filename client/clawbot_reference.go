@@ -140,6 +140,12 @@ func ResolveClawBotPartialQuote(text string, p *ClawBotPartialText) string {
 // It never recursively expands quoted references, and never changes the input.
 // Lookup receives a lossless server ID and returns the original raw item list.
 func RestoreClawBotReferences(msg ClawBotIncomingMessage, lookup func(ClawBotMessageID) json.RawMessage) ClawBotIncomingMessage {
+	return RestoreClawBotReferencesWithMedia(msg, lookup, nil)
+}
+
+// RestoreClawBotReferencesWithMedia lets trusted callers supply local media.
+// The callback runs only for cache-resolved items; wire JSON never carries paths.
+func RestoreClawBotReferencesWithMedia(msg ClawBotIncomingMessage, lookup func(ClawBotMessageID) json.RawMessage, local func(ClawBotMessageID, int) bool) ClawBotIncomingMessage {
 	out := msg
 	out.ItemList = append([]ClawBotIncomingMessageItem(nil), msg.ItemList...)
 	var quotes []string
@@ -154,23 +160,36 @@ func RestoreClawBotReferences(msg ClawBotIncomingMessage, lookup func(ClawBotMes
 			id = ref.MessageItem.MsgID
 		}
 		var quoted []ClawBotIncomingMessageItem
-		if ref.MessageItem != nil {
+		if ref.MessageItem != nil && clawBotReferenceHasContent(*ref.MessageItem) {
 			quoted = []ClawBotIncomingMessageItem{*ref.MessageItem}
 		}
-		if len(quoted) == 0 && id != "" && lookup != nil {
+		fromCache := len(quoted) == 0
+		if fromCache && id != "" && lookup != nil {
 			_ = json.Unmarshal(lookup(id), &quoted)
+		}
+		if !fromCache && local != nil && id != "" && lookup != nil {
+			var cached []ClawBotIncomingMessageItem
+			if json.Unmarshal(lookup(id), &cached) == nil && len(cached) > 0 {
+				quoted = cached
+				fromCache = true
+			}
 		}
 		parts := []string{}
 		if ref.Title != "" {
 			parts = append(parts, ref.Title)
 		}
-		for _, q := range quoted {
+		for index, q := range quoted {
 			if q.Type == 1 && q.TextItem != nil {
 				parts = append(parts, ResolveClawBotPartialQuote(q.TextItem.Text, ref.PartialText))
 			} else if q.Type >= 2 && q.Type <= 5 {
+				if q.Type == 3 && q.VoiceItem != nil && strings.TrimSpace(q.VoiceItem.Text) != "" {
+					parts = append(parts, ResolveClawBotPartialQuote(q.VoiceItem.Text, ref.PartialText))
+				}
 				q.RefMsg = nil
 				q.IsReference = true
-				media = append(media, q)
+				if !fromCache || local == nil || !local(id, index) {
+					media = append(media, q)
+				}
 				label := map[int]string{2: "图片", 3: "语音", 4: "文件", 5: "视频"}[q.Type]
 				parts = append(parts, "[引用"+label+"]")
 			}
@@ -212,6 +231,23 @@ func IsClawBotReferencedImage(msg ClawBotIncomingMessage, image *ClawBotImageIte
 		if item.IsReference && item.ImageItem == image {
 			return true
 		}
+	}
+	return false
+}
+
+func clawBotReferenceHasContent(q ClawBotIncomingMessageItem) bool {
+	usable := func(m *ClawBotCDNMedia) bool { return m != nil && (m.EncryptQueryParam != "" || m.FullURL != "") }
+	switch q.Type {
+	case 1:
+		return q.TextItem != nil && strings.TrimSpace(q.TextItem.Text) != ""
+	case 2:
+		return q.ImageItem != nil && (usable(q.ImageItem.Media) || usable(q.ImageItem.ThumbMedia))
+	case 3:
+		return q.VoiceItem != nil && (usable(q.VoiceItem.Media) || strings.TrimSpace(q.VoiceItem.Text) != "")
+	case 4:
+		return q.FileItem != nil && usable(q.FileItem.Media)
+	case 5:
+		return q.VideoItem != nil && usable(q.VideoItem.Media)
 	}
 	return false
 }

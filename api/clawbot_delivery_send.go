@@ -94,6 +94,13 @@ func (s *ClawBotService) deliverChunk(ctx context.Context, cfg config.ClawBotCon
 		protocolSession = job.Inputs[len(job.Inputs)-1].SessionID
 	}
 	s.cacheClawBotReference(cfg, client.ClawBotIncomingMessage{MessageID: response.MessageID, FromUserID: job.UserID, SessionID: protocolSession, ItemList: []client.ClawBotIncomingMessageItem{item}})
+	if media := chunk.Media; media != nil {
+		localPath := media.HistoryPath
+		if localPath == "" {
+			localPath = media.SourcePath
+		}
+		s.recordClawBotSentMediaReference(cfg, job.UserID, protocolSession, response.MessageID, localPath, media.Name, media.Kind)
+	}
 }
 
 func confirmedDeliveryMessages(job storage.ClawBotDeliveryJob) []storage.ChatMessage {

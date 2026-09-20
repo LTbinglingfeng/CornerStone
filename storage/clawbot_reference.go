@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -20,10 +21,18 @@ const (
 	clawBotReferenceItemBytes = 256 << 10
 )
 
+// ClawBotReferenceMedia is written only by trusted post-download API code.
+// ItemIndex refers to the original raw item list, never synthesized quotes.
+type ClawBotReferenceMedia struct {
+	ItemIndex  int            `json:"item_index"`
+	Attachment ChatAttachment `json:"attachment"`
+}
+
 type clawBotReferenceEntry struct {
-	Key   string          `json:"key"`
-	At    time.Time       `json:"at"`
-	Items json.RawMessage `json:"items"`
+	LocalMedia []ClawBotReferenceMedia `json:"local_media,omitempty"`
+	Key        string                  `json:"key"`
+	At         time.Time               `json:"at"`
+	Items      json.RawMessage         `json:"items"`
 }
 
 func clawBotReferenceKey(account, conversation, id string) string {
@@ -46,7 +55,8 @@ func (m *ClawBotStateManager) FindClawBotReference(account, conversation, id str
 }
 
 // SaveClawBotReference stores the complete raw item list (not credentials or
-// parsed attachments). Limits are global, so new accounts cannot grow disk use
+// parsed attachments in the wire payload). Trusted local metadata is separate.
+// Limits are global, so new accounts cannot grow disk use
 // without bound. Errors must never prevent receiving or sending a message.
 func (m *ClawBotStateManager) SaveClawBotReference(account, conversation, id string, items json.RawMessage) error {
 	if len(items) > clawBotReferenceItemBytes || !json.Valid(items) {
@@ -56,12 +66,36 @@ func (m *ClawBotStateManager) SaveClawBotReference(account, conversation, id str
 	return err
 }
 
+func (m *ClawBotStateManager) FindClawBotReferenceMedia(account, conversation, id string) ([]ClawBotReferenceMedia, error) {
+	var local []ClawBotReferenceMedia
+	_, err := m.referenceWithMedia(account, conversation, id, nil, time.Time{}, nil, &local)
+	return local, err
+}
+
+func (m *ClawBotStateManager) SaveClawBotReferenceMedia(account, conversation, id string, media []ClawBotReferenceMedia) error {
+	b, err := json.Marshal(media)
+	if err != nil || len(b) > clawBotReferenceItemBytes {
+		return errors.New("invalid reference metadata")
+	}
+	_, err = m.referenceWithMedia(account, conversation, id, nil, time.Time{}, media, nil)
+	return err
+}
+
 func (m *ClawBotStateManager) clawBotReference(account, conversation, id string, items json.RawMessage, now time.Time) (json.RawMessage, error) {
+	return m.referenceWithMedia(account, conversation, id, items, now, nil, nil)
+}
+
+func (m *ClawBotStateManager) referenceWithMedia(account, conversation, id string, items json.RawMessage, now time.Time, local []ClawBotReferenceMedia, result *[]ClawBotReferenceMedia) (json.RawMessage, error) {
 	if account == "" || conversation == "" || id == "" {
 		return nil, nil
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	scope, err := m.resolvePath(account)
+	if err != nil {
+		return nil, err
+	}
+	account = strings.TrimSuffix(filepath.Base(scope), ".json")
 	if now.IsZero() {
 		now = time.Now()
 	}
@@ -85,20 +119,37 @@ func (m *ClawBotStateManager) clawBotReference(account, conversation, id string,
 	key := clawBotReferenceKey(account, conversation, id)
 	kept := make([]clawBotReferenceEntry, 0, len(entries)+1)
 	var found json.RawMessage
+	var previous []ClawBotReferenceMedia
 	for _, e := range entries {
 		if !e.At.After(now.Add(-clawBotReferenceTTL)) || e.At.After(now) || len(e.Items) > clawBotReferenceItemBytes || !json.Valid(e.Items) {
 			continue
 		}
+		metadata, _ := json.Marshal(e.LocalMedia)
+		if len(metadata)+len(e.Items) > clawBotReferenceItemBytes {
+			continue
+		}
 		if e.Key == key {
+			previous = e.LocalMedia
+			if local != nil {
+				e.LocalMedia = append([]ClawBotReferenceMedia(nil), local...)
+			}
+			if result != nil {
+				*result = append([]ClawBotReferenceMedia(nil), e.LocalMedia...)
+			}
 			found = append(json.RawMessage(nil), e.Items...)
 			if items != nil {
 				continue
 			}
 		}
-		kept = append(kept, e)
+		if b, _ := json.Marshal(e.LocalMedia); len(b)+len(e.Items) <= clawBotReferenceItemBytes {
+			kept = append(kept, e)
+		}
 	}
 	if items != nil {
-		kept = append(kept, clawBotReferenceEntry{key, now, append(json.RawMessage(nil), items...)})
+		if b, _ := json.Marshal(previous); len(b)+len(items) > clawBotReferenceItemBytes {
+			previous = nil
+		}
+		kept = append(kept, clawBotReferenceEntry{Key: key, At: now, Items: append(json.RawMessage(nil), items...), LocalMedia: previous})
 	}
 	sort.SliceStable(kept, func(i, j int) bool { return kept[i].At.Before(kept[j].At) })
 	if len(kept) > clawBotReferenceCapacity {

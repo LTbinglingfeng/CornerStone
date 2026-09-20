@@ -25,7 +25,7 @@ func TestClawBotReferenceIsolationRestartExpiry(t *testing.T) {
 	if err != nil || string(got) != string(raw) {
 		t.Fatalf("%s %v", got, err)
 	}
-	for _, key := range [][2]string{{"another", conv}, {a, ClawBotReferenceConversation("peer", "other")}, {a, ClawBotReferenceConversation("other", "session")}, {a, ClawBotReferenceConversation("peer", "")}} {
+	for _, key := range [][2]string{{strings.Repeat("b", 64), conv}, {a, ClawBotReferenceConversation("peer", "other")}, {a, ClawBotReferenceConversation("other", "session")}, {a, ClawBotReferenceConversation("peer", "")}} {
 		got, err = m.FindClawBotReference(key[0], key[1], "18446744073709551615")
 		if err != nil || got != nil {
 			t.Fatal("cross-scope cache hit", err)
@@ -51,7 +51,7 @@ func TestClawBotReferenceEvictionAndCrashRecovery(t *testing.T) {
 	now := time.Now()
 	entries := make([]clawBotReferenceEntry, clawBotReferenceCapacity+1)
 	for i := range entries {
-		entries[i] = clawBotReferenceEntry{clawBotReferenceKey("a", "c", fmt.Sprint(i)), now.Add(time.Duration(i-len(entries)) * time.Second), json.RawMessage(`[]`)}
+		entries[i] = clawBotReferenceEntry{Key: clawBotReferenceKey(strings.Repeat("a", 64), "c", fmt.Sprint(i)), At: now.Add(time.Duration(i-len(entries)) * time.Second), Items: json.RawMessage(`[]`)}
 	}
 	b, _ := json.Marshal(entries)
 	path := filepath.Join(cacheDir, "items.json")
@@ -61,13 +61,13 @@ func TestClawBotReferenceEvictionAndCrashRecovery(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(cacheDir, ".items-crash"), []byte("partial"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.SaveClawBotReference("a", "c", "new", json.RawMessage(`[]`)); err != nil {
+	if err := m.SaveClawBotReference(strings.Repeat("a", 64), "c", "new", json.RawMessage(`[]`)); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := m.FindClawBotReference("a", "c", "0"); got != nil {
+	if got, _ := m.FindClawBotReference(strings.Repeat("a", 64), "c", "0"); got != nil {
 		t.Fatal("oldest not evicted")
 	}
-	if got, _ := m.FindClawBotReference("a", "c", "new"); got == nil {
+	if got, _ := m.FindClawBotReference(strings.Repeat("a", 64), "c", "new"); got == nil {
 		t.Fatal("newest missing")
 	}
 	if _, err := os.Stat(filepath.Join(cacheDir, ".items-crash")); !os.IsNotExist(err) {
@@ -81,13 +81,13 @@ func TestClawBotReferenceEvictionAndCrashRecovery(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`[{"key":`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.SaveClawBotReference("a", "c", "recovered", json.RawMessage(`[]`)); err != nil {
+	if err := m.SaveClawBotReference(strings.Repeat("a", 64), "c", "recovered", json.RawMessage(`[]`)); err != nil {
 		t.Fatal(err)
 	}
 	if m.failed != nil {
 		t.Fatal("cache poisoned durable state")
 	}
-	if got, _ := m.FindClawBotReference("a", "c", "recovered"); got == nil {
+	if got, _ := m.FindClawBotReference(strings.Repeat("a", 64), "c", "recovered"); got == nil {
 		t.Fatal("recovery failed")
 	}
 }
@@ -100,10 +100,10 @@ func TestClawBotReferenceConcurrentSnapshotsAndFailure(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			id := fmt.Sprint(i)
-			if err := m.SaveClawBotReference("a", "c", id, json.RawMessage(`[{"type":1}]`)); err != nil {
+			if err := m.SaveClawBotReference(strings.Repeat("a", 64), "c", id, json.RawMessage(`[{"type":1}]`)); err != nil {
 				t.Error(err)
 			}
-			got, err := m.FindClawBotReference("a", "c", id)
+			got, err := m.FindClawBotReference(strings.Repeat("a", 64), "c", id)
 			if err != nil || got == nil {
 				t.Error(err)
 			}
@@ -114,7 +114,7 @@ func TestClawBotReferenceConcurrentSnapshotsAndFailure(t *testing.T) {
 	}
 	wg.Wait()
 	for i := 0; i < 12; i++ {
-		got, err := m.FindClawBotReference("a", "c", fmt.Sprint(i))
+		got, err := m.FindClawBotReference(strings.Repeat("a", 64), "c", fmt.Sprint(i))
 		if err != nil || !json.Valid(got) {
 			t.Fatal("snapshot mutated", err)
 		}
@@ -124,7 +124,7 @@ func TestClawBotReferenceConcurrentSnapshotsAndFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	blocked := NewClawBotStateManager(dir)
-	if err := blocked.SaveClawBotReference("a", "c", "1", json.RawMessage(`[]`)); err == nil {
+	if err := blocked.SaveClawBotReference(strings.Repeat("a", 64), "c", "1", json.RawMessage(`[]`)); err == nil {
 		t.Fatal("expected IO error")
 	}
 	if blocked.failed != nil {
@@ -143,7 +143,7 @@ func TestClawBotReferenceByteBudget(t *testing.T) {
 	entries := make([]clawBotReferenceEntry, 66)
 	now := time.Now()
 	for i := range entries {
-		entries[i] = clawBotReferenceEntry{clawBotReferenceKey("a", "c", fmt.Sprint(i)), now.Add(time.Duration(i-100) * time.Second), raw}
+		entries[i] = clawBotReferenceEntry{Key: clawBotReferenceKey(strings.Repeat("a", 64), "c", fmt.Sprint(i)), At: now.Add(time.Duration(i-100) * time.Second), Items: raw}
 	}
 	data, _ := json.Marshal(entries)
 	path := filepath.Join(cacheDir, "items.json")
@@ -151,7 +151,7 @@ func TestClawBotReferenceByteBudget(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := 0; i < 2; i++ {
-		if err := m.SaveClawBotReference("a", "c", fmt.Sprint("new", i), raw); err != nil {
+		if err := m.SaveClawBotReference(strings.Repeat("a", 64), "c", fmt.Sprint("new", i), raw); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -159,11 +159,56 @@ func TestClawBotReferenceByteBudget(t *testing.T) {
 	if err != nil || info.Size() > clawBotReferenceBytes {
 		t.Fatal(info, err)
 	}
-	if got, _ := m.FindClawBotReference("a", "c", "0"); got != nil {
+	if got, _ := m.FindClawBotReference(strings.Repeat("a", 64), "c", "0"); got != nil {
 		t.Fatal("byte limit did not evict oldest")
 	}
 	oversized, _ := json.Marshal(strings.Repeat("x", clawBotReferenceItemBytes))
-	if err := m.SaveClawBotReference("a", "c", "oversized", oversized); err == nil {
+	if err := m.SaveClawBotReference(strings.Repeat("a", 64), "c", "oversized", oversized); err == nil {
 		t.Fatal("oversized accepted")
+	}
+}
+
+func TestClawBotReferenceMigrationAndLocalMetadata(t *testing.T) {
+	dir := t.TempDir()
+	m := NewClawBotStateManager(dir)
+	a, b := ClawBotAccountKey("a", "token"), ClawBotAccountKey("a", "bot-id:1")
+	raw := json.RawMessage(`[{"type":2}]`)
+	if err := m.Save(a, ClawBotState{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SaveClawBotReference(a, "c", "id", raw); err != nil {
+		t.Fatal(err)
+	}
+	local := []ClawBotReferenceMedia{{ItemIndex: 0, Attachment: ChatAttachment{Path: "cache_photo/test.png", Kind: "image"}}}
+	if err := m.SaveClawBotReferenceMedia(a, "c", "id", local); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Migrate(a, b); err != nil {
+		t.Fatal(err)
+	}
+	m = NewClawBotStateManager(dir)
+	if got, err := m.FindClawBotReference(b, "c", "id"); err != nil || string(got) != string(raw) {
+		t.Fatal(string(got), err)
+	}
+	if got, err := m.FindClawBotReferenceMedia(b, "c", "id"); err != nil || len(got) != 1 || got[0].Attachment.Path != local[0].Attachment.Path {
+		t.Fatal(got, err)
+	}
+	if _, err := m.FindClawBotReference(a, "c", "id"); err == nil {
+		t.Fatal("retired read")
+	}
+	if err := m.SaveClawBotReferenceMedia(a, "c", "id", local); err == nil {
+		t.Fatal("retired metadata write")
+	}
+	if err := m.SaveClawBotReference(a, "c", "id", raw); err == nil {
+		t.Fatal("retired write")
+	}
+	if _, err := m.FindClawBotReference("a", "c", "id"); err == nil {
+		t.Fatal("invalid account accepted")
+	}
+	if _, err := m.clawBotReference(b, "c", "id", nil, time.Now().Add(clawBotReferenceTTL+time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := m.FindClawBotReferenceMedia(b, "c", "id"); len(got) != 0 {
+		t.Fatal("expired metadata retained")
 	}
 }
