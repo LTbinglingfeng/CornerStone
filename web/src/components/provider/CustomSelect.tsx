@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useId, useRef } from 'react'
 import { useT } from '../../contexts/I18nContext'
 import type { SelectOption } from './constants'
 
@@ -13,9 +13,32 @@ interface CustomSelectProps {
 const CustomSelect: React.FC<CustomSelectProps> = ({ value, options, onChange, ariaLabel, disabled = false }) => {
     const { t } = useT()
     const [open, setOpen] = useState(false)
+    const listboxId = useId()
+    const triggerRef = useRef<HTMLButtonElement>(null)
+    const optionRefs = useRef<(HTMLButtonElement | null)[]>([])
+    const activeIndex = useRef(-1)
+    const pendingFocus = useRef<number | null>(null)
     const wrapperRef = useRef<HTMLDivElement>(null)
     const selectedOption = options.find((option) => option.value === value)
     const displayLabel = selectedOption?.label || value || options[0]?.label || t('common.select')
+
+    const closeAndRestoreFocus = () => {
+        setOpen(false)
+        triggerRef.current?.focus({ preventScroll: true })
+    }
+
+    const focusOption = (index: number) => {
+        activeIndex.current = index
+        optionRefs.current[index]?.focus({ preventScroll: true })
+        optionRefs.current[index]?.scrollIntoView({ block: 'nearest' })
+    }
+
+    useLayoutEffect(() => {
+        if (open && pendingFocus.current !== null) {
+            focusOption(pendingFocus.current)
+            pendingFocus.current = null
+        }
+    }, [open])
 
     useEffect(() => {
         if (!open) return
@@ -36,15 +59,81 @@ const CustomSelect: React.FC<CustomSelectProps> = ({ value, options, onChange, a
     }, [disabled, open])
 
     return (
-        <div className={`modal-select-ui${open ? ' open' : ''}`} ref={wrapperRef}>
+        <div
+            className={`modal-select-ui${open ? ' open' : ''}`}
+            ref={wrapperRef}
+            onBlur={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false)
+            }}
+            onKeyDown={(event) => {
+                if (disabled) return
+                if (event.key === 'Escape' && open) {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    closeAndRestoreFocus()
+                    return
+                }
+                const navigationKeys = ['ArrowDown', 'ArrowUp', 'Home', 'End']
+                const selectKey = event.key === 'Enter' || event.key === ' '
+                if (!navigationKeys.includes(event.key) && !selectKey) return
+                event.preventDefault()
+                event.stopPropagation()
+                if (!options.length) return
+
+                if (!open) {
+                    const selectedIndex = options.findIndex((option) => option.value === value)
+                    const index =
+                        event.key === 'Home'
+                            ? 0
+                            : event.key === 'End'
+                              ? options.length - 1
+                              : selectedIndex >= 0
+                                ? selectedIndex
+                                : event.key === 'ArrowUp'
+                                  ? options.length - 1
+                                  : 0
+                    pendingFocus.current = index
+                    setOpen(true)
+                    return
+                }
+                if (selectKey) {
+                    const option = options[activeIndex.current]
+                    if (option) {
+                        onChange(option.value)
+                        closeAndRestoreFocus()
+                    }
+                    return
+                }
+                const index =
+                    event.key === 'Home'
+                        ? 0
+                        : event.key === 'End'
+                          ? options.length - 1
+                          : event.key === 'ArrowDown'
+                            ? Math.min(activeIndex.current + 1, options.length - 1)
+                            : Math.max(activeIndex.current - 1, 0)
+                focusOption(index)
+            }}
+        >
             <button
+                ref={triggerRef}
                 type="button"
+                disabled={disabled}
+                aria-label={ariaLabel}
+                aria-controls={open ? listboxId : undefined}
                 className="modal-input modal-select-trigger"
                 aria-haspopup="listbox"
                 aria-expanded={open}
                 aria-disabled={disabled}
                 onClick={() => {
-                    if (!disabled) setOpen((prev) => !prev)
+                    if (!disabled) {
+                        triggerRef.current?.focus({ preventScroll: true })
+                        activeIndex.current = Math.max(
+                            0,
+                            options.findIndex((option) => option.value === value)
+                        )
+                        setOpen((prev) => !prev)
+                    }
                 }}
             >
                 <span className="modal-select-text">{displayLabel}</span>
@@ -53,11 +142,19 @@ const CustomSelect: React.FC<CustomSelectProps> = ({ value, options, onChange, a
                 </svg>
             </button>
             {open && (
-                <div className="modal-select-menu" role="listbox" aria-label={ariaLabel}>
-                    {options.map((option) => {
+                <div id={listboxId} className="modal-select-menu" role="listbox" aria-label={ariaLabel || displayLabel}>
+                    {options.map((option, index) => {
                         const isActive = option.value === value
                         return (
                             <button
+                                ref={(element) => {
+                                    optionRefs.current[index] = element
+                                }}
+                                disabled={disabled}
+                                tabIndex={-1}
+                                onFocus={() => {
+                                    activeIndex.current = index
+                                }}
                                 type="button"
                                 key={option.value}
                                 className={`modal-select-option${isActive ? ' active' : ''}`}
@@ -65,7 +162,7 @@ const CustomSelect: React.FC<CustomSelectProps> = ({ value, options, onChange, a
                                 aria-selected={isActive}
                                 onClick={() => {
                                     onChange(option.value)
-                                    setOpen(false)
+                                    closeAndRestoreFocus()
                                 }}
                             >
                                 <span>{option.label}</span>
