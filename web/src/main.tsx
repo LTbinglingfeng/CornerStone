@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
+import { MotionConfig } from 'motion/react'
 import { I18nProvider } from './contexts/I18nContext'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { ToastProvider } from './contexts/ToastContext'
@@ -15,7 +16,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
                 <ThemeProvider>
                     <ToastProvider>
                         <ConfirmProvider>
-                            <App />
+                            <MotionConfig reducedMotion="user">
+                                <App />
+                            </MotionConfig>
                         </ConfirmProvider>
                     </ToastProvider>
                 </ThemeProvider>

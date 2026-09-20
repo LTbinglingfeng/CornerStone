@@ -42,7 +42,7 @@
 .console-workspace .provider-settings-content { width: 100%; padding: 28px max(24px, calc((100% - 940px) / 2)); }
 .console-workspace .provider-card { transition: border-color 150ms ease, background-color 150ms ease; }
 .console-workspace .persona-editor-content { padding-inline: max(0px, calc((100% - 960px) / 2)); }
-.console-workspace .chat-detail .messages-container { padding-inline: max(16px, calc((100% - 920px) / 2)); }
+.console-workspace .chat-detail .message-list { padding-inline: max(16px, calc((100% - 920px) / 2)); }
 .console-workspace .chat-detail .chat-input-area { padding-inline: max(16px, calc((100% - 920px) / 2)); }
 
 @media (hover: hover) and (pointer: fine) {

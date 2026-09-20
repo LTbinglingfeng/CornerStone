@@ -43,9 +43,11 @@ export const bottomSheetVariants: Variants = {
     visible: { y: 0, transition: slideTransition },
 }
 
+// Management pages are navigation destinations, not draggable sheets.
+// Keep frequent navigation (including keyboard navigation) immediate.
 export const drawerVariants: Variants = {
-    hidden: { x: '100%', transition: slideExitTransition },
-    visible: { x: 0, transition: slideTransition },
+    hidden: { opacity: 0, transition: { duration: 0 } },
+    visible: { opacity: 1, transition: { duration: 0 } },
 }
 
 export const bubbleVariants: Variants = {
