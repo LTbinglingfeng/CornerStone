@@ -305,6 +305,13 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
 
             {loading ? (
                 <div className="provider-settings-loading">{t('common.loading')}</div>
+            ) : !settings ? (
+                <div className="console-load-error" role="alert">
+                    <p>{t('common.loadFailed')}</p>
+                    <button className="console-button" onClick={() => void loadData()}>
+                        {t('console.refresh')}
+                    </button>
+                </div>
             ) : (
                 <div className="provider-settings-content">
                     {/* ── 运行状态卡片 ── */}

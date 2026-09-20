@@ -182,6 +182,13 @@ const NapCatSettingsPanel: React.FC<NapCatSettingsProps> = ({ onBack }) => {
 
             {loading ? (
                 <div className="provider-settings-loading">{t('common.loading')}</div>
+            ) : !settings ? (
+                <div className="console-load-error" role="alert">
+                    <p>{t('common.loadFailed')}</p>
+                    <button className="console-button" onClick={() => void loadData()}>
+                        {t('console.refresh')}
+                    </button>
+                </div>
             ) : (
                 <div className="provider-settings-content">
                     <div className="provider-card active" style={{ cursor: 'default' }}>

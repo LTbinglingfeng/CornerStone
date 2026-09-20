@@ -26,6 +26,7 @@
 .console-workspace { position: relative; min-width: 0; min-height: 0; height: 100%; overflow: hidden; isolation: isolate; }
 .console-workspace:focus { outline: none; }
 .console-base-view { height: 100%; min-height: 0; }
+.console-load-error { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 24px; color: var(--text-secondary); }
 .console-page-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 36px 36px 24px; flex-shrink: 0; }
 .console-page-heading h1 { margin: 0; font-size: clamp(24px, 2.4vw, 30px); line-height: 1.2; font-weight: 650; letter-spacing: -.035em; }
 .console-page-heading p { margin: 10px 0 0; color: var(--text-secondary); font-size: 14px; line-height: 1.6; }
