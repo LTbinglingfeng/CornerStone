@@ -69,10 +69,14 @@ type ClawBotImageItem struct {
 }
 
 type ClawBotIncomingMessageItem struct {
-	Type      int               `json:"type"`
-	TextItem  *ClawBotItemText  `json:"text_item,omitempty"`
-	ImageItem *ClawBotImageItem `json:"image_item,omitempty"`
-	VoiceItem *ClawBotItemText  `json:"voice_item,omitempty"`
+	IsReference bool              `json:"-"`
+	Raw         json.RawMessage   `json:"-"`
+	RefMsg      *ClawBotReference `json:"ref_msg,omitempty"`
+	MsgID       ClawBotMessageID  `json:"msg_id,omitempty"`
+	Type        int               `json:"type"`
+	TextItem    *ClawBotItemText  `json:"text_item,omitempty"`
+	ImageItem   *ClawBotImageItem `json:"image_item,omitempty"`
+	VoiceItem   *ClawBotItemText  `json:"voice_item,omitempty"`
 }
 
 // ClawBotMessageID keeps uint64 identifiers lossless for replay detection.
@@ -101,6 +105,8 @@ func (id *ClawBotMessageID) UnmarshalJSON(data []byte) error {
 }
 
 type ClawBotIncomingMessage struct {
+	SessionID    string                       `json:"session_id,omitempty"`
+	ToUserID     string                       `json:"to_user_id,omitempty"`
 	MessageID    ClawBotMessageID             `json:"message_id,omitempty"`
 	MessageType  int                          `json:"message_type"`
 	FromUserID   string                       `json:"from_user_id"`

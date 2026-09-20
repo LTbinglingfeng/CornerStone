@@ -95,6 +95,7 @@ func (s *ClawBotService) prepareDeliveryInput(ctx context.Context, cfg config.Cl
 	}
 	if len(job.InputMessages) == 0 {
 		for index, msg := range job.Inputs {
+			msg = s.restoreClawBotReferences(cfg, msg)
 			text := strings.TrimSpace(client.ExtractTextFromClawBotMessage(msg))
 			if literal, ok := unescapeClawBotLiteralCommandText(text); ok {
 				text = literal
@@ -103,6 +104,10 @@ func (s *ClawBotService) prepareDeliveryInput(ctx context.Context, cfg config.Cl
 			for _, item := range client.ExtractImageItemsFromClawBotMessage(msg) {
 				data, err := s.client.DownloadImageItem(ctx, item)
 				if err != nil {
+					if client.IsClawBotReferencedImage(msg, item) {
+						text += "\n[引用图片不可用]"
+						continue
+					}
 					return nil, err
 				}
 				path, err := s.handler.saveCachePhotoBytes(data)

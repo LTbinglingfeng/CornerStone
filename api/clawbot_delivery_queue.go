@@ -97,6 +97,11 @@ func newDeliveryJob(kind, user string, now time.Time) storage.ClawBotDeliveryJob
 func (s *ClawBotService) receiveDeliveryBatch(cfg config.ClawBotConfig, cursor, nextCursor string, messages []client.ClawBotIncomingMessage) error {
 	mode, delay := s.getReplyWaitWindow()
 	now := time.Now()
+	for _, msg := range messages {
+		if msg.MessageType == 1 {
+			s.cacheClawBotReference(cfg, msg)
+		}
+	}
 	return s.updateChannelStateChecked(cfg, func(state *storage.ClawBotState) error {
 		d := deliveryState(state)
 		for index, msg := range messages {
@@ -119,12 +124,12 @@ func (s *ClawBotService) receiveDeliveryBatch(cfg config.ClawBotConfig, cursor, 
 			}
 			text := strings.TrimSpace(client.ExtractTextFromClawBotMessage(msg))
 			images := client.ExtractImageItemsFromClawBotMessage(msg)
-			if text == "" && len(images) == 0 {
+			if text == "" && len(images) == 0 && !client.HasClawBotReference(msg) {
 				d.Receipts[key] = "unsupported"
 				continue
 			}
 			kind := "chat"
-			if len(images) == 0 {
+			if len(images) == 0 && !client.HasClawBotReference(msg) {
 				if _, escaped := unescapeClawBotLiteralCommandText(text); !escaped {
 					if _, command := parseClawBotCommand(text); command {
 						kind = "command"

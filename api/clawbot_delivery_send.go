@@ -82,7 +82,13 @@ func (s *ClawBotService) deliverChunk(ctx context.Context, cfg config.ClawBotCon
 		return nil
 	}); err != nil {
 		s.deliveryFault(err)
+		return
 	}
+	protocolSession := ""
+	if len(job.Inputs) > 0 {
+		protocolSession = job.Inputs[len(job.Inputs)-1].SessionID
+	}
+	s.recordClawBotSentReference(cfg, job.UserID, protocolSession, response.MessageID, chunk.Text)
 }
 
 func confirmedDeliveryMessages(job storage.ClawBotDeliveryJob) []storage.ChatMessage {

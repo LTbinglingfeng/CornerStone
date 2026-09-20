@@ -474,7 +474,7 @@ func (s *ClawBotService) pollLoop(ctx context.Context, cfg config.ClawBotConfig)
 			if msg.MessageType != 1 {
 				continue
 			}
-			if strings.TrimSpace(client.ExtractTextFromClawBotMessage(msg)) == "" && len(client.ExtractImageItemsFromClawBotMessage(msg)) == 0 {
+			if strings.TrimSpace(client.ExtractTextFromClawBotMessage(msg)) == "" && len(client.ExtractImageItemsFromClawBotMessage(msg)) == 0 && !client.HasClawBotReference(msg) {
 				continue
 			}
 			s.handleIncomingMessage(ctx, cfg, msg)
@@ -500,6 +500,7 @@ func (s *ClawBotService) handleIncomingMessage(ctx context.Context, cfg config.C
 	}
 	cfg = s.handler.configManager.GetClawBotConfig()
 
+	msg = s.restoreClawBotReferences(cfg, msg)
 	text := strings.TrimSpace(client.ExtractTextFromClawBotMessage(msg))
 	imageItems := client.ExtractImageItemsFromClawBotMessage(msg)
 	if text == "" && len(imageItems) == 0 {
@@ -510,7 +511,7 @@ func (s *ClawBotService) handleIncomingMessage(ctx context.Context, cfg config.C
 		s.setLastError(err)
 		return
 	}
-	if len(imageItems) == 0 {
+	if len(imageItems) == 0 && !client.HasClawBotReference(msg) {
 		if escapedText, ok := unescapeClawBotLiteralCommandText(text); ok {
 			text = escapedText
 		} else if command, ok := parseClawBotCommand(text); ok {
