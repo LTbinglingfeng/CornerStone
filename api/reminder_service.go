@@ -280,6 +280,9 @@ func (s *ReminderService) fireReminder(ctx context.Context, reminderID string) e
 	defer cancel()
 
 	if errProcess := s.processReminder(processCtx, reminder); errProcess != nil {
+		if errors.Is(errProcess, errClawBotDeliveryPending) {
+			return nil
+		}
 		failedAt := s.now()
 		if isRetryableReminderError(errProcess) {
 			if _, errMark := s.manager.MarkPending(reminder.ID, failedAt, errProcess.Error()); errMark != nil {
@@ -325,6 +328,27 @@ func (s *ReminderService) processReminder(ctx context.Context, reminder *storage
 		return fmt.Errorf("prompt not found")
 	}
 
+	if reminder.Channel == storage.ReminderChannelClawBot && s.handler.clawBotService != nil && s.handler.clawBotService.stateManager != nil {
+		cfg := s.handler.configManager.GetClawBotConfig()
+		if !cfg.Enabled || strings.TrimSpace(cfg.BotToken) == "" {
+			return newRetryableReminderError(fmt.Errorf("clawbot channel unavailable"))
+		}
+		user := strings.TrimSpace(reminder.Target.UserID)
+		if user == "" {
+			user = strings.TrimSpace(reminder.ClawBotUserID)
+		}
+		if user == "" {
+			return fmt.Errorf("clawbot user id is required")
+		}
+		job := newDeliveryJob("reminder", user, s.now())
+		job.Reminder = reminder
+		job.SessionID = reminder.SessionID
+		err := s.handler.clawBotService.enqueueProactiveDelivery(cfg, job, deliveryOriginKey("reminder", reminder.ID, reminder.Revision))
+		if err != nil && !errors.Is(err, errClawBotDeliveryPending) {
+			return newRetryableReminderError(err)
+		}
+		return err
+	}
 	reply, err := s.generateReminderReply(ctx, reminder, session, prompt)
 	if err != nil {
 		return err

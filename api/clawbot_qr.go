@@ -122,7 +122,7 @@ func (s *ClawBotService) PollQRCode(ctx context.Context, sessionID string, verif
 		s.mu.RLock()
 		stale := s.staleToken != "" && s.staleToken == strings.TrimSpace(cfg.BotToken)
 		s.mu.RUnlock()
-		if stale || session.LocalBotToken == "" || session.LocalBotToken != strings.TrimSpace(cfg.BotToken) {
+		if stale || s.reusableQRCodeToken(session.BaseURL) == "" || session.LocalBotToken == "" || session.LocalBotToken != strings.TrimSpace(cfg.BotToken) {
 			s.deleteQRCodeSession(sessionID)
 			return nil, fmt.Errorf("ClawBot binding has no reusable local credential; start a new QR login")
 		}
@@ -146,7 +146,7 @@ func (s *ClawBotService) PollQRCode(ctx context.Context, sessionID string, verif
 		cfg.ILinkUserID = strings.TrimSpace(resp.ILinkUserID)
 		cfg.ILinkBotID = strings.TrimSpace(resp.ILinkBotID)
 		cfg.GetUpdatesBuf = ""
-		if err := s.handler.configManager.UpdateClawBotConfig(cfg); err != nil {
+		if err := s.replaceClawBotConfigLocked(cfg); err != nil {
 			return nil, err
 		}
 		s.mu.Lock()
@@ -178,4 +178,23 @@ func (s *ClawBotService) deleteQRCodeSession(sessionID string) {
 	s.mu.Lock()
 	delete(s.qrSessions, sessionID)
 	s.mu.Unlock()
+}
+
+// reusableQRCodeToken excludes retired credentials: sending them as local
+// tokens produces binded_redirect instead of returning the successor identity.
+func (s *ClawBotService) reusableQRCodeToken(baseURL string) string {
+	cfg := s.handler.configManager.GetClawBotConfig()
+	s.mu.RLock()
+	stale := s.staleToken != "" && s.staleToken == strings.TrimSpace(cfg.BotToken)
+	s.mu.RUnlock()
+	if stale || !sameClawBotOrigin(baseURL, cfg.BaseURL) {
+		return ""
+	}
+	if s.stateManager != nil {
+		// Fail closed on both retirement and unreadable authority metadata.
+		if _, err := s.stateManager.Load(clawBotAccount(cfg)); err != nil {
+			return ""
+		}
+	}
+	return strings.TrimSpace(cfg.BotToken)
 }

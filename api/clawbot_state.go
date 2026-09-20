@@ -8,11 +8,15 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"time"
 )
 
 const clawBotRecentMessageLimit = 2048
 
 func clawBotAccount(cfg config.ClawBotConfig) string {
+	if id := strings.TrimSpace(cfg.ILinkBotID); id != "" {
+		return storage.ClawBotAccountKey(cfg.BaseURL, "bot-id:"+id)
+	}
 	return storage.ClawBotAccountKey(cfg.BaseURL, strings.TrimSpace(cfg.BotToken))
 }
 
@@ -24,12 +28,30 @@ func (s *ClawBotService) restoreChannelState(cfg config.ClawBotConfig) error {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
 	account := clawBotAccount(cfg)
-	if s.stateAccount == account {
+	// Persistent authority must be revalidated even for a cached account: a
+	// migration may have retired it before the config write failed.
+	if s.stateAccount == account && s.stateManager == nil {
 		return nil
 	}
 	state := storage.ClawBotState{}
 	if s.stateManager != nil && strings.TrimSpace(cfg.BotToken) != "" {
 		var err error
+		// Do not migrate or activate a credential whose account was retired.
+		// Publish only an audit snapshot so management can still see its queue.
+		if _, err := s.stateManager.MigrationTarget(account); err == nil {
+			audit, auditErr := s.stateManager.LoadAudit(account)
+			if auditErr != nil {
+				return auditErr
+			}
+			s.stateAccount, s.state = account, audit
+			return fmt.Errorf("ClawBot account migrated; restore the verified successor credential")
+		}
+		if cfg.ILinkBotID != "" {
+			// Same credential proves the legacy token-key snapshot belongs here.
+			if err = s.stateManager.Migrate(storage.ClawBotAccountKey(cfg.BaseURL, strings.TrimSpace(cfg.BotToken)), account); err != nil {
+				return err
+			}
+		}
 		state, err = s.stateManager.Load(account)
 		if err != nil {
 			return err
@@ -45,6 +67,11 @@ func (s *ClawBotService) restoreChannelState(cfg config.ClawBotConfig) error {
 	s.mu.Lock()
 	s.contextTokens = maps.Clone(state.ContextTokens)
 	s.activeSessions = make(map[string]*clawBotActiveSession)
+	if state.Delivery != nil {
+		for user, sessionID := range state.Delivery.ActiveSessions {
+			s.activeSessions[user] = &clawBotActiveSession{SessionID: sessionID, LastActive: time.Now()}
+		}
+	}
 	s.mu.Unlock()
 	s.stateAccount, s.state = account, state
 	return nil
@@ -60,6 +87,10 @@ func (s *ClawBotService) pollCursor(cfg config.ClawBotConfig) string {
 }
 
 func (s *ClawBotService) updateChannelState(cfg config.ClawBotConfig, update func(*storage.ClawBotState)) error {
+	return s.updateChannelStateChecked(cfg, func(state *storage.ClawBotState) error { update(state); return nil })
+}
+
+func (s *ClawBotService) updateChannelStateChecked(cfg config.ClawBotConfig, update func(*storage.ClawBotState) error) error {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
 	account := clawBotAccount(cfg)
@@ -68,13 +99,16 @@ func (s *ClawBotService) updateChannelState(cfg config.ClawBotConfig, update fun
 	}
 	// Copy before changing: a failed disk write must not advance the in-memory
 	// cursor or suppress a subsequently replayed message.
-	next := s.state
-	next.ContextTokens = maps.Clone(s.state.ContextTokens)
+	next, err := storage.CloneClawBotState(s.state)
+	if err != nil {
+		return err
+	}
 	if next.ContextTokens == nil {
 		next.ContextTokens = make(map[string]string)
 	}
-	next.RecentMessageIDs = slices.Clone(s.state.RecentMessageIDs)
-	update(&next)
+	if err := update(&next); err != nil {
+		return err
+	}
 	if s.stateManager != nil {
 		if err := s.stateManager.Save(account, next); err != nil {
 			return err
@@ -153,4 +187,78 @@ func (s *ClawBotService) savePollCheckpoint(cfg config.ClawBotConfig, cursor str
 			state.RecentMessageIDs = slices.Clone(state.RecentMessageIDs[len(state.RecentMessageIDs)-clawBotRecentMessageLimit:])
 		}
 	})
+}
+
+// replaceClawBotConfigLocked requires credentialMu. Lock order is credentialMu
+// -> lifecycleMu -> stateMu. Workers are joined BEFORE migration; an error leaves
+// the channel stopped (including uncertain fsync/config-write failures).
+func (s *ClawBotService) replaceClawBotConfigLocked(next config.ClawBotConfig) error {
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	old := s.handler.configManager.GetClawBotConfig()
+	if clawBotAccount(old) == clawBotAccount(next) && strings.TrimSpace(old.BotToken) == strings.TrimSpace(next.BotToken) {
+		// Ordinary persona/permission changes must not interrupt live generation.
+		return s.handler.configManager.UpdateClawBotConfig(next)
+	}
+	s.mu.Lock()
+	cancel, done := s.workerCancel, s.workerDone
+	s.workerCancel, s.workerDone, s.workerCtx = nil, nil, nil
+	s.workerRunning, s.connected = false, false
+	s.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	if done != nil {
+		<-done
+	}
+	if s.stateManager != nil {
+		if err := s.restoreChannelState(old); err != nil {
+			// A previous identity-verified migration may have committed before
+			// config persistence. Only that recorded successor can recover it.
+			target, migrationErr := s.stateManager.MigrationTarget(clawBotAccount(old))
+			if migrationErr != nil || target != clawBotAccount(next) || strings.TrimSpace(next.BotToken) == "" {
+				return err
+			}
+			return s.handler.configManager.UpdateClawBotConfig(next)
+		}
+	}
+	if err := s.prepareClawBotMigration(old, next); err != nil {
+		return err
+	}
+	if err := s.handler.configManager.UpdateClawBotConfig(next); err != nil {
+		return err
+	}
+	return nil
+}
+
+// prepareClawBotMigration uses the OLD configuration as source, never the new
+// QR token. Only matching verified bot IDs or identical credentials prove identity.
+// Caller has stopped workers and holds credentialMu/lifecycleMu.
+func (s *ClawBotService) prepareClawBotMigration(old, next config.ClawBotConfig) error {
+	source, target := clawBotAccount(old), clawBotAccount(next)
+	if source == target {
+		return nil
+	}
+	sameID := strings.TrimSpace(old.ILinkBotID) != "" && strings.TrimSpace(old.ILinkBotID) == strings.TrimSpace(next.ILinkBotID)
+	sameCredential := strings.TrimSpace(old.BotToken) != "" && strings.TrimSpace(old.BotToken) == strings.TrimSpace(next.BotToken) && storage.ClawBotAccountKey(old.BaseURL, "") == storage.ClawBotAccountKey(next.BaseURL, "")
+	// Explicitly different verified IDs override token equality.
+	if old.ILinkBotID != "" && next.ILinkBotID != "" && old.ILinkBotID != next.ILinkBotID {
+		sameCredential = false
+	}
+	if strings.TrimSpace(next.BotToken) != "" && (sameID || sameCredential) {
+		if s.stateManager != nil {
+			return s.stateManager.Migrate(source, target)
+		}
+		return nil
+	}
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	if s.state.Delivery != nil {
+		for _, job := range s.state.Delivery.Jobs {
+			if !deliveryTerminal(job.Status) {
+				return fmt.Errorf("ClawBot identity cannot be verified; process or cancel pending delivery queue before clearing or switching credentials")
+			}
+		}
+	}
+	return nil
 }

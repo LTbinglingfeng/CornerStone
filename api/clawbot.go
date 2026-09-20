@@ -130,6 +130,7 @@ type ClawBotService struct {
 	workerRunning bool
 	workerDone    chan struct{}
 	workerAccount string
+	workerToken   string
 	closed        bool
 	cleanupCancel context.CancelFunc
 	cleanupDone   chan struct{}
@@ -219,7 +220,7 @@ func (s *ClawBotService) applyConfigLocked(cfg config.ClawBotConfig) {
 		s.mu.Unlock()
 		return
 	}
-	if cfg.Enabled && s.workerRunning && s.workerAccount == account {
+	if cfg.Enabled && s.workerRunning && s.workerAccount == account && s.workerToken == strings.TrimSpace(cfg.BotToken) {
 		s.mu.Unlock()
 		return
 	}
@@ -262,6 +263,7 @@ func (s *ClawBotService) applyConfigLocked(cfg config.ClawBotConfig) {
 	s.workerRunning = true
 	s.workerDone = done
 	s.workerAccount = account
+	s.workerToken = strings.TrimSpace(cfg.BotToken)
 	s.mu.Unlock()
 
 	go s.runWorker(ctx, cfg, done)
@@ -294,16 +296,9 @@ func (s *ClawBotService) StartQRCode(ctx context.Context, baseURL string) (*Claw
 		return nil, err
 	}
 	s.credentialMu.Lock()
-	cfg := s.handler.configManager.GetClawBotConfig()
 	revision := s.credentialRevision
+	localToken := s.reusableQRCodeToken(baseURL)
 	s.credentialMu.Unlock()
-	localToken := ""
-	s.mu.RLock()
-	stale := s.staleToken != "" && s.staleToken == strings.TrimSpace(cfg.BotToken)
-	s.mu.RUnlock()
-	if !stale && sameClawBotOrigin(baseURL, cfg.BaseURL) {
-		localToken = strings.TrimSpace(cfg.BotToken)
-	}
 	var tokens []string
 	if localToken != "" {
 		tokens = append(tokens, localToken)
@@ -448,6 +443,14 @@ func (s *ClawBotService) pollLoop(ctx context.Context, cfg config.ClawBotConfig)
 		nextCursor := strings.TrimSpace(resp.GetUpdatesBuf)
 		if nextCursor == "" {
 			nextCursor = cursor
+		}
+		if s.stateManager != nil {
+			if err := s.receiveDeliveryBatch(cfg, cursor, nextCursor, resp.Msgs); err != nil {
+				s.deliveryFault(err)
+				return
+			}
+			cursor = nextCursor
+			continue
 		}
 		if err := s.saveIncomingContextTokens(cfg, resp.Msgs); err != nil {
 			s.setLastError(err)
@@ -1361,6 +1364,12 @@ func (s *ClawBotService) getReplyWaitWindow() (string, time.Duration) {
 }
 
 func (s *ClawBotService) sendTextReply(ctx context.Context, cfg config.ClawBotConfig, userID, text string) error {
+	if s.stateManager != nil {
+		if id, ok := ctx.Value(clawBotDeliveryContextKey{}).(string); ok {
+			return s.stageDeliveryReply(cfg, id, "", &clawBotGeneratedReply{Text: text}, false, nil)
+		}
+		return s.enqueueDirectDelivery(cfg, userID, text)
+	}
 	var configManager *config.Manager
 	if s != nil && s.handler != nil {
 		configManager = s.handler.configManager
@@ -1420,6 +1429,14 @@ func (s *ClawBotService) sendExclusiveBusyReply(ctx context.Context, cfg config.
 }
 
 func (s *ClawBotService) sendAndPersistReply(ctx context.Context, cfg config.ClawBotConfig, userID, sessionID string, generatedReply *clawBotGeneratedReply, action string) {
+	if s.stateManager != nil && generatedReply != nil {
+		if id, ok := ctx.Value(clawBotDeliveryContextKey{}).(string); ok {
+			if err := s.stageDeliveryReply(cfg, id, sessionID, generatedReply, false, nil); err != nil {
+				s.deliveryFault(err)
+			}
+			return
+		}
+	}
 	if generatedReply == nil {
 		return
 	}
@@ -1459,6 +1476,14 @@ func (s *ClawBotService) sendAndPersistReply(ctx context.Context, cfg config.Cla
 }
 
 func (s *ClawBotService) sendAndReplaceTrailingReply(ctx context.Context, cfg config.ClawBotConfig, userID, sessionID string, generatedReply *clawBotGeneratedReply, expectedTail []storage.ChatMessage, action string) {
+	if s.stateManager != nil && generatedReply != nil {
+		if id, ok := ctx.Value(clawBotDeliveryContextKey{}).(string); ok {
+			if err := s.stageDeliveryReply(cfg, id, sessionID, generatedReply, true, expectedTail); err != nil {
+				s.deliveryFault(err)
+			}
+			return
+		}
+	}
 	if generatedReply == nil {
 		return
 	}

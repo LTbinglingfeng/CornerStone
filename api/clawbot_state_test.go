@@ -117,15 +117,23 @@ func TestClawBotPollPersistsAndDeduplicates(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.pollLoop(ctx, cfg)
-	if sends != 1 {
-		t.Fatalf("send count = %d", sends)
+	if sends != 0 {
+		t.Fatal("poll executed a command before durable queue dispatch")
 	}
 	state, err := s.stateManager.Load(clawBotAccount(cfg))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.GetUpdatesBuf != "cursor" || state.ContextTokens["user"] != "context" || len(state.RecentMessageIDs) != 1 {
+	if state.GetUpdatesBuf != "cursor" || state.ContextTokens["user"] != "context" || state.Delivery == nil || len(state.Delivery.Jobs) != 1 {
 		t.Fatal("poll state not saved")
+	}
+	id := state.Delivery.Jobs[0].ID
+	for range 3 {
+		job, _ := s.snapshotDelivery(id)
+		s.stepDelivery(context.Background(), cfg, job)
+	}
+	if sends != 1 {
+		t.Fatalf("dispatch sent %d messages", sends)
 	}
 }
 

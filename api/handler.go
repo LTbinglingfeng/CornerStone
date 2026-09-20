@@ -112,6 +112,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	h.registerProtectedRoute(mux, "/api/settings/memory-extraction-prompt", h.handleMemoryExtractionPrompt)
 	h.registerProtectedRoute(mux, "/api/settings/tts", h.handleTTSSettings)
 	h.registerProtectedRoute(mux, "/api/settings/clawbot", h.handleClawBotSettings)
+	h.registerProtectedRoute(mux, "/api/settings/clawbot/deliveries", h.handleClawBotDeliveries)
 	h.registerProtectedRoute(mux, "/api/settings/clawbot/qr-start", h.handleClawBotQRCodeStart)
 	h.registerProtectedRoute(mux, "/api/settings/clawbot/qr-poll", h.handleClawBotQRCodePoll)
 	h.registerProtectedRoute(mux, "/api/settings/napcat", h.handleNapCatSettings)

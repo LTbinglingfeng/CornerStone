@@ -334,12 +334,10 @@ func main() {
 	handler.SetReminderService(reminderService)
 	reminderCtx, reminderCancel := context.WithCancel(context.Background())
 	defer reminderCancel()
-	reminderService.Start(reminderCtx)
 	idleGreetingService := api.NewIdleGreetingService(handler, idleGreetingManager, exactTimeService)
 	handler.SetIdleGreetingService(idleGreetingService)
 	idleGreetingCtx, idleGreetingCancel := context.WithCancel(context.Background())
 	defer idleGreetingCancel()
-	idleGreetingService.Start(idleGreetingCtx)
 	appVersion := resolveVersion(exeDir)
 	clawBotStateManager := storage.NewClawBotStateManager(filepath.Join(baseDir, "clawbot"))
 	clawBotService := api.NewClawBotService(handler, clawBotStateManager, appVersion)
@@ -348,6 +346,9 @@ func main() {
 	napCatService := api.NewNapCatService(handler)
 	handler.SetNapCatService(napCatService)
 	defer napCatService.Close()
+	// Producers must see the durable channel before claiming scheduled tasks.
+	reminderService.Start(reminderCtx)
+	idleGreetingService.Start(idleGreetingCtx)
 	handler.RegisterRoutes(mux)
 
 	// 注册前端静态文件

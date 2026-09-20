@@ -39,8 +39,8 @@ func TestClawBotStateRecoveryIsolationAndSnapshots(t *testing.T) {
 	if state, err := m.Load(key); err != nil || !reflect.DeepEqual(state, ClawBotState{}) {
 		t.Fatalf("missing account: %+v, %v", state, err)
 	}
-	want := ClawBotState{"cursor", map[string]string{"user": "context"}, []string{"message"}}
-	input := ClawBotState{"cursor", map[string]string{"user": "context"}, []string{"message"}}
+	want := ClawBotState{GetUpdatesBuf: "cursor", ContextTokens: map[string]string{"user": "context"}, RecentMessageIDs: []string{"message"}}
+	input := ClawBotState{GetUpdatesBuf: "cursor", ContextTokens: map[string]string{"user": "context"}, RecentMessageIDs: []string{"message"}}
 	if err := m.Save(key, input); err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +155,7 @@ func TestClawBotStateConcurrentAccess(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			state := ClawBotState{"cursor", map[string]string{"user": "context"}, []string{"message"}}
+			state := ClawBotState{GetUpdatesBuf: "cursor", ContextTokens: map[string]string{"user": "context"}, RecentMessageIDs: []string{"message"}}
 			if err := m.Save(key, state); err != nil {
 				t.Error(err)
 			}

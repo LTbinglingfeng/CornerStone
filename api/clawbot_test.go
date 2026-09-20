@@ -1616,6 +1616,9 @@ func TestProcessIncomingBatch_ClawBotCanCreateScheduleReminder(t *testing.T) {
 	}
 
 	cfg := service.handler.configManager.GetClawBotConfig()
+	// Keep the fixture's reminder in the future regardless of the wall clock;
+	// this test covers creation, not an asynchronous firing during TempDir cleanup.
+	service.handler.reminderService.exactTimeProvider = &stubExactTimeService{now: time.Date(2026, 4, 5, 10, 0, 0, 0, time.UTC)}
 	service.processIncomingBatch(context.Background(), cfg, "wx-user", []clawBotPendingMessage{{Text: "今晚七点半提醒我喝水"}})
 
 	state.mu.Lock()

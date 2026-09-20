@@ -7,6 +7,7 @@ import (
 	"cornerstone/logging"
 	"cornerstone/storage"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -312,6 +313,9 @@ func (s *IdleGreetingService) fireTask(ctx context.Context, taskID string) error
 
 	errProcess := s.processTask(processCtx, task)
 	if errProcess != nil {
+		if errors.Is(errProcess, errClawBotDeliveryPending) {
+			return nil
+		}
 		failedAt := s.now()
 		if task.Attempts <= idleGreetingMaxRetries {
 			nextDueAt := failedAt.Add(idleGreetingRetryBackoff(task.Attempts))
@@ -402,6 +406,19 @@ func (s *IdleGreetingService) processTask(ctx context.Context, task *storage.Idl
 		return nil
 	}
 
+	if task.Channel == storage.ReminderChannelClawBot && s.handler.clawBotService != nil && s.handler.clawBotService.stateManager != nil {
+		cfg := s.handler.configManager.GetClawBotConfig()
+		if !cfg.Enabled || strings.TrimSpace(cfg.BotToken) == "" {
+			return fmt.Errorf("clawbot channel unavailable")
+		}
+		if strings.TrimSpace(task.Target.UserID) == "" {
+			return fmt.Errorf("clawbot user id is required")
+		}
+		job := newDeliveryJob("greeting", strings.TrimSpace(task.Target.UserID), s.now())
+		job.Greeting = task
+		job.SessionID = task.SessionID
+		return s.handler.clawBotService.enqueueProactiveDelivery(cfg, job, deliveryOriginKey("greeting", task.ID, task.Revision))
+	}
 	reply, err := s.generateReply(ctx, task, session, currentConfig)
 	if err != nil {
 		return err

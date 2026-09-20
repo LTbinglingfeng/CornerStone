@@ -44,6 +44,12 @@ func (s *ClawBotService) runWorker(ctx context.Context, cfg config.ClawBotConfig
 			logging.Warnf("clawbot notify stop failed: %v", err)
 		}
 	}()
+	if s.stateManager != nil {
+		deliveryCtx, cancel := context.WithCancel(ctx)
+		deliveryDone := make(chan struct{})
+		go func() { defer close(deliveryDone); s.runDeliveryLoop(deliveryCtx, cfg) }()
+		defer func() { cancel(); <-deliveryDone }()
+	}
 	s.pollLoop(ctx, cfg)
 }
 

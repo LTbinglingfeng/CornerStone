@@ -79,7 +79,7 @@ func (h *Handler) handleClawBotSettings(w http.ResponseWriter, r *http.Request) 
 			cfg.ILinkUserID = ""
 			cfg.ILinkBotID = ""
 			cfg.GetUpdatesBuf = ""
-		case strings.TrimSpace(req.BotToken) != "":
+		case strings.TrimSpace(req.BotToken) != "" && strings.TrimSpace(req.BotToken) != strings.TrimSpace(cfg.BotToken):
 			cfg.BotToken = strings.TrimSpace(req.BotToken)
 			cfg.ILinkUserID = ""
 			cfg.ILinkBotID = ""
@@ -89,7 +89,7 @@ func (h *Handler) handleClawBotSettings(w http.ResponseWriter, r *http.Request) 
 		if clawBotAccount(cfg) != previousAccount {
 			cfg.GetUpdatesBuf = ""
 		}
-		if err := h.configManager.UpdateClawBotConfig(cfg); err != nil {
+		if err := h.clawBotService.replaceClawBotConfigLocked(cfg); err != nil {
 			h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: err.Error()})
 			return
 		}

@@ -22,6 +22,9 @@ type MemorySession struct {
 	mu         sync.Mutex
 }
 
+// PromptID identifies the immutable persona used by this memory session.
+func (s *MemorySession) PromptID() string { return s.promptID }
+
 // LastAccess 返回最后访问时间
 func (s *MemorySession) LastAccess() time.Time {
 	s.mu.Lock()
