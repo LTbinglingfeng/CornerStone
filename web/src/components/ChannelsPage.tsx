@@ -26,8 +26,9 @@ function ChannelDirectory() {
     const failed = wechat.phase === 'error' || qq.phase === 'error'
     const statusLabel = (key: 'wechat' | 'qq') => {
         const resource = resources[key]
-        if (resource.phase === 'loading') return t('common.loading')
-        if (resource.phase === 'error') return t('console.unavailable')
+        if (resource.phase !== 'ready') {
+            return t(resource.phase === 'loading' ? 'common.loading' : 'console.unavailable')
+        }
         const labels: Record<string, string> = {
             disabled: t('common.disable'),
             missing_token: t('clawBot.missingToken'),
