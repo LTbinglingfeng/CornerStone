@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -94,6 +95,10 @@ func (m *ClawBotStateManager) SaveDeliveryMedia(account string, data []byte) (st
 	}
 	if err = root.Rename(filepath.Base(temp), id); err != nil {
 		return "", err
+	}
+	// Windows cannot sync directory handles; the blob itself was synced before rename.
+	if runtime.GOOS == "windows" {
+		return id, nil
 	}
 	d, err := os.Open(dir)
 	if err == nil {

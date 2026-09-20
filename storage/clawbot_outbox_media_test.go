@@ -8,6 +8,29 @@ import (
 	"time"
 )
 
+// Run on every platform, including Windows: a new blob must succeed on the
+// first save, not only on a retry that bypasses the directory-sync path.
+func TestClawBotDeliveryBlobFirstSaveAndRestart(t *testing.T) {
+	dir := t.TempDir()
+	account := strings.Repeat("a", 64)
+	m := NewClawBotStateManager(dir)
+	for _, content := range []string{"first attachment", "second attachment"} {
+		blob, err := m.SaveDeliveryMedia(account, []byte(content))
+		if err != nil {
+			t.Fatalf("first save of %q failed: %v", content, err)
+		}
+		restarted := NewClawBotStateManager(dir)
+		data, err := restarted.ReadDeliveryMedia(account, blob)
+		if err != nil || string(data) != content {
+			t.Fatalf("read after restart = %q, %v; want %q", data, err, content)
+		}
+		reused, err := restarted.SaveDeliveryMedia(account, []byte(content))
+		if err != nil || reused != blob {
+			t.Fatalf("repeat save = %q, %v; want %q", reused, err, blob)
+		}
+	}
+}
+
 func TestClawBotDeliveryBlobIsolationMigrationAndIntegrity(t *testing.T) {
 	dir := t.TempDir()
 	m := NewClawBotStateManager(dir)

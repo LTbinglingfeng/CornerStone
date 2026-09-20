@@ -71,12 +71,19 @@ func confirmedClawBotMediaMessages(job storage.ClawBotDeliveryJob) []storage.Cha
 		messages = append(messages, storage.ChatMessage{Role: "assistant", Content: strings.Join(texts, "\n"), Timestamp: job.CreatedAt})
 	}
 	filtered := make([]storage.ChatMessage, 0, len(messages))
+	var pendingReceipts []storage.ChatMessage
 	for index, m := range messages {
 		if len(m.Attachments) == 0 && shouldDropEmptyAssistantClientMessage(client.Message{Role: m.Role, Content: m.Content, ReasoningContent: m.ReasoningContent, ToolCalls: m.ToolCalls, ToolCallID: m.ToolCallID, ImagePaths: m.ImagePaths, TTSAudioPaths: m.TTSAudioPaths}) {
 			continue
 		}
 		filtered = append(filtered, m)
-		filtered = append(filtered, receipts[index]...)
+		pendingReceipts = append(pendingReceipts, receipts[index]...)
+		// Keep each tool-call group's results contiguous for provider replay.
+		// Receipts remain in delivery order, but follow the entire result group.
+		if index+1 == len(messages) || messages[index+1].Role != "tool" {
+			filtered = append(filtered, pendingReceipts...)
+			pendingReceipts = nil
+		}
 	}
 	return filtered
 }
