@@ -1,0 +1,6 @@
+/* Native top-layer dialogs also fit when opened inside the persona editor. */
+dialog.memory-modal-overlay > .memory-modal {
+    box-sizing: border-box;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}

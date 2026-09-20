@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { Memory } from '../types/memory'
 import { getCategoryLabel, selfCategories, userCategories } from '../types/memory'
 import { memoryService, type MemoryExportItem, type MemoryStats } from '../services/memoryService'
@@ -7,7 +7,9 @@ import { useToast } from '../contexts/ToastContext'
 import { useConfirm } from '../contexts/ConfirmContext'
 import CustomSelect from './provider/CustomSelect'
 import type { SelectOption } from './provider/constants'
+import { ModalOverlay } from './ModalOverlay'
 import './MemoryManager.css'
+import './MemoryManagerModal.css'
 
 interface MemoryManagerProps {
     promptId: string
@@ -703,6 +705,8 @@ function AddMemoryModal({
 }) {
     const { t } = useT()
     const { showToast } = useToast()
+    const contentId = useId()
+    const pinnedId = useId()
     const [subject, setSubject] = useState<'user' | 'self'>('user')
     const [category, setCategory] = useState('identity')
     const [content, setContent] = useState('')
@@ -738,7 +742,13 @@ function AddMemoryModal({
     }
 
     return (
-        <div className="memory-modal-overlay" onClick={onClose}>
+        <ModalOverlay
+            className="memory-modal-overlay"
+            aria-label={t('memory.addMemory')}
+            onDismiss={() => {
+                if (!submitting) onClose()
+            }}
+        >
             <div className="memory-modal" onClick={(e) => e.stopPropagation()}>
                 <h3>{t('memory.addMemory')}</h3>
                 <form onSubmit={handleSubmit}>
@@ -766,8 +776,9 @@ function AddMemoryModal({
                     </div>
 
                     <div className="memory-form-group">
-                        <label>{t('memory.content')}</label>
+                        <label htmlFor={contentId}>{t('memory.content')}</label>
                         <input
+                            id={contentId}
                             type="text"
                             value={content}
                             onChange={(e) => setContent(e.target.value)}
@@ -780,10 +791,18 @@ function AddMemoryModal({
                     <div className="memory-form-group memory-form-toggle">
                         <div className="modal-toggle-wrapper">
                             <label className="toggle-switch">
-                                <input type="checkbox" checked={pinned} onChange={(e) => setPinned(e.target.checked)} />
+                                <input
+                                    id={pinnedId}
+                                    aria-label={t('memory.setPinned')}
+                                    type="checkbox"
+                                    checked={pinned}
+                                    onChange={(e) => setPinned(e.target.checked)}
+                                />
                                 <span className="toggle-slider"></span>
                             </label>
-                            <span className="toggle-label">{t('memory.setPinned')}</span>
+                            <label htmlFor={pinnedId} className="toggle-label">
+                                {t('memory.setPinned')}
+                            </label>
                         </div>
                     </div>
 
@@ -797,7 +816,7 @@ function AddMemoryModal({
                     </div>
                 </form>
             </div>
-        </div>
+        </ModalOverlay>
     )
 }
 
@@ -813,6 +832,7 @@ function ImportMemoryModal({
     const { t } = useT()
     const { showToast } = useToast()
     const { confirm } = useConfirm()
+    const fileId = useId()
     const [mode, setMode] = useState<'merge' | 'replace'>('merge')
     const [importing, setImporting] = useState(false)
     const [previewData, setPreviewData] = useState<MemoryExportItem[] | null>(null)
@@ -864,13 +884,20 @@ function ImportMemoryModal({
     }
 
     return (
-        <div className="memory-modal-overlay" onClick={onClose}>
+        <ModalOverlay
+            className="memory-modal-overlay"
+            aria-label={t('memory.importMemory')}
+            onDismiss={() => {
+                if (!importing) onClose()
+            }}
+        >
             <div className="memory-modal memory-modal-wide" onClick={(e) => e.stopPropagation()}>
                 <h3>{t('memory.importMemory')}</h3>
 
                 <div className="memory-form-group">
-                    <label>{t('memory.selectFile')}</label>
+                    <label htmlFor={fileId}>{t('memory.selectFile')}</label>
                     <input
+                        id={fileId}
                         ref={fileInputRef}
                         type="file"
                         accept=".json"
@@ -926,7 +953,7 @@ function ImportMemoryModal({
                     </button>
                 </div>
             </div>
-        </div>
+        </ModalOverlay>
     )
 }
 
