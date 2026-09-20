@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -71,7 +72,33 @@ type ClawBotIncomingMessageItem struct {
 	VoiceItem *ClawBotItemText  `json:"voice_item,omitempty"`
 }
 
+// ClawBotMessageID keeps uint64 identifiers lossless for replay detection.
+type ClawBotMessageID string
+
+func (id *ClawBotMessageID) UnmarshalJSON(data []byte) error {
+	if bytes.Equal(data, []byte("null")) {
+		*id = ""
+		return nil
+	}
+	var value string
+	if len(data) > 0 && data[0] == '"' {
+		if err := json.Unmarshal(data, &value); err != nil {
+			return err
+		}
+	} else {
+		value = string(data)
+	}
+	if value != "" {
+		if _, err := strconv.ParseUint(value, 10, 64); err != nil {
+			return fmt.Errorf("invalid ClawBot message ID")
+		}
+	}
+	*id = ClawBotMessageID(value)
+	return nil
+}
+
 type ClawBotIncomingMessage struct {
+	MessageID    ClawBotMessageID             `json:"message_id,omitempty"`
 	MessageType  int                          `json:"message_type"`
 	FromUserID   string                       `json:"from_user_id"`
 	ContextToken string                       `json:"context_token"`

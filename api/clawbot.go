@@ -110,6 +110,11 @@ type ClawBotService struct {
 	client  *client.ClawBotClient
 
 	mu             sync.RWMutex
+	lifecycleMu    sync.Mutex
+	stateMu        sync.Mutex
+	stateManager   *storage.ClawBotStateManager
+	stateAccount   string
+	state          storage.ClawBotState
 	qrMu           sync.Mutex
 	qrSessions     map[string]clawBotQRCodeSession
 	activeSessions map[string]*clawBotActiveSession
@@ -120,6 +125,8 @@ type ClawBotService struct {
 	workerCtx     context.Context
 	workerCancel  context.CancelFunc
 	workerRunning bool
+	workerDone    chan struct{}
+	workerAccount string
 	connected     bool
 	staleToken    string
 	lastError     string
@@ -131,7 +138,7 @@ type clawBotCommand struct {
 	Args string
 }
 
-func NewClawBotService(handler *Handler) *ClawBotService {
+func NewClawBotService(handler *Handler, stateManagers ...*storage.ClawBotStateManager) *ClawBotService {
 	wechatUIN, err := client.GenerateClawBotWechatUIN()
 	if err != nil {
 		logging.Errorf("clawbot generate wechat uin failed: %v", err)
@@ -146,14 +153,20 @@ func NewClawBotService(handler *Handler) *ClawBotService {
 		contextTokens:  make(map[string]string),
 		wechatUIN:      wechatUIN,
 	}
+	if len(stateManagers) > 0 {
+		s.stateManager = stateManagers[0]
+	}
 	s.ApplyCurrentConfig()
 	go s.cleanupLoop()
 	return s
 }
 
 func (s *ClawBotService) Close() {
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
 	s.mu.Lock()
 	cancel := s.workerCancel
+	done := s.workerDone
 	s.workerCtx = nil
 	s.workerCancel = nil
 	s.workerRunning = false
@@ -163,17 +176,28 @@ func (s *ClawBotService) Close() {
 		cancel()
 	}
 
+	if done != nil {
+		<-done
+	}
 	s.clearAllPendingReplies()
 }
 
 func (s *ClawBotService) ApplyCurrentConfig() {
-	cfg := s.handler.configManager.GetClawBotConfig()
-	s.applyConfig(cfg)
+	s.applyConfig(s.handler.configManager.GetClawBotConfig())
 }
 
 func (s *ClawBotService) applyConfig(cfg config.ClawBotConfig) {
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	account := storage.ClawBotAccountKey(cfg.BaseURL, strings.TrimSpace(cfg.BotToken))
 	s.mu.Lock()
+	if cfg.Enabled && s.workerRunning && s.workerAccount == account {
+		s.mu.Unlock()
+		return
+	}
 	cancel := s.workerCancel
+	done := s.workerDone
+	s.workerDone = nil
 	s.workerCtx = nil
 	s.workerCancel = nil
 	s.workerRunning = false
@@ -190,18 +214,30 @@ func (s *ClawBotService) applyConfig(cfg config.ClawBotConfig) {
 		cancel()
 	}
 
+	if done != nil {
+		<-done
+	}
+	s.clearAllPendingReplies()
+	if err := s.restoreChannelState(cfg); err != nil {
+		s.setLastError(err)
+		return
+	}
 	if stale || !cfg.Enabled || strings.TrimSpace(cfg.BotToken) == "" {
 		return
 	}
 
 	ctx, workerCancel := context.WithCancel(context.Background())
+	done = make(chan struct{})
 	s.mu.Lock()
 	s.workerCtx = ctx
 	s.workerCancel = workerCancel
 	s.workerRunning = true
+	s.workerDone = done
+	s.workerAccount = account
 	s.mu.Unlock()
 
 	go func() {
+		defer close(done)
 		defer func() {
 			s.mu.Lock()
 			if s.workerCtx == ctx {
@@ -343,7 +379,7 @@ func (s *ClawBotService) GetSettings() (*ClawBotSettingsResponse, error) {
 }
 
 func (s *ClawBotService) pollLoop(ctx context.Context, cfg config.ClawBotConfig) {
-	cursor := strings.TrimSpace(cfg.GetUpdatesBuf)
+	cursor := s.pollCursor(cfg)
 	failures := 0
 	for {
 		if err := ctx.Err(); err != nil {
@@ -377,11 +413,25 @@ func (s *ClawBotService) pollLoop(ctx context.Context, cfg config.ClawBotConfig)
 		s.mu.Unlock()
 
 		nextCursor := strings.TrimSpace(resp.GetUpdatesBuf)
-		if nextCursor != "" {
-			cursor = nextCursor
+		if nextCursor == "" {
+			nextCursor = cursor
 		}
-
+		if err := s.saveIncomingContextTokens(cfg, resp.Msgs); err != nil {
+			s.setLastError(err)
+			return
+		}
+		seen := make(map[string]bool)
 		for _, msg := range resp.Msgs {
+			if ctx.Err() != nil {
+				return
+			}
+			key := clawBotMessageKey(msg)
+			if s.alreadyReceived(cfg, msg) || (key != "" && seen[key]) {
+				continue
+			}
+			if key != "" {
+				seen[key] = true
+			}
 			if msg.MessageType != 1 {
 				continue
 			}
@@ -390,12 +440,23 @@ func (s *ClawBotService) pollLoop(ctx context.Context, cfg config.ClawBotConfig)
 			}
 			s.handleIncomingMessage(ctx, cfg, msg)
 		}
+		if ctx.Err() != nil {
+			return
+		}
+		if err := s.savePollCheckpoint(cfg, nextCursor, resp.Msgs); err != nil {
+			s.setLastError(err)
+			return
+		}
+		cursor = nextCursor
 	}
 }
 
 func (s *ClawBotService) handleIncomingMessage(ctx context.Context, cfg config.ClawBotConfig, msg client.ClawBotIncomingMessage) {
 	userID := strings.TrimSpace(msg.FromUserID)
 	if userID == "" {
+		return
+	}
+	if ctx.Err() != nil || !s.isCurrentAccount(cfg) {
 		return
 	}
 	cfg = s.handler.configManager.GetClawBotConfig()
@@ -406,7 +467,10 @@ func (s *ClawBotService) handleIncomingMessage(ctx context.Context, cfg config.C
 		return
 	}
 
-	s.setContextToken(userID, msg.ContextToken)
+	if err := s.saveIncomingContextTokens(cfg, []client.ClawBotIncomingMessage{msg}); err != nil {
+		s.setLastError(err)
+		return
+	}
 	if len(imageItems) == 0 {
 		if escapedText, ok := unescapeClawBotLiteralCommandText(text); ok {
 			text = escapedText
@@ -828,6 +892,9 @@ func (s *ClawBotService) processRegenerateCommand(ctx context.Context, cfg confi
 }
 
 func (s *ClawBotService) processIncomingBatch(ctx context.Context, cfg config.ClawBotConfig, userID string, messages []clawBotPendingMessage) {
+	if ctx.Err() != nil || !s.isCurrentAccount(cfg) {
+		return
+	}
 	if len(messages) == 0 {
 		return
 	}
@@ -1180,6 +1247,9 @@ func (s *ClawBotService) flushPendingReply(ctx context.Context, userID string) {
 }
 
 func (s *ClawBotService) finishPendingReplyProcessing(ctx context.Context, userID string) {
+	if ctx != nil && ctx.Err() != nil {
+		return
+	}
 	mode, delay := s.getReplyWaitWindow()
 
 	s.mu.Lock()
@@ -1267,8 +1337,20 @@ func (s *ClawBotService) sendTextReply(ctx context.Context, cfg config.ClawBotCo
 		return nil
 	}
 
+	s.stateMu.Lock()
+	if s.stateAccount != "" && s.stateAccount != clawBotAccount(cfg) {
+		s.stateMu.Unlock()
+		return fmt.Errorf("clawbot account state has not been restored")
+	}
 	contextToken := s.getContextToken(userID)
+	s.stateMu.Unlock()
 	for _, chunk := range chunks {
+		if !s.isCurrentAccount(cfg) {
+			return fmt.Errorf("clawbot account changed; refusing stale send")
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		s.mu.RLock()
 		stale := s.staleToken != "" && s.staleToken == strings.TrimSpace(cfg.BotToken)
 		s.mu.RUnlock()
@@ -1709,13 +1791,10 @@ func (s *ClawBotService) clearActiveSession(userID, sessionID string) {
 }
 
 func (s *ClawBotService) setContextToken(userID, contextToken string) {
-	contextToken = strings.TrimSpace(contextToken)
-	if contextToken == "" {
-		return
+	cfg := s.handler.configManager.GetClawBotConfig()
+	if err := s.saveIncomingContextTokens(cfg, []client.ClawBotIncomingMessage{{MessageType: 1, FromUserID: userID, ContextToken: contextToken}}); err != nil {
+		s.setLastError(err)
 	}
-	s.mu.Lock()
-	s.contextTokens[userID] = contextToken
-	s.mu.Unlock()
 }
 
 func (s *ClawBotService) getContextToken(userID string) string {
@@ -1841,7 +1920,6 @@ func (s *ClawBotService) cleanupState() {
 	for userID, session := range s.activeSessions {
 		if now.Sub(session.LastActive) > clawBotConversationIdle {
 			delete(s.activeSessions, userID)
-			delete(s.contextTokens, userID)
 		}
 	}
 	for userID, state := range s.pendingReplies {

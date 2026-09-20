@@ -56,6 +56,7 @@ func (h *Handler) handleClawBotSettings(w http.ResponseWriter, r *http.Request) 
 		}
 
 		cfg := h.configManager.GetClawBotConfig()
+		previousAccount := clawBotAccount(cfg)
 		cfg.Enabled = req.Enabled
 		cfg.BaseURL = strings.TrimSpace(req.BaseURL)
 		if cfg.BaseURL == "" {
@@ -83,6 +84,9 @@ func (h *Handler) handleClawBotSettings(w http.ResponseWriter, r *http.Request) 
 			cfg.GetUpdatesBuf = ""
 		}
 
+		if clawBotAccount(cfg) != previousAccount {
+			cfg.GetUpdatesBuf = ""
+		}
 		if err := h.configManager.UpdateClawBotConfig(cfg); err != nil {
 			h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: err.Error()})
 			return
