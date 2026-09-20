@@ -62,8 +62,9 @@
 
 .add-btn {
     padding: 8px 12px;
-    background: var(--accent-color);
-    color: white;
+    min-height: 44px;
+    background: var(--text-primary);
+    color: var(--bg-primary);
     border: none;
     border-radius: 8px;
     cursor: pointer;
@@ -460,8 +461,9 @@
 }
 
 .memory-form-actions button[type='submit'] {
-    background: var(--accent-color);
-    color: white;
+    min-height: 44px;
+    background: var(--text-primary);
+    color: var(--bg-primary);
     border: none;
 }
 
