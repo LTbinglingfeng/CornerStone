@@ -1,0 +1,26 @@
+.channels-page { height: 100%; overflow-y: auto; padding-bottom: 32px; }
+.channel-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; padding: 0 36px; max-width: 1200px; }
+.channel-card { display: flex; flex-direction: column; align-items: flex-start; gap: 24px; padding: 28px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 16px; min-width: 0; }
+.channel-card-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; }
+.channel-monogram { display: grid; place-items: center; height: 44px; width: 44px; border: 1px solid var(--border-color); border-radius: 12px; font-weight: 650; font-size: 22px; }
+.channel-primary .channel-monogram { color: var(--success-color); }
+.channel-state { display: flex; gap: 7px; align-items: center; color: var(--text-secondary); font-size: 12px; }
+.channel-state::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+.channel-state.is-active { color: var(--success-color); }
+.channel-card h2, .channel-web-note h2 { margin: 0; font-size: 18px; line-height: 1.4; font-weight: 600; letter-spacing: -.015em; }
+.channel-card p, .channel-web-note p { color: var(--text-secondary); font-size: 13px; line-height: 1.7; margin-top: 8px; }
+.channel-card dl { width: 100%; margin-top: auto; font-size: 13px; }
+.channel-card dl > div { display: flex; gap: 16px; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border-color); }
+.channel-card dt { color: var(--text-secondary); flex-shrink: 0; }
+.channel-card dd { text-align: right; overflow-wrap: anywhere; }
+.channel-card > .console-button { width: 100%; justify-content: space-between; }
+.channel-notice { margin: 20px 36px; font-size: 13px; color: var(--danger-color); }
+.channel-web-note { margin: 28px 36px 0; display: flex; align-items: center; justify-content: space-between; gap: 24px; border-top: 1px solid var(--border-color); padding-top: 24px; max-width: 1128px; }
+.channel-web-note h2 { font-size: 15px; }
+@media (max-width: 900px) { .channel-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 760px) {
+  .channel-grid { padding: 0 20px; gap: 16px; }
+  .channel-card { padding: 22px; gap: 20px; }
+  .channel-web-note { margin: 24px 20px 0; flex-wrap: wrap; }
+  .channel-notice { margin-inline: 20px; }
+}
