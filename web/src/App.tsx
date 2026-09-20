@@ -1,13 +1,15 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { AnimatePresence, motion } from 'motion/react'
+import { AnimatePresence } from 'motion/react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import Header from './components/Header'
+import ConsoleNav from './components/ConsoleNav'
+import ManagementOverview from './components/ManagementOverview'
+import ChannelsPage from './components/ChannelsPage'
+import Settings from './components/Settings'
 import SearchBar from './components/SearchBar'
 import ChatList from './components/ChatList'
 import ChatDetail from './components/ChatDetail'
 import Contacts from './components/Contacts'
 import ProfilePage from './components/ProfilePage'
-import BottomNav from './components/BottomNav'
 import PromptSelector from './components/PromptSelector'
 import AuthSetupPage from './components/AuthSetupPage'
 import AuthLoginPage from './components/AuthLoginPage'
@@ -30,8 +32,7 @@ import { useToast } from './contexts/ToastContext'
 import { useT } from './contexts/I18nContext'
 import { formatNotificationBody, getNotificationsEnabled, isNotificationSupported } from './utils/notifications'
 import { DEFAULT_ASSISTANT_MESSAGE_SPLIT_TOKEN, resolveAssistantMessageSplitToken } from './utils/assistantMessageSplit'
-import { slideTransition } from './utils/motion'
-import { buildChatRoute, getRouteState, normalizePathname, tabOrder, tabRoutes } from './utils/routes'
+import { buildChatRoute, getRouteState, normalizePathname, tabRoutes } from './utils/routes'
 import { logoBlackDataUrl } from 'virtual:cornerstone-logos'
 import './App.css'
 
@@ -51,8 +52,7 @@ function App() {
     const location = useLocation()
     const navigate = useNavigate()
     const routeState = getRouteState(location.pathname)
-    const activeTab = routeState?.activeTab || 'chat'
-    const activeTabIndex = tabOrder.indexOf(activeTab)
+    const activeTab = routeState?.activeTab || 'overview'
     const selectedSessionId = routeState?.activeSessionId || null
     const selectedPromptId = new URLSearchParams(location.search).get('promptId') || undefined
     const [authMode, setAuthMode] = useState<'loading' | 'setup' | 'login' | 'ready'>('loading')
@@ -61,7 +61,7 @@ function App() {
     const [refreshKey, setRefreshKey] = useState(0)
     const [searchQuery, setSearchQuery] = useState('')
     const [showPromptSelector, setShowPromptSelector] = useState(false)
-    const [editingPromptId, setEditingPromptId] = useState<string | null>(null)
+    const editingPromptId = activeTab === 'contacts' ? new URLSearchParams(location.search).get('edit') : null
     const [contactsRefreshToken, setContactsRefreshToken] = useState(0)
     const [assistantMessageSplitToken, setAssistantMessageSplitToken] = useState(DEFAULT_ASSISTANT_MESSAGE_SPLIT_TOKEN)
     const [assistantMessageSplitTokenLoaded, setAssistantMessageSplitTokenLoaded] = useState(false)
@@ -121,15 +121,6 @@ function App() {
         [navigate]
     )
 
-    const handleTabChange = useCallback(
-        (tab: 'chat' | 'contacts' | 'me') => {
-            const nextPath = tabRoutes[tab]
-            if (normalizePathname(location.pathname) === nextPath) return
-            navigate(nextPath)
-        },
-        [location.pathname, navigate]
-    )
-
     const handleStartChatWithPrompt = useCallback(
         (sessionId: string, promptId: string) => {
             openSession(sessionId, promptId)
@@ -144,14 +135,17 @@ function App() {
         [openSession]
     )
 
-    const handleEditPersona = useCallback((promptId?: string) => {
-        setEditingPromptId(promptId ?? '')
-    }, [])
+    const handleEditPersona = useCallback(
+        (promptId?: string) => {
+            navigate(`${tabRoutes.contacts}?${new URLSearchParams({ edit: promptId ?? '' })}`)
+        },
+        [navigate]
+    )
 
     const handlePersonaEditorBack = useCallback(() => {
-        setEditingPromptId(null)
+        navigate(tabRoutes.contacts)
         setContactsRefreshToken((k) => k + 1)
-    }, [])
+    }, [navigate])
 
     useEffect(() => {
         if (typeof window === 'undefined') return
@@ -258,6 +252,12 @@ function App() {
     }, [selectedSessionId])
 
     useEffect(() => {
+        if (authMode !== 'ready') return
+        document.title = `${t(`console.${activeTab}`)} · CornerStone`
+        document.getElementById('console-main')?.focus({ preventScroll: true })
+    }, [activeTab, authMode, selectedSessionId, editingPromptId, t])
+
+    useEffect(() => {
         openSessionHandlerRef.current = openSession
     }, [openSession])
 
@@ -278,8 +278,8 @@ function App() {
             return
         }
 
-        if (normalizedPath === '/' || routeState === null) {
-            navigate(tabRoutes.chat, { replace: true })
+        if (normalizedPath === '/' || normalizedPath === '/management' || routeState === null) {
+            navigate({ pathname: tabRoutes.overview, search: location.search }, { replace: true })
         }
     }, [authMode, location.hash, location.pathname, location.search, navigate, routeState])
 
@@ -507,69 +507,79 @@ function App() {
     }
 
     return (
-        <div className="app-wrapper">
-            <motion.div
-                className="views-container"
-                animate={{ x: `${-100 * activeTabIndex}%` }}
-                transition={slideTransition}
-            >
-                <div className="view-page">
-                    <div className="app-container">
-                        <div className="main-content">
-                            <Header title="CornerStone" onAdd={handleCreateSession} />
-                            <SearchBar value={searchQuery} onChange={setSearchQuery} />
-                            <ChatList
-                                onSelectSession={handleSelectSession}
-                                searchQuery={searchQuery}
-                                refreshToken={refreshKey}
-                            />
-                        </div>
-                    </div>
-                </div>
-
-                <div className="view-page">
+        <div className="app-wrapper console-layout">
+            <a className="console-skip" href="#console-main">
+                {t('console.skip')}
+            </a>
+            <ConsoleNav />
+            <main id="console-main" className="console-workspace" tabIndex={-1}>
+                {activeTab === 'overview' && <ManagementOverview />}
+                {activeTab === 'channels' && <ChannelsPage />}
+                {activeTab === 'chat' && !selectedSessionId && (
+                    <section className="console-conversations">
+                        <header className="console-page-heading">
+                            <div>
+                                <h1>{t('console.chat')}</h1>
+                                <p>{t('console.chatHint')}</p>
+                            </div>
+                            <button className="console-button" onClick={handleCreateSession}>
+                                {t('console.newChat')}
+                            </button>
+                        </header>
+                        <SearchBar value={searchQuery} onChange={setSearchQuery} />
+                        <ChatList
+                            onSelectSession={handleSelectSession}
+                            searchQuery={searchQuery}
+                            refreshToken={refreshKey}
+                        />
+                    </section>
+                )}
+                {activeTab === 'contacts' && editingPromptId === null && (
                     <Contacts
                         onStartChat={handleStartChatWithPrompt}
                         onEditPersona={handleEditPersona}
                         refreshToken={contactsRefreshToken}
                     />
-                </div>
-
-                <div className="view-page">
+                )}
+                {activeTab === 'settings' && (
+                    <Settings
+                        embedded
+                        onBack={() => navigate(tabRoutes.overview)}
+                        assistantMessageSplitToken={assistantMessageSplitToken}
+                        onAssistantMessageSplitTokenChange={setAssistantMessageSplitToken}
+                    />
+                )}
+                {activeTab === 'me' && (
                     <ProfilePage
                         assistantMessageSplitToken={assistantMessageSplitToken}
                         onAssistantMessageSplitTokenChange={setAssistantMessageSplitToken}
                     />
-                </div>
-            </motion.div>
-
-            <BottomNav activeTab={activeTab} onTabChange={handleTabChange} />
-
-            <AnimatePresence>
-                {selectedSessionId && (
-                    <ChatDetail
-                        key="chat-detail"
-                        sessionId={selectedSessionId}
-                        promptId={selectedPromptId}
-                        onBack={handleBack}
-                        onSwitchSession={handleSwitchSession}
-                    />
                 )}
-            </AnimatePresence>
+                <AnimatePresence>
+                    {selectedSessionId && (
+                        <ChatDetail
+                            key="chat-detail"
+                            sessionId={selectedSessionId}
+                            promptId={selectedPromptId}
+                            onBack={handleBack}
+                            onSwitchSession={handleSwitchSession}
+                        />
+                    )}
+                </AnimatePresence>
+                <AnimatePresence>
+                    {editingPromptId !== null && (
+                        <PersonaEditor
+                            key="persona-editor"
+                            promptId={editingPromptId || undefined}
+                            onBack={handlePersonaEditorBack}
+                        />
+                    )}
+                </AnimatePresence>
+            </main>
 
             <AnimatePresence>
                 {showPromptSelector && (
                     <PromptSelector onSelect={handlePromptSelect} onClose={handlePromptSelectorClose} />
-                )}
-            </AnimatePresence>
-
-            <AnimatePresence>
-                {editingPromptId !== null && (
-                    <PersonaEditor
-                        key="persona-editor"
-                        promptId={editingPromptId || undefined}
-                        onBack={handlePersonaEditorBack}
-                    />
                 )}
             </AnimatePresence>
         </div>
