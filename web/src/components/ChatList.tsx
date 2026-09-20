@@ -1,11 +1,17 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChatSession, Prompt } from '../types/chat'
-import { getSessions, getPrompts, getPromptAvatarUrl, appendQueryParam, getErrorMessage } from '../services/api'
+import {
+    appendQueryParam,
+    deleteSession,
+    getErrorMessage,
+    getPromptAvatarUrl,
+    getPrompts,
+    getSessions,
+} from '../services/api'
 import { useT } from '../contexts/I18nContext'
-import { formatTime } from '../utils/time'
-import ContextMenu from './ContextMenu'
-import { deleteSession } from '../services/api'
 import { useToast } from '../contexts/ToastContext'
+import { useConfirm } from '../contexts/ConfirmContext'
+import { getManagementCopy } from '../i18n/archive'
 import './ChatList.css'
 
 interface ChatListProps {
@@ -14,271 +20,218 @@ interface ChatListProps {
     refreshToken?: number
 }
 
-interface PromptWithLatestChat {
-    prompt: Prompt
-    latestSession: ChatSession
-    sessionCount: number
+interface ArchivedSession {
+    session: ChatSession
+    prompt?: Prompt
+    personaName: string
 }
 
-interface MenuState {
-    visible: boolean
-    sessionId: string
-    position: { x: number; y: number }
-}
+const NO_PERSONA_FILTER = '__none__'
 
 const ChatList: React.FC<ChatListProps> = ({ onSelectSession, searchQuery = '', refreshToken }) => {
-    const { t } = useT()
+    const { locale, t } = useT()
+    const copy = getManagementCopy(locale).archive
     const { showToast } = useToast()
-    const [promptsWithChats, setPromptsWithChats] = useState<PromptWithLatestChat[]>([])
-    const [orphanSessions, setOrphanSessions] = useState<ChatSession[]>([])
+    const { confirm } = useConfirm()
+    const [sessions, setSessions] = useState<ArchivedSession[]>([])
+    const [prompts, setPrompts] = useState<Prompt[]>([])
+    const [personaFilter, setPersonaFilter] = useState('')
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
+    const [deletingId, setDeletingId] = useState('')
+    const requestRef = useRef(0)
     const lastRefreshTokenRef = useRef<number | undefined>(undefined)
-    const [menuState, setMenuState] = useState<MenuState>({
-        visible: false,
-        sessionId: '',
-        position: { x: 0, y: 0 },
-    })
+
+    const loadData = async (showLoading = true) => {
+        const request = ++requestRef.current
+        if (showLoading) setLoading(true)
+        try {
+            const [sessionData, promptData] = await Promise.all([getSessions(), getPrompts()])
+            if (request !== requestRef.current) return
+            const promptMap = new Map(promptData.map((prompt) => [prompt.id, prompt]))
+            const archive = sessionData
+                .map((session) => {
+                    const prompt = session.prompt_id ? promptMap.get(session.prompt_id) : undefined
+                    return {
+                        session,
+                        prompt,
+                        personaName: prompt?.name || session.prompt_name || copy.noPersona,
+                    }
+                })
+                .sort((a, b) => new Date(b.session.updated_at).getTime() - new Date(a.session.updated_at).getTime())
+
+            setPrompts(promptData)
+            setSessions(archive)
+            setError('')
+        } catch (loadError) {
+            if (request !== requestRef.current) return
+            setError(getErrorMessage(loadError, copy.loadError))
+        } finally {
+            if (request === requestRef.current) setLoading(false)
+        }
+    }
 
     useEffect(() => {
-        if (typeof refreshToken === 'number') {
-            lastRefreshTokenRef.current = refreshToken
-        }
-        loadData(true)
+        if (typeof refreshToken === 'number') lastRefreshTokenRef.current = refreshToken
+        loadData()
     }, [])
 
     useEffect(() => {
-        if (typeof refreshToken !== 'number') return
-        if (lastRefreshTokenRef.current === refreshToken) return
+        if (typeof refreshToken !== 'number' || lastRefreshTokenRef.current === refreshToken) return
         lastRefreshTokenRef.current = refreshToken
         loadData(false)
     }, [refreshToken])
 
-    const loadData = async (showLoading: boolean) => {
-        if (showLoading) {
-            setLoading(true)
-        }
-        try {
-            const [sessions, prompts] = await Promise.all([getSessions(), getPrompts()])
-
-            // 按 prompt_id 分组聊天
-            const sessionsByPrompt: Record<string, ChatSession[]> = {}
-            const orphans: ChatSession[] = []
-
-            sessions.forEach((session) => {
-                if (session.prompt_id) {
-                    if (!sessionsByPrompt[session.prompt_id]) {
-                        sessionsByPrompt[session.prompt_id] = []
-                    }
-                    sessionsByPrompt[session.prompt_id].push(session)
-                } else {
-                    orphans.push(session)
-                }
-            })
-
-            // 构建带有最新聊天的 prompt 列表
-            const promptMap = new Map(prompts.map((p) => [p.id, p]))
-            const result: PromptWithLatestChat[] = []
-
-            Object.entries(sessionsByPrompt).forEach(([promptId, promptSessions]) => {
-                const prompt = promptMap.get(promptId)
-                if (!prompt) {
-                    orphans.push(...promptSessions)
-                    return
-                }
-                if (promptSessions.length > 0) {
-                    // 按更新时间排序，取最新的
-                    const sorted = promptSessions.sort(
-                        (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-                    )
-                    result.push({
-                        prompt,
-                        latestSession: sorted[0],
-                        sessionCount: sorted.length,
-                    })
-                }
-            })
-
-            // 按最新聊天时间排序
-            result.sort(
-                (a, b) =>
-                    new Date(b.latestSession.updated_at).getTime() - new Date(a.latestSession.updated_at).getTime()
-            )
-
-            // 孤儿聊天也按时间排序
-            orphans.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
-
-            setPromptsWithChats(result)
-            setOrphanSessions(orphans)
-            setError('')
-        } catch (error) {
-            setPromptsWithChats([])
-            setOrphanSessions([])
-            setError(getErrorMessage(error, t('service.loadSessionFailed')))
-        } finally {
-            setLoading(false)
-        }
-    }
-
-    const handleLongPress = useCallback((sessionId: string, position: { x: number; y: number }) => {
-        setMenuState({
-            visible: true,
-            sessionId,
-            position,
+    const filteredSessions = useMemo(() => {
+        const query = searchQuery.trim().toLocaleLowerCase(locale)
+        return sessions.filter(({ session, personaName }) => {
+            const matchesQuery = !query || `${session.title} ${personaName}`.toLocaleLowerCase(locale).includes(query)
+            const matchesPersona =
+                !personaFilter ||
+                (personaFilter === NO_PERSONA_FILTER
+                    ? !session.prompt_id || !prompts.some((prompt) => prompt.id === session.prompt_id)
+                    : session.prompt_id === personaFilter)
+            return matchesQuery && matchesPersona
         })
-    }, [])
+    }, [locale, personaFilter, prompts, searchQuery, sessions])
 
-    const handleCloseMenu = useCallback(() => {
-        setMenuState((prev) => ({ ...prev, visible: false }))
-    }, [])
+    const formatDate = (value: string) => {
+        const date = new Date(value)
+        if (Number.isNaN(date.getTime())) return value
+        return new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'zh-CN', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+        }).format(date)
+    }
 
-    const handleDeleteSession = useCallback(async () => {
-        const success = await deleteSession(menuState.sessionId)
-        if (success) {
-            loadData(false)
-        } else {
-            showToast(t('memory.deleteFailed'), 'error')
+    const getAvatarUrl = (prompt?: Prompt) => {
+        if (!prompt?.avatar) return null
+        return appendQueryParam(getPromptAvatarUrl(prompt.id), 't', new Date(prompt.updated_at).getTime())
+    }
+
+    const handleDelete = async (item: ArchivedSession) => {
+        const accepted = await confirm({
+            title: copy.deleteTitle,
+            message: copy.deleteMessage(item.session.title),
+            confirmText: copy.delete,
+            danger: true,
+        })
+        if (!accepted) return
+
+        setDeletingId(item.session.id)
+        try {
+            const success = await deleteSession(item.session.id)
+            if (!success) throw new Error(copy.deleteFailed)
+            setSessions((current) => current.filter(({ session }) => session.id !== item.session.id))
+        } catch (deleteError) {
+            showToast(getErrorMessage(deleteError, copy.deleteFailed), 'error')
+        } finally {
+            setDeletingId('')
         }
-    }, [loadData, menuState.sessionId, showToast, t])
-
-    const getAvatarUrl = (prompt: Prompt) => {
-        if (prompt.avatar) {
-            return appendQueryParam(getPromptAvatarUrl(prompt.id), 't', new Date(prompt.updated_at).getTime())
-        }
-        return null
     }
 
-    const getAvatarColors = (name: string) => {
-        const colors = ['#4a90d9', '#7ed321', '#bd10e0', '#f5a623', '#50e3c2', '#9013fe', '#417505', '#2b5797']
-        const firstChar = name.charAt(0) || '?'
-        const colorIndex = firstChar.charCodeAt(0) % colors.length
-        return colors[colorIndex]
-    }
-
-    const normalizedQuery = searchQuery.trim().toLowerCase()
-    const hasQuery = normalizedQuery.length > 0
-
-    const filteredPromptsWithChats = hasQuery
-        ? promptsWithChats.filter(({ prompt, latestSession }) => {
-              const haystack = `${prompt.name} ${prompt.description || ''} ${latestSession.title}`.toLowerCase()
-              return haystack.includes(normalizedQuery)
-          })
-        : promptsWithChats
-
-    const filteredOrphanSessions = hasQuery
-        ? orphanSessions.filter((session) => session.title.toLowerCase().includes(normalizedQuery))
-        : orphanSessions
-
-    if (loading) {
-        return (
-            <div className="chat-list">
-                <div className="chat-list-empty">{t('common.loading')}</div>
-            </div>
-        )
-    }
-
-    if (error) {
-        return (
-            <div className="chat-list">
-                <div className="chat-list-empty">{error}</div>
-            </div>
-        )
-    }
-
-    if (filteredPromptsWithChats.length === 0 && filteredOrphanSessions.length === 0) {
-        return (
-            <div className="chat-list">
-                <div className="chat-list-empty">{hasQuery ? t('chat.noMatchingSessions') : t('chat.noSessions')}</div>
-            </div>
-        )
-    }
+    const hasFilters = Boolean(searchQuery.trim() || personaFilter)
 
     return (
-        <div className="chat-list">
-            {/* 有 Prompt 的聊天（按角色显示） */}
-            {filteredPromptsWithChats.map(({ prompt, latestSession, sessionCount }) => (
-                <div
-                    key={prompt.id}
-                    className="chat-item prompt-chat-item"
-                    onClick={() => onSelectSession(latestSession.id, prompt.id)}
-                    onContextMenu={(e) => {
-                        e.preventDefault()
-                        handleLongPress(latestSession.id, { x: e.clientX, y: e.clientY })
-                    }}
-                >
-                    <div className="avatar-container">
-                        {getAvatarUrl(prompt) ? (
-                            <img src={getAvatarUrl(prompt)!} alt={prompt.name} className="avatar-img" />
-                        ) : (
-                            <div className="avatar" style={{ backgroundColor: getAvatarColors(prompt.name) }}>
-                                {prompt.name.charAt(0).toUpperCase()}
-                            </div>
-                        )}
-                    </div>
-                    <div className="chat-content">
-                        <div className="chat-header">
-                            <span className="chat-name">{prompt.name}</span>
-                            <span className="chat-time">{formatTime(latestSession.updated_at)}</span>
-                        </div>
-                        <div className="chat-message">
-                            {latestSession.title}
-                            {sessionCount > 1 && (
-                                <span className="session-count">
-                                    {t('chat.conversationCount', { count: sessionCount })}
-                                </span>
+        <section className="archive" aria-label={copy.conversations}>
+            <div className="archive-toolbar">
+                <p className="archive-count" aria-live="polite">
+                    {copy.showing} <strong>{filteredSessions.length}</strong> {copy.of} {sessions.length}{' '}
+                    {copy.conversations}
+                </p>
+                <label className="archive-filter">
+                    <span>{copy.filterLabel}</span>
+                    <select value={personaFilter} onChange={(event) => setPersonaFilter(event.target.value)}>
+                        <option value="">{copy.allPersonas}</option>
+                        {prompts.map((prompt) => (
+                            <option key={prompt.id} value={prompt.id}>
+                                {prompt.name}
+                            </option>
+                        ))}
+                        {personaFilter &&
+                            personaFilter !== NO_PERSONA_FILTER &&
+                            !prompts.some((prompt) => prompt.id === personaFilter) && (
+                                <option value={personaFilter}>{copy.deletedPersona}</option>
                             )}
-                        </div>
-                    </div>
+                        <option value={NO_PERSONA_FILTER}>{copy.noPersona}</option>
+                    </select>
+                </label>
+            </div>
+
+            {error && (
+                <div className="archive-error" role="alert">
+                    <p>{error}</p>
+                    <button type="button" disabled={loading} onClick={() => loadData()}>
+                        {copy.retry}
+                    </button>
                 </div>
-            ))}
-
-            {/* 无 Prompt 的孤儿聊天 */}
-            {filteredOrphanSessions.length > 0 && (
-                <>
-                    {filteredPromptsWithChats.length > 0 && (
-                        <div className="orphan-section-title">{t('chat.otherChats')}</div>
-                    )}
-                    {filteredOrphanSessions.map((session) => (
-                        <div
-                            key={session.id}
-                            className="chat-item"
-                            onClick={() => onSelectSession(session.id)}
-                            onContextMenu={(e) => {
-                                e.preventDefault()
-                                handleLongPress(session.id, { x: e.clientX, y: e.clientY })
-                            }}
-                        >
-                            <div className="avatar-container">
-                                <div className="avatar" style={{ backgroundColor: getAvatarColors(session.title) }}>
-                                    {session.title.charAt(0)}
-                                </div>
-                            </div>
-                            <div className="chat-content">
-                                <div className="chat-header">
-                                    <span className="chat-name">{session.title}</span>
-                                    <span className="chat-time">{formatTime(session.updated_at)}</span>
-                                </div>
-                                <div className="chat-message">{t('chat.clickToView')}</div>
-                            </div>
-                        </div>
-                    ))}
-                </>
             )}
-
-            {menuState.visible && (
-                <ContextMenu
-                    position={menuState.position}
-                    onClose={handleCloseMenu}
-                    items={[
-                        {
-                            label: t('chat.deleteLastChat'),
-                            onClick: handleDeleteSession,
-                            danger: true,
-                        },
-                    ]}
-                />
+            {loading && sessions.length === 0 ? (
+                <div className="archive-state" role="status">
+                    <span className="archive-spinner" aria-hidden="true" />
+                    {t('common.loading')}
+                </div>
+            ) : error && sessions.length === 0 ? null : filteredSessions.length === 0 ? (
+                <div className="archive-state">
+                    <p>{hasFilters ? copy.noResults : copy.empty}</p>
+                </div>
+            ) : (
+                <ul className="archive-list">
+                    {filteredSessions.map((item) => {
+                        const avatarUrl = getAvatarUrl(item.prompt)
+                        return (
+                            <li key={item.session.id} className="archive-card">
+                                <div className="archive-avatar" aria-hidden="true">
+                                    {avatarUrl ? (
+                                        <img src={avatarUrl} alt="" />
+                                    ) : (
+                                        <span>{item.personaName.charAt(0).toUpperCase() || '?'}</span>
+                                    )}
+                                </div>
+                                <div className="archive-details">
+                                    <div className="archive-title-row">
+                                        <h2>{item.session.title}</h2>
+                                        <span className="archive-persona">{item.personaName}</span>
+                                    </div>
+                                    <dl className="archive-dates">
+                                        <div>
+                                            <dt>{copy.updated}</dt>
+                                            <dd>{formatDate(item.session.updated_at)}</dd>
+                                        </div>
+                                        <div>
+                                            <dt>{copy.created}</dt>
+                                            <dd>{formatDate(item.session.created_at)}</dd>
+                                        </div>
+                                    </dl>
+                                </div>
+                                <div className="archive-actions">
+                                    <button
+                                        type="button"
+                                        className="archive-open"
+                                        aria-label={`${copy.open}: ${item.session.title}`}
+                                        onClick={() => onSelectSession(item.session.id, item.session.prompt_id)}
+                                    >
+                                        {copy.open}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="archive-delete"
+                                        disabled={Boolean(deletingId)}
+                                        onClick={() => handleDelete(item)}
+                                        aria-label={`${copy.delete}: ${item.session.title}`}
+                                    >
+                                        {copy.delete}
+                                    </button>
+                                </div>
+                            </li>
+                        )
+                    })}
+                </ul>
             )}
-        </div>
+        </section>
     )
 }
 
