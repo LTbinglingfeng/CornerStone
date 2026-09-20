@@ -197,8 +197,8 @@ func TestDeliveryValidationAndMissingSession(t *testing.T) {
 }
 
 func TestDeliverySaveFailureDoesNotPublish(t *testing.T) {
-	for _, replace := range []bool{false, true} {
-		t.Run(map[bool]string{false: "append", true: "replace"}[replace], func(t *testing.T) {
+	for _, mode := range []string{"append", "replace", "suffix"} {
+		t.Run(mode, func(t *testing.T) {
 			cm := newDeliveryTestManager(t)
 			old := []ChatMessage{{Role: "assistant", Content: "old"}}
 			if err := cm.CommitDeliveryBatch("delivery", "old", old, false, nil); err != nil {
@@ -214,7 +214,14 @@ func TestDeliverySaveFailureDoesNotPublish(t *testing.T) {
 			if err := os.Mkdir(path, 0700); err != nil {
 				t.Fatal(err)
 			}
-			if err := cm.CommitDeliveryBatch("delivery", "new", []ChatMessage{{Role: "assistant", Content: "new"}}, replace, old); err == nil {
+			messages := []ChatMessage{{Role: "assistant", Content: "new"}}
+			var commitErr error
+			if mode == "suffix" {
+				commitErr = cm.CommitDeliverySuffix("delivery", "new", old, messages)
+			} else {
+				commitErr = cm.CommitDeliveryBatch("delivery", "new", messages, mode == "replace", old)
+			}
+			if commitErr == nil {
 				t.Fatal("expected failure")
 			}
 			after, _ := cm.GetSession("delivery")
@@ -251,4 +258,170 @@ func equalDeliveryJSON(t *testing.T, a, b *ChatRecord) bool {
 		t.Fatal(err)
 	}
 	return bytes.Equal(left, right)
+}
+
+func TestDeliverySuffixThreeStages(t *testing.T) {
+	cm := newDeliveryTestManager(t)
+	prefix := []ChatMessage{{Role: "user", Content: "question"}, {Role: "assistant", Content: "old response"}}
+	if err := cm.CommitDeliveryBatch("delivery", "old", prefix, false, nil); err != nil {
+		t.Fatal(err)
+	}
+	token := "→"
+	job := []ChatMessage{
+		{Role: "assistant", Content: "first", ReasoningContent: "reason", ToolCalls: []client.ToolCall{{ID: "call", Type: "function", Function: client.ToolCallFunction{Name: "search", Arguments: `{"q":"test"}`}}}},
+		{Role: "tool", Content: "result", ToolCallID: "call"},
+		{Role: "assistant", Content: "second", ImagePaths: []string{"image"}, TTSAudioPaths: []string{"audio"}, Quote: &QuotedMessage{MessageID: "id", Content: "quote", ImagePaths: []string{"quoted"}}, AssistantMessageSplitToken: &token, Timestamp: time.Now().UTC()},
+		{Role: "assistant", Content: "third", Timestamp: time.Now().UTC()},
+	}
+	if err := cm.CommitDeliveryBatch("delivery", "stage1", job[:1], false, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, stage := range []struct {
+		op            string
+		before, after int
+	}{{"stage2", 1, 3}, {"stage3", 3, 4}} {
+		if err := cm.CommitDeliverySuffix("delivery", stage.op, job[:stage.before], job[:stage.after]); err != nil {
+			t.Fatal(err)
+		}
+		record, _ := cm.GetSession("delivery")
+		want := append(cloneChatMessages(prefix), job[:stage.after]...)
+		if !reflect.DeepEqual(record.Messages, want) {
+			t.Fatalf("%s lost earlier responses or metadata: %#v", stage.op, record.Messages)
+		}
+		path := cm.getSessionFilePath("delivery")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cm = NewChatManager(cm.dataDir)
+		if err := cm.CommitDeliverySuffix("delivery", stage.op, job[:stage.before], nil); err != nil {
+			t.Fatal(err)
+		}
+		after, _ := cm.GetSession("delivery")
+		if !equalDeliveryJSON(t, record, after) {
+			t.Fatal("restart retry changed record")
+		}
+		disk, err := os.ReadFile(path)
+		if err != nil || !bytes.Equal(data, disk) {
+			t.Fatalf("retry rewrote file: %v", err)
+		}
+	}
+	want, _ := cm.GetSession("delivery")
+	job[0].ToolCalls[0].Function.Name = "changed"
+	job[2].ImagePaths[0] = "changed"
+	job[2].TTSAudioPaths[0] = "changed"
+	job[2].Quote.ImagePaths[0] = "changed"
+	token = "changed"
+	after, _ := cm.GetSession("delivery")
+	if !reflect.DeepEqual(want, after) {
+		t.Fatal("suffix input aliases record")
+	}
+}
+
+func TestDeliverySuffixCAS(t *testing.T) {
+	for _, change := range []string{"append-userweb", "edit", "metadata", "too-long"} {
+		t.Run(change, func(t *testing.T) {
+			cm := newDeliveryTestManager(t)
+			old := []ChatMessage{{Role: "assistant", Content: "first", ReasoningContent: "reason"}}
+			if err := cm.CommitDeliveryBatch("delivery", "first", old, false, nil); err != nil {
+				t.Fatal(err)
+			}
+			switch change {
+			case "append-userweb":
+				if err := cm.AddMessage("delivery", "user", "web reply"); err != nil {
+					t.Fatal(err)
+				}
+			case "edit":
+				if err := cm.UpdateMessageContentByIndex("delivery", 0, "edited"); err != nil {
+					t.Fatal(err)
+				}
+			case "metadata":
+				old[0].ReasoningContent = "different"
+			case "too-long":
+				old = append(old, old[0])
+			}
+			before, _ := cm.GetSession("delivery")
+			if err := cm.CommitDeliverySuffix("delivery", "second", old, nil); !errors.Is(err, ErrTrailingResponseBatchChanged) {
+				t.Fatalf("CAS: %v", err)
+			}
+			after, _ := cm.GetSession("delivery")
+			if !reflect.DeepEqual(before, after) {
+				t.Fatal("CAS failure changed memory")
+			}
+			after, _ = NewChatManager(cm.dataDir).GetSession("delivery")
+			if !equalDeliveryJSON(t, before, after) {
+				t.Fatal("CAS failure changed disk")
+			}
+		})
+	}
+}
+
+func TestDeliverySuffixValidationAndReceipts(t *testing.T) {
+	cm := newDeliveryTestManager(t)
+	old := []ChatMessage{{Role: "assistant", Content: "first"}}
+	for _, expected := range [][]ChatMessage{nil, {}} {
+		if err := cm.CommitDeliverySuffix("delivery", "op", expected, old); !errors.Is(err, os.ErrInvalid) {
+			t.Fatalf("empty suffix: %v", err)
+		}
+	}
+	for _, op := range []string{"", " ", strings.Repeat("x", 257)} {
+		if err := cm.CommitDeliverySuffix("delivery", op, old, nil); !errors.Is(err, os.ErrInvalid) {
+			t.Fatalf("invalid operation: %v", err)
+		}
+	}
+	if err := cm.CommitDeliverySuffix("../bad", "op", old, nil); !errors.Is(err, ErrInvalidID) {
+		t.Fatal(err)
+	}
+	if err := cm.CommitDeliverySuffix("missing", "op", old, nil); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal(err)
+	}
+	if err := cm.CommitDeliveryBatch("delivery", "first", old, false, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := cm.CommitDeliverySuffix("delivery", "silent", old, nil); err != nil {
+		t.Fatal(err)
+	}
+	cm = NewChatManager(cm.dataDir)
+	if err := cm.CommitDeliverySuffix("delivery", "silent", old, old); err != nil {
+		t.Fatal(err)
+	}
+	record, _ := cm.GetSession("delivery")
+	if len(record.Messages) != 0 || !reflect.DeepEqual(record.AppliedOperations, []string{"first", "silent"}) {
+		t.Fatal("empty replacement receipt lost")
+	}
+}
+
+func TestDeliverySuffixRetryAfterEditAndDelete(t *testing.T) {
+	cm := newDeliveryTestManager(t)
+	old := []ChatMessage{{Role: "assistant", Content: "first"}}
+	next := []ChatMessage{{Role: "assistant", Content: "second"}}
+	if err := cm.CommitDeliveryBatch("delivery", "first", old, false, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := cm.CommitDeliverySuffix("delivery", "second", old, next); err != nil {
+		t.Fatal(err)
+	}
+	for _, remove := range []bool{false, true} {
+		var err error
+		if remove {
+			err = cm.DeleteMessageByIndex("delivery", 0)
+		} else {
+			err = cm.UpdateMessageContentByIndex("delivery", 0, "edited")
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		cm = NewChatManager(cm.dataDir)
+		before, _ := cm.GetSession("delivery")
+		if (remove && len(before.Messages) != 0) || (!remove && (len(before.Messages) != 1 || before.Messages[0].Content != "edited")) {
+			t.Fatal("edit/delete did not survive restart")
+		}
+		if err := cm.CommitDeliverySuffix("delivery", "second", old, next); err != nil {
+			t.Fatal(err)
+		}
+		after, _ := cm.GetSession("delivery")
+		if !equalDeliveryJSON(t, before, after) {
+			t.Fatal("retry resurrected edited/deleted content")
+		}
+	}
 }

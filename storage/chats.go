@@ -961,6 +961,20 @@ func (cm *ChatManager) DeleteTrailingResponseBatch(sessionID string) (int, error
 // CommitDeliveryBatch atomically persists a delivery and its idempotency receipt.
 // Receipts survive message edits/deletions; retries never resurrect that content.
 func (cm *ChatManager) CommitDeliveryBatch(sessionID, operationID string, messages []ChatMessage, replace bool, expectedTail []ChatMessage) error {
+	return cm.commitDelivery(sessionID, operationID, messages, replace, expectedTail, false)
+}
+
+// CommitDeliverySuffix atomically replaces only the exact, nonempty message suffix
+// owned by a delivery, preserving earlier responses in the same user turn.
+// Like CommitDeliveryBatch, an applied operation succeeds without rewriting content.
+func (cm *ChatManager) CommitDeliverySuffix(sessionID, operationID string, expectedSuffix, messages []ChatMessage) error {
+	if len(expectedSuffix) == 0 {
+		return os.ErrInvalid
+	}
+	return cm.commitDelivery(sessionID, operationID, messages, true, expectedSuffix, true)
+}
+
+func (cm *ChatManager) commitDelivery(sessionID, operationID string, messages []ChatMessage, replace bool, expectedTail []ChatMessage, suffix bool) error {
 	if err := ValidateID(sessionID); err != nil {
 		return err
 	}
@@ -980,7 +994,14 @@ func (cm *ChatManager) CommitDeliveryBatch(sessionID, operationID string, messag
 	}
 	cutIndex := len(record.Messages)
 	if replace {
-		cutIndex, _ = splitTrailingResponseBatchMessages(record.Messages)
+		if suffix {
+			cutIndex -= len(expectedTail)
+			if cutIndex < 0 {
+				return ErrTrailingResponseBatchChanged
+			}
+		} else {
+			cutIndex, _ = splitTrailingResponseBatchMessages(record.Messages)
+		}
 		if !equalChatMessages(record.Messages[cutIndex:], expectedTail) {
 			return ErrTrailingResponseBatchChanged
 		}
