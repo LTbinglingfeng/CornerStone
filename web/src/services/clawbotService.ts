@@ -15,7 +15,7 @@ export interface ClawBotSettings {
     prompt_id?: string
     prompt_name?: string
     command_permissions: ClawBotCommandPermissions
-    status: 'disabled' | 'missing_token' | 'running' | 'error' | 'stopped' | string
+    status: 'disabled' | 'missing_token' | 'connecting' | 'token_expired' | 'running' | 'error' | 'stopped' | string
     polling: boolean
     last_error?: string
     last_error_at?: string

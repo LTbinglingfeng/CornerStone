@@ -280,6 +280,8 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
         disabled: t('clawBot.disabled'),
         missing_token: t('clawBot.missingToken'),
         running: t('clawBot.running'),
+        connecting: t('clawBot.connecting'),
+        token_expired: t('clawBot.tokenExpired'),
         error: t('clawBot.error'),
         stopped: t('clawBot.stopped'),
     }

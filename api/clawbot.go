@@ -115,6 +115,8 @@ type ClawBotService struct {
 	workerCtx     context.Context
 	workerCancel  context.CancelFunc
 	workerRunning bool
+	connected     bool
+	staleToken    string
 	lastError     string
 	lastErrorAt   time.Time
 }
@@ -170,13 +172,20 @@ func (s *ClawBotService) applyConfig(cfg config.ClawBotConfig) {
 	s.workerCtx = nil
 	s.workerCancel = nil
 	s.workerRunning = false
+	s.connected = false
+	if s.staleToken != strings.TrimSpace(cfg.BotToken) {
+		s.staleToken = ""
+		s.lastError = ""
+		s.lastErrorAt = time.Time{}
+	}
+	stale := s.staleToken != ""
 	s.mu.Unlock()
 
 	if cancel != nil {
 		cancel()
 	}
 
-	if !cfg.Enabled || strings.TrimSpace(cfg.BotToken) == "" {
+	if stale || !cfg.Enabled || strings.TrimSpace(cfg.BotToken) == "" {
 		return
 	}
 
@@ -187,7 +196,17 @@ func (s *ClawBotService) applyConfig(cfg config.ClawBotConfig) {
 	s.workerRunning = true
 	s.mu.Unlock()
 
-	go s.pollLoop(ctx, cfg)
+	go func() {
+		defer func() {
+			s.mu.Lock()
+			if s.workerCtx == ctx {
+				s.workerRunning = false
+				s.connected = false
+			}
+			s.mu.Unlock()
+		}()
+		s.pollLoop(ctx, cfg)
+	}()
 }
 
 func (s *ClawBotService) getWorkerCtx() (context.Context, bool) {
@@ -304,6 +323,8 @@ func (s *ClawBotService) GetSettings() (*ClawBotSettingsResponse, error) {
 
 	s.mu.RLock()
 	polling := s.workerRunning
+	connected := s.connected
+	stale := s.staleToken != "" && s.staleToken == strings.TrimSpace(cfg.BotToken)
 	lastError := s.lastError
 	lastErrorAt := s.lastErrorAt
 	s.mu.RUnlock()
@@ -314,10 +335,14 @@ func (s *ClawBotService) GetSettings() (*ClawBotSettingsResponse, error) {
 		status = "disabled"
 	case strings.TrimSpace(cfg.BotToken) == "":
 		status = "missing_token"
-	case polling:
-		status = "running"
+	case stale:
+		status = "token_expired"
 	case lastError != "":
 		status = "error"
+	case polling && connected:
+		status = "running"
+	case polling:
+		status = "connecting"
 	default:
 		status = "stopped"
 	}
@@ -343,31 +368,37 @@ func (s *ClawBotService) GetSettings() (*ClawBotSettingsResponse, error) {
 
 func (s *ClawBotService) pollLoop(ctx context.Context, cfg config.ClawBotConfig) {
 	cursor := strings.TrimSpace(cfg.GetUpdatesBuf)
+	failures := 0
 	for {
 		if err := ctx.Err(); err != nil {
 			return
 		}
 
 		resp, err := s.client.GetUpdates(ctx, cfg.BaseURL, cfg.BotToken, cursor, s.wechatUIN)
+		if ctx.Err() != nil {
+			return
+		}
+		if err == nil {
+			err = resp.APIError()
+		}
 		if err != nil {
-			if ctx.Err() != nil {
+			if client.IsClawBotStaleToken(err) {
+				s.markTokenStale(cfg.BotToken)
 				return
 			}
-			s.setLastError(err)
-			time.Sleep(2 * time.Second)
+			s.setLastError(fmt.Errorf("%s", strings.ReplaceAll(err.Error(), cfg.BotToken, "[redacted]")))
+			failures++
+			if !waitClawBotRetry(ctx, clawBotRetryDelay(failures)) {
+				return
+			}
 			continue
 		}
 
+		failures = 0
 		s.clearLastError()
-		if resp.ErrCode == -14 {
-			cursor = ""
-			continue
-		}
-		if resp.ErrCode != 0 {
-			s.setLastError(fmt.Errorf("clawbot getupdates errcode=%d", resp.ErrCode))
-			time.Sleep(2 * time.Second)
-			continue
-		}
+		s.mu.Lock()
+		s.connected = true
+		s.mu.Unlock()
 
 		nextCursor := strings.TrimSpace(resp.GetUpdatesBuf)
 		if nextCursor != "" {
@@ -1262,7 +1293,16 @@ func (s *ClawBotService) sendTextReply(ctx context.Context, cfg config.ClawBotCo
 
 	contextToken := s.getContextToken(userID)
 	for _, chunk := range chunks {
+		s.mu.RLock()
+		stale := s.staleToken != "" && s.staleToken == strings.TrimSpace(cfg.BotToken)
+		s.mu.RUnlock()
+		if stale {
+			return fmt.Errorf("clawbot token expired; scan QR code to sign in again")
+		}
 		if err := s.client.SendTextMessage(ctx, cfg.BaseURL, cfg.BotToken, s.wechatUIN, userID, contextToken, chunk); err != nil {
+			if client.IsClawBotStaleToken(err) {
+				s.markTokenStale(cfg.BotToken)
+			}
 			return err
 		}
 	}

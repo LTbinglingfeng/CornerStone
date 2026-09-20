@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -76,6 +77,8 @@ type ClawBotIncomingMessage struct {
 }
 
 type ClawBotGetUpdatesResponse struct {
+	Ret           int                      `json:"ret"`
+	ErrMsg        string                   `json:"errmsg"`
 	ErrCode       int                      `json:"errcode"`
 	GetUpdatesBuf string                   `json:"get_updates_buf"`
 	Msgs          []ClawBotIncomingMessage `json:"msgs"`
@@ -100,7 +103,34 @@ type ClawBotSendMessageRequest struct {
 }
 
 type ClawBotSendMessageResponse struct {
-	Ret int `json:"ret"`
+	Ret     int    `json:"ret"`
+	ErrCode int    `json:"errcode"`
+	ErrMsg  string `json:"errmsg"`
+}
+
+const ClawBotStaleTokenCode = -14
+
+// ClawBotAPIError preserves business error codes without confusing them with HTTP errors.
+type ClawBotAPIError struct {
+	Ret     int
+	ErrCode int
+	Message string
+}
+
+func (e *ClawBotAPIError) Error() string {
+	return fmt.Sprintf("clawbot API ret=%d errcode=%d: %s", e.Ret, e.ErrCode, e.Message)
+}
+
+func IsClawBotStaleToken(err error) bool {
+	var apiErr *ClawBotAPIError
+	return errors.As(err, &apiErr) && (apiErr.Ret == ClawBotStaleTokenCode || apiErr.ErrCode == ClawBotStaleTokenCode)
+}
+
+func (r *ClawBotGetUpdatesResponse) APIError() error {
+	if r.Ret == 0 && r.ErrCode == 0 {
+		return nil
+	}
+	return &ClawBotAPIError{Ret: r.Ret, ErrCode: r.ErrCode, Message: r.ErrMsg}
 }
 
 const (
@@ -222,8 +252,12 @@ func (c *ClawBotClient) SendTextMessage(ctx context.Context, baseURL, botToken, 
 	if err := c.doJSON(req, &resp); err != nil {
 		return err
 	}
-	if resp.Ret != 0 {
-		return fmt.Errorf("clawbot sendmessage ret=%d", resp.Ret)
+	if resp.Ret != 0 || resp.ErrCode != 0 {
+		message := strings.ReplaceAll(resp.ErrMsg, strings.TrimSpace(botToken), "[redacted]")
+		if contextToken != "" {
+			message = strings.ReplaceAll(message, contextToken, "[redacted]")
+		}
+		return &ClawBotAPIError{Ret: resp.Ret, ErrCode: resp.ErrCode, Message: message}
 	}
 	return nil
 }

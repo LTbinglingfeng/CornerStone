@@ -30,6 +30,7 @@
     background: linear-gradient(90deg, #10b981, #34d399);
 }
 
+.clawbot-status-card.status-token_expired::before,
 .clawbot-status-card.status-error::before,
 .clawbot-status-card.status-missing_token::before {
     background: linear-gradient(90deg, #c65746, #d4766a);
@@ -114,6 +115,7 @@
     animation: clawbot-pill-glow 2.5s ease-in-out infinite;
 }
 
+.clawbot-status-pill.token_expired,
 .clawbot-status-pill.error,
 .clawbot-status-pill.missing_token {
     background: rgba(198, 87, 70, 0.9);
