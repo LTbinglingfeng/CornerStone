@@ -1,52 +1,33 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useT } from '../contexts/I18nContext'
-import { clawBotService, type ClawBotSettings } from '../services/clawbotService'
-import { napCatService, type NapCatSettings } from '../services/napcatService'
+import { useManagementResource } from '../hooks/useManagementResource'
+import { clawBotService } from '../services/clawbotService'
+import { napCatService } from '../services/napcatService'
 import ClawBotSettingsPanel from './ClawBotSettings'
 import NapCatSettingsPanel from './NapCatSettings'
 import './ChannelsPage.css'
 
-type ChannelState = { wechat: ClawBotSettings | null; qq: NapCatSettings | null }
-
 export default function ChannelsPage() {
-    const { t } = useT()
     const [params, setParams] = useSearchParams()
     const channel = params.get('channel')
-    const [data, setData] = useState<ChannelState>({ wechat: null, qq: null })
-    const [loading, setLoading] = useState(true)
-    const [failed, setFailed] = useState<string[]>([])
-    const [refresh, setRefresh] = useState(0)
-
-    useEffect(() => {
-        if (channel === 'wechat' || channel === 'qq') return
-        let cancelled = false
-        setLoading(true)
-        setFailed([])
-        void Promise.allSettled([clawBotService.getSettings(), napCatService.getSettings()]).then(([wechat, qq]) => {
-            if (cancelled) return
-            setData({
-                wechat: wechat.status === 'fulfilled' ? wechat.value : null,
-                qq: qq.status === 'fulfilled' ? qq.value : null,
-            })
-            setFailed([
-                ...(wechat.status === 'rejected' ? ['wechat'] : []),
-                ...(qq.status === 'rejected' ? ['qq'] : []),
-            ])
-            setLoading(false)
-        })
-        return () => {
-            cancelled = true
-        }
-    }, [channel, refresh])
-
     if (channel === 'wechat') return <ClawBotSettingsPanel onBack={() => setParams({})} />
     if (channel === 'qq') return <NapCatSettingsPanel onBack={() => setParams({})} />
+    return <ChannelDirectory />
+}
 
+function ChannelDirectory() {
+    const { t } = useT()
+    const [revision, setRevision] = useState(0)
+    const wechat = useManagementResource(clawBotService.getSettings, revision)
+    const qq = useManagementResource(napCatService.getSettings, revision)
+    const resources = { wechat, qq }
+    const loading = wechat.phase === 'loading' || qq.phase === 'loading'
+    const failed = wechat.phase === 'error' || qq.phase === 'error'
     const statusLabel = (key: 'wechat' | 'qq') => {
-        if (loading) return t('common.loading')
-        if (failed.includes(key) || !data[key]) return t('console.unavailable')
-        const status = data[key].status
+        const resource = resources[key]
+        if (resource.phase === 'loading') return t('common.loading')
+        if (resource.phase === 'error') return t('console.unavailable')
         const labels: Record<string, string> = {
             disabled: t('common.disable'),
             missing_token: t('clawBot.missingToken'),
@@ -56,7 +37,7 @@ export default function ChannelsPage() {
             connected: t('napCat.connected'),
             disconnected: t('napCat.disconnected'),
         }
-        return labels[status] || t('console.unknownStatus')
+        return labels[resource.data.status] || t('console.unknownStatus')
     }
 
     return (
@@ -66,19 +47,22 @@ export default function ChannelsPage() {
                     <h1>{t('console.channels')}</h1>
                     <p>{t('console.channelsHint')}</p>
                 </div>
-                <button className="console-button" disabled={loading} onClick={() => setRefresh((value) => value + 1)}>
+                <button className="console-button" disabled={loading} onClick={() => setRevision((value) => value + 1)}>
                     {t('console.refresh')}
                 </button>
             </header>
-            <div className="channel-grid" aria-busy={loading}>
+            <div className="channel-grid">
                 {(['wechat', 'qq'] as const).map((key) => {
-                    const settings = data[key]
-                    const active =
-                        !loading &&
-                        !failed.includes(key) &&
-                        (settings?.status === 'running' || settings?.status === 'connected')
+                    const resource = resources[key]
+                    const settings = resource.phase === 'ready' ? resource.data : null
+                    const active = settings?.status === 'running' || settings?.status === 'connected'
+                    const placeholder = resource.phase === 'loading' ? '—' : t('console.unavailable')
                     return (
-                        <article className={`channel-card ${key === 'wechat' ? 'channel-primary' : ''}`} key={key}>
+                        <article
+                            className={`channel-card ${key === 'wechat' ? 'channel-primary' : ''}`}
+                            key={key}
+                            aria-busy={resource.phase === 'loading'}
+                        >
                             <div className="channel-card-top">
                                 <span className="channel-monogram" aria-hidden="true">
                                     {key === 'wechat' ? 'W' : 'Q'}
@@ -95,27 +79,21 @@ export default function ChannelsPage() {
                                 <div>
                                     <dt>{t('console.boundPersona')}</dt>
                                     <dd>
-                                        {loading
-                                            ? '—'
-                                            : failed.includes(key)
-                                              ? t('console.unavailable')
-                                              : settings?.prompt_name || t('console.defaultPersona')}
+                                        {settings ? settings.prompt_name || t('console.defaultPersona') : placeholder}
                                     </dd>
                                 </div>
                                 <div>
                                     <dt>{t('console.connection')}</dt>
                                     <dd>
-                                        {loading
-                                            ? '—'
-                                            : failed.includes(key)
-                                              ? t('console.unavailable')
-                                              : key === 'wechat'
-                                                ? t(
-                                                      data.wechat?.polling
-                                                          ? 'clawBot.backgroundPolling'
-                                                          : 'clawBot.notPolling'
-                                                  )
-                                                : statusLabel(key)}
+                                        {!settings
+                                            ? placeholder
+                                            : key === 'wechat' && wechat.phase === 'ready'
+                                              ? t(
+                                                    wechat.data.polling
+                                                        ? 'clawBot.backgroundPolling'
+                                                        : 'clawBot.notPolling'
+                                                )
+                                              : statusLabel(key)}
                                     </dd>
                                 </div>
                             </dl>
@@ -127,7 +105,7 @@ export default function ChannelsPage() {
                     )
                 })}
             </div>
-            {failed.length > 0 && (
+            {failed && (
                 <p className="channel-notice" role="alert">
                     {t('console.channelLoadFailed')}
                 </p>

@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useManagementResource, type ManagementResource } from '../hooks/useManagementResource'
 import { Link } from 'react-router-dom'
 import { useT } from '../contexts/I18nContext'
 import { overview } from '../i18n/overview'
@@ -8,37 +9,6 @@ import { napCatService } from '../services/napcatService'
 import { reminderService } from '../services/reminderService'
 import { buildChatRoute } from '../utils/routes'
 import './ManagementOverview.css'
-
-type Resource<T> = { phase: 'loading' | 'error'; data?: never } | { phase: 'ready'; data: T }
-
-// The existing services have no AbortSignal parameter. Ignore late results on
-// refresh/unmount, and bound waiting without exposing upstream error messages.
-function useOverviewResource<T>(load: () => Promise<T>, revision: number): Resource<T> {
-    const [result, setResult] = useState<Resource<T>>({ phase: 'loading' })
-    useEffect(() => {
-        let active = true
-        setResult({ phase: 'loading' })
-        const timeout = window.setTimeout(() => {
-            if (active) setResult({ phase: 'error' })
-            active = false
-        }, 20000)
-        void load().then(
-            (data) => {
-                if (active) setResult({ phase: 'ready', data })
-                window.clearTimeout(timeout)
-            },
-            () => {
-                if (active) setResult({ phase: 'error' })
-                window.clearTimeout(timeout)
-            }
-        )
-        return () => {
-            active = false
-            window.clearTimeout(timeout)
-        }
-    }, [load, revision])
-    return result
-}
 
 const loadPersonaCount = async () => (await getPrompts()).length
 const loadReminderCount = async () =>
@@ -66,17 +36,18 @@ export default function ManagementOverview() {
     const { locale } = useT()
     const copy = overview[locale]
     const [revision, setRevision] = useState(0)
-    const sessions = useOverviewResource(getSessions, revision)
-    const personas = useOverviewResource(loadPersonaCount, revision)
-    const reminders = useOverviewResource(loadReminderCount, revision)
-    const model = useOverviewResource(loadModel, revision)
-    const wechat = useOverviewResource(loadWechat, revision)
-    const qq = useOverviewResource(loadQQ, revision)
+    const sessions = useManagementResource(getSessions, revision)
+    const personas = useManagementResource(loadPersonaCount, revision)
+    const reminders = useManagementResource(loadReminderCount, revision)
+    const model = useManagementResource(loadModel, revision)
+    const wechat = useManagementResource(loadWechat, revision)
+    const qq = useManagementResource(loadQQ, revision)
     const resources = [sessions, personas, reminders, model, wechat, qq]
     const loading = resources.some((item) => item.phase === 'loading')
     const failed = resources.some((item) => item.phase === 'error')
     const refresh = () => setRevision((value) => value + 1)
-    const placeholder = (phase: Resource<unknown>['phase']) => (phase === 'loading' ? copy.loading : copy.unavailable)
+    const placeholder = (phase: ManagementResource<unknown>['phase']) =>
+        phase === 'loading' ? copy.loading : copy.unavailable
     const statusLabel = (status: string) =>
         Object.prototype.hasOwnProperty.call(copy.statuses, status)
             ? copy.statuses[status as keyof typeof copy.statuses]
