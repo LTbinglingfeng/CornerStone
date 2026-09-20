@@ -37,6 +37,7 @@ type Handler struct {
 	reminderService     *ReminderService
 	idleGreetingService *IdleGreetingService
 	weatherService      weatherService
+	weatherServiceOnce  sync.Once
 	exactTimeService    exactTimeProvider
 
 	cleanupOnce sync.Once

@@ -9,8 +9,43 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 )
+
+func TestGetWeatherServiceConcurrentInitialization(t *testing.T) {
+	for _, injected := range []bool{false, true} {
+		t.Run(strconv.FormatBool(injected), func(t *testing.T) {
+			h := &Handler{}
+			var expected weatherService
+			if injected {
+				expected = &stubWeatherService{}
+				h.weatherService = expected
+			}
+			const callers = 32
+			services := make(chan weatherService, callers)
+			start := make(chan struct{})
+			var wg sync.WaitGroup
+			for range callers {
+				wg.Go(func() { <-start; services <- h.getWeatherService() })
+			}
+			close(start)
+			wg.Wait()
+			close(services)
+			for service := range services {
+				if service == nil {
+					t.Fatal("weather service is nil")
+				}
+				if expected == nil {
+					expected = service
+				}
+				if service != expected {
+					t.Fatal("concurrent callers received different weather clients")
+				}
+			}
+		})
+	}
+}
 
 type stubWeatherService struct {
 	searchCitiesResult []client.WeatherCity

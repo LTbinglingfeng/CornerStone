@@ -98,10 +98,11 @@ var weatherCodeTextMap = map[string]string{
 }
 
 func (h *Handler) getWeatherService() weatherService {
-	if h.weatherService != nil {
-		return h.weatherService
-	}
-	h.weatherService = client.NewWeatherClient("")
+	h.weatherServiceOnce.Do(func() {
+		if h.weatherService == nil {
+			h.weatherService = client.NewWeatherClient("")
+		}
+	})
 	return h.weatherService
 }
 
