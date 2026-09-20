@@ -134,9 +134,10 @@ type ClawBotSendMessageRequest struct {
 }
 
 type ClawBotSendMessageResponse struct {
-	Ret     int    `json:"ret"`
-	ErrCode int    `json:"errcode"`
-	ErrMsg  string `json:"errmsg"`
+	Ret       int              `json:"ret"`
+	ErrCode   int              `json:"errcode"`
+	ErrMsg    string           `json:"errmsg"`
+	MessageID ClawBotMessageID `json:"message_id,omitempty"`
 }
 
 const ClawBotStaleTokenCode = -14
