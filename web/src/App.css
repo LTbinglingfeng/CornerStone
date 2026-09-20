@@ -19,6 +19,7 @@
 .console-nav { display: flex; flex-direction: column; gap: 6px; }
 .console-nav a { min-height: 46px; display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 9px; text-decoration: none; color: var(--text-secondary); font-size: 14px; font-weight: 500; }
 .console-nav a.active { background: var(--bg-primary); color: var(--text-primary); box-shadow: 0 1px 3px #00000009; }
+.console-nav-short { display: none; }
 .console-nav svg { width: 20px; height: 20px; flex-shrink: 0; }
 .console-sidebar-footer { margin-top: auto; padding: 24px 8px 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .console-version { font-size: 11px; color: var(--text-secondary); overflow-wrap: anywhere; }
@@ -63,6 +64,9 @@
   .console-nav { grid-column: 1 / -1; grid-row: 2; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 2px; }
   .console-nav a { flex-direction: column; justify-content: flex-start; gap: 6px; padding: 8px 2px; min-height: 58px; font-size: 11px; line-height: 1.3; text-align: center; overflow-wrap: anywhere; }
   .console-nav svg { width: 18px; height: 18px; }
+  .console-nav-label { display: none; }
+  .console-nav-short { display: inline; }
+  .profile-content { padding-inline: 20px; }
   .console-sidebar-footer { padding: 0; margin: 0; grid-row: 1; grid-column: 2; }
   .console-version { display: none; }
   .console-theme { border: 0; width: 44px; height: 44px; }

@@ -43,9 +43,10 @@ export default function ConsoleNav() {
             </Link>
             <nav className="console-nav" aria-label={t('console.title')}>
                 {tabOrder.map((tab) => (
-                    <NavLink key={tab} to={tabRoutes[tab]}>
+                    <NavLink key={tab} to={tabRoutes[tab]} aria-label={t(`console.${tab}`)}>
                         <ConsoleIcon name={tab} />
-                        <span>{t(`console.${tab}`)}</span>
+                        <span className="console-nav-label">{t(`console.${tab}`)}</span>
+                        <span className="console-nav-short">{t(`console.short.${tab}`)}</span>
                     </NavLink>
                 ))}
             </nav>
