@@ -1142,7 +1142,7 @@ const Settings: React.FC<SettingsProps> = ({
                 <div className="settings-content">
                     <header className="settings-category-heading">
                         <span>{managementCopy.eyebrow}</span>
-                        <h2>{managementCopy.sections[activeSection].label}</h2>
+                        <h1>{managementCopy.sections[activeSection].label}</h1>
                         <p>{managementCopy.sections[activeSection].description}</p>
                     </header>
                     {activeSection === 'models' && (
