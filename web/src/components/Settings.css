@@ -936,3 +936,88 @@
     min-height: 80px;
     line-height: 1.5;
 }
+
+/* Management categories stay in flow and wrap rather than clipping on mobile. */
+.settings-categories {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    flex-shrink: 0;
+}
+
+.settings-categories button {
+    min-height: 44px;
+    padding: 8px 16px;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    background: transparent;
+    color: var(--text-secondary);
+    font: inherit;
+    cursor: pointer;
+}
+
+.settings-categories button:hover,
+.settings-categories button:active {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+.settings-categories button[aria-current='page'] {
+    background: var(--bg-primary);
+    border-color: var(--border-color);
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.settings-categories button:focus-visible,
+.settings-entry-btn:focus-visible {
+    outline: 2px solid var(--accent-color);
+    outline-offset: 3px;
+}
+
+.settings-category-heading {
+    margin-bottom: 24px;
+    color: var(--text-secondary);
+}
+
+.settings-category-heading > span {
+    font-size: 12px;
+}
+
+.settings-category-heading h2 {
+    margin: 6px 0 8px;
+    font-size: 24px;
+    letter-spacing: -0.025em;
+    color: var(--text-primary);
+}
+
+.settings-category-heading p {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+.settings-content > .settings-section,
+.settings-category-heading,
+.settings-content > .settings-footer {
+    max-width: 920px;
+    width: 100%;
+    margin-inline: auto;
+    box-sizing: border-box;
+}
+
+@media (max-width: 600px) {
+    .settings-categories {
+        padding: 10px 12px;
+        gap: 4px;
+    }
+
+    .settings-categories button {
+        flex: 1 1 40%;
+        padding-inline: 10px;
+        font-size: 14px;
+    }
+}

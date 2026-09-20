@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
+import { useSearchParams } from 'react-router-dom'
 import { getProviders, searchWeatherCities, updateConfig, updateSystemPrompt } from '../services/api'
 import {
     memoryService,
@@ -10,10 +11,7 @@ import { ttsService, type TTSProviderConfig } from '../services/ttsService'
 import { clawBotService, type ClawBotSettings } from '../services/clawbotService'
 import { napCatService, type NapCatSettings } from '../services/napcatService'
 import { reminderService } from '../services/reminderService'
-import {
-    cornerstoneWebSearchService,
-    type CornerstoneWebSearchSettings,
-} from '../services/cornerstoneWebSearchService'
+import { cornerstoneWebSearchService, type CornerstoneWebSearchSettings } from '../services/cornerstoneWebSearchService'
 import { localeNames, type Locale } from '../i18n'
 import type { IdleGreetingConfig, Provider, WeatherCity } from '../types/chat'
 import type { Reminder } from '../types/reminder'
@@ -52,13 +50,22 @@ import {
 import ToolSettingsPanel from './ToolSettings'
 import ReminderSettingsPanel from './ReminderSettings'
 import IdleGreetingSettingsPanel from './IdleGreetingSettings'
+import { getSettingsManagementCopy } from './settingsI18n'
 import './Settings.css'
 
-interface SettingsProps {
+export interface SettingsProps {
     onBack: () => void
     assistantMessageSplitToken: string
     onAssistantMessageSplitTokenChange: (token: string) => void
+    embedded?: boolean
 }
+
+type SettingsSection = 'models' | 'automation' | 'memory' | 'general'
+
+const SETTINGS_SECTIONS: SettingsSection[] = ['models', 'automation', 'memory', 'general']
+
+const isSettingsSection = (value: string | null): value is SettingsSection =>
+    SETTINGS_SECTIONS.includes(value as SettingsSection)
 
 const DEFAULT_TIME_ZONE = 'Asia/Shanghai'
 const DEFAULT_IDLE_GREETING_CONFIG: IdleGreetingConfig = {
@@ -91,8 +98,13 @@ const Settings: React.FC<SettingsProps> = ({
     onBack,
     assistantMessageSplitToken: initialAssistantMessageSplitToken,
     onAssistantMessageSplitTokenChange,
+    embedded = false,
 }) => {
     const { t, locale, setLocale } = useT()
+    const [searchParams, setSearchParams] = useSearchParams()
+    const requestedSection = searchParams.get('section')
+    const activeSection: SettingsSection = isSettingsSection(requestedSection) ? requestedSection : 'models'
+    const managementCopy = getSettingsManagementCopy(locale)
     const { showToast } = useToast()
     const appVersion = __CORNERSTONE_VERSION__.trim() || 'dev'
     const [systemPrompt, setSystemPrompt] = useState('')
@@ -136,7 +148,7 @@ const Settings: React.FC<SettingsProps> = ({
     const [defaultMemoryExtractionPrompt, setDefaultMemoryExtractionPrompt] = useState('')
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
-    const [showProviderSettings, setShowProviderSettings] = useState(false)
+    const showProviderSettings = searchParams.get('panel') === 'providers'
     const [showImageProviderSettings, setShowImageProviderSettings] = useState(false)
     const [showMemoryProviderSettings, setShowMemoryProviderSettings] = useState(false)
     const [showClawBotSettings, setShowClawBotSettings] = useState(false)
@@ -753,8 +765,29 @@ const Settings: React.FC<SettingsProps> = ({
         }
     }
 
+    const updateLocation = (section: SettingsSection, panel?: string) => {
+        const nextParams = new URLSearchParams(searchParams)
+        nextParams.set('section', section)
+        if (panel) {
+            nextParams.set('panel', panel)
+        } else {
+            nextParams.delete('panel')
+        }
+        setSearchParams(nextParams)
+    }
+
+    const handleSectionChange = (section: SettingsSection) => {
+        updateLocation(section)
+    }
+
+    const handleOpenProviderSettings = () => {
+        updateLocation('models', 'providers')
+    }
+
     const handleProviderSettingsBack = () => {
-        setShowProviderSettings(false)
+        const nextParams = new URLSearchParams(searchParams)
+        nextParams.delete('panel')
+        setSearchParams(nextParams)
     }
 
     const handleImageProviderSettingsBack = () => {
@@ -968,9 +1001,7 @@ const Settings: React.FC<SettingsProps> = ({
             cornerstoneWebSearchSettings.fetch_results &&
             cornerstoneWebSearchSettings.fetch_results !== cornerstoneWebSearchSettings.max_results
         ) {
-            detailParts.push(
-                `${t('settings.webSearchFetchResults')}: ${cornerstoneWebSearchSettings.fetch_results}`
-            )
+            detailParts.push(`${t('settings.webSearchFetchResults')}: ${cornerstoneWebSearchSettings.fetch_results}`)
         }
         const detail = detailParts.join(' · ')
         return { title, detail }
@@ -1024,409 +1055,469 @@ const Settings: React.FC<SettingsProps> = ({
 
     return (
         <div className="settings">
-            <div className="settings-header">
-                <button className="back-button" onClick={onBack}>
-                    <svg viewBox="0 0 24 24">
-                        <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
-                    </svg>
-                </button>
-                <div className="settings-title">{t('settings.title')}</div>
-                <div style={{ width: 44 }}></div>
-            </div>
+            {!embedded && (
+                <div className="settings-header">
+                    <button className="back-button" onClick={onBack} aria-label={managementCopy.backLabel}>
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
+                        </svg>
+                    </button>
+                    <div className="settings-title">{t('settings.title')}</div>
+                    <div style={{ width: 44 }} />
+                </div>
+            )}
+            <nav className="settings-categories" aria-label={managementCopy.navigationLabel}>
+                {SETTINGS_SECTIONS.map((section) => (
+                    <button
+                        key={section}
+                        type="button"
+                        aria-current={activeSection === section ? 'page' : undefined}
+                        onClick={() => handleSectionChange(section)}
+                    >
+                        {managementCopy.sections[section].label}
+                    </button>
+                ))}
+            </nav>
 
             {loading ? (
                 <div className="settings-loading">{t('common.loading')}</div>
             ) : (
                 <div className="settings-content">
-                    {/* 供应商设置入口 */}
-                    <div className="settings-section">
-                        <h3>{t('settings.providers')}</h3>
-                        <button className="settings-entry-btn" onClick={() => setShowProviderSettings(true)}>
-                            <div className="settings-entry-info">
-                                <span className="settings-entry-label">{t('settings.currentProvider')}</span>
-                                <span className="settings-entry-value">{activeProviderName}</span>
+                    <header className="settings-category-heading">
+                        <span>{managementCopy.eyebrow}</span>
+                        <h2>{managementCopy.sections[activeSection].label}</h2>
+                        <p>{managementCopy.sections[activeSection].description}</p>
+                    </header>
+                    {activeSection === 'models' && (
+                        <>
+                            <div className="settings-section">
+                                <h3>{t('settings.providers')}</h3>
+                                <button className="settings-entry-btn" onClick={handleOpenProviderSettings}>
+                                    <div className="settings-entry-info">
+                                        <span className="settings-entry-label">{t('settings.currentProvider')}</span>
+                                        <span className="settings-entry-value">{activeProviderName}</span>
+                                    </div>
+                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
+                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                                    </svg>
+                                </button>
+
+                                <button
+                                    className="settings-entry-btn"
+                                    onClick={() => setShowImageProviderSettings(true)}
+                                    style={{ marginTop: 12 }}
+                                >
+                                    <div className="settings-entry-info">
+                                        <span className="settings-entry-label">{t('settings.imageProvider')}</span>
+                                        <span className="settings-entry-value">{imageProviderPreview.title}</span>
+                                        {imageProviderPreview.detail && (
+                                            <span className="settings-entry-subvalue">
+                                                {imageProviderPreview.detail}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
+                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                                    </svg>
+                                </button>
+
+                                <button
+                                    className="settings-entry-btn"
+                                    onClick={() => setShowCornerstoneWebSearchSettings(true)}
+                                    style={{ marginTop: 12 }}
+                                >
+                                    <div className="settings-entry-info">
+                                        <span className="settings-entry-label">{t('settings.webSearch')}</span>
+                                        <span className="settings-entry-value">
+                                            {cornerstoneWebSearchPreview.title}
+                                        </span>
+                                        {cornerstoneWebSearchPreview.detail && (
+                                            <span className="settings-entry-subvalue">
+                                                {cornerstoneWebSearchPreview.detail}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
+                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                                    </svg>
+                                </button>
                             </div>
-                            <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                            </svg>
-                        </button>
+                            <div className="settings-section">
+                                <h3>{t('settings.voice')}</h3>
 
-                        <button
-                            className="settings-entry-btn"
-                            onClick={() => setShowImageProviderSettings(true)}
-                            style={{ marginTop: 12 }}
-                        >
-                            <div className="settings-entry-info">
-                                <span className="settings-entry-label">{t('settings.imageProvider')}</span>
-                                <span className="settings-entry-value">{imageProviderPreview.title}</span>
-                                {imageProviderPreview.detail && (
-                                    <span className="settings-entry-subvalue">{imageProviderPreview.detail}</span>
-                                )}
+                                <div className="settings-group">
+                                    <label className="settings-label">{t('settings.tts')}</label>
+                                    <div className="modal-toggle-wrapper">
+                                        <label className="toggle-switch">
+                                            <input
+                                                type="checkbox"
+                                                checked={ttsEnabled}
+                                                onChange={(e) => handleTTSEnabledChange(e.target.checked)}
+                                                disabled={saving}
+                                            />
+                                            <span className="toggle-slider"></span>
+                                        </label>
+                                        <span className="toggle-label">
+                                            {ttsEnabled ? t('common.enable') : t('common.disable')}
+                                        </span>
+                                    </div>
+                                    <p className="prompt-modal-hint memory-toggle-hint">{t('settings.ttsHint')}</p>
+                                </div>
+
+                                <button
+                                    className="settings-entry-btn"
+                                    onClick={handleOpenTTSProviderModal}
+                                    style={{ marginTop: 12 }}
+                                >
+                                    <div className="settings-entry-info">
+                                        <span className="settings-entry-label">{t('settings.ttsProvider')}</span>
+                                        <span className="settings-entry-value">{ttsProviderPreview.title}</span>
+                                        {ttsProviderPreview.detail && (
+                                            <span className="settings-entry-subvalue">{ttsProviderPreview.detail}</span>
+                                        )}
+                                    </div>
+                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
+                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                                    </svg>
+                                </button>
                             </div>
-                            <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                            </svg>
-                        </button>
+                        </>
+                    )}
+                    {activeSection === 'automation' && (
+                        <>
+                            <div className="settings-section">
+                                <h3>{t('settings.tools')}</h3>
+                                <button className="settings-entry-btn" onClick={() => setShowToolSettings(true)}>
+                                    <div className="settings-entry-info">
+                                        <span className="settings-entry-label">{t('settings.tools')}</span>
+                                        <span className="settings-entry-value">{toolControlPreview.title}</span>
+                                        <span className="settings-entry-subvalue">{toolControlPreview.detail}</span>
+                                    </div>
+                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
+                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                                    </svg>
+                                </button>
 
-                        <button
-                            className="settings-entry-btn"
-                            onClick={() => setShowCornerstoneWebSearchSettings(true)}
-                            style={{ marginTop: 12 }}
-                        >
-                            <div className="settings-entry-info">
-                                <span className="settings-entry-label">{t('settings.webSearch')}</span>
-                                <span className="settings-entry-value">{cornerstoneWebSearchPreview.title}</span>
-                                {cornerstoneWebSearchPreview.detail && (
-                                    <span className="settings-entry-subvalue">{cornerstoneWebSearchPreview.detail}</span>
-                                )}
+                                <button
+                                    className="settings-entry-btn"
+                                    onClick={() => setShowReminderSettings(true)}
+                                    style={{ marginTop: 12 }}
+                                >
+                                    <div className="settings-entry-info">
+                                        <span className="settings-entry-label">{t('settings.reminders')}</span>
+                                        <span className="settings-entry-value">{reminderPreview.title}</span>
+                                        <span className="settings-entry-subvalue">{reminderPreview.detail}</span>
+                                    </div>
+                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
+                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                                    </svg>
+                                </button>
+                                <button
+                                    className="settings-entry-btn"
+                                    onClick={() => setShowIdleGreetingSettings(true)}
+                                    style={{ marginTop: 12 }}
+                                >
+                                    <div className="settings-entry-info">
+                                        <span className="settings-entry-label">{t('settings.idleGreeting')}</span>
+                                        <span className="settings-entry-value">{idleGreetingPreview.title}</span>
+                                        {idleGreetingPreview.detail && (
+                                            <span className="settings-entry-subvalue">
+                                                {idleGreetingPreview.detail}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
+                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                                    </svg>
+                                </button>
                             </div>
-                            <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                            </svg>
-                        </button>
-                    </div>
+                        </>
+                    )}
+                    {activeSection === 'memory' && (
+                        <>
+                            <div className="settings-section">
+                                <h3>{t('settings.longTermMemory')}</h3>
 
-                    <div className="settings-section">
-                        <h3>{t('settings.tools')}</h3>
-                        <button className="settings-entry-btn" onClick={() => setShowToolSettings(true)}>
-                            <div className="settings-entry-info">
-                                <span className="settings-entry-label">{t('settings.tools')}</span>
-                                <span className="settings-entry-value">{toolControlPreview.title}</span>
-                                <span className="settings-entry-subvalue">{toolControlPreview.detail}</span>
+                                <p className="prompt-modal-hint">
+                                    {t('settings.memoryHint', { rounds: memoryExtractionRounds || 5 })}
+                                </p>
+
+                                <div className="settings-group">
+                                    <label className="settings-label">{t('settings.memoryFunction')}</label>
+                                    <div className="modal-toggle-wrapper">
+                                        <label className="toggle-switch">
+                                            <input
+                                                type="checkbox"
+                                                checked={memoryEnabled}
+                                                onChange={(e) => handleMemoryEnabledChange(e.target.checked)}
+                                                disabled={saving}
+                                            />
+                                            <span className="toggle-slider"></span>
+                                        </label>
+                                        <span className="toggle-label">
+                                            {memoryEnabled ? t('common.enable') : t('common.disable')}
+                                        </span>
+                                    </div>
+                                    <p className="prompt-modal-hint memory-toggle-hint">
+                                        {t('settings.memoryDisableHint')}
+                                    </p>
+                                </div>
+
+                                <button
+                                    className="settings-entry-btn"
+                                    onClick={() => setShowMemoryProviderSettings(true)}
+                                    style={{ marginTop: 12 }}
+                                >
+                                    <div className="settings-entry-info">
+                                        <span className="settings-entry-label">{t('settings.memoryProvider')}</span>
+                                        <span className="settings-entry-value">{memoryProviderPreview.title}</span>
+                                        <span className="settings-entry-subvalue">{memoryProviderPreview.detail}</span>
+                                    </div>
+                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
+                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                                    </svg>
+                                </button>
+                                <p className="prompt-modal-hint memory-provider-hint">
+                                    {t('settings.memoryProviderHint')}
+                                </p>
+
+                                <button
+                                    className="settings-entry-btn"
+                                    onClick={handleOpenMemoryExtractionRoundsModal}
+                                    style={{ marginTop: 12 }}
+                                >
+                                    <div className="settings-entry-info">
+                                        <span className="settings-entry-label">
+                                            {t('settings.memoryExtractionRounds')}
+                                        </span>
+                                        <span className="settings-entry-value">
+                                            {getMemoryExtractionRoundsPreview()}
+                                        </span>
+                                        <span className="settings-entry-subvalue">
+                                            {getMemoryExtractionRoundsDetail()}
+                                        </span>
+                                    </div>
+                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
+                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                                    </svg>
+                                </button>
+                                <p className="prompt-modal-hint memory-provider-hint">
+                                    {t('settings.memoryExtractionRoundsHint')}
+                                </p>
+
+                                <button
+                                    className="settings-entry-btn"
+                                    onClick={handleOpenMemoryRefreshIntervalModal}
+                                    style={{ marginTop: 12 }}
+                                >
+                                    <div className="settings-entry-info">
+                                        <span className="settings-entry-label">
+                                            {t('settings.memoryRefreshInterval')}
+                                        </span>
+                                        <span className="settings-entry-value">
+                                            {getMemoryRefreshIntervalPreview()}
+                                        </span>
+                                        <span className="settings-entry-subvalue">
+                                            {getMemoryRefreshIntervalDetail()}
+                                        </span>
+                                    </div>
+                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
+                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                                    </svg>
+                                </button>
+                                <p className="prompt-modal-hint memory-provider-hint">
+                                    {t('settings.memoryRefreshIntervalHint')}
+                                </p>
+
+                                <button
+                                    className="settings-entry-btn"
+                                    onClick={handleOpenMemoryExtractionPromptModal}
+                                    style={{ marginTop: 12 }}
+                                >
+                                    <div className="settings-entry-info">
+                                        <span className="settings-entry-label">
+                                            {t('settings.memoryExtractionPrompt')}
+                                        </span>
+                                        <span className="settings-entry-value">{t('common.edit')}</span>
+                                        <span className="settings-entry-subvalue">
+                                            {t('settings.memoryExtractionPromptSupport')}
+                                        </span>
+                                    </div>
+                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
+                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                                    </svg>
+                                </button>
                             </div>
-                            <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                            </svg>
-                        </button>
+                        </>
+                    )}
+                    {activeSection === 'general' && (
+                        <>
+                            <div className="settings-section">
+                                <h3>{t('settings.globalSettings')}</h3>
+                                <button className="settings-entry-btn" onClick={handleOpenPromptModal}>
+                                    <div className="settings-entry-info">
+                                        <span className="settings-entry-label">
+                                            {t('settings.defaultSystemPrompt')}
+                                        </span>
+                                        <span className="settings-entry-value">{getPromptPreview()}</span>
+                                    </div>
+                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
+                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                                    </svg>
+                                </button>
 
-                        <button
-                            className="settings-entry-btn"
-                            onClick={() => setShowReminderSettings(true)}
-                            style={{ marginTop: 12 }}
-                        >
-                            <div className="settings-entry-info">
-                                <span className="settings-entry-label">{t('settings.reminders')}</span>
-                                <span className="settings-entry-value">{reminderPreview.title}</span>
-                                <span className="settings-entry-subvalue">{reminderPreview.detail}</span>
+                                <button
+                                    className="settings-entry-btn"
+                                    onClick={handleOpenAssistantMessageSplitTokenModal}
+                                    style={{ marginTop: 12 }}
+                                >
+                                    <div className="settings-entry-info">
+                                        <span className="settings-entry-label">
+                                            {t('settings.assistantMessageSplitToken')}
+                                        </span>
+                                        <span className="settings-entry-value">
+                                            {assistantMessageSplitTokenPreview.title}
+                                        </span>
+                                        {assistantMessageSplitTokenPreview.detail && (
+                                            <span className="settings-entry-subvalue">
+                                                {assistantMessageSplitTokenPreview.detail}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
+                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                                    </svg>
+                                </button>
+
+                                <button
+                                    className="settings-entry-btn"
+                                    onClick={handleOpenReplyWaitModal}
+                                    style={{ marginTop: 12 }}
+                                >
+                                    <div className="settings-entry-info">
+                                        <span className="settings-entry-label">{t('settings.replyWaitWindow')}</span>
+                                        <span className="settings-entry-value">{getReplyWaitPreview()}</span>
+                                    </div>
+                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
+                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                                    </svg>
+                                </button>
+
+                                <button
+                                    className="settings-entry-btn"
+                                    onClick={handleOpenTimeZoneModal}
+                                    style={{ marginTop: 12 }}
+                                >
+                                    <div className="settings-entry-info">
+                                        <span className="settings-entry-label">{t('settings.timeZone')}</span>
+                                        <span className="settings-entry-value">{timeZonePreview.title}</span>
+                                        {timeZonePreview.detail && (
+                                            <span className="settings-entry-subvalue">{timeZonePreview.detail}</span>
+                                        )}
+                                    </div>
+                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
+                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                                    </svg>
+                                </button>
+
+                                <button
+                                    className="settings-entry-btn"
+                                    onClick={handleOpenWeatherCityModal}
+                                    style={{ marginTop: 12 }}
+                                >
+                                    <div className="settings-entry-info">
+                                        <span className="settings-entry-label">{t('settings.defaultWeatherCity')}</span>
+                                        <span className="settings-entry-value">{defaultWeatherCityPreview.title}</span>
+                                        {defaultWeatherCityPreview.detail && (
+                                            <span className="settings-entry-subvalue">
+                                                {defaultWeatherCityPreview.detail}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
+                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                                    </svg>
+                                </button>
+
+                                <div className="settings-group" style={{ marginTop: 12 }}>
+                                    <label className="settings-label">{t('settings.systemNotifications')}</label>
+                                    <div className="modal-toggle-wrapper">
+                                        <label className="toggle-switch">
+                                            <input
+                                                type="checkbox"
+                                                checked={notificationsEnabled}
+                                                onChange={(e) => void handleNotificationsToggle(e.target.checked)}
+                                                disabled={saving || !notificationsSupported}
+                                            />
+                                            <span className="toggle-slider"></span>
+                                        </label>
+                                        <span className="toggle-label">
+                                            {notificationsSupported
+                                                ? notificationsEnabled
+                                                    ? t('common.enable')
+                                                    : notificationPermission === 'denied'
+                                                      ? t('common.denied')
+                                                      : t('common.disable')
+                                                : t('common.notSupported')}
+                                        </span>
+                                    </div>
+                                    <p className="prompt-modal-hint memory-toggle-hint">
+                                        {t('settings.notifyWhenNotInChat')}
+                                    </p>
+                                </div>
+
+                                <button
+                                    className="settings-entry-btn"
+                                    onClick={handleOpenLanguageModal}
+                                    style={{ marginTop: 12 }}
+                                >
+                                    <div className="settings-entry-info">
+                                        <span className="settings-entry-label">{t('settings.language')}</span>
+                                        <span className="settings-entry-value">{localeNames[locale]}</span>
+                                        <span className="settings-entry-subvalue">{t('settings.languageHint')}</span>
+                                    </div>
+                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
+                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                                    </svg>
+                                </button>
                             </div>
-                            <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                            </svg>
-                        </button>
-                    </div>
+                            <div className="settings-section">
+                                <h3>{t('settings.channels')}</h3>
+                                <button className="settings-entry-btn" onClick={() => setShowClawBotSettings(true)}>
+                                    <div className="settings-entry-info">
+                                        <span className="settings-entry-label">{t('settings.wechatClawBot')}</span>
+                                        <span className="settings-entry-value">{clawBotPreview.title}</span>
+                                        {clawBotPreview.detail && (
+                                            <span className="settings-entry-subvalue">{clawBotPreview.detail}</span>
+                                        )}
+                                    </div>
+                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
+                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                                    </svg>
+                                </button>
 
-                    <div className="settings-section">
-                        <h3>{t('settings.channels')}</h3>
-                        <button className="settings-entry-btn" onClick={() => setShowClawBotSettings(true)}>
-                            <div className="settings-entry-info">
-                                <span className="settings-entry-label">{t('settings.wechatClawBot')}</span>
-                                <span className="settings-entry-value">{clawBotPreview.title}</span>
-                                {clawBotPreview.detail && (
-                                    <span className="settings-entry-subvalue">{clawBotPreview.detail}</span>
-                                )}
+                                <button
+                                    className="settings-entry-btn"
+                                    onClick={() => setShowNapCatSettings(true)}
+                                    style={{ marginTop: 12 }}
+                                >
+                                    <div className="settings-entry-info">
+                                        <span className="settings-entry-label settings-entry-label-row">
+                                            <span>{t('settings.qqNapCat')}</span>
+                                            <span className="feature-beta-badge">BETA</span>
+                                        </span>
+                                        <span className="settings-entry-value">{napCatPreview.title}</span>
+                                        {napCatPreview.detail && (
+                                            <span className="settings-entry-subvalue">{napCatPreview.detail}</span>
+                                        )}
+                                    </div>
+                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
+                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                                    </svg>
+                                </button>
                             </div>
-                            <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                            </svg>
-                        </button>
-
-                        <button
-                            className="settings-entry-btn"
-                            onClick={() => setShowNapCatSettings(true)}
-                            style={{ marginTop: 12 }}
-                        >
-                            <div className="settings-entry-info">
-                                <span className="settings-entry-label settings-entry-label-row">
-                                    <span>{t('settings.qqNapCat')}</span>
-                                    <span className="feature-beta-badge">BETA</span>
-                                </span>
-                                <span className="settings-entry-value">{napCatPreview.title}</span>
-                                {napCatPreview.detail && (
-                                    <span className="settings-entry-subvalue">{napCatPreview.detail}</span>
-                                )}
-                            </div>
-                            <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                            </svg>
-                        </button>
-                    </div>
-
-                    {/* 全局设置 */}
-                    <div className="settings-section">
-                        <h3>{t('settings.globalSettings')}</h3>
-                        <button className="settings-entry-btn" onClick={handleOpenPromptModal}>
-                            <div className="settings-entry-info">
-                                <span className="settings-entry-label">{t('settings.defaultSystemPrompt')}</span>
-                                <span className="settings-entry-value">{getPromptPreview()}</span>
-                            </div>
-                            <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                            </svg>
-                        </button>
-
-                        <button
-                            className="settings-entry-btn"
-                            onClick={handleOpenAssistantMessageSplitTokenModal}
-                            style={{ marginTop: 12 }}
-                        >
-                            <div className="settings-entry-info">
-                                <span className="settings-entry-label">{t('settings.assistantMessageSplitToken')}</span>
-                                <span className="settings-entry-value">{assistantMessageSplitTokenPreview.title}</span>
-                                {assistantMessageSplitTokenPreview.detail && (
-                                    <span className="settings-entry-subvalue">
-                                        {assistantMessageSplitTokenPreview.detail}
-                                    </span>
-                                )}
-                            </div>
-                            <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                            </svg>
-                        </button>
-
-                        <button
-                            className="settings-entry-btn"
-                            onClick={handleOpenReplyWaitModal}
-                            style={{ marginTop: 12 }}
-                        >
-                            <div className="settings-entry-info">
-                                <span className="settings-entry-label">{t('settings.replyWaitWindow')}</span>
-                                <span className="settings-entry-value">{getReplyWaitPreview()}</span>
-                            </div>
-                            <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                            </svg>
-                        </button>
-
-                        <button
-                            className="settings-entry-btn"
-                            onClick={handleOpenTimeZoneModal}
-                            style={{ marginTop: 12 }}
-                        >
-                            <div className="settings-entry-info">
-                                <span className="settings-entry-label">{t('settings.timeZone')}</span>
-                                <span className="settings-entry-value">{timeZonePreview.title}</span>
-                                {timeZonePreview.detail && (
-                                    <span className="settings-entry-subvalue">{timeZonePreview.detail}</span>
-                                )}
-                            </div>
-                            <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                            </svg>
-                        </button>
-
-                        <button
-                            className="settings-entry-btn"
-                            onClick={() => setShowIdleGreetingSettings(true)}
-                            style={{ marginTop: 12 }}
-                        >
-                            <div className="settings-entry-info">
-                                <span className="settings-entry-label">{t('settings.idleGreeting')}</span>
-                                <span className="settings-entry-value">{idleGreetingPreview.title}</span>
-                                {idleGreetingPreview.detail && (
-                                    <span className="settings-entry-subvalue">{idleGreetingPreview.detail}</span>
-                                )}
-                            </div>
-                            <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                            </svg>
-                        </button>
-
-                        <button
-                            className="settings-entry-btn"
-                            onClick={handleOpenWeatherCityModal}
-                            style={{ marginTop: 12 }}
-                        >
-                            <div className="settings-entry-info">
-                                <span className="settings-entry-label">{t('settings.defaultWeatherCity')}</span>
-                                <span className="settings-entry-value">{defaultWeatherCityPreview.title}</span>
-                                {defaultWeatherCityPreview.detail && (
-                                    <span className="settings-entry-subvalue">{defaultWeatherCityPreview.detail}</span>
-                                )}
-                            </div>
-                            <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                            </svg>
-                        </button>
-
-                        <div className="settings-group" style={{ marginTop: 12 }}>
-                            <label className="settings-label">{t('settings.systemNotifications')}</label>
-                            <div className="modal-toggle-wrapper">
-                                <label className="toggle-switch">
-                                    <input
-                                        type="checkbox"
-                                        checked={notificationsEnabled}
-                                        onChange={(e) => void handleNotificationsToggle(e.target.checked)}
-                                        disabled={saving || !notificationsSupported}
-                                    />
-                                    <span className="toggle-slider"></span>
-                                </label>
-                                <span className="toggle-label">
-                                    {notificationsSupported
-                                        ? notificationsEnabled
-                                            ? t('common.enable')
-                                            : notificationPermission === 'denied'
-                                              ? t('common.denied')
-                                              : t('common.disable')
-                                        : t('common.notSupported')}
-                                </span>
-                            </div>
-                            <p className="prompt-modal-hint memory-toggle-hint">{t('settings.notifyWhenNotInChat')}</p>
-                        </div>
-
-                        <button
-                            className="settings-entry-btn"
-                            onClick={handleOpenLanguageModal}
-                            style={{ marginTop: 12 }}
-                        >
-                            <div className="settings-entry-info">
-                                <span className="settings-entry-label">{t('settings.language')}</span>
-                                <span className="settings-entry-value">{localeNames[locale]}</span>
-                                <span className="settings-entry-subvalue">{t('settings.languageHint')}</span>
-                            </div>
-                            <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                            </svg>
-                        </button>
-                    </div>
-
-                    {/* 语音设置 */}
-                    <div className="settings-section">
-                        <h3>{t('settings.voice')}</h3>
-
-                        <div className="settings-group">
-                            <label className="settings-label">{t('settings.tts')}</label>
-                            <div className="modal-toggle-wrapper">
-                                <label className="toggle-switch">
-                                    <input
-                                        type="checkbox"
-                                        checked={ttsEnabled}
-                                        onChange={(e) => handleTTSEnabledChange(e.target.checked)}
-                                        disabled={saving}
-                                    />
-                                    <span className="toggle-slider"></span>
-                                </label>
-                                <span className="toggle-label">
-                                    {ttsEnabled ? t('common.enable') : t('common.disable')}
-                                </span>
-                            </div>
-                            <p className="prompt-modal-hint memory-toggle-hint">{t('settings.ttsHint')}</p>
-                        </div>
-
-                        <button
-                            className="settings-entry-btn"
-                            onClick={handleOpenTTSProviderModal}
-                            style={{ marginTop: 12 }}
-                        >
-                            <div className="settings-entry-info">
-                                <span className="settings-entry-label">{t('settings.ttsProvider')}</span>
-                                <span className="settings-entry-value">{ttsProviderPreview.title}</span>
-                                {ttsProviderPreview.detail && (
-                                    <span className="settings-entry-subvalue">{ttsProviderPreview.detail}</span>
-                                )}
-                            </div>
-                            <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                            </svg>
-                        </button>
-                    </div>
-
-                    {/* 长期记忆设置 */}
-                    <div className="settings-section">
-                        <h3>{t('settings.longTermMemory')}</h3>
-
-                        <p className="prompt-modal-hint">
-                            {t('settings.memoryHint', { rounds: memoryExtractionRounds || 5 })}
-                        </p>
-
-                        <div className="settings-group">
-                            <label className="settings-label">{t('settings.memoryFunction')}</label>
-                            <div className="modal-toggle-wrapper">
-                                <label className="toggle-switch">
-                                    <input
-                                        type="checkbox"
-                                        checked={memoryEnabled}
-                                        onChange={(e) => handleMemoryEnabledChange(e.target.checked)}
-                                        disabled={saving}
-                                    />
-                                    <span className="toggle-slider"></span>
-                                </label>
-                                <span className="toggle-label">
-                                    {memoryEnabled ? t('common.enable') : t('common.disable')}
-                                </span>
-                            </div>
-                            <p className="prompt-modal-hint memory-toggle-hint">{t('settings.memoryDisableHint')}</p>
-                        </div>
-
-                        <button
-                            className="settings-entry-btn"
-                            onClick={() => setShowMemoryProviderSettings(true)}
-                            style={{ marginTop: 12 }}
-                        >
-                            <div className="settings-entry-info">
-                                <span className="settings-entry-label">{t('settings.memoryProvider')}</span>
-                                <span className="settings-entry-value">{memoryProviderPreview.title}</span>
-                                <span className="settings-entry-subvalue">{memoryProviderPreview.detail}</span>
-                            </div>
-                            <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                            </svg>
-                        </button>
-                        <p className="prompt-modal-hint memory-provider-hint">{t('settings.memoryProviderHint')}</p>
-
-                        <button
-                            className="settings-entry-btn"
-                            onClick={handleOpenMemoryExtractionRoundsModal}
-                            style={{ marginTop: 12 }}
-                        >
-                            <div className="settings-entry-info">
-                                <span className="settings-entry-label">{t('settings.memoryExtractionRounds')}</span>
-                                <span className="settings-entry-value">{getMemoryExtractionRoundsPreview()}</span>
-                                <span className="settings-entry-subvalue">{getMemoryExtractionRoundsDetail()}</span>
-                            </div>
-                            <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                            </svg>
-                        </button>
-                        <p className="prompt-modal-hint memory-provider-hint">
-                            {t('settings.memoryExtractionRoundsHint')}
-                        </p>
-
-                        <button
-                            className="settings-entry-btn"
-                            onClick={handleOpenMemoryRefreshIntervalModal}
-                            style={{ marginTop: 12 }}
-                        >
-                            <div className="settings-entry-info">
-                                <span className="settings-entry-label">{t('settings.memoryRefreshInterval')}</span>
-                                <span className="settings-entry-value">{getMemoryRefreshIntervalPreview()}</span>
-                                <span className="settings-entry-subvalue">{getMemoryRefreshIntervalDetail()}</span>
-                            </div>
-                            <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                            </svg>
-                        </button>
-                        <p className="prompt-modal-hint memory-provider-hint">
-                            {t('settings.memoryRefreshIntervalHint')}
-                        </p>
-
-                        <button
-                            className="settings-entry-btn"
-                            onClick={handleOpenMemoryExtractionPromptModal}
-                            style={{ marginTop: 12 }}
-                        >
-                            <div className="settings-entry-info">
-                                <span className="settings-entry-label">{t('settings.memoryExtractionPrompt')}</span>
-                                <span className="settings-entry-value">{t('common.edit')}</span>
-                                <span className="settings-entry-subvalue">
-                                    {t('settings.memoryExtractionPromptSupport')}
-                                </span>
-                            </div>
-                            <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                            </svg>
-                        </button>
-                    </div>
-
+                        </>
+                    )}
                     <div className="settings-footer">
                         <span className="settings-footer-label">{t('settings.currentVersion')}</span>
                         <span className="settings-footer-value">{appVersion}</span>
