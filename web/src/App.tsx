@@ -255,7 +255,7 @@ function App() {
         if (authMode !== 'ready') return
         document.title = `${t(`console.${activeTab}`)} · CornerStone`
         document.getElementById('console-main')?.focus({ preventScroll: true })
-    }, [activeTab, authMode, selectedSessionId, editingPromptId, t])
+    }, [activeTab, authMode, selectedSessionId, editingPromptId, location.search, t])
 
     useEffect(() => {
         openSessionHandlerRef.current = openSession
@@ -513,48 +513,54 @@ function App() {
             </a>
             <ConsoleNav />
             <main id="console-main" className="console-workspace" tabIndex={-1}>
-                {activeTab === 'overview' && <ManagementOverview />}
-                {activeTab === 'channels' && <ChannelsPage />}
-                {activeTab === 'chat' && !selectedSessionId && (
-                    <section className="console-conversations">
-                        <header className="console-page-heading">
-                            <div>
-                                <h1>{t('console.chat')}</h1>
-                                <p>{t('console.chatHint')}</p>
-                            </div>
-                            <button className="console-button" onClick={handleCreateSession}>
-                                {t('console.newChat')}
-                            </button>
-                        </header>
-                        <SearchBar value={searchQuery} onChange={setSearchQuery} />
-                        <ChatList
-                            onSelectSession={handleSelectSession}
-                            searchQuery={searchQuery}
-                            refreshToken={refreshKey}
+                <div
+                    className="console-base-view"
+                    inert={!!selectedSessionId || editingPromptId !== null}
+                    aria-hidden={!!selectedSessionId || editingPromptId !== null}
+                >
+                    {activeTab === 'overview' && <ManagementOverview />}
+                    {activeTab === 'channels' && <ChannelsPage />}
+                    {activeTab === 'chat' && (
+                        <section className="console-conversations">
+                            <header className="console-page-heading">
+                                <div>
+                                    <h1>{t('console.chat')}</h1>
+                                    <p>{t('console.chatHint')}</p>
+                                </div>
+                                <button className="console-button" onClick={handleCreateSession}>
+                                    {t('console.newChat')}
+                                </button>
+                            </header>
+                            <SearchBar value={searchQuery} onChange={setSearchQuery} />
+                            <ChatList
+                                onSelectSession={handleSelectSession}
+                                searchQuery={searchQuery}
+                                refreshToken={refreshKey}
+                            />
+                        </section>
+                    )}
+                    {activeTab === 'contacts' && (
+                        <Contacts
+                            onStartChat={handleStartChatWithPrompt}
+                            onEditPersona={handleEditPersona}
+                            refreshToken={contactsRefreshToken}
                         />
-                    </section>
-                )}
-                {activeTab === 'contacts' && editingPromptId === null && (
-                    <Contacts
-                        onStartChat={handleStartChatWithPrompt}
-                        onEditPersona={handleEditPersona}
-                        refreshToken={contactsRefreshToken}
-                    />
-                )}
-                {activeTab === 'settings' && (
-                    <Settings
-                        embedded
-                        onBack={() => navigate(tabRoutes.overview)}
-                        assistantMessageSplitToken={assistantMessageSplitToken}
-                        onAssistantMessageSplitTokenChange={setAssistantMessageSplitToken}
-                    />
-                )}
-                {activeTab === 'me' && (
-                    <ProfilePage
-                        assistantMessageSplitToken={assistantMessageSplitToken}
-                        onAssistantMessageSplitTokenChange={setAssistantMessageSplitToken}
-                    />
-                )}
+                    )}
+                    {activeTab === 'settings' && (
+                        <Settings
+                            embedded
+                            onBack={() => navigate(tabRoutes.overview)}
+                            assistantMessageSplitToken={assistantMessageSplitToken}
+                            onAssistantMessageSplitTokenChange={setAssistantMessageSplitToken}
+                        />
+                    )}
+                    {activeTab === 'me' && (
+                        <ProfilePage
+                            assistantMessageSplitToken={assistantMessageSplitToken}
+                            onAssistantMessageSplitTokenChange={setAssistantMessageSplitToken}
+                        />
+                    )}
+                </div>
                 <AnimatePresence>
                     {selectedSessionId && (
                         <ChatDetail
