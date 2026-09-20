@@ -189,6 +189,9 @@ const en = {
         me: 'Me',
     },
     chat: {
+        downloadAttachment: 'Download attachment',
+        attachmentModelFallback: 'Saved original; the model cannot read this attachment.',
+        attachmentDownloadFailed: 'Attachment download failed.',
         newChat: 'Chat',
         searchPlaceholder: 'Search',
         noMatchingSessions: 'No matching sessions found',

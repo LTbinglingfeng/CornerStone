@@ -124,12 +124,12 @@ func (s *ClawBotService) receiveDeliveryBatch(cfg config.ClawBotConfig, cursor, 
 			}
 			text := strings.TrimSpace(client.ExtractTextFromClawBotMessage(msg))
 			images := client.ExtractImageItemsFromClawBotMessage(msg)
-			if text == "" && len(images) == 0 && !client.HasClawBotReference(msg) {
+			if text == "" && len(images) == 0 && !client.HasClawBotAttachments(msg) && !client.HasClawBotReference(msg) {
 				d.Receipts[key] = "unsupported"
 				continue
 			}
 			kind := "chat"
-			if len(images) == 0 && !client.HasClawBotReference(msg) {
+			if len(images) == 0 && !client.HasClawBotAttachments(msg) && !client.HasClawBotReference(msg) {
 				if _, escaped := unescapeClawBotLiteralCommandText(text); !escaped {
 					if _, command := parseClawBotCommand(text); command {
 						kind = "command"

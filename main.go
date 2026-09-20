@@ -244,6 +244,14 @@ func main() {
 		}
 	}()
 
+	// Offline orphan collection must precede every manager/background worker.
+	// The data directory, like its JSON managers, requires a single server owner.
+	if removed, err := storage.CleanupAttachmentsBeforeStart(baseDir, time.Now()); err != nil {
+		logging.Warnf("附件孤儿清理已跳过或停止: %v", err)
+	} else if removed > 0 {
+		logging.Infof("已清理 %d 个未被引用的旧附件", removed)
+	}
+
 	// 文件路径
 	configPath := filepath.Join(baseDir, "config.json")
 	promptsDir := filepath.Join(baseDir, "prompts")

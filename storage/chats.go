@@ -20,6 +20,7 @@ import (
 
 // ChatMessage 聊天消息
 type ChatMessage struct {
+	Attachments                []ChatAttachment  `json:"attachments,omitempty"`
 	Role                       string            `json:"role"`
 	Content                    string            `json:"content"`
 	ReasoningContent           string            `json:"reasoning_content,omitempty"`             // 思考模型的推理内容
@@ -445,6 +446,7 @@ func cloneChatMessages(messages []ChatMessage) []ChatMessage {
 		if len(messages[i].ToolCalls) > 0 {
 			copied[i].ToolCalls = append([]client.ToolCall(nil), messages[i].ToolCalls...)
 		}
+		copied[i].Attachments = append([]ChatAttachment(nil), messages[i].Attachments...)
 		if len(messages[i].ImagePaths) > 0 {
 			copied[i].ImagePaths = append([]string(nil), messages[i].ImagePaths...)
 		}

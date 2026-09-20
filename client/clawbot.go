@@ -13,7 +13,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -76,7 +75,9 @@ type ClawBotIncomingMessageItem struct {
 	Type        int               `json:"type"`
 	TextItem    *ClawBotItemText  `json:"text_item,omitempty"`
 	ImageItem   *ClawBotImageItem `json:"image_item,omitempty"`
-	VoiceItem   *ClawBotItemText  `json:"voice_item,omitempty"`
+	VoiceItem   *ClawBotVoiceItem `json:"voice_item,omitempty"`
+	VideoItem   *ClawBotVideoItem `json:"video_item,omitempty"`
+	FileItem    *ClawBotFileItem  `json:"file_item,omitempty"`
 }
 
 // ClawBotMessageID keeps uint64 identifiers lossless for replay detection.
@@ -398,52 +399,10 @@ func ExtractImageItemsFromClawBotMessage(msg ClawBotIncomingMessage) []*ClawBotI
 }
 
 func (c *ClawBotClient) DownloadImageItem(ctx context.Context, imageItem *ClawBotImageItem) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
-	if imageItem == nil || imageItem.Media == nil {
-		return nil, fmt.Errorf("clawbot image item is empty")
+	if imageItem == nil {
+		return nil, errors.New("missing image")
 	}
-
-	media := imageItem.Media
-	imageURL := strings.TrimSpace(media.FullURL)
-	if imageURL == "" {
-		encryptQueryParam := strings.TrimSpace(media.EncryptQueryParam)
-		if encryptQueryParam == "" {
-			return nil, fmt.Errorf("clawbot image media has no download url")
-		}
-		imageURL = buildClawBotCDNDownloadURL(defaultClawBotCDNBaseURL, encryptQueryParam)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, imageURL, nil)
-	if err != nil {
-		return nil, errors.New("clawbot: invalid image URL")
-	}
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, clawBotSafeRequestError(req, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("clawbot image download http %d", resp.StatusCode)
-	}
-
-	data, err := io.ReadAll(io.LimitReader(resp.Body, clawBotMediaMaxBytes+1))
-	if err != nil {
-		return nil, err
-	}
-
-	if len(data) > clawBotMediaMaxBytes {
-		return nil, fmt.Errorf("clawbot image exceeds maximum download size")
-	}
-	key, err := parseClawBotImageAESKey(imageItem)
-	if err != nil {
-		return nil, err
-	}
-	if len(key) == 0 {
-		return data, nil
-	}
-	return decryptClawBotAESECB(data, key)
+	return c.downloadClawBotMedia(ctx, imageItem.Media, imageItem.AESKey)
 }
 
 func buildClawBotURL(baseURL, endpoint string) string {

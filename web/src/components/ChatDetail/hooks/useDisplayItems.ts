@@ -79,7 +79,7 @@ export function useDisplayItems(options: UseDisplayItemsOptions): DisplayItem[] 
             }
 
             const hasText = isAssistant ? assistantSegments.length > 0 : message.content.trim() !== ''
-            const hasContent = hasText || hasImages
+            const hasContent = hasText || hasImages || !!message.attachments?.length
 
             if (hasContent) {
                 if (isAssistant) {
@@ -89,7 +89,7 @@ export function useDisplayItems(options: UseDisplayItemsOptions): DisplayItem[] 
                             const segmentMessage: ChatMessage = {
                                 ...message,
                                 content: segment,
-                                ...(segmentIndex === 0 ? {} : { image_paths: undefined }),
+                                ...(segmentIndex === 0 ? {} : { image_paths: undefined, attachments: undefined }),
                                 ...(ttsPath ? { tts_audio_path: ttsPath } : {}),
                             }
                             items.push({

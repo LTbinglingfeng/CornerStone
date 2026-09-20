@@ -103,6 +103,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 
 	// 聊天接口 (保持 /api 前缀)
 	h.registerProtectedRoute(mux, "/api/chat", h.handleChat)
+	h.registerProtectedRoute(mux, storage.AttachmentURLPrefix, h.handleAttachment)
 
 	// 记忆接口
 	h.registerProtectedRoute(mux, "/api/memory/", h.handleMemory)

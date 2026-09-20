@@ -93,6 +93,9 @@ func (s *ClawBotService) prepareDeliveryInput(ctx context.Context, cfg config.Cl
 		}
 		job.SessionID = session.SessionID
 	}
+	// Do not unlink received files on a state-save error: rename may already
+	// have committed the queue snapshot before directory fsync failed. Offline
+	// orphan collection can safely distinguish unreferenced attachments later.
 	if len(job.InputMessages) == 0 {
 		for index, msg := range job.Inputs {
 			msg = s.restoreClawBotReferences(cfg, msg)
@@ -104,26 +107,28 @@ func (s *ClawBotService) prepareDeliveryInput(ctx context.Context, cfg config.Cl
 			for _, item := range client.ExtractImageItemsFromClawBotMessage(msg) {
 				data, err := s.client.DownloadImageItem(ctx, item)
 				if err != nil {
-					if client.IsClawBotReferencedImage(msg, item) {
-						text += "\n[引用图片不可用]"
-						continue
-					}
-					return nil, err
+					text = strings.TrimSpace(text + "\n[图片下载失败，内容不可用。]")
+					continue
 				}
 				path, err := s.handler.saveCachePhotoBytes(data)
 				if err != nil {
-					return nil, err
+					text = strings.TrimSpace(text + "\n[图片校验或保存失败，内容不可用。]")
+					continue
 				}
 				images = append(images, path)
 			}
-			if text == "" && len(images) == 0 {
+			attachments, notice := s.receiveClawBotAttachments(ctx, msg)
+			if notice != "" {
+				text = strings.TrimSpace(text + "\n" + notice)
+			}
+			if text == "" && len(images) == 0 && len(attachments) == 0 {
 				continue
 			}
 			at := job.CreatedAt.Add(time.Duration(index) * time.Millisecond)
 			if index < len(job.InputTimes) && !job.InputTimes[index].IsZero() {
 				at = job.InputTimes[index]
 			}
-			job.InputMessages = append(job.InputMessages, storage.ChatMessage{Role: "user", Content: text, ImagePaths: images, Timestamp: at})
+			job.InputMessages = append(job.InputMessages, storage.ChatMessage{Role: "user", Content: text, ImagePaths: images, Attachments: attachments, Timestamp: at})
 		}
 	}
 	if err := s.changeDelivery(cfg, job.ID, func(j *storage.ClawBotDeliveryJob) error {

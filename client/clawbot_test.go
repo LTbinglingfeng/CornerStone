@@ -58,9 +58,13 @@ func TestDownloadImageItem(t *testing.T) {
 	defer server.Close()
 
 	client := NewClawBotClient()
+	client.httpClient.Transport = clawBotProtocolTransport(func(r *http.Request) (*http.Response, error) {
+		target, _ := http.NewRequestWithContext(r.Context(), r.Method, server.URL, nil)
+		return http.DefaultTransport.RoundTrip(target)
+	})
 	data, err := client.DownloadImageItem(context.Background(), &ClawBotImageItem{
 		Media: &ClawBotCDNMedia{
-			FullURL: server.URL,
+			FullURL: "https://cdn.example.test/image",
 		},
 		AESKey: hex.EncodeToString(rawKey),
 	})

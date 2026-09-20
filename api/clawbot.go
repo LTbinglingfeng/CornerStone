@@ -86,8 +86,9 @@ type clawBotActiveSession struct {
 }
 
 type clawBotPendingMessage struct {
-	Text       string
-	ImagePaths []string
+	Text        string
+	ImagePaths  []string
+	Attachments []storage.ChatAttachment
 }
 
 type clawBotPendingReply struct {
@@ -474,7 +475,7 @@ func (s *ClawBotService) pollLoop(ctx context.Context, cfg config.ClawBotConfig)
 			if msg.MessageType != 1 {
 				continue
 			}
-			if strings.TrimSpace(client.ExtractTextFromClawBotMessage(msg)) == "" && len(client.ExtractImageItemsFromClawBotMessage(msg)) == 0 && !client.HasClawBotReference(msg) {
+			if strings.TrimSpace(client.ExtractTextFromClawBotMessage(msg)) == "" && len(client.ExtractImageItemsFromClawBotMessage(msg)) == 0 && !client.HasClawBotAttachments(msg) && !client.HasClawBotReference(msg) {
 				continue
 			}
 			s.handleIncomingMessage(ctx, cfg, msg)
@@ -503,7 +504,7 @@ func (s *ClawBotService) handleIncomingMessage(ctx context.Context, cfg config.C
 	msg = s.restoreClawBotReferences(cfg, msg)
 	text := strings.TrimSpace(client.ExtractTextFromClawBotMessage(msg))
 	imageItems := client.ExtractImageItemsFromClawBotMessage(msg)
-	if text == "" && len(imageItems) == 0 {
+	if text == "" && len(imageItems) == 0 && !client.HasClawBotAttachments(msg) {
 		return
 	}
 
@@ -511,7 +512,7 @@ func (s *ClawBotService) handleIncomingMessage(ctx context.Context, cfg config.C
 		s.setLastError(err)
 		return
 	}
-	if len(imageItems) == 0 && !client.HasClawBotReference(msg) {
+	if len(imageItems) == 0 && !client.HasClawBotAttachments(msg) && !client.HasClawBotReference(msg) {
 		if escapedText, ok := unescapeClawBotLiteralCommandText(text); ok {
 			text = escapedText
 		} else if command, ok := parseClawBotCommand(text); ok {
@@ -569,6 +570,13 @@ func (s *ClawBotService) handleIncomingMessage(ctx context.Context, cfg config.C
 	}
 
 	imagePaths := s.downloadIncomingImagePaths(ctx, userID, imageItems)
+	if len(imagePaths) < len(imageItems) {
+		text = strings.TrimSpace(text + "\n[部分或全部图片下载、校验或保存失败，失败图片内容不可用；不要声称已读取。]")
+	}
+	attachments, notice := s.receiveClawBotAttachments(ctx, msg)
+	if notice != "" {
+		text = strings.TrimSpace(text + "\n" + notice)
+	}
 	if text == "" && len(imagePaths) == 0 && len(imageItems) > 0 {
 		text = "[用户发送了图片]"
 	}
@@ -577,10 +585,14 @@ func (s *ClawBotService) handleIncomingMessage(ctx context.Context, cfg config.C
 	}
 
 	batch, accepted := s.enqueuePendingMessage(userID, clawBotPendingMessage{
-		Text:       text,
-		ImagePaths: imagePaths,
+		Text:        text,
+		ImagePaths:  imagePaths,
+		Attachments: attachments,
 	})
 	if !accepted {
+		for _, a := range attachments {
+			_ = s.handler.attachmentStore().Remove(a.Path)
+		}
 		s.sendExclusiveBusyReply(ctx, cfg, userID)
 		return
 	}
@@ -955,10 +967,11 @@ func (s *ClawBotService) processIncomingBatch(ctx context.Context, cfg config.Cl
 			continue
 		}
 		storageMessages = append(storageMessages, storage.ChatMessage{
-			Role:       "user",
-			Content:    trimmed,
-			ImagePaths: append([]string(nil), pendingMessage.ImagePaths...),
-			Timestamp:  now.Add(time.Millisecond * time.Duration(index)),
+			Role:        "user",
+			Content:     trimmed,
+			ImagePaths:  append([]string(nil), pendingMessage.ImagePaths...),
+			Attachments: append([]storage.ChatAttachment(nil), pendingMessage.Attachments...),
+			Timestamp:   now.Add(time.Millisecond * time.Duration(index)),
 		})
 	}
 	if len(storageMessages) == 0 {

@@ -1,3 +1,11 @@
+export interface ChatAttachment {
+    path: string
+    name: string
+    mime_type: string
+    kind: 'audio' | 'video' | 'file'
+    size: number
+}
+
 export interface ChatMessage {
     role: string
     content: string
@@ -5,6 +13,7 @@ export interface ChatMessage {
     tool_call_id?: string
     timestamp: string
     tool_calls?: ToolCall[]
+    attachments?: ChatAttachment[]
     image_paths?: string[]
     tts_audio_paths?: string[]
     tts_audio_path?: string

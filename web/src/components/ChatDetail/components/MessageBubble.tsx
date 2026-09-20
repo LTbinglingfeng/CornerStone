@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { DisplayItem } from '../types'
 import { parseQuotedMessageContent } from '../utils'
+import { MessageAttachments } from './MessageAttachments'
 import { MessageImages } from './MessageImages'
 import { getTTSAudioUrl } from '../../../services/api'
 import { useT } from '../../../contexts/I18nContext'
@@ -94,6 +95,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                     imagePaths={item.message.image_paths}
                     getImageUrl={getImageUrl}
                 />
+                <MessageAttachments attachments={item.message.attachments} />
                 {hasText && <div className="message-text">{text}</div>}
                 {ttsAudioPath && (
                     <button

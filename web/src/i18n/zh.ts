@@ -179,6 +179,9 @@ const zh = {
         me: '我',
     },
     chat: {
+        downloadAttachment: '下载附件',
+        attachmentModelFallback: '已保存原文件；模型无法读取此附件内容。',
+        attachmentDownloadFailed: '附件下载失败。',
         newChat: '对话',
         searchPlaceholder: '搜索',
         noMatchingSessions: '未找到匹配的会话',
