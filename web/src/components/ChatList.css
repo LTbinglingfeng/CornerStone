@@ -118,7 +118,7 @@
     padding: 3px 8px;
     border-radius: 999px;
     background: var(--archive-warm);
-    color: var(--text-secondary);
+    color: var(--text-primary);
     font-size: 12px;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -176,8 +176,8 @@
 .archive-error button,
 .archive-state button {
     border: 1px solid var(--accent-color);
-    background: var(--accent-color);
-    color: #fff;
+    background: var(--text-primary);
+    color: var(--bg-primary);
 }
 
 .archive-delete {

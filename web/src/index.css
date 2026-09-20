@@ -32,6 +32,7 @@
 }
 
 :root {
+  color-scheme: dark;
   /* 羊毛纸暗色主题 (default) — 极简暖灰深色模式 */
   --bg-primary: #151412;
   --bg-secondary: #1d1b18;
@@ -47,7 +48,7 @@
   --accent-color: #8b8680;
   --accent-hover: #9a948e;
   --accent-active: #a6a099;
-  --danger-color: #c65746;
+  --danger-color: #e78678;
   --success-color: #10b981;
   --warning-color: #e0aa14;
   --message-user-bg: #8b8680;
@@ -76,6 +77,7 @@
 }
 
 [data-theme="light"] {
+  color-scheme: light;
   /* 羊毛纸亮色主题 — 极简暖灰，模拟纸张质感 */
   --bg-primary: #faf9f5;
   --bg-secondary: #f0eee8;
@@ -89,7 +91,7 @@
   --accent-color: #8b8680;
   --accent-hover: #7f7a74;
   --accent-active: #726d67;
-  --danger-color: #c65746;
+  --danger-color: #a83f30;
   --success-color: #10b981;
   --warning-color: #e0aa14;
   --message-user-bg: #8b8680;
