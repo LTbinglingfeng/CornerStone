@@ -318,9 +318,9 @@
 }
 
 .profile-modal-btn.save {
-  background: var(--accent-color);
+  background: var(--text-primary);
   border: none;
-  color: white;
+  color: var(--bg-primary);
 }
 
 .profile-modal-btn.save:hover {

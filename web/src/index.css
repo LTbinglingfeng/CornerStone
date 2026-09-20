@@ -85,8 +85,8 @@
   --bg-input: #f0eee8;
   --bg-input-focus: #e9e6df;
   --text-primary: #2d2a26;
-  --text-secondary: #6d6760;
-  --text-placeholder: #c0bab3;
+  --text-secondary: #625c55;
+  --text-placeholder: #76716a;
   --border-color: #e3e1db;
   --accent-color: #8b8680;
   --accent-hover: #7f7a74;
@@ -134,6 +134,11 @@ html, body {
   display: flex;
   justify-content: center;
   align-items: center;
+}
+
+.toggle-switch:has(input:focus-visible) .toggle-slider {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 3px;
 }
 
 .feature-beta-badge {
