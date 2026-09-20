@@ -1,0 +1,134 @@
+.clawbot-delivery {
+    margin-bottom: 24px;
+    padding: 16px;
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    overflow-wrap: anywhere;
+    min-width: 0;
+}
+
+.clawbot-delivery-header,
+.clawbot-delivery-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.clawbot-delivery h2 {
+    margin: 0;
+    font-size: 17px;
+}
+
+.clawbot-delivery p {
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.clawbot-delivery button {
+    min-height: 44px;
+    padding: 8px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.clawbot-delivery button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.clawbot-delivery button:focus-visible,
+.clawbot-delivery summary:focus-visible,
+.clawbot-delivery input:focus-visible {
+    outline: 2px solid var(--text-primary);
+    outline-offset: 3px;
+}
+
+.clawbot-delivery-hint,
+.clawbot-delivery-meta {
+    color: var(--text-secondary);
+}
+
+.clawbot-delivery-filter {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    font-size: 13px;
+}
+
+.clawbot-delivery-list {
+    display: grid;
+    gap: 12px;
+    margin-top: 12px;
+}
+
+.clawbot-delivery-job {
+    min-width: 0;
+    padding: 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: var(--bg-primary);
+}
+
+.clawbot-delivery-status {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.clawbot-delivery-meta {
+    margin-top: 10px;
+    font-size: 12px;
+    line-height: 1.7;
+}
+
+.clawbot-delivery-error {
+    border-left: 3px solid var(--text-secondary);
+    padding: 8px 12px;
+    white-space: pre-wrap;
+}
+
+.clawbot-delivery summary {
+    cursor: pointer;
+    padding: 12px 0;
+    font-size: 13px;
+}
+
+.clawbot-delivery-chunk {
+    padding: 12px 0;
+    border-top: 1px solid var(--border-color);
+    font-size: 13px;
+}
+
+.clawbot-delivery-chunk pre {
+    margin-bottom: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font: inherit;
+    line-height: 1.6;
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.clawbot-delivery-actions {
+    justify-content: flex-start;
+    margin-top: 10px;
+}
+
+@media (max-width: 480px) {
+    .clawbot-delivery {
+        padding: 12px;
+    }
+
+    .clawbot-delivery-actions button {
+        flex: 1 1 120px;
+    }
+}

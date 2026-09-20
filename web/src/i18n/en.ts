@@ -3,6 +3,73 @@ import { overview } from './overview'
 import { settingsManagementCopy } from './settingsManagement'
 
 const en = {
+    delivery: {
+        title: 'WeChat delivery queue',
+        refresh: 'Refresh queue',
+        hint: 'Refreshes every 10 seconds without changing settings. To avoid duplicates, uncertain results are paused for review.',
+        showFinished: 'Show completed / cancelled ({count})',
+        empty: 'No deliveries to show.',
+        loadFailed: 'Could not refresh the queue. Displayed data may be outdated. Please refresh manually.',
+        actionFailed:
+            'The action result could not be confirmed. Refresh the queue before trying again; do not blindly repeat the action.',
+        actionSuccess: 'Queue updated.',
+        id: 'Job',
+        user: 'Recipient',
+        session: 'Session',
+        phaseLabel: 'Phase',
+        created: 'Created',
+        updated: 'Updated',
+        nextAttempt: 'Next attempt',
+        progress: '{sent} / {total} segments confirmed sent',
+        chunks: 'View message segments',
+        chunk: 'Segment {number}',
+        uncertainHint:
+            'Paused: the result is uncertain. Retrying may duplicate messages, commands or tool side effects.',
+        actions: {
+            retry: 'Retry',
+            confirm_sent: 'Confirm current segment received',
+            cancel: 'Stop remaining delivery',
+        },
+        confirm: {
+            retry: 'Retrying may duplicate messages, commands or tool side effects. Check the recipient’s messages and execution results first. Retry this job?',
+            confirm_sent:
+                'Only proceed after verifying that the recipient received the CURRENT uncertain segment. This confirms only that segment, NOT all segments. Remaining segments may continue to be sent.',
+            cancel: 'Stop unsent content without recalling delivered content or undoing commands or tools. If chat history conflicts, confirmed content is retained in the delivery audit for review.',
+        },
+        kind: {
+            chat: 'Chat',
+            command: 'Command',
+            reminder: 'Reminder',
+            greeting: 'Greeting',
+            direct: 'Direct message',
+        },
+        status: {
+            queued: 'Queued',
+            preparing: 'Preparing',
+            generating: 'Generating',
+            executing: 'Executing',
+            ready: 'Ready',
+            sending: 'Sending',
+            uncertain: 'Uncertain — paused',
+            blocked: 'Blocked',
+            committing: 'Committing history',
+            done: 'Done',
+            cancelled: 'Cancelled',
+        },
+        phase: {
+            preparation: 'Preparing input',
+            generation: 'Generation',
+            command: 'Command',
+            send: 'Send',
+            history: 'History',
+        },
+        chunkStatus: {
+            pending: 'Pending',
+            sending: 'Sending',
+            sent: 'Confirmed sent',
+            uncertain: 'Uncertain',
+        },
+    },
     management: managementCopy.en,
     overview: overview.en,
     settingsManagement: settingsManagementCopy.en,
@@ -264,6 +331,8 @@ const en = {
         reminderDetails: 'Reminder Details',
         reminderTitle: 'Title',
         reminderDueAt: 'Due Time',
+        reminderDeliveryInFlightHint:
+            'Editing or cancelling stops subsequent delivery of the old task, but cannot recall in-flight or delivered content.',
         reminderDueAtHint: 'Use an RFC3339 timestamp with timezone, e.g. 2026-04-05T18:30:00+08:00',
         reminderPrompt: 'Internal Reminder Prompt',
         reminderChannel: 'Channel',

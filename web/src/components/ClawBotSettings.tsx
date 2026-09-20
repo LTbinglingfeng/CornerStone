@@ -16,6 +16,7 @@ import { useToast } from '../contexts/ToastContext'
 import { drawerVariants } from '../utils/motion'
 import './ProviderSettings.css'
 import './ClawBotSettings.css'
+import ClawBotDeliveryQueue from './ClawBotDeliveryQueue'
 
 interface ClawBotSettingsProps {
     onBack: () => void
@@ -461,6 +462,8 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
 
                         {settings?.last_error && <div className="clawbot-status-error">{settings.last_error}</div>}
                     </div>
+
+                    <ClawBotDeliveryQueue />
 
                     {/* ── 基础设置 ── */}
                     <div className="clawbot-section">

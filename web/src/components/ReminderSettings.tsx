@@ -26,7 +26,9 @@ const ReminderSettingsPanel: React.FC<ReminderSettingsProps> = ({ onBack }) => {
     const [editingPrompt, setEditingPrompt] = useState('')
 
     const isDetailView = selectedReminder !== null
-    const isPending = selectedReminder?.status === 'pending'
+    const isPending =
+        selectedReminder?.status === 'pending' ||
+        (selectedReminder?.channel === 'clawbot' && selectedReminder.status === 'firing')
 
     const formatDateTime = (value?: string) => {
         if (!value) return t('common.notSet')
@@ -299,6 +301,9 @@ const ReminderSettingsPanel: React.FC<ReminderSettingsProps> = ({ onBack }) => {
                         )}
                     </div>
 
+                    {selectedReminder.channel === 'clawbot' && selectedReminder.status === 'firing' && (
+                        <p className="prompt-modal-hint">{t('settings.reminderDeliveryInFlightHint')}</p>
+                    )}
                     <div className="reminder-action-row">
                         {isPending ? (
                             <>
