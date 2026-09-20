@@ -21,6 +21,8 @@ const (
 )
 
 type IdleGreetingTask struct {
+	DeliveryID string             `json:"delivery_id,omitempty"`
+	Revision   uint64             `json:"revision,omitempty"`
 	ID         string             `json:"id"`
 	Key        string             `json:"key"`
 	Channel    ReminderChannel    `json:"channel"`
@@ -38,9 +40,10 @@ type IdleGreetingTask struct {
 }
 
 type IdleGreetingManager struct {
-	filePath string
-	mu       sync.RWMutex
-	tasks    map[string]*IdleGreetingTask
+	filePath  string
+	committed map[string]*IdleGreetingTask
+	mu        sync.RWMutex
+	tasks     map[string]*IdleGreetingTask
 }
 
 func NewIdleGreetingManager(dataDir string) *IdleGreetingManager {
@@ -82,7 +85,7 @@ func (m *IdleGreetingManager) load() {
 			changed = true
 			continue
 		}
-		if normalized.Status == IdleGreetingStatusFiring {
+		if normalized.Status == IdleGreetingStatusFiring && normalized.DeliveryID == "" {
 			normalized.Status = IdleGreetingStatusPending
 			normalized.LastError = ""
 			changed = true
@@ -90,6 +93,7 @@ func (m *IdleGreetingManager) load() {
 		next[normalized.ID] = cloneIdleGreetingTask(&normalized)
 	}
 	m.tasks = next
+	m.committed = m.snapshotLocked()
 
 	if changed {
 		if errSave := m.saveLocked(); errSave != nil {
@@ -116,12 +120,39 @@ func (m *IdleGreetingManager) saveLocked() error {
 
 	data, err := json.MarshalIndent(tasks, "", "  ")
 	if err != nil {
+		m.tasks = m.committed
+		if m.tasks == nil {
+			m.tasks = make(map[string]*IdleGreetingTask)
+		}
+		m.committed = m.snapshotLocked()
 		return err
 	}
-	if err := os.WriteFile(m.filePath, data, 0600); err != nil {
+	// Publish a complete snapshot atomically; roll memory back on any write failure.
+	tmp, err := os.CreateTemp(filepath.Dir(m.filePath), ".producer-*")
+	if err == nil {
+		name := tmp.Name()
+		defer os.Remove(name)
+		_, err = tmp.Write(data)
+		if err == nil {
+			err = tmp.Sync()
+		}
+		closeErr := tmp.Close()
+		if err == nil {
+			err = closeErr
+		}
+		if err == nil {
+			err = os.Rename(name, m.filePath)
+		}
+	}
+	if err != nil {
+		m.tasks = m.committed
+		if m.tasks == nil {
+			m.tasks = make(map[string]*IdleGreetingTask)
+		}
+		m.committed = m.snapshotLocked()
 		return err
 	}
-	_ = os.Chmod(m.filePath, 0600)
+	m.committed = m.snapshotLocked()
 	return nil
 }
 
@@ -170,6 +201,10 @@ func (m *IdleGreetingManager) UpsertPending(task IdleGreetingTask) (*IdleGreetin
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	if old := m.tasks[normalized.ID]; old != nil {
+		normalized.Revision = old.Revision + 1
+	}
+	normalized.DeliveryID = ""
 	for existingID, existing := range m.tasks {
 		if existing == nil || existing.ID == normalized.ID {
 			continue
@@ -423,4 +458,53 @@ func normalizeIdleGreetingTask(task IdleGreetingTask) (IdleGreetingTask, error) 
 		task.UpdatedAt = task.CreatedAt
 	}
 	return task, nil
+}
+
+func (m *IdleGreetingManager) snapshotLocked() map[string]*IdleGreetingTask {
+	out := make(map[string]*IdleGreetingTask, len(m.tasks))
+	for id, item := range m.tasks {
+		out[id] = cloneIdleGreetingTask(item)
+	}
+	return out
+}
+
+func idleGreetingDeliveryMatches(current *IdleGreetingTask, snapshot IdleGreetingTask, deliveryID string) bool {
+	return current != nil && current.Revision == snapshot.Revision && current.CreatedAt.Equal(snapshot.CreatedAt) &&
+		current.LastUserAt.Equal(snapshot.LastUserAt) && current.DueAt.Equal(snapshot.DueAt) &&
+		(current.Status == IdleGreetingStatusPending || current.Status == IdleGreetingStatusFiring) &&
+		(current.DeliveryID == "" || current.DeliveryID == deliveryID)
+}
+
+func (m *IdleGreetingManager) BindDelivery(snapshot IdleGreetingTask, deliveryID string, now time.Time) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	current := m.tasks[snapshot.ID]
+	if deliveryID == "" || !idleGreetingDeliveryMatches(current, snapshot, deliveryID) {
+		return false, nil
+	}
+	for _, other := range m.tasks {
+		if other.Key == current.Key && other.LastUserAt.After(current.LastUserAt) {
+			return false, nil
+		}
+	}
+	if current.DeliveryID == deliveryID {
+		return true, nil
+	}
+	current.DeliveryID = deliveryID
+	current.Status = IdleGreetingStatusFiring
+	current.UpdatedAt = now
+	if err := m.saveLocked(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (m *IdleGreetingManager) CompleteDelivery(snapshot IdleGreetingTask, deliveryID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if deliveryID == "" || !idleGreetingDeliveryMatches(m.tasks[snapshot.ID], snapshot, deliveryID) {
+		return nil
+	}
+	delete(m.tasks, snapshot.ID)
+	return m.saveLocked()
 }

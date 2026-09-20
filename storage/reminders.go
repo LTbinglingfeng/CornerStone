@@ -47,6 +47,8 @@ const (
 var ErrReminderImmutable = errors.New("reminder is not editable")
 
 type Reminder struct {
+	DeliveryID     string          `json:"delivery_id,omitempty"`
+	Revision       uint64          `json:"revision,omitempty"`
 	ID             string          `json:"id"`
 	Channel        ReminderChannel `json:"channel"`
 	SessionID      string          `json:"session_id"`
@@ -73,6 +75,7 @@ type ReminderPatch struct {
 
 type ReminderManager struct {
 	filePath  string
+	committed map[string]*Reminder
 	mu        sync.RWMutex
 	reminders map[string]*Reminder
 }
@@ -125,7 +128,7 @@ func (m *ReminderManager) load() {
 			changed = true
 			continue
 		}
-		if normalized.Status == ReminderStatusFiring {
+		if normalized.Status == ReminderStatusFiring && normalized.DeliveryID == "" {
 			normalized.Status = ReminderStatusPending
 			normalized.LastError = ""
 			changed = true
@@ -136,6 +139,7 @@ func (m *ReminderManager) load() {
 		next[normalized.ID] = cloneReminder(&normalized)
 	}
 	m.reminders = next
+	m.committed = m.snapshotLocked()
 
 	if changed {
 		if errSave := m.saveLocked(); errSave != nil {
@@ -162,12 +166,39 @@ func (m *ReminderManager) saveLocked() error {
 
 	data, err := json.MarshalIndent(reminders, "", "  ")
 	if err != nil {
+		m.reminders = m.committed
+		if m.reminders == nil {
+			m.reminders = make(map[string]*Reminder)
+		}
+		m.committed = m.snapshotLocked()
 		return err
 	}
-	if err := os.WriteFile(m.filePath, data, 0600); err != nil {
+	// Publish a complete snapshot atomically; roll memory back on any write failure.
+	tmp, err := os.CreateTemp(filepath.Dir(m.filePath), ".producer-*")
+	if err == nil {
+		name := tmp.Name()
+		defer os.Remove(name)
+		_, err = tmp.Write(data)
+		if err == nil {
+			err = tmp.Sync()
+		}
+		closeErr := tmp.Close()
+		if err == nil {
+			err = closeErr
+		}
+		if err == nil {
+			err = os.Rename(name, m.filePath)
+		}
+	}
+	if err != nil {
+		m.reminders = m.committed
+		if m.reminders == nil {
+			m.reminders = make(map[string]*Reminder)
+		}
+		m.committed = m.snapshotLocked()
 		return err
 	}
-	_ = os.Chmod(m.filePath, 0600)
+	m.committed = m.snapshotLocked()
 	return nil
 }
 
@@ -225,7 +256,6 @@ func (m *ReminderManager) Create(reminder Reminder) (*Reminder, error) {
 	}
 	m.reminders[normalized.ID] = cloneReminder(&normalized)
 	if err := m.saveLocked(); err != nil {
-		delete(m.reminders, normalized.ID)
 		return nil, err
 	}
 	return cloneReminder(&normalized), nil
@@ -239,10 +269,14 @@ func (m *ReminderManager) UpdatePending(id string, patch ReminderPatch, updatedA
 	if !ok {
 		return nil, os.ErrNotExist
 	}
-	if reminder.Status != ReminderStatusPending {
+	if reminder.Status != ReminderStatusPending && !(reminder.Status == ReminderStatusFiring && reminder.Channel == ReminderChannelClawBot) {
 		return nil, ErrReminderImmutable
 	}
 
+	reminder = cloneReminder(reminder)
+	reminder.Revision++
+	reminder.DeliveryID = ""
+	reminder.Status = ReminderStatusPending
 	if patch.Title != nil {
 		reminder.Title = strings.TrimSpace(*patch.Title)
 	}
@@ -273,10 +307,12 @@ func (m *ReminderManager) CancelPending(id string, updatedAt time.Time) (*Remind
 	if !ok {
 		return nil, os.ErrNotExist
 	}
-	if reminder.Status != ReminderStatusPending {
+	if reminder.Status != ReminderStatusPending && !(reminder.Status == ReminderStatusFiring && reminder.Channel == ReminderChannelClawBot) {
 		return nil, ErrReminderImmutable
 	}
 
+	reminder.Revision++
+	reminder.DeliveryID = ""
 	reminder.Status = ReminderStatusCancelled
 	reminder.LastError = ""
 	reminder.UpdatedAt = updatedAt
@@ -358,6 +394,9 @@ func (m *ReminderManager) MarkSent(id string, firedAt time.Time) (*Reminder, err
 	if !ok {
 		return nil, os.ErrNotExist
 	}
+	if reminder.Status != ReminderStatusFiring || reminder.DeliveryID != "" {
+		return cloneReminder(reminder), nil
+	}
 
 	reminder.Status = ReminderStatusSent
 	reminder.LastError = ""
@@ -378,6 +417,9 @@ func (m *ReminderManager) MarkFailed(id string, updatedAt time.Time, lastError s
 	reminder, ok := m.reminders[id]
 	if !ok {
 		return nil, os.ErrNotExist
+	}
+	if reminder.Status != ReminderStatusFiring || reminder.DeliveryID != "" {
+		return cloneReminder(reminder), nil
 	}
 
 	lastError = strings.TrimSpace(lastError)
@@ -559,4 +601,60 @@ func normalizeReminderTarget(channel ReminderChannel, target ReminderTarget, leg
 	}
 
 	return target, nil
+}
+
+func (m *ReminderManager) snapshotLocked() map[string]*Reminder {
+	out := make(map[string]*Reminder, len(m.reminders))
+	for id, item := range m.reminders {
+		out[id] = cloneReminder(item)
+	}
+	return out
+}
+
+// BindDelivery validates and binds under the same lock. A pending unbound source
+// is allowed for recovery after a crash between queue persistence and binding.
+func (m *ReminderManager) BindDelivery(snapshot Reminder, deliveryID string, now time.Time) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	current := m.reminders[snapshot.ID]
+	if deliveryID == "" || !reminderDeliveryMatches(current, snapshot, deliveryID) {
+		return false, nil
+	}
+	if current.DeliveryID == deliveryID {
+		return true, nil
+	}
+	current.DeliveryID = deliveryID
+	current.Status = ReminderStatusFiring
+	current.UpdatedAt = now
+	if err := m.saveLocked(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func reminderDeliveryMatches(current *Reminder, snapshot Reminder, deliveryID string) bool {
+	return current != nil && current.Revision == snapshot.Revision && current.CreatedAt.Equal(snapshot.CreatedAt) &&
+		current.DueAt.Equal(snapshot.DueAt) && current.Title == snapshot.Title && current.ReminderPrompt == snapshot.ReminderPrompt &&
+		(current.Status == ReminderStatusPending || current.Status == ReminderStatusFiring) &&
+		(current.DeliveryID == "" || current.DeliveryID == deliveryID)
+}
+
+// CompleteDelivery never overwrites a newer edit, cancellation or binding.
+func (m *ReminderManager) CompleteDelivery(snapshot Reminder, deliveryID string, cancelled bool, now time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	current := m.reminders[snapshot.ID]
+	if deliveryID == "" || !reminderDeliveryMatches(current, snapshot, deliveryID) {
+		return nil
+	}
+	current.DeliveryID = deliveryID
+	current.UpdatedAt = now
+	current.LastError = ""
+	if cancelled {
+		current.Status = ReminderStatusCancelled
+	} else {
+		current.Status = ReminderStatusSent
+		current.FiredAt = &now
+	}
+	return m.saveLocked()
 }
