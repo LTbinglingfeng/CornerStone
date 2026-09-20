@@ -68,12 +68,15 @@ func (s *ClawBotService) PollQRCode(ctx context.Context, sessionID string, verif
 		return nil, fmt.Errorf("invalid verification code")
 	}
 	if code != "" {
+		session.VerifyCode = code
+	}
+	if session.VerifyCode != "" {
 		session.VerifyAttempts++
 		if session.VerifyAttempts > 5 {
 			s.deleteQRCodeSession(sessionID)
 			return &ClawBotQRCodePollResponse{Status: "verify_code_blocked"}, nil
 		}
-		session.VerifyCode = code
+		// Count every actual verification submission, including continued polls.
 		// Record attempts before the request, including failed requests.
 		s.mu.Lock()
 		s.qrSessions[sessionID] = session
@@ -81,10 +84,21 @@ func (s *ClawBotService) PollQRCode(ctx context.Context, sessionID string, verif
 	}
 
 	resp, err := s.client.GetQRCodeStatus(ctx, session.BaseURL, session.QRCode, session.VerifyCode)
-	if err != nil {
-		return nil, err
+	s.credentialMu.Lock()
+	defer s.credentialMu.Unlock()
+	if session.Revision != s.credentialRevision {
+		return &ClawBotQRCodePollResponse{Status: "expired"}, nil
 	}
-	if err := ctx.Err(); err != nil {
+	if err != nil || ctx.Err() != nil {
+		// A failed request may already have consumed the code upstream. A plain
+		// status retry must not silently submit it again.
+		session.VerifyCode = ""
+		s.mu.Lock()
+		s.qrSessions[sessionID] = session
+		s.mu.Unlock()
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		return nil, err
 	}
 	result := &ClawBotQRCodePollResponse{Status: strings.TrimSpace(resp.Status)}
@@ -138,6 +152,7 @@ func (s *ClawBotService) PollQRCode(ctx context.Context, sessionID string, verif
 		s.mu.Lock()
 		s.staleToken = ""
 		s.lastError = ""
+		s.credentialRevision++
 		// Other pending logins must not later replace this confirmed account.
 		s.qrSessions = make(map[string]clawBotQRCodeSession)
 		s.mu.Unlock()
@@ -149,6 +164,14 @@ func (s *ClawBotService) PollQRCode(ctx context.Context, sessionID string, verif
 	s.qrSessions[sessionID] = session
 	s.mu.Unlock()
 	return result, nil
+}
+
+// Caller holds credentialMu across credential mutation and QR invalidation.
+func (s *ClawBotService) invalidateQRCodeLoginsLocked() {
+	s.credentialRevision++
+	s.mu.Lock()
+	s.qrSessions = make(map[string]clawBotQRCodeSession)
+	s.mu.Unlock()
 }
 
 func (s *ClawBotService) deleteQRCodeSession(sessionID string) {

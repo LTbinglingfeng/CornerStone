@@ -5,6 +5,8 @@ import (
 	"context"
 	"crypto/aes"
 	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
@@ -12,16 +14,19 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 )
 
 type ClawBotClient struct {
 	httpClient *http.Client
+	botAgent   string
 }
 
 type ClawBotQRCodeResponse struct {
@@ -39,10 +44,8 @@ type ClawBotQRCodeStatusResponse struct {
 }
 
 type ClawBotGetUpdatesRequest struct {
-	GetUpdatesBuf string `json:"get_updates_buf"`
-	BaseInfo      struct {
-		ChannelVersion string `json:"channel_version"`
-	} `json:"base_info"`
+	GetUpdatesBuf string          `json:"get_updates_buf"`
+	BaseInfo      ClawBotBaseInfo `json:"base_info"`
 }
 
 type ClawBotItemText struct {
@@ -106,11 +109,12 @@ type ClawBotIncomingMessage struct {
 }
 
 type ClawBotGetUpdatesResponse struct {
-	Ret           int                      `json:"ret"`
-	ErrMsg        string                   `json:"errmsg"`
-	ErrCode       int                      `json:"errcode"`
-	GetUpdatesBuf string                   `json:"get_updates_buf"`
-	Msgs          []ClawBotIncomingMessage `json:"msgs"`
+	LongPollingTimeoutMS int                      `json:"longpolling_timeout_ms"`
+	Ret                  int                      `json:"ret"`
+	ErrMsg               string                   `json:"errmsg"`
+	ErrCode              int                      `json:"errcode"`
+	GetUpdatesBuf        string                   `json:"get_updates_buf"`
+	Msgs                 []ClawBotIncomingMessage `json:"msgs"`
 }
 
 type ClawBotSendMessageRequest struct {
@@ -126,9 +130,7 @@ type ClawBotSendMessageRequest struct {
 			TextItem *ClawBotItemText `json:"text_item,omitempty"`
 		} `json:"item_list"`
 	} `json:"msg"`
-	BaseInfo struct {
-		ChannelVersion string `json:"channel_version"`
-	} `json:"base_info"`
+	BaseInfo ClawBotBaseInfo `json:"base_info"`
 }
 
 type ClawBotSendMessageResponse struct {
@@ -167,9 +169,54 @@ const (
 	clawBotMediaMaxBytes     = 100 << 20
 )
 
-func NewClawBotClient() *ClawBotClient {
-	return &ClawBotClient{
-		httpClient: newHTTPClient(),
+// These protocol versions align with upstream reference 2.4.9, not CornerStone's build version.
+const clawBotChannelVersion = "2.4.9"
+const clawBotClientVersion = (2 << 16) | (4 << 8) | 9
+
+var ErrClawBotPollTimeout = errors.New("clawbot poll timeout")
+
+type ClawBotBaseInfo struct {
+	ChannelVersion string `json:"channel_version"`
+	BotAgent       string `json:"bot_agent"`
+}
+
+func NewClawBotClient(appVersion ...string) *ClawBotClient {
+	version := "dev"
+	if len(appVersion) > 0 {
+		candidate := strings.TrimSpace(appVersion[0])
+		// A build version is one UA-style ASCII version token (upstream limit: 32 bytes).
+		valid := len(candidate) > 0 && len(candidate) <= 32
+		for _, ch := range candidate {
+			if !(ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch >= '0' && ch <= '9' || strings.ContainsRune("_.+-", ch)) {
+				valid = false
+			}
+		}
+		if valid {
+			version = candidate
+		}
+	}
+	return &ClawBotClient{httpClient: newHTTPClient(), botAgent: "CornerStone/" + version}
+}
+
+func (c *ClawBotClient) baseInfo() ClawBotBaseInfo {
+	agent := c.botAgent
+	if agent == "" {
+		agent = "CornerStone/dev"
+	}
+	return ClawBotBaseInfo{ChannelVersion: clawBotChannelVersion, BotAgent: agent}
+}
+
+func setClawBotHeaders(req *http.Request, token, uin string) {
+	req.Header.Set("iLink-App-Id", "bot")
+	req.Header.Set("iLink-App-ClientVersion", strconv.Itoa(clawBotClientVersion))
+	if req.Method == http.MethodGet {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("AuthorizationType", "ilink_bot_token")
+	req.Header.Set("X-WECHAT-UIN", uin)
+	if token = strings.TrimSpace(token); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 }
 
@@ -178,14 +225,13 @@ func GenerateClawBotWechatUIN() (string, error) {
 	if _, err := rand.Read(buf); err != nil {
 		return "", err
 	}
-	value := int32(binary.BigEndian.Uint32(buf))
-	if value < 0 {
-		value = -value
-	}
+	value := binary.BigEndian.Uint32(buf)
 	return base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%d", value))), nil
 }
 
 func (c *ClawBotClient) GetBotQRCode(ctx context.Context, baseURL string, localTokens ...string) (*ClawBotQRCodeResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 	endpoint := buildClawBotURL(baseURL, "/ilink/bot/get_bot_qrcode?bot_type=3")
 	if localTokens == nil {
 		localTokens = []string{}
@@ -198,15 +244,13 @@ func (c *ClawBotClient) GetBotQRCode(ctx context.Context, baseURL string, localT
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
-		return nil, err
+		return nil, errors.New("clawbot: invalid request")
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("AuthorizationType", "ilink_bot_token")
 	uin, err := GenerateClawBotWechatUIN()
 	if err != nil {
-		return nil, err
+		return nil, errors.New("clawbot: invalid request")
 	}
-	req.Header.Set("X-WECHAT-UIN", uin)
+	setClawBotHeaders(req, "", uin)
 	var resp ClawBotQRCodeResponse
 	if err := c.doJSON(req, &resp); err != nil {
 		return nil, err
@@ -215,6 +259,8 @@ func (c *ClawBotClient) GetBotQRCode(ctx context.Context, baseURL string, localT
 }
 
 func (c *ClawBotClient) GetQRCodeStatus(ctx context.Context, baseURL, qrcode string, verifyCode ...string) (*ClawBotQRCodeStatusResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, 35*time.Second)
+	defer cancel()
 	query := url.Values{}
 	query.Set("qrcode", qrcode)
 	if len(verifyCode) > 0 && verifyCode[0] != "" {
@@ -223,23 +269,29 @@ func (c *ClawBotClient) GetQRCodeStatus(ctx context.Context, baseURL, qrcode str
 	endpoint := buildClawBotURL(baseURL, "/ilink/bot/get_qrcode_status?"+query.Encode())
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("clawbot: invalid request")
 	}
-	req.Header.Set("iLink-App-ClientVersion", "1")
+	setClawBotHeaders(req, "", "")
 
 	var resp ClawBotQRCodeStatusResponse
 	if err := c.doJSON(req, &resp); err != nil {
-		// net/http errors include the complete request URL (QR value and verification code).
-		return nil, fmt.Errorf("clawbot QR status request failed")
+		return nil, err
 	}
 	return &resp, nil
 }
 
-func (c *ClawBotClient) GetUpdates(ctx context.Context, baseURL, botToken, getUpdatesBuf, wechatUIN string) (*ClawBotGetUpdatesResponse, error) {
+func (c *ClawBotClient) GetUpdates(ctx context.Context, baseURL, botToken, getUpdatesBuf, wechatUIN string, pollTimeout ...time.Duration) (*ClawBotGetUpdatesResponse, error) {
+	parent := ctx
+	timeout := 35 * time.Second
+	if len(pollTimeout) > 0 && pollTimeout[0] > 0 {
+		timeout = pollTimeout[0]
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	body := ClawBotGetUpdatesRequest{
 		GetUpdatesBuf: strings.TrimSpace(getUpdatesBuf),
 	}
-	body.BaseInfo.ChannelVersion = "1.0.0"
+	body.BaseInfo = c.baseInfo()
 
 	payload, err := json.Marshal(body)
 	if err != nil {
@@ -248,21 +300,26 @@ func (c *ClawBotClient) GetUpdates(ctx context.Context, baseURL, botToken, getUp
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, buildClawBotURL(baseURL, "/ilink/bot/getupdates"), bytes.NewReader(payload))
 	if err != nil {
-		return nil, err
+		return nil, errors.New("clawbot: invalid request")
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(botToken))
-	req.Header.Set("AuthorizationType", "ilink_bot_token")
-	req.Header.Set("X-WECHAT-UIN", wechatUIN)
+	setClawBotHeaders(req, botToken, wechatUIN)
 
 	var resp ClawBotGetUpdatesResponse
 	if err := c.doJSON(req, &resp); err != nil {
+		if parent.Err() != nil {
+			return nil, parent.Err()
+		}
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return nil, ErrClawBotPollTimeout
+		}
 		return nil, err
 	}
 	return &resp, nil
 }
 
 func (c *ClawBotClient) SendTextMessage(ctx context.Context, baseURL, botToken, wechatUIN, toUserID, contextToken, text string) error {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
 	body := ClawBotSendMessageRequest{}
 	body.Msg.FromUserID = ""
 	body.Msg.ToUserID = strings.TrimSpace(toUserID)
@@ -281,7 +338,7 @@ func (c *ClawBotClient) SendTextMessage(ctx context.Context, baseURL, botToken, 
 			},
 		},
 	}
-	body.BaseInfo.ChannelVersion = "1.0.0"
+	body.BaseInfo = c.baseInfo()
 
 	payload, err := json.Marshal(body)
 	if err != nil {
@@ -290,24 +347,15 @@ func (c *ClawBotClient) SendTextMessage(ctx context.Context, baseURL, botToken, 
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, buildClawBotURL(baseURL, "/ilink/bot/sendmessage"), bytes.NewReader(payload))
 	if err != nil {
-		return err
+		return errors.New("clawbot: invalid request")
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(botToken))
-	req.Header.Set("AuthorizationType", "ilink_bot_token")
-	req.Header.Set("X-WECHAT-UIN", wechatUIN)
+	setClawBotHeaders(req, botToken, wechatUIN)
 
 	var resp ClawBotSendMessageResponse
 	if err := c.doJSON(req, &resp); err != nil {
 		return err
 	}
-	if resp.Ret != 0 || resp.ErrCode != 0 {
-		message := strings.ReplaceAll(resp.ErrMsg, strings.TrimSpace(botToken), "[redacted]")
-		if contextToken != "" {
-			message = strings.ReplaceAll(message, contextToken, "[redacted]")
-		}
-		return &ClawBotAPIError{Ret: resp.Ret, ErrCode: resp.ErrCode, Message: message}
-	}
+
 	return nil
 }
 
@@ -343,6 +391,8 @@ func ExtractImageItemsFromClawBotMessage(msg ClawBotIncomingMessage) []*ClawBotI
 }
 
 func (c *ClawBotClient) DownloadImageItem(ctx context.Context, imageItem *ClawBotImageItem) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
 	if imageItem == nil || imageItem.Media == nil {
 		return nil, fmt.Errorf("clawbot image item is empty")
 	}
@@ -359,28 +409,26 @@ func (c *ClawBotClient) DownloadImageItem(ctx context.Context, imageItem *ClawBo
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, imageURL, nil)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("clawbot: invalid image URL")
 	}
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, clawBotSafeRequestError(req, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
-		message := strings.TrimSpace(string(body))
-		if message == "" {
-			message = resp.Status
-		}
-		return nil, fmt.Errorf("clawbot image download http %d: %s", resp.StatusCode, message)
+		return nil, fmt.Errorf("clawbot image download http %d", resp.StatusCode)
 	}
 
-	data, err := io.ReadAll(io.LimitReader(resp.Body, clawBotMediaMaxBytes))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, clawBotMediaMaxBytes+1))
 	if err != nil {
 		return nil, err
 	}
 
+	if len(data) > clawBotMediaMaxBytes {
+		return nil, fmt.Errorf("clawbot image exceeds maximum download size")
+	}
 	key, err := parseClawBotImageAESKey(imageItem)
 	if err != nil {
 		return nil, err
@@ -401,26 +449,170 @@ func buildClawBotCDNDownloadURL(baseURL, encryptedQueryParam string) string {
 	return baseURL + "/download?encrypted_query_param=" + url.QueryEscape(strings.TrimSpace(encryptedQueryParam))
 }
 
-func (c *ClawBotClient) doJSON(req *http.Request, dst interface{}) error {
-	resp, err := c.httpClient.Do(req)
+// NotifyStart and NotifyStop use the caller's context; shutdown callers should
+// supply a fresh context if their polling context has already been canceled.
+func (c *ClawBotClient) NotifyStart(ctx context.Context, baseURL, botToken, wechatUIN string) error {
+	return c.notify(ctx, baseURL, botToken, wechatUIN, "notifystart")
+}
+
+func (c *ClawBotClient) NotifyStop(ctx context.Context, baseURL, botToken, wechatUIN string) error {
+	return c.notify(ctx, baseURL, botToken, wechatUIN, "notifystop")
+}
+
+func (c *ClawBotClient) notify(ctx context.Context, baseURL, botToken, wechatUIN, operation string) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	payload, err := json.Marshal(struct {
+		BaseInfo ClawBotBaseInfo `json:"base_info"`
+	}{c.baseInfo()})
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
-		message := strings.TrimSpace(string(body))
-		if message == "" {
-			message = resp.Status
-		}
-		return fmt.Errorf("clawbot http %d: %s", resp.StatusCode, message)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, buildClawBotURL(baseURL, "/ilink/bot/msg/"+operation), bytes.NewReader(payload))
+	if err != nil {
+		return errors.New("clawbot: invalid notify request")
 	}
+	setClawBotHeaders(req, botToken, wechatUIN)
+	var resp ClawBotSendMessageResponse
+	return c.doJSON(req, &resp)
+}
 
-	if dst == nil {
+func clawBotSafeRequestError(req *http.Request, err error) error {
+	// Never wrap net/http's URL errors: they include QR and verification queries.
+	for _, cause := range []error{context.Canceled, context.DeadlineExceeded} {
+		if errors.Is(err, cause) {
+			return fmt.Errorf("clawbot request failed: %w", cause)
+		}
+	}
+	if req.Context().Err() != nil {
+		return fmt.Errorf("clawbot request failed: %w", req.Context().Err())
+	}
+	var dnsErr *net.DNSError
+	var tlsErr *tls.CertificateVerificationError
+	var certificateErr x509.UnknownAuthorityError
+	var hostnameErr x509.HostnameError
+	var opErr *net.OpError
+	var netErr net.Error
+	switch {
+	case errors.As(err, &dnsErr):
+		return errors.New("clawbot request failed (dns)")
+	case errors.As(err, &tlsErr), errors.As(err, &certificateErr), errors.As(err, &hostnameErr):
+		return errors.New("clawbot request failed (tls)")
+	case errors.As(err, &netErr) && netErr.Timeout():
+		return errors.New("clawbot request failed (timeout)")
+	case errors.As(err, &opErr):
+		return errors.New("clawbot request failed (tcp)")
+	default:
+		return errors.New("clawbot request failed (network or invalid response)")
+	}
+}
+
+func clawBotCollectSecrets(value interface{}, secrets *[]string) {
+	switch v := value.(type) {
+	case map[string]interface{}:
+		for key, child := range v {
+			switch strings.ToLower(key) {
+			case "bot_token", "context_token", "verify_code", "qrcode", "qrcode_img_content":
+				if text, ok := child.(string); ok && text != "" {
+					*secrets = append(*secrets, text)
+				}
+			case "local_token_list":
+				if tokens, ok := child.([]interface{}); ok {
+					for _, token := range tokens {
+						if text, ok := token.(string); ok && text != "" {
+							*secrets = append(*secrets, text)
+						}
+					}
+				}
+			}
+			clawBotCollectSecrets(child, secrets)
+		}
+	case []interface{}:
+		for _, child := range v {
+			clawBotCollectSecrets(child, secrets)
+		}
+	}
+}
+
+func clawBotSanitizeMessage(message string, secrets []string) string {
+	// Unknown credentials labelled by the upstream are also suppressed, even if
+	// they were not sent by this request. Do not attempt to parse arbitrary prose.
+	lower := strings.ToLower(message)
+	for _, key := range []string{"bot_token", "context_token", "verify_code", "qrcode"} {
+		if strings.Contains(lower, key) {
+			return "[redacted]"
+		}
+	}
+	for _, secret := range secrets {
+		if secret == "" {
+			continue
+		}
+		for _, form := range []string{secret, url.QueryEscape(secret), url.PathEscape(secret)} {
+			message = strings.ReplaceAll(message, form, "[redacted]")
+		}
+	}
+	return message
+}
+
+func (c *ClawBotClient) doJSON(req *http.Request, dst interface{}) error {
+	// Copy rather than mutate the shared client: no credential-bearing JSON API
+	// request may follow even a same-origin redirect (including 307/308 POSTs).
+	hc := *c.httpClient
+	hc.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := hc.Do(req)
+	if err != nil {
+		return clawBotSafeRequestError(req, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		// Untrusted error bodies may echo arbitrary credentials; omit them entirely.
+		return fmt.Errorf("clawbot http %d", resp.StatusCode)
+	}
+	secrets := []string{strings.TrimPrefix(req.Header.Get("Authorization"), "Bearer ")}
+	for _, key := range []string{"qrcode", "verify_code"} {
+		secrets = append(secrets, req.URL.Query().Get(key))
+	}
+	if req.GetBody != nil {
+		body, err := req.GetBody()
+		if err == nil {
+			var value interface{}
+			if json.NewDecoder(body).Decode(&value) == nil {
+				clawBotCollectSecrets(value, &secrets)
+			}
+			body.Close()
+		}
+	}
+	var raw json.RawMessage
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return clawBotSafeRequestError(req, err)
+	}
+	var value interface{}
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return errors.New("clawbot: invalid JSON response")
+	}
+	if _, ok := value.(map[string]interface{}); !ok {
+		return errors.New("clawbot: invalid JSON response")
+	}
+	clawBotCollectSecrets(value, &secrets)
+	var envelope ClawBotSendMessageResponse
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return errors.New("clawbot: invalid JSON response")
+	}
+	envelope.ErrMsg = clawBotSanitizeMessage(envelope.ErrMsg, secrets)
+	if dst != nil {
+		if err := json.Unmarshal(raw, dst); err != nil {
+			return errors.New("clawbot: invalid JSON response")
+		}
+	}
+	// Preserve GetUpdates' existing response + APIError contract.
+	if updates, ok := dst.(*ClawBotGetUpdatesResponse); ok {
+		updates.ErrMsg = envelope.ErrMsg
 		return nil
 	}
-	return json.NewDecoder(resp.Body).Decode(dst)
+	if envelope.Ret != 0 || envelope.ErrCode != 0 {
+		return &ClawBotAPIError{Ret: envelope.Ret, ErrCode: envelope.ErrCode, Message: envelope.ErrMsg}
+	}
+	return nil
 }
 
 func parseClawBotImageAESKey(imageItem *ClawBotImageItem) ([]byte, error) {

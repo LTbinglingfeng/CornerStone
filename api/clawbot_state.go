@@ -82,6 +82,9 @@ func (s *ClawBotService) updateChannelState(cfg config.ClawBotConfig, update fun
 	}
 	s.stateAccount, s.state = account, next
 	s.mu.Lock()
+	if s.contextTokens == nil {
+		s.contextTokens = make(map[string]string)
+	}
 	for user, token := range next.ContextTokens {
 		s.contextTokens[user] = token
 	}
@@ -94,8 +97,18 @@ func (s *ClawBotService) saveIncomingContextTokens(cfg config.ClawBotConfig, mes
 	s.stateMu.Lock()
 	for _, msg := range messages {
 		user, token := strings.TrimSpace(msg.FromUserID), strings.TrimSpace(msg.ContextToken)
-		if msg.MessageType == 1 && user != "" && token != "" && s.state.ContextTokens[user] != token {
-			tokens[user] = token
+		if msg.MessageType != 1 || user == "" || token == "" {
+			continue
+		}
+		if key := clawBotMessageKey(msg); key != "" && s.state.ContextTokens[user] != "" && slices.Contains(s.state.RecentMessageIDs, key) {
+			continue
+		}
+		// Pick the last token in the batch before comparing it with saved state.
+		tokens[user] = token
+	}
+	for user, token := range tokens {
+		if s.state.ContextTokens[user] == token {
+			delete(tokens, user)
 		}
 	}
 	s.stateMu.Unlock()

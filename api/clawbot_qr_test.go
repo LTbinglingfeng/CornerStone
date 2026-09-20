@@ -152,6 +152,67 @@ func TestClawBotQRCodeRedirectAndAttemptBounds(t *testing.T) {
 	}
 }
 
+func TestClawBotOldQRCodeCannotReplaceSavedAccount(t *testing.T) {
+	started, release := make(chan struct{}), make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-release
+		fmt.Fprint(w, `{"status":"confirmed","bot_token":"old-qr-token"}`)
+	}))
+	defer server.Close()
+	s := newTestClawBotService(t, server.URL)
+	s.handler.SetClawBotService(s)
+	s.qrSessions = map[string]clawBotQRCodeSession{"id": {BaseURL: server.URL, QRCode: "qr", CreatedAt: time.Now()}}
+	result := make(chan *ClawBotQRCodePollResponse, 1)
+	go func() {
+		resp, err := s.PollQRCode(context.Background(), "id")
+		if err != nil {
+			t.Error(err)
+		}
+		result <- resp
+	}()
+	<-started
+	body := fmt.Sprintf(`{"enabled":false,"base_url":%q,"bot_token":"replacement"}`, server.URL)
+	req := httptest.NewRequest(http.MethodPut, "/api/settings/clawbot", strings.NewReader(body))
+	recorder := httptest.NewRecorder()
+	s.handler.handleClawBotSettings(recorder, req)
+	close(release)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("save status = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	resp := <-result
+	if resp == nil || resp.Status != "expired" {
+		t.Fatalf("old QR result = %#v", resp)
+	}
+	if s.handler.configManager.GetClawBotConfig().BotToken != "replacement" {
+		t.Fatal("old QR overwrote replacement credential")
+	}
+}
+
+func TestClawBotFailedVerificationIsNotReplayed(t *testing.T) {
+	var codes []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		codes = append(codes, r.URL.Query().Get("verify_code"))
+		if len(codes) == 1 {
+			http.Error(w, "unavailable", http.StatusBadGateway)
+			return
+		}
+		fmt.Fprint(w, `{"status":"wait"}`)
+	}))
+	defer server.Close()
+	s := newTestClawBotService(t, server.URL)
+	s.qrSessions = map[string]clawBotQRCodeSession{"id": {BaseURL: server.URL, QRCode: "qr", CreatedAt: time.Now()}}
+	if _, err := s.PollQRCode(context.Background(), "id", "123456"); err == nil {
+		t.Fatal("expected network failure")
+	}
+	if _, err := s.PollQRCode(context.Background(), "id"); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(codes, ",") != "123456," {
+		t.Fatalf("verification replayed: %v", codes)
+	}
+}
+
 func TestClawBotQRCodeDoesNotShareCredentialsAcrossOrigins(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {

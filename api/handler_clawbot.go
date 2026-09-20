@@ -55,6 +55,8 @@ func (h *Handler) handleClawBotSettings(w http.ResponseWriter, r *http.Request) 
 			}
 		}
 
+		h.clawBotService.credentialMu.Lock()
+		defer h.clawBotService.credentialMu.Unlock()
 		cfg := h.configManager.GetClawBotConfig()
 		previousAccount := clawBotAccount(cfg)
 		cfg.Enabled = req.Enabled
@@ -91,6 +93,9 @@ func (h *Handler) handleClawBotSettings(w http.ResponseWriter, r *http.Request) 
 			h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: err.Error()})
 			return
 		}
+		if clawBotAccount(cfg) != previousAccount || req.ClearBotToken || strings.TrimSpace(req.BotToken) != "" {
+			h.clawBotService.invalidateQRCodeLoginsLocked()
+		}
 		h.clawBotService.ApplyCurrentConfig()
 
 		settings, err := h.clawBotService.GetSettings()
@@ -120,7 +125,7 @@ func (h *Handler) handleClawBotQRCodeStart(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 35*time.Second)
 	defer cancel()
 
 	resp, err := h.clawBotService.StartQRCode(ctx, req.BaseURL)
@@ -150,7 +155,7 @@ func (h *Handler) handleClawBotQRCodePoll(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 40*time.Second)
 	defer cancel()
 
 	if !validClawBotVerifyCode(strings.TrimSpace(req.VerifyCode)) {

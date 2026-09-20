@@ -129,6 +129,35 @@ func TestClawBotPollPersistsAndDeduplicates(t *testing.T) {
 	}
 }
 
+func TestClawBotReplayDoesNotRollBackContext(t *testing.T) {
+	s := newTestClawBotService(t, "https://ilinkai.weixin.qq.com")
+	s.stateManager = storage.NewClawBotStateManager(t.TempDir())
+	cfg := s.handler.configManager.GetClawBotConfig()
+	if err := s.restoreChannelState(cfg); err != nil {
+		t.Fatal(err)
+	}
+	old := client.ClawBotIncomingMessage{MessageType: 1, MessageID: "1", FromUserID: "user", ContextToken: "A"}
+	latest := client.ClawBotIncomingMessage{MessageType: 1, MessageID: "2", FromUserID: "user", ContextToken: "B"}
+	if err := s.saveIncomingContextTokens(cfg, []client.ClawBotIncomingMessage{latest}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.saveIncomingContextTokens(cfg, []client.ClawBotIncomingMessage{old, latest}); err != nil {
+		t.Fatal(err)
+	}
+	if s.getContextToken("user") != "B" {
+		t.Fatal("batch comparison rolled context back")
+	}
+	if err := s.savePollCheckpoint(cfg, "cursor", []client.ClawBotIncomingMessage{old, latest}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.saveIncomingContextTokens(cfg, []client.ClawBotIncomingMessage{old}); err != nil {
+		t.Fatal(err)
+	}
+	if s.getContextToken("user") != "B" {
+		t.Fatal("duplicate rolled context back")
+	}
+}
+
 func TestClawBotMessageIDLossless(t *testing.T) {
 	for _, raw := range []string{`{"message_id":18446744073709551615}`, `{"message_id":"18446744073709551615"}`} {
 		var msg client.ClawBotIncomingMessage

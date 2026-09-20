@@ -342,7 +342,7 @@ func main() {
 	idleGreetingService.Start(idleGreetingCtx)
 	appVersion := resolveVersion(exeDir)
 	clawBotStateManager := storage.NewClawBotStateManager(filepath.Join(baseDir, "clawbot"))
-	clawBotService := api.NewClawBotService(handler, clawBotStateManager)
+	clawBotService := api.NewClawBotService(handler, clawBotStateManager, appVersion)
 	handler.SetClawBotService(clawBotService)
 	defer clawBotService.Close()
 	napCatService := api.NewNapCatService(handler)

@@ -289,6 +289,13 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
 
     const handleSave = async () => {
         if (saving) return
+        cancelQRCode()
+        setQRData(null)
+        setQRStatus('')
+        setVerifyCode('')
+        setQRRetry(false)
+        setQRPolling(false)
+        setQRLoading(false)
         const signal = lifecycleRef.current!.signal
         setSaving(true)
         try {
@@ -664,6 +671,9 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
                                         value={verifyCode}
                                         onChange={(event) => setVerifyCode(event.target.value)}
                                         autoComplete="one-time-code"
+                                        inputMode="numeric"
+                                        pattern="[0-9]*"
+                                        maxLength={32}
                                         disabled={qrPolling}
                                     />
                                     <button

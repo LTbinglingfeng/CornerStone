@@ -76,6 +76,7 @@ type clawBotQRCodeSession struct {
 	LocalBotToken    string
 	VerifyAttempts   int
 	VerifyCode       string
+	Revision         uint64
 	Redirects        int
 }
 
@@ -109,24 +110,29 @@ type ClawBotService struct {
 	handler *Handler
 	client  *client.ClawBotClient
 
-	mu             sync.RWMutex
-	lifecycleMu    sync.Mutex
-	stateMu        sync.Mutex
-	stateManager   *storage.ClawBotStateManager
-	stateAccount   string
-	state          storage.ClawBotState
-	qrMu           sync.Mutex
-	qrSessions     map[string]clawBotQRCodeSession
-	activeSessions map[string]*clawBotActiveSession
-	pendingReplies map[string]*clawBotPendingReply
-	contextTokens  map[string]string
-	wechatUIN      string
+	mu                 sync.RWMutex
+	lifecycleMu        sync.Mutex
+	stateMu            sync.Mutex
+	stateManager       *storage.ClawBotStateManager
+	stateAccount       string
+	state              storage.ClawBotState
+	qrMu               sync.Mutex
+	credentialMu       sync.Mutex
+	credentialRevision uint64
+	qrSessions         map[string]clawBotQRCodeSession
+	activeSessions     map[string]*clawBotActiveSession
+	pendingReplies     map[string]*clawBotPendingReply
+	contextTokens      map[string]string
+	wechatUIN          string
 
 	workerCtx     context.Context
 	workerCancel  context.CancelFunc
 	workerRunning bool
 	workerDone    chan struct{}
 	workerAccount string
+	closed        bool
+	cleanupCancel context.CancelFunc
+	cleanupDone   chan struct{}
 	connected     bool
 	staleToken    string
 	lastError     string
@@ -138,7 +144,7 @@ type clawBotCommand struct {
 	Args string
 }
 
-func NewClawBotService(handler *Handler, stateManagers ...*storage.ClawBotStateManager) *ClawBotService {
+func NewClawBotService(handler *Handler, stateManager *storage.ClawBotStateManager, appVersion ...string) *ClawBotService {
 	wechatUIN, err := client.GenerateClawBotWechatUIN()
 	if err != nil {
 		logging.Errorf("clawbot generate wechat uin failed: %v", err)
@@ -146,18 +152,22 @@ func NewClawBotService(handler *Handler, stateManagers ...*storage.ClawBotStateM
 
 	s := &ClawBotService{
 		handler:        handler,
-		client:         client.NewClawBotClient(),
+		client:         client.NewClawBotClient(appVersion...),
 		qrSessions:     make(map[string]clawBotQRCodeSession),
 		activeSessions: make(map[string]*clawBotActiveSession),
 		pendingReplies: make(map[string]*clawBotPendingReply),
 		contextTokens:  make(map[string]string),
 		wechatUIN:      wechatUIN,
 	}
-	if len(stateManagers) > 0 {
-		s.stateManager = stateManagers[0]
-	}
+	s.stateManager = stateManager
+	cleanupCtx, cleanupCancel := context.WithCancel(context.Background())
+	s.cleanupCancel = cleanupCancel
+	s.cleanupDone = make(chan struct{})
 	s.ApplyCurrentConfig()
-	go s.cleanupLoop()
+	go func() {
+		defer close(s.cleanupDone)
+		s.cleanupLoop(cleanupCtx)
+	}()
 	return s
 }
 
@@ -167,6 +177,8 @@ func (s *ClawBotService) Close() {
 	s.mu.Lock()
 	cancel := s.workerCancel
 	done := s.workerDone
+	s.closed = true
+	cleanupCancel, cleanupDone := s.cleanupCancel, s.cleanupDone
 	s.workerCtx = nil
 	s.workerCancel = nil
 	s.workerRunning = false
@@ -176,21 +188,37 @@ func (s *ClawBotService) Close() {
 		cancel()
 	}
 
+	if cleanupCancel != nil {
+		cleanupCancel()
+	}
 	if done != nil {
 		<-done
+	}
+	if cleanupDone != nil {
+		<-cleanupDone
 	}
 	s.clearAllPendingReplies()
 }
 
 func (s *ClawBotService) ApplyCurrentConfig() {
-	s.applyConfig(s.handler.configManager.GetClawBotConfig())
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	s.applyConfigLocked(s.handler.configManager.GetClawBotConfig())
 }
 
 func (s *ClawBotService) applyConfig(cfg config.ClawBotConfig) {
 	s.lifecycleMu.Lock()
 	defer s.lifecycleMu.Unlock()
-	account := storage.ClawBotAccountKey(cfg.BaseURL, strings.TrimSpace(cfg.BotToken))
+	s.applyConfigLocked(cfg)
+}
+
+func (s *ClawBotService) applyConfigLocked(cfg config.ClawBotConfig) {
+	account := clawBotAccount(cfg)
 	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return
+	}
 	if cfg.Enabled && s.workerRunning && s.workerAccount == account {
 		s.mu.Unlock()
 		return
@@ -236,18 +264,7 @@ func (s *ClawBotService) applyConfig(cfg config.ClawBotConfig) {
 	s.workerAccount = account
 	s.mu.Unlock()
 
-	go func() {
-		defer close(done)
-		defer func() {
-			s.mu.Lock()
-			if s.workerCtx == ctx {
-				s.workerRunning = false
-				s.connected = false
-			}
-			s.mu.Unlock()
-		}()
-		s.pollLoop(ctx, cfg)
-	}()
+	go s.runWorker(ctx, cfg, done)
 }
 
 func (s *ClawBotService) getWorkerCtx() (context.Context, bool) {
@@ -276,7 +293,10 @@ func (s *ClawBotService) StartQRCode(ctx context.Context, baseURL string) (*Claw
 	if err := validateClawBotBaseURL(baseURL); err != nil {
 		return nil, err
 	}
+	s.credentialMu.Lock()
 	cfg := s.handler.configManager.GetClawBotConfig()
+	revision := s.credentialRevision
+	s.credentialMu.Unlock()
 	localToken := ""
 	s.mu.RLock()
 	stale := s.staleToken != "" && s.staleToken == strings.TrimSpace(cfg.BotToken)
@@ -310,8 +330,14 @@ func (s *ClawBotService) StartQRCode(ctx context.Context, baseURL string) (*Claw
 		QRCodeImgContent: qrcodeImgContent,
 		CreatedAt:        time.Now(),
 		LocalBotToken:    localToken,
+		Revision:         revision,
 	}
 
+	s.credentialMu.Lock()
+	defer s.credentialMu.Unlock()
+	if revision != s.credentialRevision {
+		return nil, fmt.Errorf("ClawBot credentials changed; start a new QR login")
+	}
 	s.mu.Lock()
 	s.qrSessions = map[string]clawBotQRCodeSession{sessionID: session}
 	s.mu.Unlock()
@@ -381,14 +407,20 @@ func (s *ClawBotService) GetSettings() (*ClawBotSettingsResponse, error) {
 func (s *ClawBotService) pollLoop(ctx context.Context, cfg config.ClawBotConfig) {
 	cursor := s.pollCursor(cfg)
 	failures := 0
+	pollTimeout := 35 * time.Second
 	for {
 		if err := ctx.Err(); err != nil {
 			return
 		}
 
-		resp, err := s.client.GetUpdates(ctx, cfg.BaseURL, cfg.BotToken, cursor, s.wechatUIN)
+		resp, err := s.client.GetUpdates(ctx, cfg.BaseURL, cfg.BotToken, cursor, s.wechatUIN, pollTimeout)
 		if ctx.Err() != nil {
 			return
+		}
+		if errors.Is(err, client.ErrClawBotPollTimeout) {
+			// A held long-poll reaching its deadline is normal, not proof of a
+			// healthy response and not a reason to show a connection error.
+			continue
 		}
 		if err == nil {
 			err = resp.APIError()
@@ -406,6 +438,7 @@ func (s *ClawBotService) pollLoop(ctx context.Context, cfg config.ClawBotConfig)
 			continue
 		}
 
+		pollTimeout = clawBotPollTimeout(resp.LongPollingTimeoutMS, pollTimeout)
 		failures = 0
 		s.clearLastError()
 		s.mu.Lock()
@@ -1898,12 +1931,16 @@ func (s *ClawBotService) clearLastError() {
 	s.mu.Unlock()
 }
 
-func (s *ClawBotService) cleanupLoop() {
+func (s *ClawBotService) cleanupLoop(ctx context.Context) {
 	ticker := time.NewTicker(clawBotCleanupInterval)
 	defer ticker.Stop()
-
-	for range ticker.C {
-		s.cleanupState()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.cleanupState()
+		}
 	}
 }
 
