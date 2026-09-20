@@ -361,6 +361,7 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
                                     <label className="toggle-switch">
                                         <input
                                             type="checkbox"
+                                            aria-label={t('clawBot.enableChannel')}
                                             checked={form.enabled}
                                             onChange={(event) =>
                                                 setForm((current) => ({
@@ -383,6 +384,7 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
                                 <label className="settings-label">{t('clawBot.baseUrl')}</label>
                                 <input
                                     className="settings-input"
+                                    aria-label={t('clawBot.baseUrl')}
                                     value={form.base_url}
                                     onChange={(event) =>
                                         setForm((current) => ({ ...current, base_url: event.target.value }))
@@ -426,6 +428,7 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
                                                     <label className="toggle-switch">
                                                         <input
                                                             type="checkbox"
+                                                            aria-label={item.label}
                                                             checked={enabled}
                                                             onChange={(event) =>
                                                                 setForm((current) => ({
@@ -460,6 +463,9 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
                                 <label className="settings-label">{t('clawBot.botToken')}</label>
                                 <input
                                     className="settings-input"
+                                    type="password"
+                                    autoComplete="off"
+                                    aria-label={t('clawBot.botToken')}
                                     value={form.bot_token}
                                     onChange={(event) =>
                                         setForm((current) => ({ ...current, bot_token: event.target.value }))
@@ -530,6 +536,7 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
                                     <textarea
                                         className="settings-textarea clawbot-qrcode-text"
                                         readOnly
+                                        aria-label={t('clawBot.scanLogin')}
                                         value={qrData.qrcode_img_content || qrData.qrcode}
                                     />
                                 )}

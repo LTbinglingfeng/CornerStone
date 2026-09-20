@@ -256,6 +256,7 @@ const NapCatSettingsPanel: React.FC<NapCatSettingsProps> = ({ onBack }) => {
                             <label className="toggle-switch">
                                 <input
                                     type="checkbox"
+                                    aria-label={t('napCat.enableChannel')}
                                     checked={form.enabled}
                                     onChange={(event) =>
                                         setForm((current) => ({
@@ -289,6 +290,7 @@ const NapCatSettingsPanel: React.FC<NapCatSettingsProps> = ({ onBack }) => {
                         <label className="settings-label">{t('napCat.accessToken')}</label>
                         <input
                             className="settings-input"
+                            aria-label={t('napCat.accessToken')}
                             value={form.access_token}
                             onChange={(event) =>
                                 setForm((current) => ({ ...current, access_token: event.target.value }))
@@ -345,6 +347,7 @@ const NapCatSettingsPanel: React.FC<NapCatSettingsProps> = ({ onBack }) => {
                             <label className="toggle-switch">
                                 <input
                                     type="checkbox"
+                                    aria-label={t('napCat.allowPrivate')}
                                     checked={form.allow_private}
                                     onChange={(event) =>
                                         setForm((current) => ({ ...current, allow_private: event.target.checked }))
@@ -385,6 +388,7 @@ const NapCatSettingsPanel: React.FC<NapCatSettingsProps> = ({ onBack }) => {
                         <label className="settings-label">{t('napCat.allowedPrivateUserIds')}</label>
                         <textarea
                             className="settings-textarea"
+                            aria-label={t('napCat.allowedPrivateUserIds')}
                             value={form.allowed_private_user_ids_text}
                             onChange={(event) =>
                                 setForm((current) => ({
