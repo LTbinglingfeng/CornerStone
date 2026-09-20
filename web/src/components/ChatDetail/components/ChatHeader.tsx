@@ -20,7 +20,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
 
     return (
         <div className="chat-detail-header">
-            <button className="back-button" onClick={onBack}>
+            <button className="back-button" onClick={onBack} aria-label={t('common.back')}>
                 <svg viewBox="0 0 24 24">
                     <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
                 </svg>
@@ -29,7 +29,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                 {showTyping ? t('chat.typingIndicator') : title}
             </div>
             {showSettingsButton && (
-                <button className="settings-button" onClick={onOpenSettings}>
+                <button className="settings-button" onClick={onOpenSettings} aria-label={t('chatSettings.currentChat')}>
                     <svg viewBox="0 0 24 24">
                         <path d="M6 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
                     </svg>

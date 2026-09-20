@@ -112,6 +112,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
                 <textarea
                     ref={textareaRef}
                     className="chat-input"
+                    aria-label={t('chat.inputPlaceholder')}
                     placeholder={t('chat.inputPlaceholder')}
                     value={value}
                     onChange={handleInputChange}
@@ -119,7 +120,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
                     onKeyDown={handleKeyDown}
                     rows={1}
                 />
-                <button className="send-button" onClick={onSend} disabled={!canSend}>
+                <button className="send-button" onClick={onSend} disabled={!canSend} aria-label={t('common.send')}>
                     <svg viewBox="0 0 24 24">
                         <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
                     </svg>
