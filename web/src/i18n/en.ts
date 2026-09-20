@@ -23,6 +23,13 @@ const en = {
         progress: '{sent} / {total} segments confirmed sent',
         chunks: 'View message segments',
         chunk: 'Segment {number}',
+        messageId: 'Server message ID: {id}',
+        manuallyConfirmed: 'Manually confirmed received',
+        media: { image: 'Image', video: 'Video', file: 'File' },
+        upload: {
+            pending: 'Not uploaded',
+            uploaded: 'Upload completed — this alone does not confirm delivery',
+        },
         uncertainHint:
             'Paused: the result is uncertain. Retrying may duplicate messages, commands or tool side effects.',
         actions: {
@@ -49,6 +56,7 @@ const en = {
             generating: 'Generating',
             executing: 'Executing',
             ready: 'Ready',
+            uploading: 'Uploading attachment',
             sending: 'Sending',
             uncertain: 'Uncertain — paused',
             blocked: 'Blocked',
@@ -60,11 +68,13 @@ const en = {
             preparation: 'Preparing input',
             generation: 'Generation',
             command: 'Command',
+            upload: 'Attachment upload (not delivery)',
             send: 'Send',
             history: 'History',
         },
         chunkStatus: {
             pending: 'Pending',
+            uploading: 'Uploading',
             sending: 'Sending',
             sent: 'Confirmed sent',
             uncertain: 'Uncertain',
@@ -217,6 +227,7 @@ const en = {
         startNewChat: 'Start a new conversation',
         loadMore: 'Scroll up to load more',
         recalledBanner: 'You recalled a message',
+        attachmentIntentBanner: 'Attachment delivery requested',
         noReplyBanner: 'Left on read',
         doubleTapPoke: 'Double tap to poke',
         userAvatar: 'User',
@@ -312,6 +323,9 @@ const en = {
         toolSendPatDescription: 'Allow the AI to send a pat interaction',
         toolNoReply: 'No Reply',
         toolNoReplyDescription: 'Allow the AI to end the round without sending any visible text reply',
+        toolSendAttachment: 'Send Attachment',
+        toolSendAttachmentDescription:
+            'Allow AI to queue existing session attachments, images, or audio for delivery (WeChat only)',
         toolGetTime: 'Time Query',
         toolGetTimeDescription: 'Allow the AI to query current time, date, weekday, and timezone information',
         toolGetWeather: 'Weather Query',

@@ -186,7 +186,18 @@ export default function ClawBotDeliveryQueue() {
                                         {t('delivery.chunk', { number: index + 1 })} ·{' '}
                                         {t(`delivery.chunkStatus.${chunk.status}`)}
                                     </strong>
-                                    <pre>{chunk.text}</pre>
+                                    {chunk.media ? (
+                                        <p>
+                                            {t(`delivery.media.${chunk.media.kind}`)} · {chunk.media.name} ·{' '}
+                                            {chunk.media.size.toLocaleString()} B
+                                            <br />
+                                            {t(`delivery.upload.${chunk.media.upload_status}`)}
+                                        </p>
+                                    ) : (
+                                        <pre>{chunk.text}</pre>
+                                    )}
+                                    {chunk.message_id && <p>{t('delivery.messageId', { id: chunk.message_id })}</p>}
+                                    {chunk.manual_confirmation && <p>{t('delivery.manuallyConfirmed')}</p>}
                                 </div>
                             ))}
                         </details>

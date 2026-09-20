@@ -18,7 +18,24 @@ type ClawBotDeliveryState struct {
 	ActiveSessions map[string]string    `json:"active_sessions,omitempty"`
 }
 
+// ClawBotDeliveryMedia separates immutable local bytes and the CDN upload
+// receipt from acknowledgement of the message containing the media reference.
+type ClawBotDeliveryMedia struct {
+	Kind         string                       `json:"kind"`
+	Name         string                       `json:"name"`
+	MIMEType     string                       `json:"mime_type"`
+	Size         int64                        `json:"size"`
+	SourcePath   string                       `json:"source_path,omitempty"`
+	HistoryPath  string                       `json:"history_path,omitempty"`
+	BlobID       string                       `json:"blob_id,omitempty"`
+	UploadStatus string                       `json:"upload_status,omitempty"`
+	Uploaded     *client.ClawBotUploadedMedia `json:"uploaded,omitempty"`
+}
+
 type ClawBotDeliveryChunk struct {
+	Media *ClawBotDeliveryMedia `json:"media,omitempty"`
+	// MessageIndex identifies the persisted artifact source; absent in old jobs.
+	MessageIndex       *int   `json:"message_index,omitempty"`
 	ClientID           string `json:"client_id"`
 	Text               string `json:"text"`
 	Status             string `json:"status"`

@@ -28,6 +28,10 @@ func (s *ClawBotService) deliverChunk(ctx context.Context, cfg config.ClawBotCon
 		s.parkDelivery(cfg, job.ID, "send", "Invalid chunk cursor", false)
 		return
 	}
+	if media := job.Chunks[job.NextChunk].Media; media != nil && media.Uploaded == nil {
+		s.uploadDeliveryChunk(ctx, cfg, job)
+		return
+	}
 	err := s.changeDelivery(cfg, job.ID, func(j *storage.ClawBotDeliveryJob) error {
 		if j.Status != "ready" || j.NextChunk != job.NextChunk || j.Revision != job.Revision {
 			return errClawBotJobUnavailable
@@ -44,7 +48,8 @@ func (s *ClawBotService) deliverChunk(ctx context.Context, cfg config.ClawBotCon
 		return
 	}
 	chunk := job.Chunks[job.NextChunk]
-	response, err := s.client.SendTextMessageWithID(ctx, cfg.BaseURL, cfg.BotToken, s.wechatUIN, job.UserID, s.getContextToken(job.UserID), chunk.Text, chunk.ClientID)
+	item := clawBotDeliveryWireItem(chunk)
+	response, err := s.client.SendItemMessageWithID(ctx, cfg.BaseURL, cfg.BotToken, s.wechatUIN, job.UserID, s.getContextToken(job.UserID), item, chunk.ClientID)
 	if err != nil {
 		var deliveryErr *client.ClawBotDeliveryError
 		if errors.As(err, &deliveryErr) && deliveryErr.Outcome != client.ClawBotDeliveryUncertain {
@@ -88,10 +93,15 @@ func (s *ClawBotService) deliverChunk(ctx context.Context, cfg config.ClawBotCon
 	if len(job.Inputs) > 0 {
 		protocolSession = job.Inputs[len(job.Inputs)-1].SessionID
 	}
-	s.recordClawBotSentReference(cfg, job.UserID, protocolSession, response.MessageID, chunk.Text)
+	s.cacheClawBotReference(cfg, client.ClawBotIncomingMessage{MessageID: response.MessageID, FromUserID: job.UserID, SessionID: protocolSession, ItemList: []client.ClawBotIncomingMessageItem{item}})
 }
 
 func confirmedDeliveryMessages(job storage.ClawBotDeliveryJob) []storage.ChatMessage {
+	for _, chunk := range job.Chunks {
+		if chunk.Media != nil {
+			return confirmedClawBotMediaMessages(job)
+		}
+	}
 	if job.NextChunk >= len(job.Chunks) {
 		return job.Messages
 	}

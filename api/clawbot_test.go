@@ -1119,12 +1119,12 @@ func TestProcessIncomingBatch_ClawBotRunsReadOnlyToolLoop(t *testing.T) {
 	}
 
 	firstReq := state.chatReqs[0]
-	if len(firstReq.Tools) != 4 {
-		t.Fatalf("first request tools len = %d, want 4", len(firstReq.Tools))
+	if len(firstReq.Tools) != 5 {
+		t.Fatalf("first request tools len = %d, want 5", len(firstReq.Tools))
 	}
 	for _, tool := range firstReq.Tools {
 		switch tool.Function.Name {
-		case "get_time", "get_weather", "schedule_reminder", "no_reply":
+		case "get_time", "get_weather", "schedule_reminder", "no_reply", "send_attachment":
 		default:
 			t.Fatalf("unexpected clawbot tool %q", tool.Function.Name)
 		}
@@ -1305,8 +1305,8 @@ func TestProcessIncomingBatch_ClawBotRunsWebSearchToolLoopWhenConfigured(t *test
 	}
 
 	firstReq := state.chatReqs[0]
-	if len(firstReq.Tools) != 5 {
-		t.Fatalf("first request tools len = %d, want 5", len(firstReq.Tools))
+	if len(firstReq.Tools) != 6 {
+		t.Fatalf("first request tools len = %d, want 6", len(firstReq.Tools))
 	}
 	names := make(map[string]struct{}, len(firstReq.Tools))
 	for _, tool := range firstReq.Tools {
@@ -1480,8 +1480,8 @@ func TestProcessIncomingBatch_ClawBotRunsWriteMemoryToolLoopWhenEnabled(t *testi
 	}
 
 	firstReq := state.chatReqs[0]
-	if len(firstReq.Tools) != 5 {
-		t.Fatalf("first request tools len = %d, want 5", len(firstReq.Tools))
+	if len(firstReq.Tools) != 6 {
+		t.Fatalf("first request tools len = %d, want 6", len(firstReq.Tools))
 	}
 	names := make(map[string]struct{}, len(firstReq.Tools))
 	for _, tool := range firstReq.Tools {

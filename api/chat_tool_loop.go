@@ -176,6 +176,11 @@ func runChatWithToolLoop(
 				shouldTerminateWithNoReply = true
 			}
 			resultJSON := marshalChatToolResult(result)
+			if toolCtx.Attachments != nil && result.OK {
+				if a, ok := attachmentFromToolResult(resultJSON); ok {
+					addToolAttachment(toolCtx.Attachments, a)
+				}
+			}
 
 			toolMsg := client.Message{
 				Role:       "tool",

@@ -41,6 +41,12 @@ func (e *ClawBotHTTPError) Error() string { return fmt.Sprintf("clawbot http %d"
 // SendTextMessageWithID makes exactly one delivery attempt. Callers must persist and
 // reuse clientID across retries; it is a correlation ID, not an idempotency guarantee.
 func (c *ClawBotClient) SendTextMessageWithID(ctx context.Context, baseURL, botToken, wechatUIN, toUserID, contextToken, text, clientID string) (*ClawBotSendMessageResponse, error) {
+	return c.SendItemMessageWithID(ctx, baseURL, botToken, wechatUIN, toUserID, contextToken, ClawBotIncomingMessageItem{Type: 1, TextItem: &ClawBotItemText{Text: text}}, clientID)
+}
+
+// SendItemMessageWithID sends one ordered text or media item, with the same
+// conservative acknowledgement rules as text. Upload is deliberately separate.
+func (c *ClawBotClient) SendItemMessageWithID(ctx context.Context, baseURL, botToken, wechatUIN, toUserID, contextToken string, item ClawBotIncomingMessageItem, clientID string) (*ClawBotSendMessageResponse, error) {
 	fail := func(outcome string, retryable bool, err error) (*ClawBotSendMessageResponse, error) {
 		return nil, &ClawBotDeliveryError{Outcome: outcome, Retryable: retryable, Err: err}
 	}
@@ -52,16 +58,24 @@ func (c *ClawBotClient) SendTextMessageWithID(ctx context.Context, baseURL, botT
 	}
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	body := ClawBotSendMessageRequest{}
+	var body struct {
+		Msg struct {
+			FromUserID   string                       `json:"from_user_id"`
+			ToUserID     string                       `json:"to_user_id"`
+			ClientID     string                       `json:"client_id"`
+			MessageType  int                          `json:"message_type"`
+			MessageState int                          `json:"message_state"`
+			ContextToken string                       `json:"context_token,omitempty"`
+			ItemList     []ClawBotIncomingMessageItem `json:"item_list"`
+		} `json:"msg"`
+		BaseInfo ClawBotBaseInfo `json:"base_info"`
+	}
 	body.Msg.ToUserID = strings.TrimSpace(toUserID)
 	body.Msg.ClientID = clientID
 	body.Msg.MessageType = 2
 	body.Msg.MessageState = 2
 	body.Msg.ContextToken = strings.TrimSpace(contextToken)
-	body.Msg.ItemList = append(body.Msg.ItemList, struct {
-		Type     int              `json:"type"`
-		TextItem *ClawBotItemText `json:"text_item,omitempty"`
-	}{Type: 1, TextItem: &ClawBotItemText{Text: text}})
+	body.Msg.ItemList = []ClawBotIncomingMessageItem{item}
 	body.BaseInfo = c.baseInfo()
 	payload, err := json.Marshal(body)
 	if err != nil {
@@ -133,6 +147,10 @@ func (c *ClawBotClient) SendTextMessageWithID(ctx context.Context, baseURL, botT
 		return fail(ClawBotDeliveryUncertain, false, errors.New("clawbot: invalid delivery response"))
 	}
 	secrets := []string{botToken, strings.TrimSpace(botToken), contextToken, strings.TrimSpace(contextToken)}
+	var requestValue interface{}
+	if json.Unmarshal(payload, &requestValue) == nil {
+		clawBotCollectSecrets(requestValue, &secrets)
+	}
 	var value interface{}
 	if json.Unmarshal(raw, &value) == nil {
 		clawBotCollectSecrets(value, &secrets)

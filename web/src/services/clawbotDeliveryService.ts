@@ -19,17 +19,30 @@ export interface DeliveryJob {
         | 'executing'
         | 'ready'
         | 'sending'
+        | 'uploading'
         | 'uncertain'
         | 'blocked'
         | 'committing'
         | 'done'
         | 'cancelled'
-    phase?: 'preparation' | 'generation' | 'command' | 'send' | 'history'
+    phase?: 'preparation' | 'generation' | 'command' | 'upload' | 'send' | 'history'
     created_at: string
     updated_at: string
     last_error?: string
     next_attempt_at?: string
-    chunks: { text: string; status: 'pending' | 'sending' | 'sent' | 'uncertain'; message_id?: string }[]
+    chunks: {
+        text: string
+        status: 'pending' | 'uploading' | 'sending' | 'sent' | 'uncertain'
+        message_id?: string
+        manual_confirmation?: boolean
+        media?: {
+            kind: 'image' | 'video' | 'file'
+            name: string
+            mime_type: string
+            size: number
+            upload_status: 'pending' | 'uploaded'
+        }
+    }[]
     allowed_actions: string[]
 }
 

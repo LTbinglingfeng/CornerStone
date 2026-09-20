@@ -1230,6 +1230,10 @@ func getChatTools(options ...chatToolOptions) []client.Tool {
 		})
 	}
 
+	if channel == chatToolChannelClawBot {
+		tools = append(tools, sendAttachmentTool())
+	}
+
 	if len(options) > 0 && options[0].ReminderFiring {
 		filtered := make([]client.Tool, 0, 3)
 		for _, tool := range tools {
@@ -1245,7 +1249,7 @@ func getChatTools(options ...chatToolOptions) []client.Tool {
 		filtered := make([]client.Tool, 0, 6)
 		for _, tool := range tools {
 			switch canonicalToolName(tool.Function.Name) {
-			case "get_time", "get_weather", cornerstoneWebSearchToolName, "schedule_reminder", "write_memory", "no_reply":
+			case "get_time", "get_weather", cornerstoneWebSearchToolName, "schedule_reminder", "write_memory", "no_reply", sendAttachmentToolName:
 				filtered = append(filtered, tool)
 			}
 		}

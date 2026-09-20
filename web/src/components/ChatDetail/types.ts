@@ -22,7 +22,7 @@ export type DisplayItem =
     | {
           key: string
           role: string
-          type: 'no-reply-banner'
+          type: 'no-reply-banner' | 'attachment-intent-banner'
           message: ChatMessage
           toolCall: ToolCall
           messageIndex: number

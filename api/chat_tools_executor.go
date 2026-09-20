@@ -29,6 +29,7 @@ func marshalChatToolResult(result chatToolResult) string {
 }
 
 type chatToolContext struct {
+	Attachments      map[string]storage.ChatAttachment
 	SessionID        string
 	PromptID         string
 	PromptName       string
@@ -60,6 +61,7 @@ func newChatToolExecutor() *chatToolExecutor {
 	executor.handlers["send_red_packet"] = executor.handleSendRedPacket
 	executor.handlers["red_packet_received"] = executor.handleRedPacketReceived
 	executor.handlers["send_pat"] = executor.handleSendPat
+	executor.handlers[sendAttachmentToolName] = executor.handleSendAttachment
 	executor.handlers["no_reply"] = executor.handleNoReply
 	executor.handlers["get_weather"] = executor.handleGetWeather
 	executor.handlers["get_time"] = executor.handleGetTime

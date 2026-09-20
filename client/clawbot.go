@@ -478,7 +478,7 @@ func clawBotCollectSecrets(value interface{}, secrets *[]string) {
 	case map[string]interface{}:
 		for key, child := range v {
 			switch strings.ToLower(key) {
-			case "bot_token", "context_token", "verify_code", "qrcode", "qrcode_img_content":
+			case "bot_token", "context_token", "verify_code", "qrcode", "qrcode_img_content", "aeskey", "aes_key", "typing_ticket", "upload_param", "upload_full_url", "encrypt_query_param", "full_url":
 				if text, ok := child.(string); ok && text != "" {
 					*secrets = append(*secrets, text)
 				}
@@ -504,7 +504,7 @@ func clawBotSanitizeMessage(message string, secrets []string) string {
 	// Unknown credentials labelled by the upstream are also suppressed, even if
 	// they were not sent by this request. Do not attempt to parse arbitrary prose.
 	lower := strings.ToLower(message)
-	for _, key := range []string{"bot_token", "context_token", "verify_code", "qrcode"} {
+	for _, key := range []string{"bot_token", "context_token", "verify_code", "qrcode", "aeskey", "aes_key", "typing_ticket", "upload_param", "encrypt_query_param"} {
 		if strings.Contains(lower, key) {
 			return "[redacted]"
 		}

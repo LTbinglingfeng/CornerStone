@@ -161,6 +161,14 @@ export const MessageList: React.FC<MessageListProps> = ({
                             )
                         }
 
+                        if (item.type === 'attachment-intent-banner') {
+                            return (
+                                <div key={item.key} className="message-item pat-banner-item">
+                                    <div className="pat-banner">{t('chat.attachmentIntentBanner')}</div>
+                                </div>
+                            )
+                        }
+
                         if (isNoReplyBanner) {
                             return (
                                 <div key={item.key} className="message-item pat-banner-item">

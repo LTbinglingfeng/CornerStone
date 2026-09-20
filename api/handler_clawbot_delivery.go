@@ -32,7 +32,7 @@ func deliveryActions(job storage.ClawBotDeliveryJob) []string {
 			actions = append(actions, "confirm_sent")
 		}
 		return actions
-	case "queued", "ready":
+	case "queued", "ready", "uploading":
 		return []string{"cancel"}
 	case "cancelled":
 		if !job.HistoryCommitted {
@@ -45,6 +45,9 @@ func deliveryActions(job storage.ClawBotDeliveryJob) []string {
 }
 func projectStoppedDelivery(job *storage.ClawBotDeliveryJob) {
 	switch job.Status {
+	case "uploading":
+		job.Status = "ready"
+		job.Phase = "upload"
 	case "sending":
 		job.Status = "uncertain"
 		job.Phase = "send"
@@ -103,6 +106,21 @@ func (s *ClawBotService) deliveryList() []clawBotPublicDelivery {
 			projectStoppedDelivery(&job)
 		}
 		row := clawBotPublicDelivery{ID: job.ID, AccountID: s.stateAccount, Revision: job.Revision, Kind: job.Kind, UserID: job.UserID, SessionID: job.SessionID, Status: job.Status, Phase: job.Phase, CreatedAt: job.CreatedAt, UpdatedAt: job.UpdatedAt, LastError: job.LastError, Chunks: append([]storage.ClawBotDeliveryChunk{}, job.Chunks...), AllowedActions: deliveryActions(job)}
+		// Do not leak CDN download credentials, keys or private blob locations.
+		for i := range row.Chunks {
+			if media := row.Chunks[i].Media; media != nil {
+				copy := *media
+				copy.UploadStatus = "pending"
+				if media.Uploaded != nil {
+					copy.UploadStatus = "uploaded"
+				}
+				copy.Uploaded = nil
+				copy.BlobID = ""
+				copy.SourcePath = ""
+				copy.HistoryPath = ""
+				row.Chunks[i].Media = &copy
+			}
+		}
 		row.HistoryPending = job.CancelRequested && !job.HistoryCommitted
 		if !job.NextAttemptAt.IsZero() {
 			retryAt := job.NextAttemptAt
@@ -166,7 +184,7 @@ func (s *ClawBotService) actOnDelivery(cfg config.ClawBotConfig, req clawBotDeli
 			j.Phase = "history"
 		case "retry":
 			switch j.Phase {
-			case "send":
+			case "send", "upload":
 				j.Status = "ready"
 				if j.NextChunk < len(j.Chunks) {
 					j.Chunks[j.NextChunk].Status = "pending"

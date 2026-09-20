@@ -58,8 +58,8 @@ func TestGetChatTools_IncludesTimeAndClawBotKeepsReadOnlyTools(t *testing.T) {
 	}
 
 	clawBotTools := getChatTools(chatToolOptions{Channel: chatToolChannelClawBot})
-	if len(clawBotTools) != 4 {
-		t.Fatalf("clawbot tools len = %d, want 4", len(clawBotTools))
+	if len(clawBotTools) != 5 {
+		t.Fatalf("clawbot tools len = %d, want 5", len(clawBotTools))
 	}
 
 	names := make(map[string]struct{}, len(clawBotTools))
@@ -83,8 +83,8 @@ func TestGetChatTools_IncludesTimeAndClawBotKeepsReadOnlyTools(t *testing.T) {
 		Channel:            chatToolChannelClawBot,
 		WriteMemoryEnabled: true,
 	})
-	if len(clawBotTools) != 5 {
-		t.Fatalf("clawbot tools len with write memory = %d, want 5", len(clawBotTools))
+	if len(clawBotTools) != 6 {
+		t.Fatalf("clawbot tools len with write memory = %d, want 6", len(clawBotTools))
 	}
 
 	names = make(map[string]struct{}, len(clawBotTools))
@@ -99,8 +99,8 @@ func TestGetChatTools_IncludesTimeAndClawBotKeepsReadOnlyTools(t *testing.T) {
 		Channel:                     chatToolChannelClawBot,
 		CornerstoneWebSearchEnabled: true,
 	})
-	if len(clawBotTools) != 5 {
-		t.Fatalf("clawbot tools len with web search = %d, want 5", len(clawBotTools))
+	if len(clawBotTools) != 6 {
+		t.Fatalf("clawbot tools len with web search = %d, want 6", len(clawBotTools))
 	}
 
 	names = make(map[string]struct{}, len(clawBotTools))
@@ -116,8 +116,8 @@ func TestGetChatTools_IncludesTimeAndClawBotKeepsReadOnlyTools(t *testing.T) {
 		CornerstoneWebSearchEnabled: true,
 		WriteMemoryEnabled:          true,
 	})
-	if len(clawBotTools) != 6 {
-		t.Fatalf("clawbot tools len with web search and write memory = %d, want 6", len(clawBotTools))
+	if len(clawBotTools) != 7 {
+		t.Fatalf("clawbot tools len with web search and write memory = %d, want 7", len(clawBotTools))
 	}
 
 	disabledTimeTools := getChatTools(chatToolOptions{
@@ -142,8 +142,8 @@ func TestGetChatTools_IncludesTimeAndClawBotKeepsReadOnlyTools(t *testing.T) {
 			"get_weather": false,
 		},
 	})
-	if len(clawBotTools) != 3 {
-		t.Fatalf("clawbot tools len with get_weather toggle disabled = %d, want 3", len(clawBotTools))
+	if len(clawBotTools) != 4 {
+		t.Fatalf("clawbot tools len with get_weather toggle disabled = %d, want 4", len(clawBotTools))
 	}
 	names = make(map[string]struct{}, len(clawBotTools))
 	for _, tool := range clawBotTools {

@@ -240,6 +240,12 @@ func (s *ClawBotService) recoverDeliveries(cfg config.ClawBotConfig) error {
 			j := &d.Jobs[i]
 			previous := j.Status
 			switch j.Status {
+			case "uploading":
+				j.Status = "ready"
+				j.Phase = "upload"
+				if j.NextChunk < len(j.Chunks) {
+					j.Chunks[j.NextChunk].Status = "pending"
+				}
 			case "preparing":
 				j.Status = "queued" // only downloads and idempotent input history
 			case "generating", "executing":

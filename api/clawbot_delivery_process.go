@@ -255,7 +255,7 @@ func (s *ClawBotService) stageDeliveryReply(cfg config.ClawBotConfig, id, sessio
 	}
 	token := configuredAssistantMessageSplitToken(s.handler.configManager)
 	ensureAssistantMessageSplitToken(messages, token)
-	texts := splitClawBotReplyMessages(text, token, clawBotReplyChunkMaxRune)
+	chunks := buildClawBotDeliveryChunks(id, text, token, messages)
 	return s.updateChannelStateChecked(cfg, func(state *storage.ClawBotState) error {
 		d := deliveryState(state)
 		j := deliveryJob(d, id)
@@ -270,10 +270,7 @@ func (s *ClawBotService) stageDeliveryReply(cfg config.ClawBotConfig, id, sessio
 		j.Replace = replace
 		j.ExpectedTail = expected
 		j.NextChunk = 0
-		j.Chunks = make([]storage.ClawBotDeliveryChunk, 0, len(texts))
-		for index, text := range texts {
-			j.Chunks = append(j.Chunks, storage.ClawBotDeliveryChunk{ClientID: fmt.Sprintf("cs-%s-%d", id, index), Text: text, Status: "pending"})
-		}
+		j.Chunks = chunks
 		j.Status = "ready"
 		j.Phase = "send"
 		j.LastError = ""

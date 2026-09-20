@@ -22,12 +22,16 @@ export function useDisplayItems(options: UseDisplayItemsOptions): DisplayItem[] 
     return useMemo(() => {
         const items: DisplayItem[] = []
         const successfulNoReplyToolCallIds = new Set<string>()
+        const attachmentIntentToolCallIds = new Set<string>()
 
         messages.forEach((message) => {
             if (message.role !== 'tool' || !message.tool_call_id) return
 
             try {
                 const payload = JSON.parse(message.content || '{}') as { ok?: boolean; tool?: string }
+                if (payload.tool === 'send_attachment' && payload.ok === true) {
+                    attachmentIntentToolCallIds.add(message.tool_call_id)
+                }
                 if (payload.tool === 'no_reply' && payload.ok === true) {
                     successfulNoReplyToolCallIds.add(message.tool_call_id)
                 }
@@ -79,7 +83,8 @@ export function useDisplayItems(options: UseDisplayItemsOptions): DisplayItem[] 
             }
 
             const hasText = isAssistant ? assistantSegments.length > 0 : message.content.trim() !== ''
-            const hasContent = hasText || hasImages || !!message.attachments?.length
+            const hasContent =
+                hasText || hasImages || !!message.attachments?.length || !!message.tts_audio_paths?.length
 
             if (hasContent) {
                 if (isAssistant) {
@@ -105,7 +110,7 @@ export function useDisplayItems(options: UseDisplayItemsOptions): DisplayItem[] 
                             key: `${message.timestamp}-text-0`,
                             role: message.role,
                             type: 'text',
-                            message: { ...message, content: '' },
+                            message: { ...message, content: '', tts_audio_path: message.tts_audio_paths?.[0] },
                             messageIndex: index,
                         })
                     }
@@ -156,6 +161,19 @@ export function useDisplayItems(options: UseDisplayItemsOptions): DisplayItem[] 
                         key: `${message.timestamp}-rp-received-${toolCall.id || toolIndex}`,
                         role: message.role,
                         type: 'red-packet-received-banner',
+                        message,
+                        toolCall,
+                        messageIndex: index,
+                    })
+                }
+            })
+
+            toolCalls.forEach((toolCall) => {
+                if (toolCall.function.name === 'send_attachment' && attachmentIntentToolCallIds.has(toolCall.id)) {
+                    items.push({
+                        key: `${message.timestamp}-attachment-intent-${toolCall.id}`,
+                        role: message.role,
+                        type: 'attachment-intent-banner',
                         message,
                         toolCall,
                         messageIndex: index,

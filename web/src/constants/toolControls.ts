@@ -6,6 +6,7 @@ export type ToolControlTitleKey =
     | 'settings.toolSendRedPacket'
     | 'settings.toolRedPacketReceived'
     | 'settings.toolSendPat'
+    | 'settings.toolSendAttachment'
     | 'settings.toolNoReply'
     | 'settings.toolGetTime'
     | 'settings.toolGetWeather'
@@ -16,6 +17,7 @@ export type ToolControlDescriptionKey =
     | 'settings.toolSendRedPacketDescription'
     | 'settings.toolRedPacketReceivedDescription'
     | 'settings.toolSendPatDescription'
+    | 'settings.toolSendAttachmentDescription'
     | 'settings.toolNoReplyDescription'
     | 'settings.toolGetTimeDescription'
     | 'settings.toolGetWeatherDescription'
@@ -38,6 +40,12 @@ export const TOOL_CONTROL_SECTION_TITLE_KEYS: Record<ToolControlSection, ToolCon
 }
 
 export const TOOL_CONTROL_DEFINITIONS: ToolControlDefinition[] = [
+    {
+        key: 'send_attachment',
+        section: 'interaction',
+        titleKey: 'settings.toolSendAttachment',
+        descriptionKey: 'settings.toolSendAttachmentDescription',
+    },
     {
         key: 'send_red_packet',
         section: 'interaction',
