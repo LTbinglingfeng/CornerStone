@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useSearchParams } from 'react-router-dom'
 import { getProviders, searchWeatherCities, updateConfig, updateSystemPrompt } from '../services/api'
@@ -111,9 +111,14 @@ const Settings: React.FC<SettingsProps> = ({
     const [systemPrompt, setSystemPrompt] = useState('')
     const [editingPrompt, setEditingPrompt] = useState('')
     const [activeProviderName, setActiveProviderName] = useState('')
-    const [imageProviderPreview, setImageProviderPreview] = useState<{ title: string; detail: string }>({
-        title: '',
+    const [imageProviderPreview, setImageProviderPreview] = useState<{
+        name: string
+        detail: string
+        mode: 'selected' | 'auto' | 'none'
+    }>({
+        name: '',
         detail: '',
+        mode: 'none',
     })
     const [memoryProvider, setMemoryProvider] = useState<Provider | null>(null)
     const [clawBotSettings, setClawBotSettings] = useState<ClawBotSettings | null>(null)
@@ -148,6 +153,10 @@ const Settings: React.FC<SettingsProps> = ({
     const [editingMemoryExtractionPrompt, setEditingMemoryExtractionPrompt] = useState('')
     const [defaultMemoryExtractionPrompt, setDefaultMemoryExtractionPrompt] = useState('')
     const [loading, setLoading] = useState(true)
+    const [loadFailed, setLoadFailed] = useState(false)
+    const [refreshRequested, setRefreshRequested] = useState(false)
+    const loadGeneration = useRef(0)
+    const cancelLoad = useRef<(() => void) | null>(null)
     const [saving, setSaving] = useState(false)
     const showProviderSettings = searchParams.get('panel') === 'providers'
     const [showImageProviderSettings, setShowImageProviderSettings] = useState(false)
@@ -200,15 +209,43 @@ const Settings: React.FC<SettingsProps> = ({
         isNotificationSupported() ? Notification.permission : 'unsupported'
     )
 
+    const editorOpen =
+        showProviderSettings ||
+        showImageProviderSettings ||
+        showMemoryProviderSettings ||
+        showClawBotSettings ||
+        showNapCatSettings ||
+        showCornerstoneWebSearchSettings ||
+        showToolSettings ||
+        showReminderSettings ||
+        showIdleGreetingSettings ||
+        showPromptModal ||
+        showReplyWaitModal ||
+        showAssistantMessageSplitTokenModal ||
+        showTimeZoneModal ||
+        showWeatherCityModal ||
+        showLanguageModal ||
+        showTTSProviderModal ||
+        showMemoryExtractionRoundsModal ||
+        showMemoryRefreshIntervalModal ||
+        showMemoryExtractionPromptModal
+
+    // An exiting panel can finish animating after another editor has opened.
+    // Defer that refresh rather than replacing the new editor's working state.
     useEffect(() => {
-        loadData()
-    }, [])
+        if (refreshRequested && !editorOpen) {
+            setRefreshRequested(false)
+            void loadData()
+        }
+    }, [refreshRequested, editorOpen])
 
     useEffect(() => {
-        if (!loading) {
-            void loadData({ showLoading: false })
+        void loadData()
+        return () => {
+            loadGeneration.current += 1
+            cancelLoad.current?.()
         }
-    }, [locale])
+    }, [])
 
     useEffect(() => {
         const supported = isNotificationSupported()
@@ -267,16 +304,39 @@ const Settings: React.FC<SettingsProps> = ({
         }
     }, [showWeatherCityModal, weatherCityQuery, t])
 
-    const loadData = async ({ showLoading = true }: { showLoading?: boolean } = {}) => {
-        if (showLoading) setLoading(true)
-        const providersData = await getProviders()
-        if (providersData) {
+    const loadData = async () => {
+        const generation = ++loadGeneration.current
+        cancelLoad.current?.()
+        // Every refresh gates the editor until a complete snapshot is available.
+        // Services do not accept AbortSignal; invalidate and settle the wait instead.
+        setLoading(true)
+        setLoadFailed(false)
+        let timer: ReturnType<typeof setTimeout> | undefined
+        const interrupted = new Promise<never>((_, reject) => {
+            cancelLoad.current = () => reject(new Error('Settings load cancelled'))
+            timer = setTimeout(() => reject(new Error('Settings load timed out')), 20_000)
+        })
+        try {
+            const [providersData, tts, memory, clawBot, napCat, webSearch, reminderList] = await Promise.race([
+                Promise.all([
+                    getProviders(),
+                    ttsService.getTTSSettings(),
+                    memoryService.getMemoryExtractionSettings(),
+                    clawBotService.getSettings(),
+                    napCatService.getSettings(),
+                    cornerstoneWebSearchService.getSettings(),
+                    reminderService.listReminders(),
+                ]),
+                interrupted,
+            ])
+            if (generation !== loadGeneration.current) return
+            if (!providersData) throw new Error('Settings snapshot unavailable')
+
             setSystemPrompt(providersData.system_prompt)
             const nextAssistantMessageSplitToken = resolveAssistantMessageSplitToken(
                 providersData.assistant_message_split_token
             )
             setAssistantMessageSplitTokenState(nextAssistantMessageSplitToken)
-            setEditingAssistantMessageSplitToken(nextAssistantMessageSplitToken)
             onAssistantMessageSplitTokenChange(nextAssistantMessageSplitToken)
             setTimeZone((providersData.time_zone || DEFAULT_TIME_ZONE).trim() || DEFAULT_TIME_ZONE)
             setIdleGreetingConfig(normalizeIdleGreetingConfig(providersData.idle_greeting))
@@ -295,79 +355,57 @@ const Settings: React.FC<SettingsProps> = ({
                 })
                 const syncedReplyWaitConfig = getReplyWaitWindowConfig()
                 setReplyWaitConfigState(syncedReplyWaitConfig)
-                setEditingReplyWaitConfig(syncedReplyWaitConfig)
             }
             const activeProvider = providersData.providers.find((p) => p.id === providersData.active_provider_id)
-            setActiveProviderName(activeProvider?.name || t('common.notSet'))
+            setActiveProviderName(activeProvider?.name || '')
             const configuredImageProviderId = providersData.image_provider_id || ''
             const imageProviders = providersData.providers.filter((p) => p.type === 'gemini_image')
             if (configuredImageProviderId) {
                 const selected = imageProviders.find((p) => p.id === configuredImageProviderId)
                 setImageProviderPreview({
-                    title: selected?.name || t('common.notConfigured'),
+                    name: selected?.name || '',
+                    mode: 'selected',
                     detail: selected?.model || '',
                 })
             } else {
                 const auto = imageProviders[0]
                 if (auto) {
                     setImageProviderPreview({
-                        title: t('imageProvider.autoSelect'),
+                        name: '',
+                        mode: 'auto',
                         detail: `${auto.name || auto.id}${auto.model ? ` · ${auto.model}` : ''}`,
                     })
                 } else {
                     setImageProviderPreview({
-                        title: t('common.notConfigured'),
-                        detail: t('imageProvider.noProviders'),
+                        name: '',
+                        mode: 'none',
+                        detail: '',
                     })
                 }
             }
             setMemoryProvider(providersData.memory_provider || null)
             setMemoryEnabled(!!providersData.memory_enabled)
-        }
-        try {
-            const settings = await ttsService.getTTSSettings()
-            setTTSEnabledState(settings.enabled)
-            setTTSProvider(settings.provider)
-        } catch {
-            setTTSEnabledState(false)
-            setTTSProvider(null)
-        }
-        try {
-            const settings = await memoryService.getMemoryExtractionSettings()
-            setMemoryExtractionSettings(settings)
-            setMemoryExtractionRounds(settings.rounds)
-            setMemoryExtractionMaxRounds(settings.max_rounds)
-            setMemoryExtractionProviderName(settings.provider_name || '')
-            setMemoryRefreshInterval(settings.refresh_interval)
-            setMemoryRefreshMaxInterval(settings.max_refresh_interval)
-        } catch {
-            setMemoryExtractionSettings(null)
-        }
-        try {
-            const settings = await clawBotService.getSettings()
-            setClawBotSettings(settings)
-        } catch {
-            setClawBotSettings(null)
-        }
-        try {
-            const settings = await napCatService.getSettings()
-            setNapCatSettings(settings)
-        } catch {
-            setNapCatSettings(null)
-        }
-        try {
-            const settings = await cornerstoneWebSearchService.getSettings()
-            setCornerstoneWebSearchSettings(settings)
-        } catch {
-            setCornerstoneWebSearchSettings(null)
-        }
-        try {
-            const reminderList = await reminderService.listReminders()
+            setTTSEnabledState(tts.enabled)
+            setTTSProvider(tts.provider)
+            setMemoryExtractionSettings(memory)
+            setMemoryExtractionRounds(memory.rounds)
+            setMemoryExtractionMaxRounds(memory.max_rounds)
+            setMemoryExtractionProviderName(memory.provider_name || '')
+            setMemoryRefreshInterval(memory.refresh_interval)
+            setMemoryRefreshMaxInterval(memory.max_refresh_interval)
+            setClawBotSettings(clawBot)
+            setNapCatSettings(napCat)
+            setCornerstoneWebSearchSettings(webSearch)
             setReminders(reminderList)
         } catch {
-            setReminders([])
+            if (generation === loadGeneration.current) setLoadFailed(true)
+        } finally {
+            clearTimeout(timer)
+            if (generation === loadGeneration.current) {
+                cancelLoad.current = null
+                setLoading(false)
+            }
         }
-        if (showLoading) setLoading(false)
     }
 
     const setReplyWaitConfig = (config: ReplyWaitWindowConfig) => {
@@ -1090,7 +1128,16 @@ const Settings: React.FC<SettingsProps> = ({
             </nav>
 
             {loading ? (
-                <div className="settings-loading">{t('common.loading')}</div>
+                <div className="settings-loading" role="status">
+                    {t('common.loading')}
+                </div>
+            ) : loadFailed ? (
+                <div className="settings-loading" role="alert">
+                    <p>{t('common.loadFailed')}</p>
+                    <button type="button" onClick={() => void loadData()}>
+                        {t('console.refresh')}
+                    </button>
+                </div>
             ) : (
                 <div className="settings-content">
                     <header className="settings-category-heading">
@@ -1105,7 +1152,9 @@ const Settings: React.FC<SettingsProps> = ({
                                 <button className="settings-entry-btn" onClick={handleOpenProviderSettings}>
                                     <div className="settings-entry-info">
                                         <span className="settings-entry-label">{t('settings.currentProvider')}</span>
-                                        <span className="settings-entry-value">{activeProviderName}</span>
+                                        <span className="settings-entry-value">
+                                            {activeProviderName || t('common.notSet')}
+                                        </span>
                                     </div>
                                     <svg className="settings-entry-arrow" viewBox="0 0 24 24">
                                         <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
@@ -1119,10 +1168,16 @@ const Settings: React.FC<SettingsProps> = ({
                                 >
                                     <div className="settings-entry-info">
                                         <span className="settings-entry-label">{t('settings.imageProvider')}</span>
-                                        <span className="settings-entry-value">{imageProviderPreview.title}</span>
-                                        {imageProviderPreview.detail && (
+                                        <span className="settings-entry-value">
+                                            {imageProviderPreview.mode === 'auto'
+                                                ? t('imageProvider.autoSelect')
+                                                : imageProviderPreview.name || t('common.notConfigured')}
+                                        </span>
+                                        {(imageProviderPreview.detail || imageProviderPreview.mode === 'none') && (
                                             <span className="settings-entry-subvalue">
-                                                {imageProviderPreview.detail}
+                                                {imageProviderPreview.mode === 'none'
+                                                    ? t('imageProvider.noProviders')
+                                                    : imageProviderPreview.detail}
                                             </span>
                                         )}
                                     </div>
@@ -1538,41 +1593,41 @@ const Settings: React.FC<SettingsProps> = ({
                 </div>
             )}
 
-            <AnimatePresence onExitComplete={() => void loadData({ showLoading: false })}>
+            <AnimatePresence onExitComplete={() => setRefreshRequested(true)}>
                 {showProviderSettings && <ProviderSettings onBack={handleProviderSettingsBack} />}
             </AnimatePresence>
 
-            <AnimatePresence onExitComplete={() => void loadData({ showLoading: false })}>
+            <AnimatePresence onExitComplete={() => setRefreshRequested(true)}>
                 {showImageProviderSettings && <ImageProviderSettings onBack={handleImageProviderSettingsBack} />}
             </AnimatePresence>
 
-            <AnimatePresence onExitComplete={() => void loadData({ showLoading: false })}>
+            <AnimatePresence onExitComplete={() => setRefreshRequested(true)}>
                 {showMemoryProviderSettings && <MemoryProviderSettings onBack={handleMemoryProviderSettingsBack} />}
             </AnimatePresence>
 
-            <AnimatePresence onExitComplete={() => void loadData({ showLoading: false })}>
+            <AnimatePresence onExitComplete={() => setRefreshRequested(true)}>
                 {showClawBotSettings && <ClawBotSettingsPanel onBack={handleClawBotSettingsBack} />}
             </AnimatePresence>
 
-            <AnimatePresence onExitComplete={() => void loadData({ showLoading: false })}>
+            <AnimatePresence onExitComplete={() => setRefreshRequested(true)}>
                 {showNapCatSettings && <NapCatSettingsPanel onBack={handleNapCatSettingsBack} />}
             </AnimatePresence>
 
-            <AnimatePresence onExitComplete={() => void loadData({ showLoading: false })}>
+            <AnimatePresence onExitComplete={() => setRefreshRequested(true)}>
                 {showCornerstoneWebSearchSettings && (
                     <CornerstoneWebSearchSettingsPanel onBack={handleCornerstoneWebSearchSettingsBack} />
                 )}
             </AnimatePresence>
 
-            <AnimatePresence onExitComplete={() => void loadData({ showLoading: false })}>
+            <AnimatePresence onExitComplete={() => setRefreshRequested(true)}>
                 {showToolSettings && <ToolSettingsPanel onBack={handleToolSettingsBack} />}
             </AnimatePresence>
 
-            <AnimatePresence onExitComplete={() => void loadData({ showLoading: false })}>
+            <AnimatePresence onExitComplete={() => setRefreshRequested(true)}>
                 {showReminderSettings && <ReminderSettingsPanel onBack={handleReminderSettingsBack} />}
             </AnimatePresence>
 
-            <AnimatePresence onExitComplete={() => void loadData({ showLoading: false })}>
+            <AnimatePresence onExitComplete={() => setRefreshRequested(true)}>
                 {showIdleGreetingSettings && (
                     <IdleGreetingSettingsPanel
                         config={idleGreetingConfig}
