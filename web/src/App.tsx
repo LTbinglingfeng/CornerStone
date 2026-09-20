@@ -564,12 +564,7 @@ function App() {
                             onAssistantMessageSplitTokenChange={setAssistantMessageSplitToken}
                         />
                     )}
-                    {activeTab === 'me' && (
-                        <ProfilePage
-                            assistantMessageSplitToken={assistantMessageSplitToken}
-                            onAssistantMessageSplitTokenChange={setAssistantMessageSplitToken}
-                        />
-                    )}
+                    {activeTab === 'me' && <ProfilePage />}
                 </div>
                 <AnimatePresence>
                     {selectedSessionId && (

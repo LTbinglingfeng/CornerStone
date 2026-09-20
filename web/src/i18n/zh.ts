@@ -1,5 +1,6 @@
 const zh = {
     console: {
+        profileHint: '设置聊天中使用的昵称、头像与个人简介。',
         refresh: '刷新状态',
         unavailable: '暂时无法获取',
         unknownStatus: '未知状态',

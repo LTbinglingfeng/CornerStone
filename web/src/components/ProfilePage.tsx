@@ -1,25 +1,16 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
+import { Link } from 'react-router-dom'
 import { getUserInfo, updateUserInfo, uploadUserAvatar, getUserAvatarUrl, appendQueryParam } from '../services/api'
 import { useT } from '../contexts/I18nContext'
 import type { UserInfo } from '../types/chat'
-import Settings from './Settings'
-import { centerModalVariants, drawerVariants, overlayVariants } from '../utils/motion'
+import { centerModalVariants, overlayVariants } from '../utils/motion'
 import './ProfilePage.css'
 
-interface ProfilePageProps {
-    assistantMessageSplitToken: string
-    onAssistantMessageSplitTokenChange: (token: string) => void
-}
-
-const ProfilePage: React.FC<ProfilePageProps> = ({
-    assistantMessageSplitToken,
-    onAssistantMessageSplitTokenChange,
-}) => {
+const ProfilePage: React.FC = () => {
     const { t } = useT()
     const [userInfo, setUserInfo] = useState<UserInfo | null>(null)
     const [loading, setLoading] = useState(true)
-    const [showSettings, setShowSettings] = useState(false)
     const [showUserModal, setShowUserModal] = useState(false)
     const [editingUserInfo, setEditingUserInfo] = useState({ username: '', description: '' })
     const [userAvatarFile, setUserAvatarFile] = useState<File | null>(null)
@@ -105,14 +96,6 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
         }
     }
 
-    const handleOpenSettings = () => {
-        setShowSettings(true)
-    }
-
-    const handleCloseSettings = () => {
-        setShowSettings(false)
-    }
-
     const avatarUrl = useMemo(() => {
         if (!userInfo?.avatar) return null
         return appendQueryParam(getUserAvatarUrl(), 't', new Date(userInfo.updated_at).getTime())
@@ -120,18 +103,24 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
 
     return (
         <div className="profile-page">
-            <div className="profile-header">
-                <div style={{ width: 44 }}></div>
-                <div className="profile-title">{t('profile.title')}</div>
-                <div style={{ width: 44 }}></div>
-            </div>
+            <header className="console-page-heading">
+                <div>
+                    <h1>{t('console.me')}</h1>
+                    <p>{t('console.profileHint')}</p>
+                </div>
+            </header>
 
             {loading ? (
                 <div className="profile-loading">{t('common.loading')}</div>
             ) : (
                 <div className="profile-content">
                     {/* 个人信息卡片 */}
-                    <div className="profile-card" onClick={handleOpenUserModal}>
+                    <button
+                        type="button"
+                        className="profile-card"
+                        onClick={handleOpenUserModal}
+                        aria-label={t('profile.personalInfo')}
+                    >
                         <div className="profile-avatar-wrapper">
                             {avatarUrl ? (
                                 <img src={avatarUrl} alt="Avatar" className="profile-avatar" />
@@ -150,11 +139,11 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
                         <svg className="profile-arrow" viewBox="0 0 24 24">
                             <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
                         </svg>
-                    </div>
+                    </button>
 
                     {/* 菜单列表 */}
                     <div className="profile-menu-section">
-                        <div className="profile-menu-item" onClick={handleOpenSettings}>
+                        <Link className="profile-menu-item" to="/settings">
                             <div className="menu-icon settings-icon">
                                 <svg viewBox="0 0 24 24">
                                     <path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
@@ -164,31 +153,12 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
                             <svg className="menu-arrow" viewBox="0 0 24 24">
                                 <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
                             </svg>
-                        </div>
+                        </Link>
                     </div>
 
                     {message && <div className={`profile-message ${messageType}`}>{message}</div>}
                 </div>
             )}
-
-            {/* 设置二级界面 */}
-            <AnimatePresence onExitComplete={() => void loadUserInfo({ showLoading: false })}>
-                {showSettings && (
-                    <motion.div
-                        className="settings-overlay"
-                        initial="hidden"
-                        animate="visible"
-                        exit="hidden"
-                        variants={drawerVariants}
-                    >
-                        <Settings
-                            onBack={handleCloseSettings}
-                            assistantMessageSplitToken={assistantMessageSplitToken}
-                            onAssistantMessageSplitTokenChange={onAssistantMessageSplitTokenChange}
-                        />
-                    </motion.div>
-                )}
-            </AnimatePresence>
 
             {/* 用户信息编辑弹窗 */}
             <AnimatePresence>
@@ -211,7 +181,11 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
                         >
                             <div className="profile-modal-header">
                                 <h3>{t('profile.personalInfo')}</h3>
-                                <button className="profile-modal-close" onClick={handleCloseUserModal}>
+                                <button
+                                    className="profile-modal-close"
+                                    onClick={handleCloseUserModal}
+                                    aria-label={t('common.cancel')}
+                                >
                                     <svg viewBox="0 0 24 24">
                                         <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
                                     </svg>

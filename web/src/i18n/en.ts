@@ -1,5 +1,6 @@
 const en = {
     console: {
+        profileHint: 'Manage the name, avatar and personal context used in conversations.',
         refresh: 'Refresh status',
         unavailable: 'Unavailable',
         unknownStatus: 'Unknown status',
