@@ -50,13 +50,12 @@
   font-weight: 500;
 }
 .console-mark {
-  font-size: 30px;
-  font-weight: 750;
-  letter-spacing: -0.12em;
-  line-height: 1;
-}
-.console-mark span {
-  color: var(--success-color);
+  display: block;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  object-fit: contain;
+  border-radius: 8px;
 }
 .console-nav {
   display: flex;
@@ -279,7 +278,9 @@
     display: none;
   }
   .console-mark {
-    font-size: 24px;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
   }
   .console-nav {
     grid-column: 1 / -1;

@@ -133,6 +133,11 @@ async function freePort() {
             await page.getByRole('heading', { name: 'Overview', exact: true }).waitFor()
             await page.getByText('No conversations yet.', { exact: true }).waitFor()
             assert.equal(new URL(page.url()).pathname, '/overview')
+            const logo = page.locator('.console-brand img')
+            const readmeLogo = fs.readFileSync(path.resolve(__dirname, '../public/logo_black.jpg')).toString('base64')
+            assert.equal(await logo.getAttribute('src'), `data:image/jpeg;base64,${readmeLogo}`)
+            assert(await logo.evaluate((image) => image.complete && image.naturalWidth > 0))
+            assert.equal((await logo.boundingBox()).width, 36)
             await audit('overview-light')
             await page.screenshot({ path: path.join(artifacts, 'overview-empty.png') })
         })
@@ -328,6 +333,7 @@ async function freePort() {
         })
         await check('mobile, dark theme, reduced motion and short viewport navigation', async () => {
             await page.setViewportSize({ width: 390, height: 844 })
+            assert.equal((await page.locator('.console-brand img').boundingBox()).width, 28)
             for (const route of ['/overview', '/channels', '/contacts', '/chat', '/settings?section=general', '/me']) {
                 await goto(route)
                 await page.waitForTimeout(250)

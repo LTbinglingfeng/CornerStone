@@ -1,4 +1,5 @@
 import { Link, NavLink } from 'react-router-dom'
+import { logoBlackDataUrl } from 'virtual:cornerstone-logos'
 import { useT } from '../contexts/I18nContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { tabOrder, tabRoutes, type AppTab } from '../utils/routes'
@@ -34,9 +35,7 @@ export default function ConsoleNav() {
     return (
         <aside className="console-sidebar">
             <Link to={tabRoutes.overview} className="console-brand">
-                <span className="console-mark" aria-hidden="true">
-                    C<span>·</span>
-                </span>
+                <img className="console-mark" src={logoBlackDataUrl} alt="" width={36} height={36} />
                 <span>
                     CornerStone<small>{t('console.title')}</small>
                 </span>
