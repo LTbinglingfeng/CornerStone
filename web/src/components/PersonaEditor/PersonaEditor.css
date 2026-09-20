@@ -23,7 +23,9 @@
     justify-content: space-between;
     padding: 0 4px;
     flex-shrink: 0;
-    transition: background-color 0.3s ease, border-color 0.3s ease;
+    transition:
+        background-color 0.3s ease,
+        border-color 0.3s ease;
 }
 
 .persona-editor-header .header-left,
@@ -39,6 +41,7 @@
 
 .persona-editor-header .header-title {
     flex: 1;
+    margin: 0;
     text-align: center;
     font-size: 17px;
     font-weight: 600;
@@ -52,7 +55,9 @@
     gap: 2px;
     background: none;
     border: none;
-    color: var(--accent-color);
+    color: var(--text-primary);
+    min-height: 44px;
+    min-width: 44px;
     font-size: 15px;
     cursor: pointer;
     padding: 8px 12px;
@@ -62,17 +67,19 @@
 .persona-editor-header .back-btn svg {
     width: 22px;
     height: 22px;
-    fill: var(--accent-color);
+    fill: currentColor;
 }
 
 .persona-editor-header .back-btn:active {
-    opacity: 0.6;
+    opacity: 0.8;
 }
 
 .persona-editor-header .save-btn {
     background: none;
     border: none;
-    color: var(--accent-color);
+    color: var(--text-primary);
+    min-height: 44px;
+    min-width: 44px;
     font-size: 15px;
     font-weight: 600;
     cursor: pointer;
@@ -87,12 +94,13 @@
 }
 
 .persona-editor-header .save-btn:active:not(:disabled) {
-    opacity: 0.6;
+    opacity: 0.8;
 }
 
 /* 滚动内容区域 */
 .persona-editor-content {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     padding-bottom: env(safe-area-inset-bottom, 20px);
@@ -108,6 +116,9 @@
 
 .persona-hero .avatar-container {
     position: relative;
+    padding: 0;
+    border: 0;
+    background: var(--bg-secondary);
     width: 96px;
     height: 96px;
     border-radius: 50%;
@@ -147,7 +158,8 @@
     transition: opacity 0.2s;
 }
 
-.persona-hero .avatar-container:hover .avatar-overlay {
+.persona-hero .avatar-container:hover .avatar-overlay,
+.persona-hero .avatar-container:focus-visible .avatar-overlay {
     opacity: 1;
 }
 
@@ -163,7 +175,8 @@
     color: var(--danger-color);
     font-size: 13px;
     cursor: pointer;
-    padding: 4px 8px;
+    padding: 8px;
+    min-height: 44px;
     margin-top: -12px;
     margin-bottom: 8px;
 }
@@ -174,17 +187,20 @@
 
 .persona-hero .name-input {
     width: 100%;
-    max-width: 320px;
-    text-align: center;
-    background: transparent;
-    border: none;
-    border-bottom: 2px solid var(--border-color);
+    box-sizing: border-box;
+    text-align: left;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
     color: var(--text-primary);
     font-size: 20px;
     font-weight: 600;
-    padding: 8px 4px;
+    padding: 10px 12px;
+    min-height: 44px;
     outline: none;
-    transition: border-color 0.3s ease, color 0.3s ease;
+    transition:
+        border-color 0.3s ease,
+        color 0.3s ease;
 }
 
 .persona-hero .name-input::placeholder {
@@ -198,13 +214,15 @@
 
 .persona-hero .description-input {
     width: 100%;
-    max-width: 320px;
-    text-align: center;
-    background: transparent;
-    border: none;
-    color: var(--text-secondary);
-    font-size: 14px;
-    padding: 8px 4px;
+    box-sizing: border-box;
+    text-align: left;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-size: 16px;
+    padding: 10px 12px;
+    min-height: 44px;
     outline: none;
     resize: none;
     line-height: 1.5;
@@ -253,7 +271,9 @@
     color: var(--accent-color);
     fill: currentColor;
     flex-shrink: 0;
-    transition: transform 0.2s ease, filter 0.2s ease;
+    transition:
+        transform 0.2s ease,
+        filter 0.2s ease;
 }
 
 .persona-section-header .section-badge {
@@ -271,13 +291,16 @@
     border-radius: 10px;
     padding: 12px 14px;
     color: var(--text-primary);
-    font-size: 14px;
+    font-size: 16px;
     font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
     line-height: 1.6;
     outline: none;
     resize: vertical;
     box-sizing: border-box;
-    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+    transition:
+        background-color 0.3s ease,
+        color 0.3s ease,
+        border-color 0.3s ease;
 }
 
 .prompt-textarea::placeholder {
@@ -291,13 +314,20 @@
 
 /* 记忆管理区域 */
 .persona-memory-section .persona-section-header {
+    width: 100%;
+    min-height: 44px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    text-align: left;
+    font-family: inherit;
     cursor: pointer;
     user-select: none;
     margin-bottom: 0;
 }
 
 .persona-memory-section .persona-section-header:hover .section-title {
-    color: var(--accent-color);
+    color: var(--text-primary);
 }
 
 .persona-memory-section .section-icon-memory .memory-icon-back {
@@ -320,11 +350,6 @@
     opacity: 0.92;
 }
 
-.persona-memory-section .persona-section-header:hover .section-icon-memory {
-    transform: translateY(-1px) scale(1.03);
-    filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.12));
-}
-
 .memory-count-badge {
     display: inline-flex;
     align-items: center;
@@ -332,8 +357,8 @@
     min-width: 22px;
     height: 22px;
     padding: 0 7px;
-    background-color: var(--accent-color);
-    color: white;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
     font-size: 12px;
     font-weight: 600;
     border-radius: 11px;
@@ -377,6 +402,7 @@
     font-weight: 500;
     cursor: pointer;
     padding: 8px 16px;
+    min-height: 44px;
     transition: opacity 0.2s;
 }
 
@@ -385,18 +411,68 @@
 }
 
 .danger-zone .delete-persona-btn:active {
-    opacity: 0.6;
+    opacity: 0.8;
 }
 
 /* MemoryManager embedded 覆盖样式 */
-.memory-manager.embedded {
+.persona-editor .memory-manager.embedded {
     padding: 0;
 }
 
-.memory-manager.embedded .memory-header {
+.persona-editor .memory-manager.embedded .memory-header {
     margin-top: 12px;
 }
 
-.memory-manager.embedded .batch-action-bar {
+.persona-editor .memory-manager.embedded .batch-action-bar {
     margin: 16px 0 0;
+}
+
+.persona-avatar-field {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.persona-identity-fields {
+    width: 100%;
+    min-width: 0;
+    display: grid;
+    gap: 8px;
+}
+
+.persona-identity-fields label {
+    color: var(--text-primary);
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.persona-identity-fields label:not(:first-child) {
+    margin-top: 8px;
+}
+
+.persona-editor button:focus-visible,
+.persona-editor input:focus-visible,
+.persona-editor textarea:focus-visible {
+    outline: 2px solid var(--text-primary);
+    outline-offset: 3px;
+}
+
+@media (min-width: 640px) {
+    .persona-hero {
+        flex-direction: row;
+        align-items: flex-start;
+        gap: 32px;
+        padding: 32px 24px;
+    }
+
+    .persona-avatar-field {
+        flex: 0 0 112px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .persona-editor,
+    .persona-editor * {
+        transition: none !important;
+    }
 }

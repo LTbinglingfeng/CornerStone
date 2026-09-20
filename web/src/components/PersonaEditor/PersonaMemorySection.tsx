@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'motion/react'
+import { useId } from 'react'
 import { useT } from '../../contexts/I18nContext'
 import MemoryManager from '../MemoryManager'
 
@@ -18,9 +18,16 @@ const PersonaMemorySection: React.FC<PersonaMemorySectionProps> = ({
     onMemoryCountChange,
 }) => {
     const { t } = useT()
+    const contentId = useId()
     return (
         <div className="persona-section persona-memory-section">
-            <div className="persona-section-header" onClick={onToggle}>
+            <button
+                type="button"
+                className="persona-section-header"
+                onClick={onToggle}
+                aria-expanded={expanded}
+                aria-controls={contentId}
+            >
                 <span className="section-title">
                     <svg className="section-icon section-icon-memory" viewBox="0 0 24 24" aria-hidden="true">
                         <rect className="memory-icon-back" x="3.5" y="6" width="10.5" height="8.5" rx="2.5" />
@@ -40,33 +47,22 @@ const PersonaMemorySection: React.FC<PersonaMemorySectionProps> = ({
                     </svg>
                     <span>{t('persona.memoryManagement')}</span>
                 </span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     {memoryCount > 0 && <span className="memory-count-badge">{memoryCount}</span>}
-                    <motion.div
+                    <span
                         className="memory-chevron"
-                        animate={{ rotate: expanded ? 90 : 0 }}
-                        transition={{ duration: 0.2 }}
+                        aria-hidden="true"
+                        style={{ transform: expanded ? 'rotate(90deg)' : undefined }}
                     >
                         <svg viewBox="0 0 24 24">
                             <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z" />
                         </svg>
-                    </motion.div>
-                </div>
+                    </span>
+                </span>
+            </button>
+            <div id={contentId} className="memory-content-wrapper" hidden={!expanded}>
+                {expanded && <MemoryManager promptId={promptId} embedded onMemoryCountChange={onMemoryCountChange} />}
             </div>
-            <AnimatePresence initial={false}>
-                {expanded && (
-                    <motion.div
-                        className="memory-content-wrapper"
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: 'auto', opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-                        style={{ overflow: 'hidden' }}
-                    >
-                        <MemoryManager promptId={promptId} embedded onMemoryCountChange={onMemoryCountChange} />
-                    </motion.div>
-                )}
-            </AnimatePresence>
         </div>
     )
 }

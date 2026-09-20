@@ -191,7 +191,7 @@ const PersonaEditor: React.FC<PersonaEditorProps> = ({ promptId, onBack }) => {
                         {t('common.back')}
                     </button>
                 </div>
-                <div className="header-title">{isEditing ? t('persona.editTitle') : t('persona.createTitle')}</div>
+                <h1 className="header-title">{isEditing ? t('persona.editTitle') : t('persona.createTitle')}</h1>
                 <div className="header-right">
                     <button className="save-btn" onClick={handleSave} disabled={saving}>
                         {saving ? t('common.saving') : t('common.save')}

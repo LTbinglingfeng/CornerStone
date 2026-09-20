@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useId, useRef } from 'react'
 import { useT } from '../../contexts/I18nContext'
 
 interface PersonaHeroProps {
@@ -22,7 +22,8 @@ const PersonaHero: React.FC<PersonaHeroProps> = ({
 }) => {
     const { t } = useT()
     const fileInputRef = useRef<HTMLInputElement>(null)
-    const descRef = useRef<HTMLTextAreaElement>(null)
+    const nameId = useId()
+    const descriptionId = useId()
 
     const handleAvatarClick = () => {
         fileInputRef.current?.click()
@@ -50,18 +51,27 @@ const PersonaHero: React.FC<PersonaHeroProps> = ({
     return (
         <div className="persona-hero">
             {/* 头像 */}
-            <div className="avatar-container" onClick={handleAvatarClick}>
-                {avatarUrl ? (
-                    <img className="avatar-image" src={avatarUrl} alt={name || t('profile.uploadAvatar')} />
-                ) : (
-                    <div className="avatar-fallback">{initial}</div>
-                )}
-                <div className="avatar-overlay">
-                    <svg viewBox="0 0 24 24">
-                        <path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z" />
-                        <path d="M9 2 7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z" />
-                    </svg>
-                </div>
+            <div className="persona-avatar-field">
+                <button
+                    type="button"
+                    className="avatar-container"
+                    onClick={handleAvatarClick}
+                    aria-label={t('profile.uploadAvatar')}
+                >
+                    {avatarUrl ? (
+                        <img className="avatar-image" src={avatarUrl} alt={name || t('profile.uploadAvatar')} />
+                    ) : (
+                        <span className="avatar-fallback" aria-hidden="true">
+                            {initial}
+                        </span>
+                    )}
+                    <span className="avatar-overlay" aria-hidden="true">
+                        <svg viewBox="0 0 24 24">
+                            <path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z" />
+                            <path d="M9 2 7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z" />
+                        </svg>
+                    </span>
+                </button>
                 <input
                     type="file"
                     ref={fileInputRef}
@@ -69,41 +79,47 @@ const PersonaHero: React.FC<PersonaHeroProps> = ({
                     accept="image/*"
                     style={{ display: 'none' }}
                 />
+
+                {/* 删除头像 */}
+                {avatarUrl && (
+                    <button
+                        type="button"
+                        className="avatar-delete-link"
+                        onClick={(e) => {
+                            e.stopPropagation()
+                            onAvatarDelete()
+                        }}
+                    >
+                        {t('persona.deleteAvatar')}
+                    </button>
+                )}
             </div>
+            <div className="persona-identity-fields">
+                {/* 名称 */}
+                <label htmlFor={nameId}>{t('persona.namePlaceholder')}</label>
+                <input
+                    id={nameId}
+                    required
+                    className="name-input"
+                    type="text"
+                    value={name}
+                    onChange={(e) => onNameChange(e.target.value)}
+                    placeholder={t('persona.namePlaceholder')}
+                    maxLength={50}
+                />
 
-            {/* 删除头像 */}
-            {avatarUrl && (
-                <button
-                    className="avatar-delete-link"
-                    onClick={(e) => {
-                        e.stopPropagation()
-                        onAvatarDelete()
-                    }}
-                >
-                    {t('persona.deleteAvatar')}
-                </button>
-            )}
-
-            {/* 名称 */}
-            <input
-                className="name-input"
-                type="text"
-                value={name}
-                onChange={(e) => onNameChange(e.target.value)}
-                placeholder={t('persona.namePlaceholder')}
-                maxLength={50}
-            />
-
-            {/* 描述 */}
-            <textarea
-                ref={descRef}
-                className="description-input"
-                value={description}
-                onChange={handleDescriptionInput}
-                placeholder={t('persona.descriptionPlaceholder')}
-                rows={1}
-                maxLength={200}
-            />
+                {/* 描述 */}
+                <label htmlFor={descriptionId}>{t('persona.descriptionPlaceholder')}</label>
+                <textarea
+                    id={descriptionId}
+                    className="description-input"
+                    value={description}
+                    onChange={handleDescriptionInput}
+                    placeholder={t('persona.descriptionPlaceholder')}
+                    rows={1}
+                    maxLength={200}
+                />
+            </div>
         </div>
     )
 }
