@@ -10,7 +10,8 @@
 .auth-loading { height: 100%; display: grid; place-items: center; color: var(--text-secondary); }
 
 .console-layout { display: grid; grid-template-columns: 228px minmax(0, 1fr); }
-.console-sidebar { display: flex; flex-direction: column; padding: 28px 16px 16px; background: var(--bg-secondary); border-right: 1px solid var(--border-color); min-height: 0; }
+.console-sidebar { display: flex; flex-direction: column; padding: 28px 16px 16px; background: var(--bg-secondary); border-right: 1px solid var(--border-color); min-height: 0; overflow-y: auto; }
+.console-sidebar > * { flex-shrink: 0; }
 .console-brand { display: flex; align-items: center; gap: 12px; padding: 0 12px 32px; color: var(--text-primary); text-decoration: none; font-size: 17px; font-weight: 650; letter-spacing: -.025em; }
 .console-brand small { display: block; margin-top: 4px; color: var(--text-secondary); font-size: 11px; letter-spacing: .035em; font-weight: 500; }
 .console-mark { font-size: 30px; font-weight: 750; letter-spacing: -.12em; line-height: 1; }
@@ -33,7 +34,7 @@
 .console-conversations > .search-bar { margin-inline: 20px; }
 .console-skip { position: absolute; left: 12px; top: -80px; z-index: 1000; background: var(--text-primary); color: var(--bg-primary); padding: 12px 20px; border-radius: 8px; }
 .console-skip:focus { top: 12px; }
-.console-layout :is(button, a, input, select, textarea, [tabindex]):focus-visible { outline: 2px solid var(--text-primary); outline-offset: 3px; }
+.console-layout :is(button, a, input, select, textarea, [tabindex]):not(.console-workspace):focus-visible { outline: 2px solid var(--text-primary); outline-offset: 3px; }
 .console-workspace > .provider-settings,
 .console-workspace > .settings,
 .console-workspace > .profile-page { height: 100%; }
