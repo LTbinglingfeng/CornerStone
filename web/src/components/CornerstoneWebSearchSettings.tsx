@@ -8,6 +8,7 @@ import {
 } from '../services/cornerstoneWebSearchService'
 import { useT } from '../contexts/I18nContext'
 import { NumericInput } from './NumericInput'
+import { ModalOverlay } from './ModalOverlay'
 import { CustomSelect, type SelectOption } from './provider'
 import { centerModalVariants, drawerVariants, overlayVariants } from '../utils/motion'
 import './ProviderSettings.css'
@@ -228,6 +229,7 @@ const CornerstoneWebSearchSettingsPanel: React.FC<CornerstoneWebSearchSettingsPr
                         <label className="settings-label">{t('settings.webSearchMaxResults')}</label>
                         <NumericInput
                             className="settings-input"
+                            aria-label={t('settings.webSearchMaxResults')}
                             value={maxResults}
                             onValueChange={setMaxResults}
                             parseAs="int"
@@ -242,6 +244,7 @@ const CornerstoneWebSearchSettingsPanel: React.FC<CornerstoneWebSearchSettingsPr
                             <label className="settings-label">{t('settings.webSearchFetchResults')}</label>
                             <NumericInput
                                 className="settings-input"
+                                aria-label={t('settings.webSearchFetchResults')}
                                 value={fetchResults}
                                 onValueChange={setFetchResults}
                                 parseAs="int"
@@ -256,6 +259,7 @@ const CornerstoneWebSearchSettingsPanel: React.FC<CornerstoneWebSearchSettingsPr
                         <label className="settings-label">{t('settings.webSearchTimeoutSeconds')}</label>
                         <NumericInput
                             className="settings-input"
+                            aria-label={t('settings.webSearchTimeoutSeconds')}
                             value={timeoutSeconds}
                             onValueChange={setTimeoutSeconds}
                             parseAs="int"
@@ -269,6 +273,7 @@ const CornerstoneWebSearchSettingsPanel: React.FC<CornerstoneWebSearchSettingsPr
                         <label className="settings-label">{t('settings.webSearchExcludeDomains')}</label>
                         <textarea
                             className="settings-textarea"
+                            aria-label={t('settings.webSearchExcludeDomains')}
                             value={excludeDomainsText}
                             onChange={(e) => setExcludeDomainsText(e.target.value)}
                             placeholder={t('settings.webSearchExcludeDomainsHint')}
@@ -284,6 +289,7 @@ const CornerstoneWebSearchSettingsPanel: React.FC<CornerstoneWebSearchSettingsPr
                                 <label className="toggle-switch">
                                     <input
                                         type="checkbox"
+                                        aria-label={t('settings.webSearchSearchWithTime')}
                                         checked={searchWithTime}
                                         onChange={(e) => setSearchWithTime(e.target.checked)}
                                         disabled={saving}
@@ -304,6 +310,7 @@ const CornerstoneWebSearchSettingsPanel: React.FC<CornerstoneWebSearchSettingsPr
                                     <label className="settings-label">{t('settings.webSearchApiHost')}</label>
                                     <input
                                         className="settings-input"
+                                        aria-label={t('settings.webSearchApiHost')}
                                         value={apiHost}
                                         onChange={(e) => setApiHost(e.target.value)}
                                         placeholder="https://..."
@@ -330,6 +337,7 @@ const CornerstoneWebSearchSettingsPanel: React.FC<CornerstoneWebSearchSettingsPr
                                     <label className="settings-label">{t('settings.webSearchApiKey')}</label>
                                     <input
                                         className="settings-input"
+                                        aria-label={t('settings.webSearchApiKey')}
                                         value={apiKey}
                                         onChange={(e) => {
                                             setApiKey(e.target.value)
@@ -349,6 +357,7 @@ const CornerstoneWebSearchSettingsPanel: React.FC<CornerstoneWebSearchSettingsPr
                                     <label className="settings-label">{t('settings.webSearchBasicAuthUsername')}</label>
                                     <input
                                         className="settings-input"
+                                        aria-label={t('settings.webSearchBasicAuthUsername')}
                                         value={basicAuthUsername}
                                         onChange={(e) => setBasicAuthUsername(e.target.value)}
                                         placeholder=""
@@ -362,6 +371,7 @@ const CornerstoneWebSearchSettingsPanel: React.FC<CornerstoneWebSearchSettingsPr
                                     <label className="settings-label">{t('settings.webSearchBasicAuthPassword')}</label>
                                     <input
                                         className="settings-input"
+                                        aria-label={t('settings.webSearchBasicAuthPassword')}
                                         value={basicAuthPassword}
                                         onChange={(e) => {
                                             setBasicAuthPassword(e.target.value)
@@ -400,7 +410,11 @@ const CornerstoneWebSearchSettingsPanel: React.FC<CornerstoneWebSearchSettingsPr
 
             <AnimatePresence>
                 {saving && (
-                    <motion.div
+                    <ModalOverlay
+                        aria-label={t('common.saving')}
+                        onDismiss={() => {
+                            // Saving is the only open state; keep dismissal blocked until it finishes.
+                        }}
                         className="prompt-modal-overlay"
                         initial="hidden"
                         animate="visible"
