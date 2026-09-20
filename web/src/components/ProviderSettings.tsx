@@ -31,7 +31,7 @@ interface ProviderSettingsProps {
 }
 
 const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
-    const { t } = useT()
+    const { t, locale } = useT()
     const { showToast } = useToast()
     const { confirm } = useConfirm()
     const [providers, setProviders] = useState<Provider[]>([])
@@ -316,18 +316,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                             const isActive = provider.id === activeProviderId
                             const isChatSelectable = provider.type !== 'gemini_image'
                             return (
-                                <div
-                                    key={provider.id}
-                                    className={`provider-card ${isActive ? 'active' : 'inactive'}`}
-                                    onClick={() => {
-                                        if (isActive) return
-                                        if (!isChatSelectable) {
-                                            showToast(t('provider.imageOnly'), 'info')
-                                            return
-                                        }
-                                        handleSetActive(provider.id)
-                                    }}
-                                >
+                                <div key={provider.id} className={`provider-card ${isActive ? 'active' : 'inactive'}`}>
                                     <div className="provider-card-header">
                                         <div className="provider-card-id">{provider.id}</div>
                                         {isActive && (
@@ -390,13 +379,25 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                             </span>
                                         </div>
                                     </div>
+                                    {!isChatSelectable && (
+                                        <p className="provider-card-note">{t('provider.imageOnly')}</p>
+                                    )}
                                     <div className="provider-card-actions">
                                         <button
+                                            className="card-action-btn use"
+                                            disabled={isActive || !isChatSelectable}
+                                            title={!isChatSelectable ? t('provider.imageOnly') : undefined}
+                                            onClick={() => handleSetActive(provider.id)}
+                                        >
+                                            {isActive
+                                                ? t('imageProvider.inUse')
+                                                : locale === 'zh'
+                                                  ? '使用模型'
+                                                  : 'Use model'}
+                                        </button>
+                                        <button
                                             className="card-action-btn edit"
-                                            onClick={(e) => {
-                                                e.stopPropagation()
-                                                handleEditProvider(provider)
-                                            }}
+                                            onClick={() => handleEditProvider(provider)}
                                         >
                                             <svg viewBox="0 0 24 24">
                                                 <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
@@ -405,10 +406,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                         </button>
                                         <button
                                             className="card-action-btn delete"
-                                            onClick={(e) => {
-                                                e.stopPropagation()
-                                                handleDeleteProvider(provider.id)
-                                            }}
+                                            onClick={() => handleDeleteProvider(provider.id)}
                                         >
                                             <svg viewBox="0 0 24 24">
                                                 <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
