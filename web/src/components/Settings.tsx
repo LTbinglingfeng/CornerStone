@@ -27,6 +27,7 @@ import {
 } from '../utils/assistantMessageSplit'
 import { NumericInput } from './NumericInput'
 import ProviderSettings from './ProviderSettings'
+import { ModalOverlay } from './ModalOverlay'
 import MemoryProviderSettings from './MemoryProviderSettings'
 import ImageProviderSettings from './ImageProviderSettings'
 import ClawBotSettingsPanel from './ClawBotSettings'
@@ -380,6 +381,7 @@ const Settings: React.FC<SettingsProps> = ({
     }
 
     const handleClosePromptModal = () => {
+        if (saving) return
         setShowPromptModal(false)
     }
 
@@ -389,6 +391,7 @@ const Settings: React.FC<SettingsProps> = ({
     }
 
     const handleCloseReplyWaitModal = () => {
+        if (savingReplyWaitConfig) return
         setShowReplyWaitModal(false)
     }
 
@@ -398,6 +401,7 @@ const Settings: React.FC<SettingsProps> = ({
     }
 
     const handleCloseAssistantMessageSplitTokenModal = () => {
+        if (savingAssistantMessageSplitToken) return
         setShowAssistantMessageSplitTokenModal(false)
     }
 
@@ -408,6 +412,7 @@ const Settings: React.FC<SettingsProps> = ({
     }
 
     const handleCloseTimeZoneModal = () => {
+        if (savingTimeZone) return
         setShowTimeZoneModal(false)
     }
 
@@ -423,6 +428,7 @@ const Settings: React.FC<SettingsProps> = ({
     }
 
     const handleCloseWeatherCityModal = () => {
+        if (weatherCitySaving) return
         setShowWeatherCityModal(false)
     }
 
@@ -446,6 +452,7 @@ const Settings: React.FC<SettingsProps> = ({
     }
 
     const handleCloseMemoryExtractionRoundsModal = () => {
+        if (savingMemoryExtractionRounds) return
         setShowMemoryExtractionRoundsModal(false)
     }
 
@@ -459,7 +466,7 @@ const Settings: React.FC<SettingsProps> = ({
             setMemoryExtractionMaxRounds(settings.max_rounds)
             setMemoryExtractionProviderName(settings.provider_name || '')
             showToast(t('settings.memoryExtractionRoundsSaved'), 'success')
-            handleCloseMemoryExtractionRoundsModal()
+            setShowMemoryExtractionRoundsModal(false)
         } catch (error) {
             const message = error instanceof Error ? error.message : t('common.saveFailed')
             showToast(message, 'error')
@@ -475,6 +482,7 @@ const Settings: React.FC<SettingsProps> = ({
     }
 
     const handleCloseMemoryRefreshIntervalModal = () => {
+        if (savingMemoryRefreshInterval) return
         setShowMemoryRefreshIntervalModal(false)
     }
 
@@ -487,7 +495,7 @@ const Settings: React.FC<SettingsProps> = ({
             setMemoryRefreshInterval(settings.refresh_interval)
             setMemoryRefreshMaxInterval(settings.max_refresh_interval)
             showToast(t('settings.memoryRefreshIntervalSaved'), 'success')
-            handleCloseMemoryRefreshIntervalModal()
+            setShowMemoryRefreshIntervalModal(false)
         } catch (error) {
             const message = error instanceof Error ? error.message : t('common.saveFailed')
             showToast(message, 'error')
@@ -519,6 +527,7 @@ const Settings: React.FC<SettingsProps> = ({
     }
 
     const handleCloseMemoryExtractionPromptModal = () => {
+        if (savingMemoryExtractionPrompt || loadingMemoryExtractionPrompt) return
         setShowMemoryExtractionPromptModal(false)
     }
 
@@ -528,7 +537,7 @@ const Settings: React.FC<SettingsProps> = ({
         try {
             await memoryService.updateMemoryExtractionPromptTemplate(editingMemoryExtractionPrompt)
             showToast(t('settings.memoryExtractionPromptSaved'), 'success')
-            handleCloseMemoryExtractionPromptModal()
+            setShowMemoryExtractionPromptModal(false)
         } catch (error) {
             const message = error instanceof Error ? error.message : t('common.saveFailed')
             showToast(message, 'error')
@@ -552,7 +561,7 @@ const Settings: React.FC<SettingsProps> = ({
 
             setReplyWaitConfig(editingReplyWaitConfig)
             showToast(t('settings.replyWaitWindowSaved'), 'success')
-            handleCloseReplyWaitModal()
+            setShowReplyWaitModal(false)
         } finally {
             setSavingReplyWaitConfig(false)
         }
@@ -575,7 +584,7 @@ const Settings: React.FC<SettingsProps> = ({
             setAssistantMessageSplitTokenState(nextToken)
             onAssistantMessageSplitTokenChange(nextToken)
             showToast(t('settings.assistantMessageSplitTokenSaved'), 'success')
-            handleCloseAssistantMessageSplitTokenModal()
+            setShowAssistantMessageSplitTokenModal(false)
         } finally {
             setSavingAssistantMessageSplitToken(false)
         }
@@ -594,7 +603,7 @@ const Settings: React.FC<SettingsProps> = ({
 
             setDefaultWeatherCity(selectedWeatherCity)
             showToast(t('settings.defaultWeatherCitySaved'), 'success')
-            handleCloseWeatherCityModal()
+            setShowWeatherCityModal(false)
         } finally {
             setWeatherCitySaving(false)
         }
@@ -614,7 +623,7 @@ const Settings: React.FC<SettingsProps> = ({
 
             setTimeZone(nextTimeZone)
             showToast(t('settings.timeZoneSaved'), 'success')
-            handleCloseTimeZoneModal()
+            setShowTimeZoneModal(false)
         } finally {
             setSavingTimeZone(false)
         }
@@ -626,7 +635,7 @@ const Settings: React.FC<SettingsProps> = ({
         if (success) {
             setSystemPrompt(editingPrompt)
             showToast(t('settings.systemPromptSaved'), 'success')
-            handleClosePromptModal()
+            setShowPromptModal(false)
         } else {
             showToast(t('common.saveFailed'), 'error')
         }
@@ -718,6 +727,7 @@ const Settings: React.FC<SettingsProps> = ({
     }
 
     const handleCloseTTSProviderModal = () => {
+        if (saving) return
         setShowTTSProviderModal(false)
     }
 
@@ -741,7 +751,7 @@ const Settings: React.FC<SettingsProps> = ({
             setTTSEnabledState(settings.enabled)
             setTTSProvider(settings.provider)
             showToast(t('settings.ttsSaved'), 'success')
-            handleCloseTTSProviderModal()
+            setShowTTSProviderModal(false)
         } catch (error) {
             console.error('Failed to save tts provider:', error)
             showToast(t('common.saveFailed'), 'error')
@@ -1150,6 +1160,7 @@ const Settings: React.FC<SettingsProps> = ({
                                     <div className="modal-toggle-wrapper">
                                         <label className="toggle-switch">
                                             <input
+                                                aria-label={t('settings.tts')}
                                                 type="checkbox"
                                                 checked={ttsEnabled}
                                                 onChange={(e) => handleTTSEnabledChange(e.target.checked)}
@@ -1247,6 +1258,7 @@ const Settings: React.FC<SettingsProps> = ({
                                     <div className="modal-toggle-wrapper">
                                         <label className="toggle-switch">
                                             <input
+                                                aria-label={t('settings.memoryFunction')}
                                                 type="checkbox"
                                                 checked={memoryEnabled}
                                                 onChange={(e) => handleMemoryEnabledChange(e.target.checked)}
@@ -1444,6 +1456,7 @@ const Settings: React.FC<SettingsProps> = ({
                                     <div className="modal-toggle-wrapper">
                                         <label className="toggle-switch">
                                             <input
+                                                aria-label={t('settings.systemNotifications')}
                                                 type="checkbox"
                                                 checked={notificationsEnabled}
                                                 onChange={(e) => void handleNotificationsToggle(e.target.checked)}
@@ -1571,13 +1584,14 @@ const Settings: React.FC<SettingsProps> = ({
 
             <AnimatePresence>
                 {showPromptModal && (
-                    <motion.div
+                    <ModalOverlay
                         className="prompt-modal-overlay"
+                        aria-label={t('settings.editSystemPrompt')}
                         initial="hidden"
                         animate="visible"
                         exit="hidden"
                         variants={overlayVariants}
-                        onClick={handleClosePromptModal}
+                        onDismiss={handleClosePromptModal}
                     >
                         <motion.div
                             className="prompt-modal-card"
@@ -1585,11 +1599,14 @@ const Settings: React.FC<SettingsProps> = ({
                             animate="visible"
                             exit="hidden"
                             variants={centerModalVariants}
-                            onClick={(e) => e.stopPropagation()}
                         >
                             <div className="prompt-modal-header">
                                 <h3>{t('settings.editSystemPrompt')}</h3>
-                                <button className="prompt-modal-close" onClick={handleClosePromptModal}>
+                                <button
+                                    className="prompt-modal-close"
+                                    aria-label={t('common.close')}
+                                    onClick={handleClosePromptModal}
+                                >
                                     <svg viewBox="0 0 24 24">
                                         <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
                                     </svg>
@@ -1599,6 +1616,7 @@ const Settings: React.FC<SettingsProps> = ({
                             <div className="prompt-modal-body">
                                 <p className="prompt-modal-hint">{t('settings.systemPromptHint')}</p>
                                 <textarea
+                                    aria-label={t('settings.editSystemPrompt')}
                                     className="prompt-modal-textarea"
                                     value={editingPrompt}
                                     onChange={(e) => setEditingPrompt(e.target.value)}
@@ -1620,19 +1638,20 @@ const Settings: React.FC<SettingsProps> = ({
                                 </button>
                             </div>
                         </motion.div>
-                    </motion.div>
+                    </ModalOverlay>
                 )}
             </AnimatePresence>
 
             <AnimatePresence>
                 {showAssistantMessageSplitTokenModal && (
-                    <motion.div
+                    <ModalOverlay
                         className="prompt-modal-overlay"
+                        aria-label={t('settings.assistantMessageSplitToken')}
                         initial="hidden"
                         animate="visible"
                         exit="hidden"
                         variants={overlayVariants}
-                        onClick={handleCloseAssistantMessageSplitTokenModal}
+                        onDismiss={handleCloseAssistantMessageSplitTokenModal}
                     >
                         <motion.div
                             className="prompt-modal-card"
@@ -1640,12 +1659,12 @@ const Settings: React.FC<SettingsProps> = ({
                             animate="visible"
                             exit="hidden"
                             variants={centerModalVariants}
-                            onClick={(e) => e.stopPropagation()}
                         >
                             <div className="prompt-modal-header">
                                 <h3>{t('settings.assistantMessageSplitToken')}</h3>
                                 <button
                                     className="prompt-modal-close"
+                                    aria-label={t('common.close')}
                                     onClick={handleCloseAssistantMessageSplitTokenModal}
                                 >
                                     <svg viewBox="0 0 24 24">
@@ -1660,6 +1679,7 @@ const Settings: React.FC<SettingsProps> = ({
                                 <div className="settings-group">
                                     <label className="settings-label">{t('settings.splitToken')}</label>
                                     <input
+                                        aria-label={t('settings.splitToken')}
                                         className="settings-input"
                                         type="text"
                                         value={editingAssistantMessageSplitToken}
@@ -1686,19 +1706,20 @@ const Settings: React.FC<SettingsProps> = ({
                                 </button>
                             </div>
                         </motion.div>
-                    </motion.div>
+                    </ModalOverlay>
                 )}
             </AnimatePresence>
 
             <AnimatePresence>
                 {showReplyWaitModal && (
-                    <motion.div
+                    <ModalOverlay
                         className="prompt-modal-overlay"
+                        aria-label={t('settings.replyWaitWindow')}
                         initial="hidden"
                         animate="visible"
                         exit="hidden"
                         variants={overlayVariants}
-                        onClick={handleCloseReplyWaitModal}
+                        onDismiss={handleCloseReplyWaitModal}
                     >
                         <motion.div
                             className="prompt-modal-card"
@@ -1706,11 +1727,14 @@ const Settings: React.FC<SettingsProps> = ({
                             animate="visible"
                             exit="hidden"
                             variants={centerModalVariants}
-                            onClick={(e) => e.stopPropagation()}
                         >
                             <div className="prompt-modal-header">
                                 <h3>{t('settings.replyWaitWindow')}</h3>
-                                <button className="prompt-modal-close" onClick={handleCloseReplyWaitModal}>
+                                <button
+                                    className="prompt-modal-close"
+                                    aria-label={t('common.close')}
+                                    onClick={handleCloseReplyWaitModal}
+                                >
                                     <svg viewBox="0 0 24 24">
                                         <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
                                     </svg>
@@ -1723,6 +1747,7 @@ const Settings: React.FC<SettingsProps> = ({
                                 <div className="settings-group">
                                     <label className="settings-label">{t('settings.mergeMode')}</label>
                                     <select
+                                        aria-label={t('settings.mergeMode')}
                                         className="settings-input"
                                         value={editingReplyWaitConfig.mode}
                                         onChange={(e) =>
@@ -1740,6 +1765,7 @@ const Settings: React.FC<SettingsProps> = ({
                                 <div className="settings-group">
                                     <label className="settings-label">{t('settings.waitSeconds')}</label>
                                     <NumericInput
+                                        aria-label={t('settings.waitSeconds')}
                                         className="settings-input"
                                         min={0}
                                         max={120}
@@ -1771,19 +1797,20 @@ const Settings: React.FC<SettingsProps> = ({
                                 </button>
                             </div>
                         </motion.div>
-                    </motion.div>
+                    </ModalOverlay>
                 )}
             </AnimatePresence>
 
             <AnimatePresence>
                 {showTimeZoneModal && (
-                    <motion.div
+                    <ModalOverlay
                         className="prompt-modal-overlay"
+                        aria-label={t('settings.timeZone')}
                         initial="hidden"
                         animate="visible"
                         exit="hidden"
                         variants={overlayVariants}
-                        onClick={handleCloseTimeZoneModal}
+                        onDismiss={handleCloseTimeZoneModal}
                     >
                         <motion.div
                             className="prompt-modal-card"
@@ -1791,11 +1818,14 @@ const Settings: React.FC<SettingsProps> = ({
                             animate="visible"
                             exit="hidden"
                             variants={centerModalVariants}
-                            onClick={(e) => e.stopPropagation()}
                         >
                             <div className="prompt-modal-header">
                                 <h3>{t('settings.timeZone')}</h3>
-                                <button className="prompt-modal-close" onClick={handleCloseTimeZoneModal}>
+                                <button
+                                    className="prompt-modal-close"
+                                    aria-label={t('common.close')}
+                                    onClick={handleCloseTimeZoneModal}
+                                >
                                     <svg viewBox="0 0 24 24">
                                         <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
                                     </svg>
@@ -1806,6 +1836,7 @@ const Settings: React.FC<SettingsProps> = ({
                                 <p className="prompt-modal-hint">{t('settings.timeZoneHint')}</p>
                                 <div className="settings-group">
                                     <input
+                                        aria-label={t('settings.timeZone')}
                                         className="settings-input"
                                         value={editingTimeZone}
                                         onChange={(e) => setEditingTimeZone(e.target.value)}
@@ -1828,19 +1859,20 @@ const Settings: React.FC<SettingsProps> = ({
                                 </button>
                             </div>
                         </motion.div>
-                    </motion.div>
+                    </ModalOverlay>
                 )}
             </AnimatePresence>
 
             <AnimatePresence>
                 {showWeatherCityModal && (
-                    <motion.div
+                    <ModalOverlay
                         className="prompt-modal-overlay"
+                        aria-label={t('settings.defaultWeatherCity')}
                         initial="hidden"
                         animate="visible"
                         exit="hidden"
                         variants={overlayVariants}
-                        onClick={handleCloseWeatherCityModal}
+                        onDismiss={handleCloseWeatherCityModal}
                     >
                         <motion.div
                             className="prompt-modal-card"
@@ -1848,11 +1880,14 @@ const Settings: React.FC<SettingsProps> = ({
                             animate="visible"
                             exit="hidden"
                             variants={centerModalVariants}
-                            onClick={(e) => e.stopPropagation()}
                         >
                             <div className="prompt-modal-header">
                                 <h3>{t('settings.defaultWeatherCity')}</h3>
-                                <button className="prompt-modal-close" onClick={handleCloseWeatherCityModal}>
+                                <button
+                                    className="prompt-modal-close"
+                                    aria-label={t('common.close')}
+                                    onClick={handleCloseWeatherCityModal}
+                                >
                                     <svg viewBox="0 0 24 24">
                                         <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
                                     </svg>
@@ -1863,6 +1898,7 @@ const Settings: React.FC<SettingsProps> = ({
                                 <p className="prompt-modal-hint">{t('settings.defaultWeatherCityHint')}</p>
                                 <div className="settings-group">
                                     <input
+                                        aria-label={t('settings.defaultWeatherCity')}
                                         className="settings-input"
                                         value={weatherCityQuery}
                                         onChange={(e) => setWeatherCityQuery(e.target.value)}
@@ -1927,19 +1963,20 @@ const Settings: React.FC<SettingsProps> = ({
                                 </button>
                             </div>
                         </motion.div>
-                    </motion.div>
+                    </ModalOverlay>
                 )}
             </AnimatePresence>
 
             <AnimatePresence>
                 {showLanguageModal && (
-                    <motion.div
+                    <ModalOverlay
                         className="prompt-modal-overlay"
+                        aria-label={t('settings.language')}
                         initial="hidden"
                         animate="visible"
                         exit="hidden"
                         variants={overlayVariants}
-                        onClick={handleCloseLanguageModal}
+                        onDismiss={handleCloseLanguageModal}
                     >
                         <motion.div
                             className="prompt-modal-card"
@@ -1947,11 +1984,14 @@ const Settings: React.FC<SettingsProps> = ({
                             animate="visible"
                             exit="hidden"
                             variants={centerModalVariants}
-                            onClick={(e) => e.stopPropagation()}
                         >
                             <div className="prompt-modal-header">
                                 <h3>{t('settings.language')}</h3>
-                                <button className="prompt-modal-close" onClick={handleCloseLanguageModal}>
+                                <button
+                                    className="prompt-modal-close"
+                                    aria-label={t('common.close')}
+                                    onClick={handleCloseLanguageModal}
+                                >
                                     <svg viewBox="0 0 24 24">
                                         <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
                                     </svg>
@@ -1982,19 +2022,20 @@ const Settings: React.FC<SettingsProps> = ({
                                 </div>
                             </div>
                         </motion.div>
-                    </motion.div>
+                    </ModalOverlay>
                 )}
             </AnimatePresence>
 
             <AnimatePresence>
                 {showTTSProviderModal && (
-                    <motion.div
+                    <ModalOverlay
                         className="prompt-modal-overlay"
+                        aria-label={t('settings.ttsProvider')}
                         initial="hidden"
                         animate="visible"
                         exit="hidden"
                         variants={overlayVariants}
-                        onClick={handleCloseTTSProviderModal}
+                        onDismiss={handleCloseTTSProviderModal}
                     >
                         <motion.div
                             className="prompt-modal-card"
@@ -2002,11 +2043,14 @@ const Settings: React.FC<SettingsProps> = ({
                             animate="visible"
                             exit="hidden"
                             variants={centerModalVariants}
-                            onClick={(e) => e.stopPropagation()}
                         >
                             <div className="prompt-modal-header">
                                 <h3>{t('settings.ttsProvider')}</h3>
-                                <button className="prompt-modal-close" onClick={handleCloseTTSProviderModal}>
+                                <button
+                                    className="prompt-modal-close"
+                                    aria-label={t('common.close')}
+                                    onClick={handleCloseTTSProviderModal}
+                                >
                                     <svg viewBox="0 0 24 24">
                                         <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
                                     </svg>
@@ -2019,6 +2063,7 @@ const Settings: React.FC<SettingsProps> = ({
                                 <div className="settings-group">
                                     <label className="settings-label">Base URL</label>
                                     <input
+                                        aria-label="Base URL"
                                         className="settings-input"
                                         value={editingTTSProvider.base_url}
                                         onChange={(e) =>
@@ -2031,6 +2076,7 @@ const Settings: React.FC<SettingsProps> = ({
                                 <div className="settings-group">
                                     <label className="settings-label">API Key</label>
                                     <input
+                                        aria-label="API Key"
                                         className="settings-input"
                                         type="password"
                                         value={editingTTSProvider.api_key}
@@ -2046,6 +2092,7 @@ const Settings: React.FC<SettingsProps> = ({
                                 <div className="settings-group">
                                     <label className="settings-label">Model</label>
                                     <input
+                                        aria-label="Model"
                                         className="settings-input"
                                         value={editingTTSProvider.model}
                                         onChange={(e) =>
@@ -2058,6 +2105,7 @@ const Settings: React.FC<SettingsProps> = ({
                                 <div className="settings-group">
                                     <label className="settings-label">Voice ID</label>
                                     <input
+                                        aria-label="Voice ID"
                                         className="settings-input"
                                         value={editingTTSProvider.voice_setting.voice_id}
                                         onChange={(e) =>
@@ -2073,6 +2121,7 @@ const Settings: React.FC<SettingsProps> = ({
                                 <div className="settings-group">
                                     <label className="settings-label">Speed</label>
                                     <NumericInput
+                                        aria-label="Speed"
                                         className="settings-input"
                                         min={0.5}
                                         max={2}
@@ -2091,6 +2140,7 @@ const Settings: React.FC<SettingsProps> = ({
                                 <div className="settings-group">
                                     <label className="settings-label">Language Boost</label>
                                     <input
+                                        aria-label="Language Boost"
                                         className="settings-input"
                                         value={editingTTSProvider.language_boost || ''}
                                         onChange={(e) =>
@@ -2121,19 +2171,20 @@ const Settings: React.FC<SettingsProps> = ({
                                 </button>
                             </div>
                         </motion.div>
-                    </motion.div>
+                    </ModalOverlay>
                 )}
             </AnimatePresence>
 
             <AnimatePresence>
                 {showMemoryExtractionRoundsModal && (
-                    <motion.div
+                    <ModalOverlay
                         className="prompt-modal-overlay"
+                        aria-label={t('settings.memoryExtractionRounds')}
                         initial="hidden"
                         animate="visible"
                         exit="hidden"
                         variants={overlayVariants}
-                        onClick={handleCloseMemoryExtractionRoundsModal}
+                        onDismiss={handleCloseMemoryExtractionRoundsModal}
                     >
                         <motion.div
                             className="prompt-modal-card"
@@ -2141,11 +2192,14 @@ const Settings: React.FC<SettingsProps> = ({
                             animate="visible"
                             exit="hidden"
                             variants={centerModalVariants}
-                            onClick={(e) => e.stopPropagation()}
                         >
                             <div className="prompt-modal-header">
                                 <h3>{t('settings.memoryExtractionRounds')}</h3>
-                                <button className="prompt-modal-close" onClick={handleCloseMemoryExtractionRoundsModal}>
+                                <button
+                                    className="prompt-modal-close"
+                                    aria-label={t('common.close')}
+                                    onClick={handleCloseMemoryExtractionRoundsModal}
+                                >
                                     <svg viewBox="0 0 24 24">
                                         <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
                                     </svg>
@@ -2157,6 +2211,7 @@ const Settings: React.FC<SettingsProps> = ({
                                 <div className="settings-group">
                                     <label className="settings-label">{t('settings.rounds')}</label>
                                     <NumericInput
+                                        aria-label={t('settings.rounds')}
                                         className="settings-input"
                                         min={1}
                                         max={memoryExtractionMaxRounds || 1}
@@ -2188,19 +2243,20 @@ const Settings: React.FC<SettingsProps> = ({
                                 </button>
                             </div>
                         </motion.div>
-                    </motion.div>
+                    </ModalOverlay>
                 )}
             </AnimatePresence>
 
             <AnimatePresence>
                 {showMemoryRefreshIntervalModal && (
-                    <motion.div
+                    <ModalOverlay
                         className="prompt-modal-overlay"
+                        aria-label={t('settings.memoryRefreshInterval')}
                         initial="hidden"
                         animate="visible"
                         exit="hidden"
                         variants={overlayVariants}
-                        onClick={handleCloseMemoryRefreshIntervalModal}
+                        onDismiss={handleCloseMemoryRefreshIntervalModal}
                     >
                         <motion.div
                             className="prompt-modal-card"
@@ -2208,11 +2264,14 @@ const Settings: React.FC<SettingsProps> = ({
                             animate="visible"
                             exit="hidden"
                             variants={centerModalVariants}
-                            onClick={(e) => e.stopPropagation()}
                         >
                             <div className="prompt-modal-header">
                                 <h3>{t('settings.memoryRefreshInterval')}</h3>
-                                <button className="prompt-modal-close" onClick={handleCloseMemoryRefreshIntervalModal}>
+                                <button
+                                    className="prompt-modal-close"
+                                    aria-label={t('common.close')}
+                                    onClick={handleCloseMemoryRefreshIntervalModal}
+                                >
                                     <svg viewBox="0 0 24 24">
                                         <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
                                     </svg>
@@ -2224,6 +2283,7 @@ const Settings: React.FC<SettingsProps> = ({
                                 <div className="settings-group">
                                     <label className="settings-label">{t('settings.intervalRounds')}</label>
                                     <NumericInput
+                                        aria-label={t('settings.intervalRounds')}
                                         className="settings-input"
                                         min={1}
                                         max={memoryRefreshMaxInterval || 99}
@@ -2255,19 +2315,20 @@ const Settings: React.FC<SettingsProps> = ({
                                 </button>
                             </div>
                         </motion.div>
-                    </motion.div>
+                    </ModalOverlay>
                 )}
             </AnimatePresence>
 
             <AnimatePresence>
                 {showMemoryExtractionPromptModal && (
-                    <motion.div
+                    <ModalOverlay
                         className="prompt-modal-overlay"
+                        aria-label={t('settings.memoryExtractionPrompt')}
                         initial="hidden"
                         animate="visible"
                         exit="hidden"
                         variants={overlayVariants}
-                        onClick={handleCloseMemoryExtractionPromptModal}
+                        onDismiss={handleCloseMemoryExtractionPromptModal}
                     >
                         <motion.div
                             className="prompt-modal-card"
@@ -2275,11 +2336,14 @@ const Settings: React.FC<SettingsProps> = ({
                             animate="visible"
                             exit="hidden"
                             variants={centerModalVariants}
-                            onClick={(e) => e.stopPropagation()}
                         >
                             <div className="prompt-modal-header">
                                 <h3>{t('settings.memoryExtractionPrompt')}</h3>
-                                <button className="prompt-modal-close" onClick={handleCloseMemoryExtractionPromptModal}>
+                                <button
+                                    className="prompt-modal-close"
+                                    aria-label={t('common.close')}
+                                    onClick={handleCloseMemoryExtractionPromptModal}
+                                >
                                     <svg viewBox="0 0 24 24">
                                         <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
                                     </svg>
@@ -2301,6 +2365,7 @@ const Settings: React.FC<SettingsProps> = ({
                                 </div>
 
                                 <textarea
+                                    aria-label={t('settings.memoryExtractionPrompt')}
                                     className="prompt-modal-textarea"
                                     value={editingMemoryExtractionPrompt}
                                     onChange={(e) => setEditingMemoryExtractionPrompt(e.target.value)}
@@ -2330,7 +2395,7 @@ const Settings: React.FC<SettingsProps> = ({
                                 </button>
                             </div>
                         </motion.div>
-                    </motion.div>
+                    </ModalOverlay>
                 )}
             </AnimatePresence>
         </div>
