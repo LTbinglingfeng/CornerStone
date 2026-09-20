@@ -13,6 +13,7 @@ import {
     CustomSelect,
 } from './provider'
 import { NumericInput } from './NumericInput'
+import { ModalOverlay } from './ModalOverlay'
 import { useT } from '../contexts/I18nContext'
 import { centerModalVariants, drawerVariants, overlayVariants } from '../utils/motion'
 import './ProviderSettings.css'
@@ -339,13 +340,16 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
 
             <AnimatePresence>
                 {showModal && editingProvider && (
-                    <motion.div
+                    <ModalOverlay
+                        aria-label={t('memoryProvider.configTitle')}
+                        onDismiss={() => {
+                            if (!saving) handleCloseModal()
+                        }}
                         className="modal-overlay"
                         initial="hidden"
                         animate="visible"
                         exit="hidden"
                         variants={overlayVariants}
-                        onClick={handleCloseModal}
                     >
                         <motion.div
                             className="modal-card"
@@ -357,7 +361,12 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                         >
                             <div className="modal-header">
                                 <h3>{t('memoryProvider.configTitle')}</h3>
-                                <button className="modal-close" onClick={handleCloseModal}>
+                                <button
+                                    className="modal-close"
+                                    onClick={handleCloseModal}
+                                    disabled={saving}
+                                    aria-label={t('common.close')}
+                                >
                                     <svg viewBox="0 0 24 24">
                                         <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
                                     </svg>
@@ -370,6 +379,7 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                                     <input
                                         type="text"
                                         className="modal-input"
+                                        aria-label={t('memoryProvider.providerId')}
                                         value={editingProvider.id}
                                         onChange={(e) => handleProviderChange('id', e.target.value)}
                                         placeholder="memory"
@@ -381,6 +391,7 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                                     <input
                                         type="text"
                                         className="modal-input"
+                                        aria-label={t('provider.displayName')}
                                         value={editingProvider.name}
                                         onChange={(e) => handleProviderChange('name', e.target.value)}
                                         placeholder={t('memoryProvider.title')}
@@ -402,6 +413,7 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                                     <input
                                         type="text"
                                         className="modal-input"
+                                        aria-label={t('memoryProvider.apiUrl')}
                                         value={editingProvider.base_url}
                                         onChange={(e) => handleProviderChange('base_url', e.target.value)}
                                         placeholder="https://api.openai.com/v1"
@@ -413,6 +425,7 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                                     <input
                                         type="password"
                                         className="modal-input"
+                                        aria-label={t('memoryProvider.apiKey')}
                                         value={editingProvider.api_key}
                                         onChange={(e) => handleProviderChange('api_key', e.target.value)}
                                         placeholder={memoryProvider ? t('memoryProvider.apiKeyHint') : 'sk-...'}
@@ -424,6 +437,7 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                                     <input
                                         type="text"
                                         className="modal-input"
+                                        aria-label={t('memoryProvider.model')}
                                         value={editingProvider.model}
                                         onChange={(e) => handleProviderChange('model', e.target.value)}
                                         placeholder="gpt-4"
@@ -437,6 +451,7 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                                         min={0}
                                         max={2}
                                         step={0.1}
+                                        aria-label={t('memoryProvider.temperature')}
                                         value={editingProvider.temperature}
                                         parseAs="float"
                                         onValueChange={(value) => handleProviderChange('temperature', value)}
@@ -452,6 +467,7 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                                         min={0}
                                         max={1}
                                         step={0.1}
+                                        aria-label={t('memoryProvider.topP')}
                                         value={editingProvider.top_p}
                                         parseAs="float"
                                         onValueChange={(value) => handleProviderChange('top_p', value)}
@@ -508,6 +524,7 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                                                     min={getGeminiThinkingBudgetRange(editingProvider.model).min}
                                                     max={getGeminiThinkingBudgetRange(editingProvider.model).max}
                                                     step={1}
+                                                    aria-label={t('memoryProvider.geminiThinkingParams')}
                                                     value={editingProvider.gemini_thinking_budget}
                                                     parseAs="int"
                                                     onValueChange={(value) =>
@@ -520,6 +537,7 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                                                 <input
                                                     type="text"
                                                     className="modal-input"
+                                                    aria-label={t('memoryProvider.geminiThinkingParams')}
                                                     value={t('common.disabled')}
                                                     disabled
                                                 />
@@ -536,6 +554,7 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                                                 className="modal-input"
                                                 min={0}
                                                 step={1}
+                                                aria-label={t('memoryProvider.thinkingBudget')}
                                                 value={editingProvider.thinking_budget}
                                                 parseAs="int"
                                                 onValueChange={(value) =>
@@ -551,6 +570,7 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                                                 <label className="toggle-switch">
                                                     <input
                                                         type="checkbox"
+                                                        aria-label={t('provider.promptCaching')}
                                                         checked={editingProvider.prompt_caching}
                                                         onChange={(e) =>
                                                             handleProviderChange('prompt_caching', e.target.checked)
@@ -586,7 +606,7 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                             </div>
 
                             <div className="modal-footer">
-                                <button className="modal-btn cancel" onClick={handleCloseModal}>
+                                <button className="modal-btn cancel" onClick={handleCloseModal} disabled={saving}>
                                     {t('common.cancel')}
                                 </button>
                                 <button className="modal-btn save" onClick={handleSaveProvider} disabled={saving}>
@@ -594,7 +614,7 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                                 </button>
                             </div>
                         </motion.div>
-                    </motion.div>
+                    </ModalOverlay>
                 )}
             </AnimatePresence>
 
