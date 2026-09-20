@@ -67,6 +67,7 @@ type ClawBotConfig struct {
 	BaseURL            string          `json:"base_url"`
 	BotToken           string          `json:"bot_token,omitempty"`
 	ILinkUserID        string          `json:"ilink_user_id,omitempty"`
+	ILinkBotID         string          `json:"ilink_bot_id,omitempty"`
 	PromptID           string          `json:"prompt_id,omitempty"`
 	GetUpdatesBuf      string          `json:"get_updates_buf,omitempty"`
 	CommandPermissions map[string]bool `json:"command_permissions,omitempty"`
@@ -743,6 +744,11 @@ func (m *Manager) applyConfigDefaults() bool {
 		m.config.ClawBot.ILinkUserID = ilinkUserID
 		changed = true
 	}
+	if botID := strings.TrimSpace(m.config.ClawBot.ILinkBotID); botID != m.config.ClawBot.ILinkBotID {
+		m.config.ClawBot.ILinkBotID = botID
+		changed = true
+	}
+
 	botToken := strings.TrimSpace(m.config.ClawBot.BotToken)
 	if botToken != m.config.ClawBot.BotToken {
 		m.config.ClawBot.BotToken = botToken

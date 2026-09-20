@@ -11,7 +11,9 @@
     background: var(--bg-secondary);
     border: 1px solid var(--border-color);
     overflow: hidden;
-    transition: border-color 0.3s ease, background-color 0.3s ease;
+    transition:
+        border-color 0.3s ease,
+        background-color 0.3s ease;
 }
 
 .clawbot-status-card::before {
@@ -127,8 +129,13 @@
 }
 
 @keyframes clawbot-pill-glow {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.78; }
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.78;
+    }
 }
 
 .clawbot-status-meta {
@@ -197,7 +204,9 @@
     border-radius: 14px;
     border: 1px solid var(--border-color);
     overflow: visible;
-    transition: border-color 0.3s ease, background-color 0.3s ease;
+    transition:
+        border-color 0.3s ease,
+        background-color 0.3s ease;
 }
 
 .clawbot-section-card .settings-group {
@@ -356,7 +365,9 @@
     border-radius: 16px;
     background: var(--bg-secondary);
     border: 1px solid var(--border-color);
-    transition: border-color 0.3s ease, background-color 0.3s ease;
+    transition:
+        border-color 0.3s ease,
+        background-color 0.3s ease;
 }
 
 .clawbot-qrcode-header {
@@ -436,4 +447,11 @@
     .clawbot-command-toggle {
         width: 100%;
     }
+}
+
+.clawbot-verify-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 14px;
 }

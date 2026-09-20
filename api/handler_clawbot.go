@@ -22,7 +22,8 @@ type ClawBotQRCodeStartRequest struct {
 }
 
 type ClawBotQRCodePollRequest struct {
-	SessionID string `json:"session_id"`
+	SessionID  string `json:"session_id"`
+	VerifyCode string `json:"verify_code,omitempty"`
 }
 
 func (h *Handler) handleClawBotSettings(w http.ResponseWriter, r *http.Request) {
@@ -60,6 +61,10 @@ func (h *Handler) handleClawBotSettings(w http.ResponseWriter, r *http.Request) 
 		if cfg.BaseURL == "" {
 			cfg.BaseURL = config.DefaultClawBotBaseURL
 		}
+		if err := validateClawBotBaseURL(cfg.BaseURL); err != nil {
+			h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: err.Error()})
+			return
+		}
 		cfg.PromptID = promptID
 		if req.CommandPermissions != nil {
 			cfg.CommandPermissions = config.NormalizeClawBotCommandPermissions(req.CommandPermissions)
@@ -69,9 +74,12 @@ func (h *Handler) handleClawBotSettings(w http.ResponseWriter, r *http.Request) 
 		case req.ClearBotToken:
 			cfg.BotToken = ""
 			cfg.ILinkUserID = ""
+			cfg.ILinkBotID = ""
 			cfg.GetUpdatesBuf = ""
 		case strings.TrimSpace(req.BotToken) != "":
 			cfg.BotToken = strings.TrimSpace(req.BotToken)
+			cfg.ILinkUserID = ""
+			cfg.ILinkBotID = ""
 			cfg.GetUpdatesBuf = ""
 		}
 
@@ -141,7 +149,11 @@ func (h *Handler) handleClawBotQRCodePoll(w http.ResponseWriter, r *http.Request
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 
-	resp, err := h.clawBotService.PollQRCode(ctx, strings.TrimSpace(req.SessionID))
+	if !validClawBotVerifyCode(strings.TrimSpace(req.VerifyCode)) {
+		h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid verification code"})
+		return
+	}
+	resp, err := h.clawBotService.PollQRCode(ctx, strings.TrimSpace(req.SessionID), strings.TrimSpace(req.VerifyCode))
 	if err != nil {
 		h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: err.Error()})
 		return

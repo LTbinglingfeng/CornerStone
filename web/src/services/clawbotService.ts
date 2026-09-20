@@ -28,29 +28,42 @@ export interface ClawBotQRCodeStartResponse {
 }
 
 export interface ClawBotQRCodePollResponse {
-    status: 'wait' | 'scaned' | 'confirmed' | 'expired' | string
+    status:
+        | 'wait'
+        | 'scaned'
+        | 'confirmed'
+        | 'expired'
+        | 'need_verifycode'
+        | 'verify_code_blocked'
+        | 'scaned_but_redirect'
+        | 'binded_redirect'
+        | string
     settings?: ClawBotSettings
 }
 
 export const clawBotService = {
-    async getSettings(): Promise<ClawBotSettings> {
-        const data = await apiFetchJson<ApiResponse<ClawBotSettings>>('/api/settings/clawbot')
+    async getSettings(signal?: AbortSignal): Promise<ClawBotSettings> {
+        const data = await apiFetchJson<ApiResponse<ClawBotSettings>>('/api/settings/clawbot', { signal })
         if (!data.success || !data.data) {
             throw new Error(data.error || translate('service.getClawBotSettingsFailed'))
         }
         return data.data
     },
 
-    async updateSettings(update: {
-        enabled: boolean
-        base_url: string
-        bot_token?: string
-        prompt_id?: string
-        clear_bot_token?: boolean
-        command_permissions?: ClawBotCommandPermissions
-    }): Promise<ClawBotSettings> {
+    async updateSettings(
+        update: {
+            enabled: boolean
+            base_url: string
+            bot_token?: string
+            prompt_id?: string
+            clear_bot_token?: boolean
+            command_permissions?: ClawBotCommandPermissions
+        },
+        signal?: AbortSignal
+    ): Promise<ClawBotSettings> {
         const data = await apiFetchJson<ApiResponse<ClawBotSettings>>('/api/settings/clawbot', {
             method: 'PUT',
+            signal,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(update),
         })
@@ -60,9 +73,10 @@ export const clawBotService = {
         return data.data
     },
 
-    async startQRCode(baseURL: string): Promise<ClawBotQRCodeStartResponse> {
+    async startQRCode(baseURL: string, signal?: AbortSignal): Promise<ClawBotQRCodeStartResponse> {
         const data = await apiFetchJson<ApiResponse<ClawBotQRCodeStartResponse>>('/api/settings/clawbot/qr-start', {
             method: 'POST',
+            signal,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ base_url: baseURL }),
         })
@@ -72,11 +86,12 @@ export const clawBotService = {
         return data.data
     },
 
-    async pollQRCode(sessionID: string): Promise<ClawBotQRCodePollResponse> {
+    async pollQRCode(sessionID: string, verifyCode?: string, signal?: AbortSignal): Promise<ClawBotQRCodePollResponse> {
         const data = await apiFetchJson<ApiResponse<ClawBotQRCodePollResponse>>('/api/settings/clawbot/qr-poll', {
             method: 'POST',
+            signal,
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ session_id: sessionID }),
+            body: JSON.stringify({ session_id: sessionID, verify_code: verifyCode }),
         })
         if (!data.success || !data.data) {
             throw new Error(data.error || translate('service.pollQRCodeFailed'))

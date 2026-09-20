@@ -73,6 +73,10 @@ type clawBotQRCodeSession struct {
 	QRCode           string
 	QRCodeImgContent string
 	CreatedAt        time.Time
+	LocalBotToken    string
+	VerifyAttempts   int
+	VerifyCode       string
+	Redirects        int
 }
 
 type clawBotActiveSession struct {
@@ -106,6 +110,7 @@ type ClawBotService struct {
 	client  *client.ClawBotClient
 
 	mu             sync.RWMutex
+	qrMu           sync.Mutex
 	qrSessions     map[string]clawBotQRCodeSession
 	activeSessions map[string]*clawBotActiveSession
 	pendingReplies map[string]*clawBotPendingReply
@@ -217,6 +222,11 @@ func (s *ClawBotService) getWorkerCtx() (context.Context, bool) {
 }
 
 func (s *ClawBotService) StartQRCode(ctx context.Context, baseURL string) (*ClawBotQRCodeStartResponse, error) {
+	s.qrMu.Lock()
+	defer s.qrMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	s.cleanupState()
 
 	baseURL = strings.TrimSpace(baseURL)
@@ -227,11 +237,29 @@ func (s *ClawBotService) StartQRCode(ctx context.Context, baseURL string) (*Claw
 		baseURL = config.DefaultClawBotBaseURL
 	}
 
-	resp, err := s.client.GetBotQRCode(ctx, baseURL)
+	if err := validateClawBotBaseURL(baseURL); err != nil {
+		return nil, err
+	}
+	cfg := s.handler.configManager.GetClawBotConfig()
+	localToken := ""
+	s.mu.RLock()
+	stale := s.staleToken != "" && s.staleToken == strings.TrimSpace(cfg.BotToken)
+	s.mu.RUnlock()
+	if !stale && sameClawBotOrigin(baseURL, cfg.BaseURL) {
+		localToken = strings.TrimSpace(cfg.BotToken)
+	}
+	var tokens []string
+	if localToken != "" {
+		tokens = append(tokens, localToken)
+	}
+	resp, err := s.client.GetBotQRCode(ctx, baseURL, tokens...)
 	if err != nil {
 		return nil, err
 	}
 
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	qrcode := strings.TrimSpace(resp.QRCode)
 	qrcodeImgContent := strings.TrimSpace(resp.QRCodeImgContent)
 	if qrcode == "" {
@@ -245,10 +273,11 @@ func (s *ClawBotService) StartQRCode(ctx context.Context, baseURL string) (*Claw
 		QRCode:           qrcode,
 		QRCodeImgContent: qrcodeImgContent,
 		CreatedAt:        time.Now(),
+		LocalBotToken:    localToken,
 	}
 
 	s.mu.Lock()
-	s.qrSessions[sessionID] = session
+	s.qrSessions = map[string]clawBotQRCodeSession{sessionID: session}
 	s.mu.Unlock()
 
 	return &ClawBotQRCodeStartResponse{
@@ -256,59 +285,6 @@ func (s *ClawBotService) StartQRCode(ctx context.Context, baseURL string) (*Claw
 		QRCode:           qrcode,
 		QRCodeImgContent: qrcodeImgContent,
 	}, nil
-}
-
-func (s *ClawBotService) PollQRCode(ctx context.Context, sessionID string) (*ClawBotQRCodePollResponse, error) {
-	s.cleanupState()
-
-	s.mu.RLock()
-	session, ok := s.qrSessions[sessionID]
-	s.mu.RUnlock()
-	if !ok {
-		return nil, fmt.Errorf("qrcode session not found")
-	}
-
-	resp, err := s.client.GetQRCodeStatus(ctx, session.BaseURL, session.QRCode)
-	if err != nil {
-		return nil, err
-	}
-
-	status := strings.TrimSpace(resp.Status)
-	result := &ClawBotQRCodePollResponse{
-		Status: status,
-	}
-	if status == "expired" {
-		s.mu.Lock()
-		delete(s.qrSessions, sessionID)
-		s.mu.Unlock()
-		return result, nil
-	}
-	if status != "confirmed" {
-		return result, nil
-	}
-
-	cfg := s.handler.configManager.GetClawBotConfig()
-	cfg.BaseURL = strings.TrimSpace(resp.BaseURL)
-	if cfg.BaseURL == "" {
-		cfg.BaseURL = session.BaseURL
-	}
-	cfg.BotToken = strings.TrimSpace(resp.BotToken)
-	cfg.ILinkUserID = strings.TrimSpace(resp.ILinkUserID)
-	cfg.GetUpdatesBuf = ""
-	if err := s.handler.configManager.UpdateClawBotConfig(cfg); err != nil {
-		return nil, err
-	}
-	s.ApplyCurrentConfig()
-
-	settings, err := s.GetSettings()
-	if err != nil {
-		return nil, err
-	}
-	s.mu.Lock()
-	delete(s.qrSessions, sessionID)
-	s.mu.Unlock()
-	result.Settings = settings
-	return result, nil
 }
 
 func (s *ClawBotService) GetSettings() (*ClawBotSettingsResponse, error) {

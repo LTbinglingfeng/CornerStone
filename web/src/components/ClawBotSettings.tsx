@@ -51,6 +51,13 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
     const { t } = useT()
     const { showToast } = useToast()
     const pollTimerRef = useRef<number | null>(null)
+    const qrGenerationRef = useRef(0)
+    const qrControllerRef = useRef<AbortController | null>(null)
+    const lifecycleRef = useRef<AbortController | null>(null)
+    const settingsRevisionRef = useRef(0)
+    const [verifyCode, setVerifyCode] = useState('')
+    const [qrPolling, setQRPolling] = useState(false)
+    const [qrRetry, setQRRetry] = useState(false)
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
     const [settings, setSettings] = useState<ClawBotSettings | null>(null)
@@ -68,12 +75,36 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
     const [qrLoading, setQRLoading] = useState(false)
     const [qrDisplaySrc, setQRDisplaySrc] = useState('')
 
+    const cancelQRCode = () => {
+        qrGenerationRef.current += 1
+        qrControllerRef.current?.abort()
+        if (pollTimerRef.current != null) window.clearTimeout(pollTimerRef.current)
+        pollTimerRef.current = null
+    }
+
     useEffect(() => {
+        const controller = new AbortController()
+        lifecycleRef.current = controller
         void loadData()
-        return () => {
-            if (pollTimerRef.current != null) {
-                window.clearTimeout(pollTimerRef.current)
+        let refreshTimer: number | undefined
+        const refresh = async () => {
+            const revision = settingsRevisionRef.current
+            try {
+                const nextSettings = await clawBotService.getSettings(controller.signal)
+                if (!controller.signal.aborted && revision === settingsRevisionRef.current) {
+                    setSettings(nextSettings)
+                }
+            } catch {
+                // Background refresh must not interrupt editing or QR login.
+            } finally {
+                if (!controller.signal.aborted) refreshTimer = window.setTimeout(refresh, 10000)
             }
+        }
+        refreshTimer = window.setTimeout(refresh, 10000)
+        return () => {
+            controller.abort()
+            window.clearTimeout(refreshTimer)
+            cancelQRCode()
         }
     }, [])
 
@@ -164,9 +195,11 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
     )
 
     const loadData = async () => {
+        const signal = lifecycleRef.current!.signal
         setLoading(true)
         try {
-            const [nextSettings, promptList] = await Promise.all([clawBotService.getSettings(), getPrompts()])
+            const [nextSettings, promptList] = await Promise.all([clawBotService.getSettings(signal), getPrompts()])
+            if (signal.aborted) return
             setSettings(nextSettings)
             setPrompts(promptList)
             setForm({
@@ -178,14 +211,16 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
                 command_permissions: normalizeCommandPermissions(nextSettings.command_permissions),
             })
         } catch (error) {
+            if (signal.aborted) return
             const message = error instanceof Error ? error.message : t('common.loadFailed')
             showToast(message, 'error')
         } finally {
-            setLoading(false)
+            if (!signal.aborted) setLoading(false)
         }
     }
 
     const syncSettings = (nextSettings: ClawBotSettings) => {
+        settingsRevisionRef.current += 1
         setSettings(nextSettings)
         setForm((current) => ({
             ...current,
@@ -198,81 +233,141 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
         }))
     }
 
-    const scheduleQRCodePoll = (sessionID: string) => {
-        if (pollTimerRef.current != null) {
-            window.clearTimeout(pollTimerRef.current)
-        }
-
-        pollTimerRef.current = window.setTimeout(async () => {
-            try {
-                const result = await clawBotService.pollQRCode(sessionID)
-                setQRStatus(result.status)
-
-                if (result.status === 'confirmed' && result.settings) {
-                    syncSettings(result.settings)
-                    setQRData(null)
-                    showToast(t('clawBot.scanLogin'), 'success')
-                    return
-                }
-
-                if (result.status === 'expired') {
-                    showToast(t('service.getQRCodeFailed'), 'error')
-                    return
-                }
-
-                scheduleQRCodePoll(sessionID)
-            } catch (error) {
-                const message = error instanceof Error ? error.message : t('service.pollQRCodeFailed')
-                showToast(message, 'error')
+    const pollQRCode = async (
+        sessionID: string,
+        generation: number,
+        controller: AbortController,
+        code?: string,
+        failures = 0
+    ) => {
+        const active = () => generation === qrGenerationRef.current && !controller.signal.aborted
+        if (!active()) return
+        setQRPolling(true)
+        setQRRetry(false)
+        try {
+            const result = await clawBotService.pollQRCode(sessionID, code, controller.signal)
+            if (!active()) return
+            setQRStatus(result.status)
+            if (result.status === 'confirmed' || result.status === 'binded_redirect') {
+                if (result.settings) syncSettings(result.settings)
+                setQRData(null)
+                setVerifyCode('')
+                showToast(
+                    t(result.status === 'binded_redirect' ? 'clawBot.qrAlreadyBound' : 'clawBot.qrConfirmed'),
+                    'success'
+                )
+                return
             }
-        }, 2500)
+            if (['need_verifycode', 'verify_code_blocked', 'expired'].includes(result.status)) return
+            if (!['wait', 'scaned', 'scaned_but_redirect'].includes(result.status)) {
+                setQRRetry(true)
+                return
+            }
+            setVerifyCode('')
+            pollTimerRef.current = window.setTimeout(() => void pollQRCode(sessionID, generation, controller), 2500)
+        } catch {
+            if (!active()) return
+            // Never automatically replay a verification code: the server may have consumed it.
+            if (code === undefined && failures < 3) {
+                pollTimerRef.current = window.setTimeout(
+                    () => void pollQRCode(sessionID, generation, controller, undefined, failures + 1),
+                    2500
+                )
+            } else {
+                setQRRetry(true)
+            }
+        } finally {
+            if (active()) setQRPolling(false)
+        }
+    }
+
+    const retryQRCode = (code?: string) => {
+        if (!qrData || qrPolling || !qrControllerRef.current) return
+        if (pollTimerRef.current != null) window.clearTimeout(pollTimerRef.current)
+        void pollQRCode(qrData.session_id, qrGenerationRef.current, qrControllerRef.current, code)
     }
 
     const handleSave = async () => {
         if (saving) return
+        const signal = lifecycleRef.current!.signal
         setSaving(true)
         try {
-            const nextSettings = await clawBotService.updateSettings({
-                enabled: form.enabled,
-                base_url: form.base_url.trim(),
-                bot_token: form.bot_token.trim() || undefined,
-                prompt_id: form.prompt_id || undefined,
-                clear_bot_token: form.clear_bot_token,
-                command_permissions: form.command_permissions,
-            })
+            const nextSettings = await clawBotService.updateSettings(
+                {
+                    enabled: form.enabled,
+                    base_url: form.base_url.trim(),
+                    bot_token: form.bot_token.trim() || undefined,
+                    prompt_id: form.prompt_id || undefined,
+                    clear_bot_token: form.clear_bot_token,
+                    command_permissions: form.command_permissions,
+                },
+                signal
+            )
+            if (signal.aborted) return
             syncSettings(nextSettings)
             showToast(t('clawBot.saved'), 'success')
         } catch (error) {
+            if (signal.aborted) return
             const message = error instanceof Error ? error.message : t('common.saveFailed')
             showToast(message, 'error')
         } finally {
-            setSaving(false)
+            if (!signal.aborted) setSaving(false)
         }
     }
 
     const handleStartQRCode = async () => {
         if (qrLoading) return
+        cancelQRCode()
+        const generation = qrGenerationRef.current
+        const controller = new AbortController()
+        qrControllerRef.current = controller
+        const active = () => generation === qrGenerationRef.current && !controller.signal.aborted
+        setQRData(null)
+        setQRStatus('')
+        setVerifyCode('')
+        setQRRetry(false)
+        setQRPolling(false)
         setQRLoading(true)
         try {
-            const nextSettings = await clawBotService.updateSettings({
-                enabled: form.enabled,
-                base_url: form.base_url.trim(),
-                prompt_id: form.prompt_id || undefined,
-                clear_bot_token: false,
-                command_permissions: form.command_permissions,
-            })
+            const nextSettings = await clawBotService.updateSettings(
+                {
+                    enabled: form.enabled,
+                    base_url: form.base_url.trim(),
+                    prompt_id: form.prompt_id || undefined,
+                    clear_bot_token: false,
+                    command_permissions: form.command_permissions,
+                },
+                controller.signal
+            )
+            if (!active()) return
             syncSettings(nextSettings)
 
-            const result = await clawBotService.startQRCode(form.base_url.trim())
+            const result = await clawBotService.startQRCode(form.base_url.trim(), controller.signal)
+            if (!active()) return
             setQRData(result)
             setQRStatus('wait')
-            scheduleQRCodePoll(result.session_id)
+            pollTimerRef.current = window.setTimeout(
+                () => void pollQRCode(result.session_id, generation, controller),
+                2500
+            )
         } catch (error) {
+            if (!active()) return
             const message = error instanceof Error ? error.message : t('service.getQRCodeFailed')
             showToast(message, 'error')
         } finally {
-            setQRLoading(false)
+            if (active()) setQRLoading(false)
         }
+    }
+
+    const qrStatusLabels: Record<string, string> = {
+        wait: t('clawBot.qrWait'),
+        scaned: t('clawBot.qrScanned'),
+        confirmed: t('clawBot.qrConfirmed'),
+        expired: t('clawBot.qrExpired'),
+        need_verifycode: t('clawBot.qrNeedCode'),
+        verify_code_blocked: t('clawBot.qrCodeBlocked'),
+        scaned_but_redirect: t('clawBot.qrRedirect'),
+        binded_redirect: t('clawBot.qrAlreadyBound'),
     }
 
     const currentStatus = settings?.status || 'disabled'
@@ -534,7 +629,9 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
                         <div className="clawbot-qrcode-card">
                             <div className="clawbot-qrcode-header">
                                 <div className="clawbot-qrcode-title">{t('clawBot.scanLogin')}</div>
-                                <div className="clawbot-qrcode-status">{qrStatus || 'wait'}</div>
+                                <div className="clawbot-qrcode-status" role="status">
+                                    {qrStatusLabels[qrStatus] || qrStatus}
+                                </div>
                             </div>
                             <div className="clawbot-qrcode-body">
                                 {qrDisplaySrc ? (
@@ -550,6 +647,47 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
                                     />
                                 )}
                             </div>
+                            {qrStatus === 'need_verifycode' && (
+                                <form
+                                    className="clawbot-verify-form"
+                                    onSubmit={(event) => {
+                                        event.preventDefault()
+                                        if (verifyCode.trim()) retryQRCode(verifyCode.trim())
+                                    }}
+                                >
+                                    <label className="settings-label" htmlFor="clawbot-verify-code">
+                                        {t('clawBot.qrVerifyCode')}
+                                    </label>
+                                    <input
+                                        id="clawbot-verify-code"
+                                        className="settings-input"
+                                        value={verifyCode}
+                                        onChange={(event) => setVerifyCode(event.target.value)}
+                                        autoComplete="one-time-code"
+                                        disabled={qrPolling}
+                                    />
+                                    <button
+                                        className="clawbot-btn-secondary"
+                                        type="submit"
+                                        disabled={qrPolling || !verifyCode.trim()}
+                                    >
+                                        {t('clawBot.qrSubmitCode')}
+                                    </button>
+                                </form>
+                            )}
+                            {qrRetry && (
+                                <div className="clawbot-qrcode-hint" role="alert">
+                                    <p>{t('clawBot.qrRetryHint')}</p>
+                                    <button
+                                        type="button"
+                                        className="clawbot-btn-secondary"
+                                        onClick={() => retryQRCode()}
+                                        disabled={qrPolling}
+                                    >
+                                        {t('clawBot.qrRetry')}
+                                    </button>
+                                </div>
+                            )}
                             <div className="clawbot-qrcode-hint">{t('clawBot.qrCodeHint')}</div>
                         </div>
                     )}

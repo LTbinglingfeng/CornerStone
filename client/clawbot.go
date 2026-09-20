@@ -29,10 +29,12 @@ type ClawBotQRCodeResponse struct {
 }
 
 type ClawBotQRCodeStatusResponse struct {
-	Status      string `json:"status"`
-	BotToken    string `json:"bot_token"`
-	BaseURL     string `json:"baseurl"`
-	ILinkUserID string `json:"ilink_user_id"`
+	Status       string `json:"status"`
+	BotToken     string `json:"bot_token"`
+	BaseURL      string `json:"baseurl"`
+	ILinkUserID  string `json:"ilink_user_id"`
+	ILinkBotID   string `json:"ilink_bot_id"`
+	RedirectHost string `json:"redirect_host"`
 }
 
 type ClawBotGetUpdatesRequest struct {
@@ -156,12 +158,28 @@ func GenerateClawBotWechatUIN() (string, error) {
 	return base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%d", value))), nil
 }
 
-func (c *ClawBotClient) GetBotQRCode(ctx context.Context, baseURL string) (*ClawBotQRCodeResponse, error) {
+func (c *ClawBotClient) GetBotQRCode(ctx context.Context, baseURL string, localTokens ...string) (*ClawBotQRCodeResponse, error) {
 	endpoint := buildClawBotURL(baseURL, "/ilink/bot/get_bot_qrcode?bot_type=3")
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if localTokens == nil {
+		localTokens = []string{}
+	}
+	payload, err := json.Marshal(struct {
+		LocalTokens []string `json:"local_token_list"`
+	}{localTokens})
 	if err != nil {
 		return nil, err
 	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("AuthorizationType", "ilink_bot_token")
+	uin, err := GenerateClawBotWechatUIN()
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-WECHAT-UIN", uin)
 	var resp ClawBotQRCodeResponse
 	if err := c.doJSON(req, &resp); err != nil {
 		return nil, err
@@ -169,9 +187,12 @@ func (c *ClawBotClient) GetBotQRCode(ctx context.Context, baseURL string) (*Claw
 	return &resp, nil
 }
 
-func (c *ClawBotClient) GetQRCodeStatus(ctx context.Context, baseURL, qrcode string) (*ClawBotQRCodeStatusResponse, error) {
+func (c *ClawBotClient) GetQRCodeStatus(ctx context.Context, baseURL, qrcode string, verifyCode ...string) (*ClawBotQRCodeStatusResponse, error) {
 	query := url.Values{}
 	query.Set("qrcode", qrcode)
+	if len(verifyCode) > 0 && verifyCode[0] != "" {
+		query.Set("verify_code", verifyCode[0])
+	}
 	endpoint := buildClawBotURL(baseURL, "/ilink/bot/get_qrcode_status?"+query.Encode())
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -181,7 +202,8 @@ func (c *ClawBotClient) GetQRCodeStatus(ctx context.Context, baseURL, qrcode str
 
 	var resp ClawBotQRCodeStatusResponse
 	if err := c.doJSON(req, &resp); err != nil {
-		return nil, err
+		// net/http errors include the complete request URL (QR value and verification code).
+		return nil, fmt.Errorf("clawbot QR status request failed")
 	}
 	return &resp, nil
 }
