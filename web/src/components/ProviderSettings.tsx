@@ -18,6 +18,7 @@ import {
     CustomSelect,
     ModelSelect,
 } from './provider'
+import { ModalOverlay } from './ModalOverlay'
 import { NumericInput } from './NumericInput'
 import { useT } from '../contexts/I18nContext'
 import { useToast } from '../contexts/ToastContext'
@@ -425,13 +426,14 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
             {/* 悬浮编辑/新增卡片 */}
             <AnimatePresence>
                 {showModal && editingProvider && (
-                    <motion.div
+                    <ModalOverlay
+                        aria-label={isAddingNew ? t('provider.addProvider') : t('common.edit')}
+                        onDismiss={handleCloseModal}
                         className="modal-overlay"
                         initial="hidden"
                         animate="visible"
                         exit="hidden"
                         variants={overlayVariants}
-                        onClick={handleCloseModal}
                     >
                         <motion.div
                             className="modal-card"
@@ -443,7 +445,11 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                         >
                             <div className="modal-header">
                                 <h3>{isAddingNew ? t('provider.addProvider') : t('common.edit')}</h3>
-                                <button className="modal-close" onClick={handleCloseModal}>
+                                <button
+                                    className="modal-close"
+                                    onClick={handleCloseModal}
+                                    aria-label={t('common.close')}
+                                >
                                     <svg viewBox="0 0 24 24">
                                         <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
                                     </svg>
@@ -825,7 +831,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                 </button>
                             </div>
                         </motion.div>
-                    </motion.div>
+                    </ModalOverlay>
                 )}
             </AnimatePresence>
         </motion.div>

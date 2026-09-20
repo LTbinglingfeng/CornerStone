@@ -1,0 +1,31 @@
+/* Extra specificity overrides legacy absolute overlay geometry, regardless of import order. */
+dialog.native-modal-overlay {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    height: 100dvh;
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    border: 0;
+    padding: 0;
+    box-sizing: border-box;
+    color: inherit;
+    overflow: auto;
+    overscroll-behavior: contain;
+}
+
+dialog.native-modal-overlay::backdrop {
+    background: transparent;
+}
+
+/* Preserve a gutter without padding the full-viewport scrim. */
+dialog.native-modal-overlay > * {
+    width: calc(100% - 40px);
+    max-height: min(var(--modal-card-max-height, 90vh), calc(100dvh - 40px));
+}
+
+dialog.native-modal-overlay:not([open]) {
+    display: none;
+}
