@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -42,16 +43,17 @@ type QuotedMessage struct {
 
 // ChatRecord 聊天记录条目（每个会话一个JSONL文件）
 type ChatRecord struct {
-	ID           string        `json:"id"`
-	SessionID    string        `json:"session_id"`
-	Title        string        `json:"title,omitempty"`
-	PromptID     string        `json:"prompt_id,omitempty"`   // 关联的 Prompt ID
-	PromptName   string        `json:"prompt_name,omitempty"` // 关联的 Prompt 名称（用于文件命名）
-	Messages     []ChatMessage `json:"messages"`
-	Model        string        `json:"model,omitempty"`
-	SystemPrompt string        `json:"system_prompt,omitempty"`
-	CreatedAt    time.Time     `json:"created_at"`
-	UpdatedAt    time.Time     `json:"updated_at"`
+	AppliedOperations []string      `json:"applied_operations,omitempty"`
+	ID                string        `json:"id"`
+	SessionID         string        `json:"session_id"`
+	Title             string        `json:"title,omitempty"`
+	PromptID          string        `json:"prompt_id,omitempty"`   // 关联的 Prompt ID
+	PromptName        string        `json:"prompt_name,omitempty"` // 关联的 Prompt 名称（用于文件命名）
+	Messages          []ChatMessage `json:"messages"`
+	Model             string        `json:"model,omitempty"`
+	SystemPrompt      string        `json:"system_prompt,omitempty"`
+	CreatedAt         time.Time     `json:"created_at"`
+	UpdatedAt         time.Time     `json:"updated_at"`
 }
 
 // ChatSession 聊天会话元数据
@@ -261,6 +263,7 @@ func cloneChatRecord(record *ChatRecord) *ChatRecord {
 	}
 	copied := *record
 	copied.Messages = cloneChatMessages(record.Messages)
+	copied.AppliedOperations = append([]string(nil), record.AppliedOperations...)
 	return &copied
 }
 
@@ -334,26 +337,18 @@ func (cm *ChatManager) saveSession(record *ChatRecord) error {
 		logging.Errorf("session save failed: id=%s err=%v", record.SessionID, os.ErrInvalid)
 		return os.ErrInvalid
 	}
-	file, err := os.Create(filePath)
+	file, err := os.CreateTemp(cm.dataDir, ".chat-*.tmp") // CreateTemp uses 0600.
 	if err != nil {
-		logging.Errorf("session save failed: id=%s err=%v", record.SessionID, err)
 		return err
 	}
-	defer file.Close()
+	defer func() {
+		file.Close()
+		os.Remove(file.Name())
+	}()
 
-	// 第一行写入会话元数据（不含消息）
-	meta := ChatRecord{
-		ID:           record.ID,
-		SessionID:    record.SessionID,
-		Title:        record.Title,
-		PromptID:     record.PromptID,
-		PromptName:   record.PromptName,
-		Model:        record.Model,
-		SystemPrompt: record.SystemPrompt,
-		CreatedAt:    record.CreatedAt,
-		UpdatedAt:    record.UpdatedAt,
-		Messages:     nil, // 元数据行不包含消息
-	}
+	// Copy all metadata, excluding the separately serialized messages.
+	meta := *record
+	meta.Messages = nil
 	if err := writeJSONLine(file, meta); err != nil {
 		logging.Errorf("session save failed: id=%s err=%v", record.SessionID, err)
 		return err
@@ -364,6 +359,29 @@ func (cm *ChatManager) saveSession(record *ChatRecord) error {
 		if err := writeJSONLine(file, msg); err != nil {
 			logging.Errorf("session save failed: id=%s err=%v", record.SessionID, err)
 			return err
+		}
+	}
+
+	if err := file.Sync(); err != nil {
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(file.Name(), filePath); err != nil {
+		return err
+	}
+	// Rename is the commit point. A directory sync failure must not leave the
+	// caller's memory behind an already committed file; report it through logging.
+	// Windows does not support syncing directory handles via os.File.Sync.
+	if runtime.GOOS != "windows" {
+		dir, err := os.Open(cm.dataDir)
+		if err == nil {
+			err = dir.Sync()
+			dir.Close()
+		}
+		if err != nil {
+			logging.Warnf("session directory sync failed: path=%s err=%v", cm.dataDir, err)
 		}
 	}
 
@@ -420,6 +438,10 @@ func cloneChatMessages(messages []ChatMessage) []ChatMessage {
 	for i := range messages {
 		copied[i] = messages[i]
 		copied[i].Quote = cloneQuotedMessage(messages[i].Quote)
+		if messages[i].AssistantMessageSplitToken != nil {
+			token := *messages[i].AssistantMessageSplitToken
+			copied[i].AssistantMessageSplitToken = &token
+		}
 		if len(messages[i].ToolCalls) > 0 {
 			copied[i].ToolCalls = append([]client.ToolCall(nil), messages[i].ToolCalls...)
 		}
@@ -567,6 +589,7 @@ func (cm *ChatManager) GetSessionMessagesPage(sessionID string, limit int, befor
 	}
 
 	page := *record
+	page.AppliedOperations = append([]string(nil), record.AppliedOperations...)
 	page.Messages = cloneChatMessages(record.Messages[start:end])
 
 	return &page, start, total, nil
@@ -933,6 +956,47 @@ func (cm *ChatManager) DeleteTrailingResponseBatch(sessionID string) (int, error
 		return 0, err
 	}
 	return deleted, nil
+}
+
+// CommitDeliveryBatch atomically persists a delivery and its idempotency receipt.
+// Receipts survive message edits/deletions; retries never resurrect that content.
+func (cm *ChatManager) CommitDeliveryBatch(sessionID, operationID string, messages []ChatMessage, replace bool, expectedTail []ChatMessage) error {
+	if err := ValidateID(sessionID); err != nil {
+		return err
+	}
+	if strings.TrimSpace(operationID) == "" || len(operationID) > 256 {
+		return os.ErrInvalid
+	}
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	record, ok := cm.sessions[sessionID]
+	if !ok {
+		return os.ErrNotExist
+	}
+	for _, applied := range record.AppliedOperations {
+		if applied == operationID {
+			return nil
+		}
+	}
+	cutIndex := len(record.Messages)
+	if replace {
+		cutIndex, _ = splitTrailingResponseBatchMessages(record.Messages)
+		if !equalChatMessages(record.Messages[cutIndex:], expectedTail) {
+			return ErrTrailingResponseBatchChanged
+		}
+	}
+	next := cloneChatRecord(record)
+	next.Messages = append(next.Messages[:cutIndex], cloneChatMessages(messages)...)
+	next.AppliedOperations = append(next.AppliedOperations, operationID)
+	next.UpdatedAt = time.Now()
+	if len(messages) > 0 && !messages[len(messages)-1].Timestamp.IsZero() {
+		next.UpdatedAt = messages[len(messages)-1].Timestamp
+	}
+	if err := cm.saveSession(next); err != nil {
+		return err
+	}
+	cm.sessions[sessionID] = next
+	return nil
 }
 
 // ReplaceTrailingResponseBatch 以 compare-and-swap 的方式原子替换尾部响应批次。
