@@ -192,6 +192,8 @@ func (s *ClawBotService) generateDelivery(ctx context.Context, cfg config.ClawBo
 		s.deliveryFault(err)
 		return
 	}
+	stopTyping := s.startClawBotTyping(ctx, cfg, job.UserID)
+	defer stopTyping()
 	var result *clawBotGeneratedReply
 	switch job.Kind {
 	case "reminder":
@@ -222,6 +224,7 @@ func (s *ClawBotService) generateDelivery(ctx context.Context, cfg config.ClawBo
 	default:
 		result, err = s.generateReplyForSession(ctx, session, cfg.PromptID, job.UserID)
 	}
+	stopTyping()
 	if err != nil {
 		s.parkDelivery(cfg, job.ID, "generation", "Reply generation was interrupted or failed. Tools may already have run; review before retrying.", true)
 		return

@@ -107,6 +107,7 @@ type clawBotGeneratedReply struct {
 }
 
 type ClawBotService struct {
+	typing  clawBotTypingState
 	handler *Handler
 	client  *client.ClawBotClient
 
@@ -199,6 +200,7 @@ func (s *ClawBotService) Close() {
 		<-cleanupDone
 	}
 	s.clearAllPendingReplies()
+	s.stopClawBotTyping()
 }
 
 func (s *ClawBotService) ApplyCurrentConfig() {
@@ -247,6 +249,7 @@ func (s *ClawBotService) applyConfigLocked(cfg config.ClawBotConfig) {
 		<-done
 	}
 	s.clearAllPendingReplies()
+	s.stopClawBotTyping()
 	if err := s.restoreChannelState(cfg); err != nil {
 		s.setLastError(err)
 		return
@@ -1106,6 +1109,10 @@ write_memory 只能用于极为重要的长期记忆。
 不要再输出任何可见文字。`))
 	}
 
+	if s.stateManager == nil {
+		stopTyping := s.startClawBotTyping(ctx, s.handler.configManager.GetClawBotConfig(), userID)
+		defer stopTyping()
+	}
 	reply, err := s.handler.generateSessionReply(ctx, sessionReplyOptions{
 		Session:    session,
 		PromptID:   validPromptID,

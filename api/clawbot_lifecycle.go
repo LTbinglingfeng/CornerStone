@@ -10,6 +10,7 @@ import (
 
 func (s *ClawBotService) runWorker(ctx context.Context, cfg config.ClawBotConfig, done chan struct{}) {
 	defer close(done)
+	defer s.stopClawBotTyping()
 	defer func() {
 		s.mu.Lock()
 		if s.workerCtx == ctx {
