@@ -1,5 +1,21 @@
+import { managementCopy } from './archive'
+import { overview } from './overview'
+import { settingsManagementCopy } from './settingsManagement'
+
 const en = {
+    management: managementCopy.en,
+    overview: overview.en,
+    settingsManagement: settingsManagementCopy.en,
     console: {
+        short: {
+            overview: 'Overview',
+            channels: 'Channels',
+            contacts: 'Personas',
+            chat: 'History',
+            settings: 'Settings',
+            me: 'Profile',
+        },
+        useModel: 'Use model',
         profileHint: 'Manage the name, avatar and personal context used in conversations.',
         refresh: 'Refresh status',
         unavailable: 'Unavailable',

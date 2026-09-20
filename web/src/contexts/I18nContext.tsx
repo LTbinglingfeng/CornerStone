@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useMemo, ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, useMemo, useEffect, ReactNode } from 'react'
 import { getLocale, persistLocale, translate, type Locale, type TranslationKey } from '../i18n'
 
 interface I18nContextType {
@@ -11,6 +11,10 @@ const I18nContext = createContext<I18nContextType | undefined>(undefined)
 
 export const I18nProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const [locale, setLocaleState] = useState<Locale>(getLocale)
+
+    useEffect(() => {
+        document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en'
+    }, [locale])
 
     const setLocale = useCallback((newLocale: Locale) => {
         setLocaleState(newLocale)

@@ -31,7 +31,7 @@ interface ProviderSettingsProps {
 }
 
 const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
-    const { t, locale } = useT()
+    const { t } = useT()
     const { showToast } = useToast()
     const { confirm } = useConfirm()
     const [providers, setProviders] = useState<Provider[]>([])
@@ -394,11 +394,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                             title={!isChatSelectable ? t('provider.imageOnly') : undefined}
                                             onClick={() => handleSetActive(provider.id)}
                                         >
-                                            {isActive
-                                                ? t('imageProvider.inUse')
-                                                : locale === 'zh'
-                                                  ? '使用模型'
-                                                  : 'Use model'}
+                                            {isActive ? t('imageProvider.inUse') : t('console.useModel')}
                                         </button>
                                         <button
                                             className="card-action-btn edit"

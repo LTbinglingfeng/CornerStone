@@ -1,6 +1,6 @@
-import type { Locale } from '../i18n'
+import type { Locale } from './index'
 
-const settingsManagementCopy = {
+export const settingsManagementCopy = {
     zh: {
         eyebrow: '管理设置',
         navigationLabel: '设置分类',

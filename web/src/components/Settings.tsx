@@ -51,7 +51,7 @@ import {
 import ToolSettingsPanel from './ToolSettings'
 import ReminderSettingsPanel from './ReminderSettings'
 import IdleGreetingSettingsPanel from './IdleGreetingSettings'
-import { getSettingsManagementCopy } from './settingsI18n'
+import { getSettingsManagementCopy } from '../i18n/settingsManagement'
 import './Settings.css'
 
 export interface SettingsProps {

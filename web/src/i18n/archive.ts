@@ -1,6 +1,6 @@
 import type { Locale } from './index'
 
-const copy = {
+export const managementCopy = {
     en: {
         archive: {
             allPersonas: 'All personas',
@@ -94,5 +94,5 @@ const copy = {
 } as const
 
 export function getManagementCopy(locale: Locale) {
-    return copy[locale]
+    return managementCopy[locale]
 }

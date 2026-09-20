@@ -1,5 +1,14 @@
+import { managementCopy } from './archive'
+import { overview } from './overview'
+import { settingsManagementCopy } from './settingsManagement'
+
 const zh = {
+    management: managementCopy.zh,
+    overview: overview.zh,
+    settingsManagement: settingsManagementCopy.zh,
     console: {
+        short: { overview: '概览', channels: '通道', contacts: '人设', chat: '会话', settings: '设置', me: '资料' },
+        useModel: '使用模型',
         profileHint: '设置聊天中使用的昵称、头像与个人简介。',
         refresh: '刷新状态',
         unavailable: '暂时无法获取',
