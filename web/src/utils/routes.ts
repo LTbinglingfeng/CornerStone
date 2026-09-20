@@ -1,8 +1,11 @@
-export type AppTab = 'chat' | 'contacts' | 'me'
+export type AppTab = 'overview' | 'channels' | 'contacts' | 'chat' | 'settings' | 'me'
 
-export const tabOrder: AppTab[] = ['chat', 'contacts', 'me']
+export const tabOrder: AppTab[] = ['overview', 'channels', 'contacts', 'chat', 'settings', 'me']
 
 export const tabRoutes: Record<AppTab, string> = {
+    overview: '/overview',
+    channels: '/channels',
+    settings: '/settings',
     chat: '/chat',
     contacts: '/contacts',
     me: '/me',
@@ -24,8 +27,14 @@ const decodeRouteSegment = (value: string) => {
 export const getRouteState = (pathname: string): { activeTab: AppTab; activeSessionId: string | null } | null => {
     const normalizedPath = normalizePathname(pathname)
 
-    if (normalizedPath === tabRoutes.chat) {
-        return { activeTab: 'chat', activeSessionId: null }
+    for (const tab of tabOrder) {
+        if (normalizedPath === tabRoutes[tab]) {
+            return { activeTab: tab, activeSessionId: null }
+        }
+    }
+
+    if (normalizedPath === '/' || normalizedPath === '/management') {
+        return { activeTab: 'overview', activeSessionId: null }
     }
 
     if (normalizedPath.startsWith(`${tabRoutes.chat}/`)) {
