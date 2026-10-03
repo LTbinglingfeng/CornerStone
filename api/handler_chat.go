@@ -665,7 +665,7 @@ func shouldDropEmptyAssistantStorageMessage(msg storage.ChatMessage) bool {
 	if len(msg.ImagePaths) > 0 {
 		return false
 	}
-	if len(msg.TTSAudioPaths) > 0 {
+	if len(msg.TTSAudioPaths) > 0 || len(msg.Attachments) > 0 {
 		return false
 	}
 	return true
@@ -1230,7 +1230,7 @@ func getChatTools(options ...chatToolOptions) []client.Tool {
 		})
 	}
 
-	if channel == chatToolChannelClawBot {
+	if channel == chatToolChannelClawBot || channel == chatToolChannelNapCat {
 		tools = append(tools, sendAttachmentTool())
 	}
 
@@ -1260,7 +1260,7 @@ func getChatTools(options ...chatToolOptions) []client.Tool {
 		filtered := make([]client.Tool, 0, 5)
 		for _, tool := range tools {
 			switch canonicalToolName(tool.Function.Name) {
-			case "get_time", "get_weather", cornerstoneWebSearchToolName, "schedule_reminder", "write_memory":
+			case "get_time", "get_weather", cornerstoneWebSearchToolName, "schedule_reminder", "write_memory", "no_reply", sendAttachmentToolName:
 				filtered = append(filtered, tool)
 			}
 		}

@@ -313,7 +313,7 @@ const zh = {
         toolNoReply: '已读不回',
         toolNoReplyDescription: '允许 AI 结束本轮且不发送任何可见文字回复',
         toolSendAttachment: '发送附件',
-        toolSendAttachmentDescription: '允许 AI 将当前会话已有的附件、图片或语音加入微信投递队列（仅微信通道）',
+        toolSendAttachmentDescription: '允许 AI 请求发送当前会话已有的附件、图片或语音（微信和 QQ 私聊通道）',
         toolGetTime: '时间查询',
         toolGetTimeDescription: '允许 AI 查询当前时间、日期、星期和时区等实时信息',
         toolGetWeather: '天气查询',

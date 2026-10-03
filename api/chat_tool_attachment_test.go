@@ -12,7 +12,7 @@ import (
 func TestSendAttachmentRegistration(t *testing.T) {
 	for _, channel := range []chatToolChannel{chatToolChannelClawBot, chatToolChannelDefault, chatToolChannelNapCat} {
 		names := buildToolNameSet(getChatTools(chatToolOptions{Channel: channel}))
-		if names[sendAttachmentToolName] != (channel == chatToolChannelClawBot) {
+		if names[sendAttachmentToolName] != (channel == chatToolChannelClawBot || channel == chatToolChannelNapCat) {
 			t.Fatalf("channel %q: %v", channel, names)
 		}
 	}
@@ -22,6 +22,8 @@ func TestSendAttachmentRegistration(t *testing.T) {
 	for _, opts := range []chatToolOptions{
 		{Channel: chatToolChannelClawBot, ToolToggles: map[string]bool{sendAttachmentToolName: false}},
 		{Channel: chatToolChannelClawBot, ReminderFiring: true},
+		{Channel: chatToolChannelNapCat, ReminderFiring: true},
+		{Channel: chatToolChannelNapCat, ToolToggles: map[string]bool{sendAttachmentToolName: false}},
 	} {
 		if buildToolNameSet(getChatTools(opts))[sendAttachmentToolName] {
 			t.Fatal("attachment must be hidden")
@@ -61,7 +63,7 @@ func TestSendAttachmentSessionScopeAndMetadata(t *testing.T) {
 			t.Fatalf("accepted %q", p)
 		}
 	}
-	for _, denied := range []chatToolContext{{Channel: chatToolChannelDefault, Attachments: allowed}, {Channel: chatToolChannelNapCat, Attachments: allowed}, {Channel: chatToolChannelClawBot, Attachments: allowed, AllowedToolNames: map[string]bool{sendAttachmentToolName: false}}} {
+	for _, denied := range []chatToolContext{{Channel: chatToolChannelDefault, Attachments: allowed}, {Channel: chatToolChannelClawBot, Attachments: allowed, AllowedToolNames: map[string]bool{sendAttachmentToolName: false}}} {
 		if executor.ExecuteResult(context.Background(), toolCall("call", sendAttachmentToolName, `{"path":"cache_photo/existing.png"}`), denied).OK {
 			t.Fatal("channel/toggle bypass")
 		}

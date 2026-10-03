@@ -325,7 +325,7 @@ const en = {
         toolNoReplyDescription: 'Allow the AI to end the round without sending any visible text reply',
         toolSendAttachment: 'Send Attachment',
         toolSendAttachmentDescription:
-            'Allow AI to queue existing session attachments, images, or audio for delivery (WeChat only)',
+            'Allow AI to request delivery of existing session attachments, images, or audio (WeChat and QQ private chats)',
         toolGetTime: 'Time Query',
         toolGetTimeDescription: 'Allow the AI to query current time, date, weekday, and timezone information',
         toolGetWeather: 'Weather Query',

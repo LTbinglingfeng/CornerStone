@@ -70,6 +70,14 @@ func attachmentFromToolResult(content string) (storage.ChatAttachment, bool) {
 func sessionToolAttachments(messages []storage.ChatMessage) map[string]storage.ChatAttachment {
 	allowed := make(map[string]storage.ChatAttachment)
 	for _, msg := range messages {
+		if msg.Quote != nil {
+			for _, a := range msg.Quote.Attachments {
+				addToolAttachment(allowed, a)
+			}
+			for _, p := range msg.Quote.ImagePaths {
+				addToolAttachment(allowed, storage.ChatAttachment{Path: p, Kind: "image"})
+			}
+		}
 		for _, a := range msg.Attachments {
 			addToolAttachment(allowed, a)
 		}
@@ -89,7 +97,7 @@ func sessionToolAttachments(messages []storage.ChatMessage) map[string]storage.C
 }
 
 func (e *chatToolExecutor) handleSendAttachment(ctx context.Context, call client.ToolCall, toolCtx chatToolContext) chatToolResult {
-	if toolCtx.Channel != chatToolChannelClawBot || (toolCtx.AllowedToolNames != nil && !toolCtx.AllowedToolNames[sendAttachmentToolName]) {
+	if (toolCtx.Channel != chatToolChannelClawBot && toolCtx.Channel != chatToolChannelNapCat) || (toolCtx.AllowedToolNames != nil && !toolCtx.AllowedToolNames[sendAttachmentToolName]) {
 		return chatToolResult{Error: "send_attachment is disabled or unavailable on this channel"}
 	}
 	var args struct {
@@ -102,11 +110,11 @@ func (e *chatToolExecutor) handleSendAttachment(ctx context.Context, call client
 	if !ok {
 		return chatToolResult{Error: "attachment is not registered in the current session"}
 	}
-	// No disk/network access and no delivery side effects: the delivery queue consumes
-	// this intent after persistence, keyed by the tool call ID.
+	// No disk/network access or delivery side effects: the channel delivery layer
+	// consumes this intent later, deduplicating tool calls and attachment paths.
 	return chatToolResult{OK: true, Data: map[string]interface{}{"attachment": a}}
 }
 
 func sendAttachmentTool() client.Tool {
-	return client.Tool{Type: "function", Function: client.ToolFunction{Name: sendAttachmentToolName, Description: "将当前会话已登记的附件、图片或语音加入微信投递队列。仅使用附件清单或成功工具产物 metadata 中的原始 path，不支持任意磁盘路径或 URL。成功仅表示生成投递意图，不表示已送达；不要重复调用同一附件。", Parameters: map[string]interface{}{"type": "object", "properties": map[string]interface{}{"path": map[string]interface{}{"type": "string", "description": "当前会话附件的原始本地引用路径"}}, "required": []string{"path"}, "additionalProperties": false}}}
+	return client.Tool{Type: "function", Function: client.ToolFunction{Name: sendAttachmentToolName, Description: "请求通过当前渠道发送本会话已登记的附件、图片或语音。仅使用附件清单或成功工具产物 metadata 中的原始 path，不支持任意磁盘路径或 URL。成功仅表示生成投递意图，不表示已送达；不要重复调用同一附件。", Parameters: map[string]interface{}{"type": "object", "properties": map[string]interface{}{"path": map[string]interface{}{"type": "string", "description": "当前会话附件的原始本地引用路径"}}, "required": []string{"path"}, "additionalProperties": false}}}
 }
