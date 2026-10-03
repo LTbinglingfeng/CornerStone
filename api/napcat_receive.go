@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -39,6 +41,7 @@ type napCatIncomingSegment struct {
 }
 
 type napCatReceiveParsedMessage struct {
+	Segments       []napCatIncomingSegment
 	Text           string
 	ReplyMessageID int64
 	ImageSegments  []napCatMessageSegment
@@ -51,7 +54,11 @@ func parseNapCatReceiveMessage(raw json.RawMessage, fallback string, allowReply 
 	if err != nil {
 		return nil, err
 	}
-	p := &napCatReceiveParsedMessage{}
+	return parseNapCatReceiveSegments(segments, allowReply), nil
+}
+
+func parseNapCatReceiveSegments(segments []napCatIncomingSegment, allowReply bool) *napCatReceiveParsedMessage {
+	p := &napCatReceiveParsedMessage{Segments: segments}
 	var text strings.Builder
 	for _, seg := range segments {
 		switch seg.Type {
@@ -87,9 +94,21 @@ func parseNapCatReceiveMessage(raw json.RawMessage, fallback string, allowReply 
 	}
 	p.Text = text.String()
 	if p.Text == "" && len(p.ImageSegments)+len(p.MediaSegments) == 0 && p.ReplyMessageID == 0 {
-		return nil, nil
+		return nil
 	}
-	return p, nil
+	return p
+}
+
+// Keep time for persisting the input and generating a reply after slow media.
+// Connection cancellation and permission checks still use the parent context.
+func napCatReceiveContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	delay := 30 * time.Second
+	if deadline, ok := ctx.Deadline(); ok {
+		if remaining := time.Until(deadline) / 2; remaining < delay {
+			delay = remaining
+		}
+	}
+	return context.WithTimeout(ctx, delay)
 }
 
 func decodeNapCatIncomingSegments(raw json.RawMessage, fallback string) ([]napCatIncomingSegment, error) {
@@ -213,6 +232,37 @@ func (m *napCatReceiveMaterializer) materialize(ctx context.Context, p *napCatRe
 	if p == nil {
 		return
 	}
+	if len(p.Segments) > 0 {
+		for _, seg := range p.Segments {
+			switch seg.Type {
+			case "node", "forward", "record", "video", "file":
+				if ctx.Err() != nil {
+					m.appendText("\n[附件或转发接收已中断]\n")
+				} else if seg.Type == "node" || seg.Type == "forward" {
+					m.forward(ctx, seg, depth)
+				} else {
+					m.media(ctx, seg)
+				}
+			default:
+				part := parseNapCatReceiveSegments([]napCatIncomingSegment{seg}, false)
+				if part == nil {
+					continue
+				}
+				m.appendText(part.Text)
+				for _, image := range part.ImageSegments {
+					if ctx.Err() != nil {
+						m.appendText("\n[图片接收已中断]\n")
+						continue
+					}
+					var item napCatIncomingSegment
+					item.Type, item.Data.napCatMessageSegmentData = "image", image.Data
+					m.media(ctx, item)
+				}
+			}
+		}
+		return
+	}
+	// Compatibility for in-memory callers that construct parsed input directly.
 	m.appendText(p.Text)
 	for _, image := range p.ImageSegments {
 		var seg napCatIncomingSegment
@@ -392,9 +442,7 @@ func (m *napCatReceiveMaterializer) media(ctx context.Context, seg napCatIncomin
 			return
 		}
 		m.images = append(m.images, path)
-		if strings.TrimSpace(m.text.String()) == "" {
-			m.appendText("[用户发送了图片]")
-		}
+		m.appendText("\n[用户发送了图片]\n")
 		return
 	}
 	kind := seg.Type
@@ -441,12 +489,15 @@ func (m *napCatReceiveMaterializer) readMedia(ctx context.Context, seg napCatInc
 		params    map[string]interface{}
 		converted bool
 	}
+	validContent := func(data []byte) bool {
+		return seg.Type != "image" || strings.HasPrefix(http.DetectContentType(data), "image/")
+	}
 	// Prefer an existing download URL, except for voice where get_record can
 	// produce a playable MP3. Avoid making every image wait for an extra API.
 	if seg.Type != "record" {
 		for _, ref := range []string{seg.Data.URL, seg.Data.File} {
 			if napCatReceiveHTTP(ref) {
-				if data, err := readNapCatResource(ctx, ref, limit); err == nil {
+				if data, err := readNapCatResource(ctx, ref, limit); err == nil && validContent(data) {
 					return data, false, nil
 				}
 			}
@@ -480,7 +531,7 @@ func (m *napCatReceiveMaterializer) readMedia(ctx context.Context, seg napCatInc
 		if json.Unmarshal(raw, &resource) != nil {
 			continue
 		}
-		data, err := readNapCatResolvedResource(ctx, &resource, limit)
+		data, err := readNapCatResolvedResource(ctx, &resource, limit, validContent)
 		if err == nil {
 			return data, a.converted, nil
 		}

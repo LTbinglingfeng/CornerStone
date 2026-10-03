@@ -16,9 +16,17 @@ import (
 // get_image/get_file may return a URL, a NapCat-local path, or base64.
 // A failed URL must not mask another usable representation. Local paths only
 // work on shared storage; base64 is the cross-host fallback.
-func readNapCatResolvedResource(ctx context.Context, resource *napCatGetImageData, limit int64) ([]byte, error) {
+func readNapCatResolvedResource(ctx context.Context, resource *napCatGetImageData, limit int64, validators ...func([]byte) bool) ([]byte, error) {
 	if resource == nil {
 		return nil, errors.New("missing media resource")
+	}
+	validContent := func(data []byte) bool {
+		for _, validate := range validators {
+			if validate != nil && !validate(data) {
+				return false
+			}
+		}
+		return true
 	}
 	var errs []error
 	if resource.Base64 != "" {
@@ -27,7 +35,7 @@ func readNapCatResolvedResource(ctx context.Context, resource *napCatGetImageDat
 			errs = append(errs, errors.New("media base64 exceeds limit"))
 		} else {
 			data, err := base64.StdEncoding.DecodeString(raw)
-			if err == nil && len(data) > 0 && int64(len(data)) <= limit {
+			if err == nil && len(data) > 0 && int64(len(data)) <= limit && validContent(data) {
 				return data, nil
 			}
 			errs = append(errs, errors.New("invalid media base64"))
@@ -41,8 +49,11 @@ func readNapCatResolvedResource(ctx context.Context, resource *napCatGetImageDat
 		}
 		seen[ref] = true
 		data, err := readNapCatResource(ctx, ref, limit)
-		if err == nil {
+		if err == nil && validContent(data) {
 			return data, nil
+		}
+		if err == nil {
+			err = errors.New("invalid media content")
 		}
 		errs = append(errs, err)
 	}

@@ -65,6 +65,7 @@ type napCatPendingMessage struct {
 	ReplyMessageID int64
 	ImageSegments  []napCatMessageSegment
 	MediaSegments  []napCatIncomingSegment
+	Segments       []napCatIncomingSegment
 	ImagePaths     []string
 }
 
@@ -333,7 +334,7 @@ func (s *NapCatService) connect(conn *websocket.Conn, accessToken string, authen
 	go s.readLoop(ctx, conn)
 
 	go func() {
-		if err := s.refreshLoginInfo(ctx); err != nil {
+		if err := s.refreshLoginInfo(ctx); err != nil && ctx.Err() == nil {
 			s.setLastError(err)
 			logging.Warnf("napcat get_login_info failed: err=%v", err)
 		}
@@ -798,6 +799,7 @@ func (s *NapCatService) parseIncomingPrivateMessage(source napCatChatSource, eve
 		MessageID:      event.MessageID,
 		ReplyMessageID: parsed.ReplyMessageID,
 		MediaSegments:  append([]napCatIncomingSegment(nil), parsed.MediaSegments...),
+		Segments:       append([]napCatIncomingSegment(nil), parsed.Segments...),
 	}
 	if len(parsed.ImageSegments) > 0 {
 		pending.ImageSegments = append([]napCatMessageSegment(nil), parsed.ImageSegments...)
@@ -1299,14 +1301,16 @@ func (s *NapCatService) processIncomingBatch(ctx context.Context, cfg config.Nap
 	now := s.handler.now()
 	storageMessages := make([]storage.ChatMessage, 0, len(messages))
 	budget := &napCatReceiveBudget{}
+	receiveCtx, cancelReceive := napCatReceiveContext(ctx)
+	defer cancelReceive()
 	for index, pendingMessage := range messages {
-		parsed := &napCatReceiveParsedMessage{Text: pendingMessage.Text, MediaSegments: pendingMessage.MediaSegments}
+		parsed := &napCatReceiveParsedMessage{Text: pendingMessage.Text, MediaSegments: pendingMessage.MediaSegments, Segments: pendingMessage.Segments}
 		if len(pendingMessage.ImagePaths) == 0 {
 			parsed.ImageSegments = pendingMessage.ImageSegments
 		}
-		trimmed, imagePaths, attachments := s.materializeNapCatReceivedMessage(ctx, parsed, budget)
+		trimmed, imagePaths, attachments := s.materializeNapCatReceivedMessage(receiveCtx, parsed, budget)
 		imagePaths = append(append([]string(nil), pendingMessage.ImagePaths...), imagePaths...)
-		quote, errQuote := s.resolveQuotedMessage(ctx, source, pendingMessage.ReplyMessageID, budget)
+		quote, errQuote := s.resolveQuotedMessage(receiveCtx, source, pendingMessage.ReplyMessageID, budget)
 		if errQuote != nil {
 			s.setLastError(errQuote)
 			logging.Warnf(
@@ -1320,6 +1324,9 @@ func (s *NapCatService) processIncomingBatch(ctx context.Context, cfg config.Nap
 
 		if trimmed == "" && len(imagePaths)+len(attachments) == 0 {
 			trimmed = "[消息内容超出本批接收限额]"
+			if quote != nil && pendingMessage.Text == "[用户引用了消息]" {
+				trimmed = pendingMessage.Text
+			}
 		}
 		storageMessages = append(storageMessages, storage.ChatMessage{
 			Role:        "user",
@@ -1330,6 +1337,7 @@ func (s *NapCatService) processIncomingBatch(ctx context.Context, cfg config.Nap
 			Timestamp:   now.Add(time.Millisecond * time.Duration(index)),
 		})
 	}
+	cancelReceive()
 	if len(storageMessages) == 0 || s.validateSourceContext(ctx) != nil {
 		return
 	}
