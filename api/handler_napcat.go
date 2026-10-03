@@ -139,5 +139,5 @@ func (h *Handler) handleNapCatWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.napCatService.Connect(conn, expected)
+	h.napCatService.connect(conn, expected, true)
 }

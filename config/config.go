@@ -1602,9 +1602,15 @@ func (m *Manager) GetNapCatConfig() NapCatConfig {
 func (m *Manager) UpdateNapCatConfig(cfg NapCatConfig) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	previous := m.config.NapCat
+	cfg.AccessToken = strings.TrimSpace(cfg.AccessToken)
+	cfg.PromptID = strings.TrimSpace(cfg.PromptID)
+	cfg.SourceFilterMode = normalizeNapCatSourceFilterMode(cfg.SourceFilterMode)
+	cfg.AllowedPrivateUserIDs = normalizeNapCatAllowlist(cfg.AllowedPrivateUserIDs)
 	m.config.NapCat = cfg
-	if m.applyConfigDefaults() {
-		return m.saveUnsafe()
+	if err := m.saveUnsafe(); err != nil {
+		m.config.NapCat = previous
+		return err
 	}
-	return m.saveUnsafe()
+	return nil
 }

@@ -71,6 +71,9 @@ type napCatPendingMessage struct {
 }
 
 type napCatPendingReply struct {
+	Context         context.Context
+	Cancel          context.CancelFunc
+	TimerVersion    uint64
 	Messages        []napCatPendingMessage
 	WindowStartedAt time.Time
 	LastActive      time.Time
@@ -108,6 +111,9 @@ type napCatMessageEvent struct {
 	Time        int64           `json:"time"`
 	SelfID      int64           `json:"self_id"`
 	PostType    string          `json:"post_type"`
+	NoticeType  string          `json:"notice_type,omitempty"`
+	TargetID    int64           `json:"target_id,omitempty"`
+	SenderID    int64           `json:"sender_id,omitempty"`
 	MessageType string          `json:"message_type"`
 	SubType     string          `json:"sub_type"`
 	MessageID   int64           `json:"message_id"`
@@ -150,18 +156,20 @@ type napCatGetMsgData struct {
 }
 
 type napCatGetImageData struct {
-	File string `json:"file,omitempty"`
-	Path string `json:"path,omitempty"`
-	URL  string `json:"url,omitempty"`
+	File   string `json:"file,omitempty"`
+	Path   string `json:"path,omitempty"`
+	URL    string `json:"url,omitempty"`
+	Base64 string `json:"base64,omitempty"`
 }
 
 type NapCatService struct {
 	handler *Handler
 
-	mu         sync.RWMutex
-	conn       *websocket.Conn
-	connCancel context.CancelFunc
-	writeMu    sync.Mutex
+	mu          sync.RWMutex
+	conn        *websocket.Conn
+	connCancel  context.CancelFunc
+	connContext context.Context
+	writeMu     sync.Mutex
 
 	connectedAt           time.Time
 	connectedAccessToken  string
@@ -197,20 +205,28 @@ func (s *NapCatService) Close() {
 }
 
 func (s *NapCatService) ApplyCurrentConfig() {
-	cfg := config.NapCatConfig{}
-	if s.handler != nil && s.handler.configManager != nil {
-		cfg = s.handler.configManager.GetNapCatConfig()
-	}
-	if !cfg.Enabled || strings.TrimSpace(cfg.AccessToken) == "" {
-		s.disconnect("napcat disabled or missing token")
+	if s.handler == nil || s.handler.configManager == nil {
+		s.disconnect("napcat configuration unavailable")
 		return
 	}
-
-	s.mu.RLock()
-	tokenAtConnect := s.connectedAccessToken
-	s.mu.RUnlock()
-	if tokenAtConnect != "" && tokenAtConnect != strings.TrimSpace(cfg.AccessToken) {
-		s.disconnect("napcat access token rotated")
+	s.mu.Lock()
+	cfg := s.handler.configManager.GetNapCatConfig()
+	conn := s.conn
+	disconnect := !cfg.Enabled || strings.TrimSpace(cfg.AccessToken) == "" || (s.connectedAccessToken != "" && s.connectedAccessToken != strings.TrimSpace(cfg.AccessToken))
+	for source, state := range s.pendingReplies {
+		if disconnect || !cfg.AllowPrivate || !napCatSourceAllowed(cfg, source) {
+			if state.Timer != nil {
+				state.Timer.Stop()
+			}
+			if state.Cancel != nil {
+				state.Cancel()
+			}
+			delete(s.pendingReplies, source)
+		}
+	}
+	s.mu.Unlock()
+	if disconnect && conn != nil {
+		s.disconnectConnection(conn, "napcat configuration changed")
 	}
 }
 
@@ -275,41 +291,46 @@ func (s *NapCatService) GetSettings() (*NapCatSettingsResponse, error) {
 }
 
 func (s *NapCatService) Connect(conn *websocket.Conn, accessToken string) {
+	s.connect(conn, accessToken, false)
+}
+
+func (s *NapCatService) connect(conn *websocket.Conn, accessToken string, authenticate bool) {
 	if conn == nil {
 		return
 	}
 
 	accessToken = strings.TrimSpace(accessToken)
 
+	ctx, cancel := context.WithCancel(context.WithValue(context.Background(), napCatConnectionKey{}, conn))
 	s.mu.Lock()
-	prevConn := s.conn
-	prevCancel := s.connCancel
-	s.conn = conn
+	if authenticate {
+		cfg := s.handler.configManager.GetNapCatConfig()
+		if !cfg.Enabled || strings.TrimSpace(cfg.AccessToken) != accessToken {
+			s.mu.Unlock()
+			cancel()
+			_ = conn.Close()
+			return
+		}
+	}
+	prevConn, prevCancel := s.conn, s.connCancel
+	for echo, waiter := range s.pendingActionWaiters {
+		delete(s.pendingActionWaiters, echo)
+		close(waiter)
+	}
+	s.clearPendingRepliesLocked()
+	s.conn, s.connCancel, s.connContext = conn, cancel, ctx
 	s.connectedAt = time.Now()
 	s.connectedAccessToken = accessToken
-	s.connCancel = nil
 	s.selfID = 0
 	s.selfNickname = ""
 	s.clearLastErrorLocked()
 	s.mu.Unlock()
-
 	if prevCancel != nil {
 		prevCancel()
 	}
 	if prevConn != nil {
 		_ = prevConn.Close()
 	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	s.mu.Lock()
-	if s.conn == conn {
-		s.connCancel = cancel
-	} else {
-		cancel()
-		s.mu.Unlock()
-		return
-	}
-	s.mu.Unlock()
 
 	go s.readLoop(ctx, conn)
 
@@ -322,7 +343,16 @@ func (s *NapCatService) Connect(conn *websocket.Conn, accessToken string) {
 }
 
 func (s *NapCatService) disconnect(reason string) {
+	s.disconnectConnection(nil, reason)
+}
+
+func (s *NapCatService) disconnectConnection(expected *websocket.Conn, reason string) {
 	s.mu.Lock()
+	if expected != nil && s.conn != expected {
+		s.mu.Unlock()
+		return
+	}
+	s.clearPendingRepliesLocked()
 	conn := s.conn
 	cancel := s.connCancel
 	s.conn = nil
@@ -367,14 +397,7 @@ func (s *NapCatService) setLastError(err error) {
 }
 
 func (s *NapCatService) readLoop(ctx context.Context, conn *websocket.Conn) {
-	defer func() {
-		s.mu.Lock()
-		shouldDisconnect := s.conn == conn
-		s.mu.Unlock()
-		if shouldDisconnect {
-			s.disconnect("connection closed")
-		}
-	}()
+	defer s.disconnectConnection(conn, "connection closed")
 
 	conn.SetReadLimit(8 << 20) // 8MB
 
@@ -401,7 +424,7 @@ func (s *NapCatService) readLoop(ctx context.Context, conn *websocket.Conn) {
 }
 
 func (s *NapCatService) handleIncomingFrame(ctx context.Context, data []byte) {
-	if len(data) == 0 {
+	if len(data) == 0 || ctx.Err() != nil {
 		return
 	}
 
@@ -419,7 +442,7 @@ func (s *NapCatService) handleIncomingFrame(ctx context.Context, data []byte) {
 		}
 		if event.SelfID != 0 {
 			s.mu.Lock()
-			if s.selfID == 0 {
+			if s.contextValidLocked(ctx) == nil && s.selfID == 0 {
 				s.selfID = event.SelfID
 			}
 			s.mu.Unlock()
@@ -444,6 +467,10 @@ func (s *NapCatService) handleIncomingFrame(ctx context.Context, data []byte) {
 	}
 
 	s.mu.Lock()
+	if s.contextValidLocked(ctx) != nil {
+		s.mu.Unlock()
+		return
+	}
 	ch := s.pendingActionWaiters[echo]
 	delete(s.pendingActionWaiters, echo)
 	s.mu.Unlock()
@@ -482,6 +509,10 @@ func (s *NapCatService) refreshLoginInfo(ctx context.Context) error {
 	}
 
 	s.mu.Lock()
+	if err := s.contextValidLocked(ctx); err != nil {
+		s.mu.Unlock()
+		return err
+	}
 	s.selfID = info.UserID
 	s.selfNickname = strings.TrimSpace(info.Nickname)
 	s.mu.Unlock()
@@ -489,6 +520,11 @@ func (s *NapCatService) refreshLoginInfo(ctx context.Context) error {
 }
 
 func (s *NapCatService) sendActionWithEcho(ctx context.Context, action string, params interface{}) (*napCatActionResponse, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, napCatActionTimeout)
+	defer cancel()
 	action = strings.TrimSpace(action)
 	if action == "" {
 		return nil, errors.New("action is empty")
@@ -498,6 +534,10 @@ func (s *NapCatService) sendActionWithEcho(ctx context.Context, action string, p
 	waiter := make(chan *napCatActionResponse, 1)
 
 	s.mu.Lock()
+	if err := s.contextValidLocked(ctx); err != nil {
+		s.mu.Unlock()
+		return nil, err
+	}
 	conn := s.conn
 	if conn == nil {
 		s.mu.Unlock()
@@ -514,7 +554,7 @@ func (s *NapCatService) sendActionWithEcho(ctx context.Context, action string, p
 		Params: params,
 		Echo:   echo,
 	}
-	if err := s.writeJSON(conn, req); err != nil {
+	if err := s.writeJSONContext(ctx, conn, req); err != nil {
 		s.mu.Lock()
 		if ch := s.pendingActionWaiters[echo]; ch != nil {
 			delete(s.pendingActionWaiters, echo)
@@ -542,7 +582,6 @@ func (s *NapCatService) sendActionWithEcho(ctx context.Context, action string, p
 }
 
 func (s *NapCatService) sendAction(ctx context.Context, action string, params interface{}) error {
-	_ = ctx
 	action = strings.TrimSpace(action)
 	if action == "" {
 		return errors.New("action is empty")
@@ -555,29 +594,104 @@ func (s *NapCatService) sendAction(ctx context.Context, action string, params in
 		return errors.New("napcat websocket not connected")
 	}
 
-	return s.writeJSON(conn, napCatActionRequest{
+	return s.writeJSONContext(ctx, conn, napCatActionRequest{
 		Action: action,
 		Params: params,
 	})
 }
 
-func (s *NapCatService) writeJSON(conn *websocket.Conn, value interface{}) error {
-	if conn == nil {
-		return errors.New("napcat websocket not connected")
-	}
+// Context values bind work to the socket that accepted it and, optionally, its source.
+type napCatConnectionKey struct{}
+type napCatSourceKey struct{}
+type napCatPendingKey struct{}
 
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-
-	_ = conn.SetWriteDeadline(time.Now().Add(15 * time.Second))
-	if err := conn.WriteJSON(value); err != nil {
-		s.setLastError(err)
+func (s *NapCatService) contextValidLocked(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
 		return err
+	}
+	if conn, ok := ctx.Value(napCatConnectionKey{}).(*websocket.Conn); ok && conn != s.conn {
+		return errors.New("napcat connection changed")
+	}
+	if source, ok := ctx.Value(napCatSourceKey{}).(napCatChatSource); ok {
+		if s.handler == nil || s.handler.configManager == nil {
+			return errors.New("napcat configuration unavailable")
+		}
+		cfg := s.handler.configManager.GetNapCatConfig()
+		if !cfg.Enabled || !cfg.AllowPrivate || strings.TrimSpace(cfg.AccessToken) == "" || strings.TrimSpace(cfg.AccessToken) != s.connectedAccessToken || !napCatSourceAllowed(cfg, source) {
+			return errors.New("napcat source permission revoked")
+		}
+		if source.SelfID != 0 && source.SelfID != s.selfID {
+			return errors.New("napcat connected self_id mismatch")
+		}
 	}
 	return nil
 }
 
+// bindSourceContext must be called before generating unsolicited replies as well as sending them.
+// The returned cleanup releases the cancellation link to the originating connection.
+func (s *NapCatService) bindSourceContext(ctx context.Context, source napCatChatSource) (context.Context, context.CancelFunc, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.contextValidLocked(ctx); err != nil {
+		return nil, nil, err
+	}
+	if s.conn == nil || s.connContext == nil {
+		return nil, nil, errors.New("napcat websocket not connected")
+	}
+	ctx = context.WithValue(ctx, napCatConnectionKey{}, s.conn)
+	ctx = context.WithValue(ctx, napCatSourceKey{}, source)
+	if err := s.contextValidLocked(ctx); err != nil {
+		return nil, nil, err
+	}
+	runCtx, cancel := context.WithCancel(ctx)
+	stop := context.AfterFunc(s.connContext, cancel)
+	return runCtx, func() { stop(); cancel() }, nil
+}
+
+func (s *NapCatService) validateSourceContext(ctx context.Context) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.contextValidLocked(ctx)
+}
+
+func (s *NapCatService) writeJSON(conn *websocket.Conn, value interface{}) error {
+	return s.writeJSONContext(context.Background(), conn, value)
+}
+
+func (s *NapCatService) writeJSONContext(ctx context.Context, conn *websocket.Conn, value interface{}) error {
+	if conn == nil {
+		return errors.New("napcat websocket not connected")
+	}
+	// TryLock keeps cancellation responsive without leaving lock-waiter goroutines behind.
+	for !s.writeMu.TryLock() {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Millisecond):
+		}
+	}
+	defer s.writeMu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.contextValidLocked(ctx); err != nil {
+		return err
+	}
+	if conn != s.conn {
+		return errors.New("napcat connection changed")
+	}
+	deadline := time.Now().Add(napCatActionTimeout)
+	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
+		deadline = d
+	}
+	_ = conn.SetWriteDeadline(deadline)
+	return conn.WriteJSON(value)
+}
+
 func (s *NapCatService) handleEvent(ctx context.Context, event napCatMessageEvent) {
+	event = normalizeNapCatPrivateNotice(event)
 	if strings.TrimSpace(event.PostType) != "message" {
 		return
 	}
@@ -623,7 +737,7 @@ func (s *NapCatService) handleEvent(ctx context.Context, event napCatMessageEven
 		return
 	}
 
-	batch, accepted := s.enqueuePendingMessage(source, *parsed)
+	batch, accepted := s.enqueuePendingMessageContext(ctx, source, *parsed)
 	if !accepted {
 		return
 	}
@@ -720,7 +834,7 @@ func parseNapCatRawStringMessage(raw string, allowReply bool) *napCatParsedMessa
 		return nil
 	}
 	if !strings.Contains(text, "[CQ:") {
-		return &napCatParsedMessage{Text: text}
+		return &napCatParsedMessage{Text: decodeNapCatCQText(text)}
 	}
 
 	segments := make([]napCatMessageSegment, 0, 4)
@@ -847,6 +961,11 @@ func parseNapCatCQSegment(raw string) (napCatMessageSegment, bool) {
 		}
 	case "face":
 		segment.Data.ID = strings.TrimSpace(args["id"])
+	case "mface":
+		segment.Data.ID = strings.TrimSpace(args["id"])
+		segment.Data.Summary = strings.TrimSpace(args["summary"])
+		segment.Data.EmojiID = strings.TrimSpace(args["emoji_id"])
+		segment.Data.EmojiPackageID = strings.TrimSpace(args["emoji_package_id"])
 	case "poke":
 		segment.Data.PokeType = strings.TrimSpace(args["type"])
 		segment.Data.ID = strings.TrimSpace(args["id"])
@@ -1129,22 +1248,11 @@ func (s *NapCatService) downloadNapCatImageBytes(ctx context.Context, segment na
 	var resolvedErr error
 	resource, errResolve := s.resolveNapCatImageResource(ctx, segment)
 	if errResolve == nil {
-		switch {
-		case strings.TrimSpace(resource.URL) != "":
-			data, err := downloadNapCatImageBytesFromURL(ctx, resource.URL)
-			if err == nil {
-				return data, nil
-			}
-			resolvedErr = err
-		case strings.TrimSpace(resource.File) != "":
-			data, err := readNapCatImageBytesFromFile(resource.File)
-			if err == nil {
-				return data, nil
-			}
-			resolvedErr = err
-		default:
-			resolvedErr = fmt.Errorf("resolved napcat image resource missing url/file")
+		data, err := readNapCatResolvedResource(ctx, resource, maxChatImageBodyBytes)
+		if err == nil {
+			return data, nil
 		}
+		resolvedErr = err
 	} else {
 		resolvedErr = errResolve
 	}
@@ -1213,8 +1321,8 @@ func (s *NapCatService) resolveNapCatImageResource(ctx context.Context, segment 
 	if data.File == "" {
 		data.File = data.Path
 	}
-	if data.URL == "" && data.File == "" {
-		return nil, fmt.Errorf("get_image response missing url/file")
+	if data.URL == "" && data.File == "" && data.Base64 == "" {
+		return nil, fmt.Errorf("get_image response missing url/file/base64")
 	}
 	return &data, nil
 }
@@ -1296,6 +1404,18 @@ func stringSliceContains(values []string, value string) bool {
 }
 
 func (s *NapCatService) processPendingBatchAsync(ctx context.Context, source napCatChatSource, batch []napCatPendingMessage) {
+	s.mu.RLock()
+	state := s.pendingReplies[source]
+	if state == nil || (ctx != nil && s.contextValidLocked(ctx) != nil) {
+		s.mu.RUnlock()
+		return
+	}
+	if prior, ok := ctxPendingState(ctx); ok && prior != state {
+		s.mu.RUnlock()
+		return
+	}
+	ctx = state.Context
+	s.mu.RUnlock()
 	if len(batch) == 0 {
 		s.finishPendingReplyProcessing(ctx, source)
 		return
@@ -1308,7 +1428,7 @@ func (s *NapCatService) processPendingBatchAsync(ctx context.Context, source nap
 		if s.handler != nil && s.handler.configManager != nil {
 			cfg = s.handler.configManager.GetNapCatConfig()
 		}
-		if !cfg.Enabled || strings.TrimSpace(cfg.AccessToken) == "" {
+		if !cfg.Enabled || !cfg.AllowPrivate || !napCatSourceAllowed(cfg, source) || strings.TrimSpace(cfg.AccessToken) == "" {
 			return
 		}
 
@@ -1324,6 +1444,11 @@ func (s *NapCatService) processPendingBatchAsync(ctx context.Context, source nap
 }
 
 func (s *NapCatService) processIncomingBatch(ctx context.Context, cfg config.NapCatConfig, source napCatChatSource, messages []napCatPendingMessage) {
+	ctx, cancel, bindErr := s.bindSourceContext(ctx, source)
+	if bindErr != nil {
+		return
+	}
+	defer cancel()
 	if len(messages) == 0 || !source.isPrivate() {
 		return
 	}
@@ -1371,7 +1496,7 @@ func (s *NapCatService) processIncomingBatch(ctx context.Context, cfg config.Nap
 			Timestamp:  now.Add(time.Millisecond * time.Duration(index)),
 		})
 	}
-	if len(storageMessages) == 0 {
+	if len(storageMessages) == 0 || s.validateSourceContext(ctx) != nil {
 		return
 	}
 
@@ -1420,6 +1545,9 @@ func (s *NapCatService) processIncomingBatch(ctx context.Context, cfg config.Nap
 		}
 	}
 
+	if s.validateSourceContext(ctx) != nil {
+		return
+	}
 	generatedReply, err := s.generateReply(ctx, source, session.SessionID, cfg.PromptID)
 	if err != nil {
 		logging.Errorf("napcat generate reply failed: source=%+v session=%s err=%v", source, session.SessionID, err)
@@ -1573,6 +1701,12 @@ func (s *NapCatService) sendAndPersistReply(ctx context.Context, source napCatCh
 	if generatedReply == nil || !source.isPrivate() {
 		return
 	}
+	ctx, cancel, err := s.bindSourceContext(ctx, source)
+	if err != nil {
+		s.setLastError(err)
+		return
+	}
+	defer cancel()
 
 	reply := strings.TrimSpace(generatedReply.Text)
 	if reply != "" {
@@ -1621,7 +1755,7 @@ func (s *NapCatService) sendPrivateText(ctx context.Context, userID int64, text 
 	for _, chunk := range chunks {
 		if err := s.sendConfirmedAction(ctx, "send_private_msg", map[string]interface{}{
 			"user_id": userID,
-			"message": chunk,
+			"message": []napCatMessageSegment{{Type: "text", Data: napCatMessageSegmentData{Text: chunk}}},
 		}); err != nil {
 			return err
 		}
@@ -1662,6 +1796,11 @@ func (s *NapCatService) sendReminderPrivateText(ctx context.Context, target stor
 		return fmt.Errorf("napcat connected self_id mismatch: connected=%d target=%d", connectedSelfID, targetSelfID)
 	}
 
+	ctx, cancel, err := s.bindSourceContext(ctx, napCatChatSource{Kind: "private", UserID: userID, SelfID: targetSelfID})
+	if err != nil {
+		return err
+	}
+	defer cancel()
 	if err := s.sendPrivateText(ctx, userID, text); err != nil {
 		if isRetryableNapCatReminderSendError(err) {
 			return newRetryableReminderError(err)
@@ -1906,6 +2045,9 @@ func (s *NapCatService) cleanupState() {
 		if state.Timer != nil {
 			state.Timer.Stop()
 		}
+		if state.Cancel != nil {
+			state.Cancel()
+		}
 		delete(s.pendingReplies, source)
 	}
 	s.mu.Unlock()
@@ -1915,9 +2057,16 @@ func (s *NapCatService) clearAllPendingReplies() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	s.clearPendingRepliesLocked()
+}
+
+func (s *NapCatService) clearPendingRepliesLocked() {
 	for source, state := range s.pendingReplies {
 		if state.Timer != nil {
 			state.Timer.Stop()
+		}
+		if state.Cancel != nil {
+			state.Cancel()
 		}
 		delete(s.pendingReplies, source)
 	}
@@ -1943,15 +2092,39 @@ func (s *NapCatService) getReplyWaitWindow() (string, time.Duration) {
 }
 
 func (s *NapCatService) enqueuePendingMessage(source napCatChatSource, message napCatPendingMessage) ([]napCatPendingMessage, bool) {
+	s.mu.RLock()
+	ctx := s.connContext
+	s.mu.RUnlock()
+	return s.enqueuePendingMessageContext(ctx, source, message)
+}
+
+func (s *NapCatService) enqueuePendingMessageContext(ctx context.Context, source napCatChatSource, message napCatPendingMessage) ([]napCatPendingMessage, bool) {
 	mode, delay := s.getReplyWaitWindow()
 	now := time.Now()
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if ctx != nil && s.contextValidLocked(ctx) != nil {
+		return nil, false
+	}
+	if ctx == nil || ctx.Value(napCatConnectionKey{}) == nil {
+		ctx = s.connContext
+	}
+	if s.handler != nil && s.handler.configManager != nil {
+		cfg := s.handler.configManager.GetNapCatConfig()
+		if !cfg.Enabled || !cfg.AllowPrivate || !napCatSourceAllowed(cfg, source) {
+			return nil, false
+		}
+	}
 	state := s.pendingReplies[source]
 	if state == nil {
 		state = &napCatPendingReply{}
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		ctx = context.WithValue(ctx, napCatPendingKey{}, state)
+		state.Context, state.Cancel = context.WithCancel(ctx)
 		s.pendingReplies[source] = state
 	}
 	if len(state.Messages) == 0 {
@@ -1963,6 +2136,7 @@ func (s *NapCatService) enqueuePendingMessage(source napCatChatSource, message n
 	if delay <= 0 {
 		if state.Processing {
 			state.Ready = true
+			state.TimerVersion++
 			if state.Timer != nil {
 				state.Timer.Stop()
 				state.Timer = nil
@@ -2000,8 +2174,11 @@ func (s *NapCatService) schedulePendingReplyLocked(source napCatChatSource, stat
 		state.Timer.Stop()
 		state.Timer = nil
 	}
+	state.Ready = false
+	state.TimerVersion++
+	version := state.TimerVersion
 	state.Timer = time.AfterFunc(waitFor, func() {
-		s.flushPendingReply(nil, source)
+		s.flushPendingReplyVersion(state.Context, source, state, version)
 	})
 }
 
@@ -2009,6 +2186,7 @@ func (s *NapCatService) beginPendingProcessingLocked(state *napCatPendingReply) 
 	if state == nil || state.Processing || len(state.Messages) == 0 {
 		return nil
 	}
+	state.TimerVersion++
 	batch := append([]napCatPendingMessage(nil), state.Messages...)
 	state.Messages = nil
 	state.WindowStartedAt = time.Time{}
@@ -2022,12 +2200,25 @@ func (s *NapCatService) beginPendingProcessingLocked(state *napCatPendingReply) 
 }
 
 func (s *NapCatService) flushPendingReply(ctx context.Context, source napCatChatSource) {
+	s.flushPendingReplyVersion(ctx, source, nil, 0)
+}
+
+func (s *NapCatService) flushPendingReplyVersion(ctx context.Context, source napCatChatSource, expected *napCatPendingReply, version uint64) {
 	s.mu.Lock()
 	state := s.pendingReplies[source]
 	if state == nil {
 		s.mu.Unlock()
 		return
 	}
+	if expected != nil && (state != expected || state.TimerVersion != version) {
+		s.mu.Unlock()
+		return
+	}
+	if ctx != nil && s.contextValidLocked(ctx) != nil {
+		s.mu.Unlock()
+		return
+	}
+	ctx = state.Context
 	state.Timer = nil
 	if state.Processing {
 		state.Ready = true
@@ -2043,6 +2234,14 @@ func (s *NapCatService) flushPendingReply(ctx context.Context, source napCatChat
 	s.processPendingBatchAsync(ctx, source, batch)
 }
 
+func ctxPendingState(ctx context.Context) (*napCatPendingReply, bool) {
+	if ctx == nil {
+		return nil, false
+	}
+	state, ok := ctx.Value(napCatPendingKey{}).(*napCatPendingReply)
+	return state, ok
+}
+
 func (s *NapCatService) finishPendingReplyProcessing(ctx context.Context, source napCatChatSource) {
 	mode, delay := s.getReplyWaitWindow()
 
@@ -2052,33 +2251,34 @@ func (s *NapCatService) finishPendingReplyProcessing(ctx context.Context, source
 		s.mu.Unlock()
 		return
 	}
+	if ctx != nil && s.contextValidLocked(ctx) != nil {
+		s.mu.Unlock()
+		return
+	}
+	if prior, ok := ctxPendingState(ctx); ok && prior != state {
+		s.mu.Unlock()
+		return
+	}
 	state.Processing = false
-	shouldFlushNow := state.Ready
-	state.Ready = false
-	hasMessages := len(state.Messages) > 0
-	hasTimer := state.Timer != nil
-	if !hasMessages && !hasTimer {
+	if len(state.Messages) == 0 && state.Timer == nil {
+		if state.Cancel != nil {
+			state.Cancel()
+		}
 		delete(s.pendingReplies, source)
-	}
-	s.mu.Unlock()
-
-	if !hasMessages {
+		s.mu.Unlock()
 		return
 	}
-	if shouldFlushNow || delay <= 0 {
-		s.flushPendingReply(ctx, source)
-		return
-	}
-	if hasTimer {
-		return
-	}
-
-	s.mu.Lock()
-	state = s.pendingReplies[source]
-	if state != nil && !state.Processing && len(state.Messages) > 0 {
+	var batch []napCatPendingMessage
+	if state.Ready || delay <= 0 {
+		batch = s.beginPendingProcessingLocked(state)
+	} else if state.Timer == nil && len(state.Messages) > 0 {
 		s.schedulePendingReplyLocked(source, state, mode, delay, time.Now())
 	}
+	ctx = state.Context
 	s.mu.Unlock()
+	if len(batch) > 0 {
+		s.processPendingBatchAsync(ctx, source, batch)
+	}
 }
 
 func napCatPrivateSessionPrefix(selfID, userID int64) string {

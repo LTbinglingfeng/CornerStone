@@ -130,6 +130,11 @@ func newNapCatTestService(
 		service.Close()
 		server.Close()
 	})
+	// Production processing requires a confirmed bot identity. Wait for login
+	// rather than racing the background handshake in these integration fixtures.
+	if err := service.refreshLoginInfo(context.Background()); err != nil {
+		t.Fatalf("refreshLoginInfo: %v", err)
+	}
 
 	return service
 }
@@ -140,9 +145,15 @@ func newNapCatQuoteTestHandler(t *testing.T) *Handler {
 	provider := newTestProvider("provider-1")
 	provider.APIKey = ""
 
+	manager := newTestProviderConfigManager(t, provider)
+	cfg := manager.GetNapCatConfig()
+	cfg.Enabled, cfg.AllowPrivate, cfg.AccessToken = true, true, "test-token"
+	if err := manager.UpdateNapCatConfig(cfg); err != nil {
+		t.Fatal(err)
+	}
 	return &Handler{
 		chatManager:   storage.NewChatManager(t.TempDir()),
-		configManager: newTestProviderConfigManager(t, provider),
+		configManager: manager,
 		cachePhotoDir: t.TempDir(),
 	}
 }
@@ -2533,8 +2544,10 @@ func TestIdleGreetingService_FireTask_NapCatSendsAndPersists(t *testing.T) {
 			}
 		case "send_private_msg":
 			if params, ok := req.Params.(map[string]interface{}); ok {
-				if text, ok := params["message"].(string); ok {
-					sendTexts = append(sendTexts, text)
+				raw, _ := json.Marshal(params["message"])
+				parsed, _ := parseNapCatEventMessage(raw, "")
+				if parsed != nil {
+					sendTexts = append(sendTexts, parsed.Text)
 				}
 			}
 			return napCatActionResponse{
