@@ -34,12 +34,13 @@ type ChatMessage struct {
 }
 
 type QuotedMessage struct {
-	MessageID      string   `json:"message_id,omitempty"`
-	MessageType    string   `json:"message_type,omitempty"`
-	SenderUserID   string   `json:"sender_user_id,omitempty"`
-	SenderNickname string   `json:"sender_nickname,omitempty"`
-	Content        string   `json:"content,omitempty"`
-	ImagePaths     []string `json:"image_paths,omitempty"`
+	Attachments    []ChatAttachment `json:"attachments,omitempty"`
+	MessageID      string           `json:"message_id,omitempty"`
+	MessageType    string           `json:"message_type,omitempty"`
+	SenderUserID   string           `json:"sender_user_id,omitempty"`
+	SenderNickname string           `json:"sender_nickname,omitempty"`
+	Content        string           `json:"content,omitempty"`
+	ImagePaths     []string         `json:"image_paths,omitempty"`
 }
 
 // ChatRecord 聊天记录条目（每个会话一个JSONL文件）
@@ -274,6 +275,7 @@ func cloneQuotedMessage(quote *QuotedMessage) *QuotedMessage {
 	}
 
 	copied := *quote
+	copied.Attachments = append([]ChatAttachment(nil), quote.Attachments...)
 	if len(quote.ImagePaths) > 0 {
 		copied.ImagePaths = append([]string(nil), quote.ImagePaths...)
 	}

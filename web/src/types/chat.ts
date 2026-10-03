@@ -6,7 +6,18 @@ export interface ChatAttachment {
     size: number
 }
 
+export interface QuotedMessage {
+    message_id?: string
+    message_type?: string
+    sender_user_id?: string
+    sender_nickname?: string
+    content?: string
+    image_paths?: string[]
+    attachments?: ChatAttachment[]
+}
+
 export interface ChatMessage {
+    quote?: QuotedMessage
     role: string
     content: string
     reasoning_content?: string

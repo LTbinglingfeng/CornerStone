@@ -804,10 +804,10 @@ const en = {
         wsUrlHint:
             'Fill this URL in NapCat reverse WebSocket settings. Supports access_token query or Authorization: Bearer <token>.',
         messagePostFormatHint:
-            'Use messagePostFormat=array in NapCat for full private-chat compatibility. string mode is only a CQ fallback, and group chat is still unsupported.',
+            'Use messagePostFormat=array in NapCat; string mode is a CQ fallback. Receiving media across hosts requires accessible download URLs, Base64 responses, or shared storage.',
         enableChannel: 'Enable Channel',
         m1PrivateOnly:
-            'This version supports NapCat private text, image, and poke messages. Group chat and other message types remain unsupported.',
+            'Private chats only: text, images, audio, video, files, quotes, forwarded-message parsing, and pokes. Non-image attachments are saved, but the current model does not automatically listen to, watch, or read them. Group chat and automatic friend-request approval are not supported.',
         bindPersona: 'Bind Persona',
         noPersonaBind: 'No persona',
         accessToken: 'Access Token',

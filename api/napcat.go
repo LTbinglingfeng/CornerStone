@@ -10,9 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -67,6 +64,7 @@ type napCatPendingMessage struct {
 	MessageID      int64
 	ReplyMessageID int64
 	ImageSegments  []napCatMessageSegment
+	MediaSegments  []napCatIncomingSegment
 	ImagePaths     []string
 }
 
@@ -399,7 +397,9 @@ func (s *NapCatService) setLastError(err error) {
 func (s *NapCatService) readLoop(ctx context.Context, conn *websocket.Conn) {
 	defer s.disconnectConnection(conn, "connection closed")
 
-	conn.SetReadLimit(8 << 20) // 8MB
+	// Base64 media returned by get_file/get_record must fit without an
+	// unbounded websocket frame. Materialization enforces the decoded budget.
+	conn.SetReadLimit((storage.MaxAttachmentBytes+2)/3*4 + (1 << 20))
 
 	for {
 		if ctx.Err() != nil {
@@ -770,10 +770,10 @@ func (d napCatMessageSegmentData) hasEmojiMetadata() bool {
 }
 
 func (s *NapCatService) parseIncomingPrivateMessage(source napCatChatSource, event napCatMessageEvent) (*napCatPendingMessage, bool) {
-	parsed, errParse := parseNapCatEventMessage(event.Message, event.RawMessage)
+	parsed, errParse := parseNapCatReceiveMessage(event.Message, event.RawMessage, true)
 	if errParse != nil {
 		logging.Warnf("napcat parse message failed: source=%+v message_id=%d err=%v", source, event.MessageID, errParse)
-		return nil, false
+		return &napCatPendingMessage{Text: "[消息内容超出接收限额或解析失败]", MessageID: event.MessageID}, true
 	}
 	if parsed == nil {
 		return nil, false
@@ -783,6 +783,12 @@ func (s *NapCatService) parseIncomingPrivateMessage(source napCatChatSource, eve
 	if text == "" && len(parsed.ImageSegments) > 0 {
 		text = "[用户发送了图片]"
 	}
+	if text == "" && len(parsed.MediaSegments) > 0 {
+		text = "[用户发送了附件或合并转发]"
+	}
+	if text == "" && parsed.ReplyMessageID != 0 {
+		text = "[用户引用了消息]"
+	}
 	if text == "" && len(parsed.ImageSegments) == 0 {
 		return nil, false
 	}
@@ -791,6 +797,7 @@ func (s *NapCatService) parseIncomingPrivateMessage(source napCatChatSource, eve
 		Text:           text,
 		MessageID:      event.MessageID,
 		ReplyMessageID: parsed.ReplyMessageID,
+		MediaSegments:  append([]napCatIncomingSegment(nil), parsed.MediaSegments...),
 	}
 	if len(parsed.ImageSegments) > 0 {
 		pending.ImageSegments = append([]napCatMessageSegment(nil), parsed.ImageSegments...)
@@ -1098,7 +1105,7 @@ func formatNapCatPokePlaceholder() string {
 	return "[戳一戳]"
 }
 
-func (s *NapCatService) resolveQuotedMessage(ctx context.Context, source napCatChatSource, replyMessageID int64) (*storage.QuotedMessage, error) {
+func (s *NapCatService) resolveQuotedMessage(ctx context.Context, source napCatChatSource, replyMessageID int64, budgets ...*napCatReceiveBudget) (*storage.QuotedMessage, error) {
 	if replyMessageID <= 0 {
 		return nil, nil
 	}
@@ -1134,7 +1141,7 @@ func (s *NapCatService) resolveQuotedMessage(ctx context.Context, source napCatC
 		return newNapCatQuotePlaceholder(replyMessageID), fmt.Errorf("parse get_msg data failed: %w", err)
 	}
 
-	quote, err := s.buildQuotedMessageFromGetMsg(ctx, source, replyMessageID, data)
+	quote, err := s.buildQuotedMessageFromGetMsg(ctx, source, replyMessageID, data, budgets...)
 	if err != nil {
 		return newNapCatQuotePlaceholder(replyMessageID), err
 	}
@@ -1144,8 +1151,8 @@ func (s *NapCatService) resolveQuotedMessage(ctx context.Context, source napCatC
 	return quote, nil
 }
 
-func (s *NapCatService) buildQuotedMessageFromGetMsg(ctx context.Context, source napCatChatSource, replyMessageID int64, data napCatGetMsgData) (*storage.QuotedMessage, error) {
-	parsed, err := parseNapCatEventMessageWithReply(data.Message, data.RawMessage, false)
+func (s *NapCatService) buildQuotedMessageFromGetMsg(ctx context.Context, source napCatChatSource, replyMessageID int64, data napCatGetMsgData, budgets ...*napCatReceiveBudget) (*storage.QuotedMessage, error) {
+	parsed, err := parseNapCatReceiveMessage(data.Message, data.RawMessage, false)
 	if err != nil {
 		return nil, err
 	}
@@ -1155,14 +1162,11 @@ func (s *NapCatService) buildQuotedMessageFromGetMsg(ctx context.Context, source
 		messageID = replyMessageID
 	}
 
-	imagePaths := []string(nil)
-	content := ""
-	if parsed != nil {
-		content = strings.TrimSpace(parsed.Text)
-		if len(parsed.ImageSegments) > 0 {
-			imagePaths = s.downloadIncomingImagePaths(ctx, source, messageID, parsed.ImageSegments)
-		}
+	var budget *napCatReceiveBudget
+	if len(budgets) > 0 {
+		budget = budgets[0]
 	}
+	content, imagePaths, attachments := s.materializeNapCatReceivedMessage(ctx, parsed, budget)
 	if content == "" && len(imagePaths) > 0 {
 		content = "[用户发送了图片]"
 	}
@@ -1184,6 +1188,7 @@ func (s *NapCatService) buildQuotedMessageFromGetMsg(ctx context.Context, source
 		MessageType:    strings.TrimSpace(data.MessageType),
 		SenderNickname: senderNickname,
 		Content:        content,
+		Attachments:    attachments,
 	}
 	if senderUserID > 0 {
 		quote.SenderUserID = strconv.FormatInt(senderUserID, 10)
@@ -1202,176 +1207,6 @@ func newNapCatQuotePlaceholder(replyMessageID int64) *storage.QuotedMessage {
 		quote.MessageID = strconv.FormatInt(replyMessageID, 10)
 	}
 	return quote
-}
-
-func (s *NapCatService) downloadIncomingImagePaths(ctx context.Context, source napCatChatSource, messageID int64, imageSegments []napCatMessageSegment) []string {
-	if len(imageSegments) == 0 {
-		return nil
-	}
-
-	imagePaths := make([]string, 0, len(imageSegments))
-	for index, segment := range imageSegments {
-		data, err := s.downloadNapCatImageBytes(ctx, segment)
-		if err != nil {
-			s.setLastError(err)
-			logging.Errorf("napcat download image failed: source=%+v message_id=%d index=%d err=%v", source, messageID, index, err)
-			continue
-		}
-
-		relPath, errSave := s.handler.saveCachePhotoBytes(data)
-		if errSave != nil {
-			s.setLastError(errSave)
-			logging.Errorf("napcat save image failed: source=%+v message_id=%d index=%d err=%v", source, messageID, index, errSave)
-			continue
-		}
-		imagePaths = append(imagePaths, relPath)
-	}
-	return imagePaths
-}
-
-func (s *NapCatService) downloadNapCatImageBytes(ctx context.Context, segment napCatMessageSegment) ([]byte, error) {
-	directURL := strings.TrimSpace(segment.Data.URL)
-	localPath := strings.TrimSpace(segment.Data.Path)
-	if localPath == "" && looksLikeNapCatLocalFilePath(segment.Data.File) {
-		localPath = strings.TrimSpace(segment.Data.File)
-	}
-
-	var directErr error
-	if directURL != "" {
-		data, err := downloadNapCatImageBytesFromURL(ctx, directURL)
-		if err == nil {
-			return data, nil
-		}
-		directErr = err
-	}
-
-	var resolvedErr error
-	resource, errResolve := s.resolveNapCatImageResource(ctx, segment)
-	if errResolve == nil {
-		data, err := readNapCatResolvedResource(ctx, resource, maxChatImageBodyBytes)
-		if err == nil {
-			return data, nil
-		}
-		resolvedErr = err
-	} else {
-		resolvedErr = errResolve
-	}
-
-	var localErr error
-	if localPath != "" {
-		data, err := readNapCatImageBytesFromFile(localPath)
-		if err == nil {
-			return data, nil
-		}
-		localErr = err
-	}
-
-	return nil, buildNapCatImageDownloadError(directErr, resolvedErr, localErr)
-}
-
-func buildNapCatImageDownloadError(directErr, resolvedErr, localErr error) error {
-	parts := make([]string, 0, 3)
-	if directErr != nil {
-		parts = append(parts, fmt.Sprintf("segment url download failed: %v", directErr))
-	}
-	if resolvedErr != nil {
-		parts = append(parts, fmt.Sprintf("get_image fallback failed: %v", resolvedErr))
-	}
-	if localErr != nil {
-		parts = append(parts, fmt.Sprintf("local path fallback failed: %v", localErr))
-	}
-	if len(parts) == 0 {
-		return fmt.Errorf("unable to resolve napcat image resource")
-	}
-	return errors.New(strings.Join(parts, "; "))
-}
-
-func (s *NapCatService) resolveNapCatImageResource(ctx context.Context, segment napCatMessageSegment) (*napCatGetImageData, error) {
-	fileID := strings.TrimSpace(segment.Data.FileID)
-	if fileID == "" {
-		fileID = strings.TrimSpace(segment.Data.File)
-	}
-	if fileID == "" {
-		return nil, fmt.Errorf("image segment missing file identifier")
-	}
-
-	resp, err := s.sendActionWithEcho(ctx, "get_image", map[string]interface{}{
-		"file": fileID,
-	})
-	if err != nil {
-		return nil, err
-	}
-	if resp == nil {
-		return nil, fmt.Errorf("get_image failed: empty response")
-	}
-	if strings.ToLower(strings.TrimSpace(resp.Status)) != "ok" || resp.RetCode != 0 {
-		return nil, fmt.Errorf("get_image failed: status=%s retcode=%d message=%s", strings.TrimSpace(resp.Status), resp.RetCode, strings.TrimSpace(resp.Message))
-	}
-
-	var data napCatGetImageData
-	if len(resp.Data) == 0 {
-		return nil, fmt.Errorf("get_image response missing data")
-	}
-	if err := json.Unmarshal(resp.Data, &data); err != nil {
-		return nil, fmt.Errorf("parse get_image data failed: %w", err)
-	}
-	data.File = strings.TrimSpace(data.File)
-	data.Path = strings.TrimSpace(data.Path)
-	data.URL = strings.TrimSpace(data.URL)
-	if data.File == "" {
-		data.File = data.Path
-	}
-	if data.URL == "" && data.File == "" && data.Base64 == "" {
-		return nil, fmt.Errorf("get_image response missing url/file/base64")
-	}
-	return &data, nil
-}
-
-func downloadNapCatImageBytesFromURL(ctx context.Context, rawURL string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSpace(rawURL), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		_ = resp.Body.Close()
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status: %s", resp.Status)
-	}
-
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxChatImageBodyBytes+1))
-	if err != nil {
-		return nil, err
-	}
-	if int64(len(data)) > maxChatImageBodyBytes {
-		return nil, fmt.Errorf("image too large")
-	}
-	return data, nil
-}
-
-func readNapCatImageBytesFromFile(filePath string) ([]byte, error) {
-	file, err := os.Open(strings.TrimSpace(filePath))
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		_ = file.Close()
-	}()
-
-	data, err := io.ReadAll(io.LimitReader(file, maxChatImageBodyBytes+1))
-	if err != nil {
-		return nil, err
-	}
-	if int64(len(data)) > maxChatImageBodyBytes {
-		return nil, fmt.Errorf("image too large")
-	}
-	return data, nil
 }
 
 func napCatSourceAllowed(cfg config.NapCatConfig, source napCatChatSource) bool {
@@ -1463,8 +1298,15 @@ func (s *NapCatService) processIncomingBatch(ctx context.Context, cfg config.Nap
 
 	now := s.handler.now()
 	storageMessages := make([]storage.ChatMessage, 0, len(messages))
+	budget := &napCatReceiveBudget{}
 	for index, pendingMessage := range messages {
-		quote, errQuote := s.resolveQuotedMessage(ctx, source, pendingMessage.ReplyMessageID)
+		parsed := &napCatReceiveParsedMessage{Text: pendingMessage.Text, MediaSegments: pendingMessage.MediaSegments}
+		if len(pendingMessage.ImagePaths) == 0 {
+			parsed.ImageSegments = pendingMessage.ImageSegments
+		}
+		trimmed, imagePaths, attachments := s.materializeNapCatReceivedMessage(ctx, parsed, budget)
+		imagePaths = append(append([]string(nil), pendingMessage.ImagePaths...), imagePaths...)
+		quote, errQuote := s.resolveQuotedMessage(ctx, source, pendingMessage.ReplyMessageID, budget)
 		if errQuote != nil {
 			s.setLastError(errQuote)
 			logging.Warnf(
@@ -1476,24 +1318,16 @@ func (s *NapCatService) processIncomingBatch(ctx context.Context, cfg config.Nap
 			)
 		}
 
-		imagePaths := append([]string(nil), pendingMessage.ImagePaths...)
-		if len(imagePaths) == 0 && len(pendingMessage.ImageSegments) > 0 {
-			imagePaths = s.downloadIncomingImagePaths(ctx, source, pendingMessage.MessageID, pendingMessage.ImageSegments)
-		}
-
-		trimmed := strings.TrimSpace(pendingMessage.Text)
-		if trimmed == "" && len(imagePaths) == 0 && len(pendingMessage.ImageSegments) > 0 {
-			trimmed = "[用户发送了图片]"
-		}
-		if trimmed == "" && len(imagePaths) == 0 {
-			continue
+		if trimmed == "" && len(imagePaths)+len(attachments) == 0 {
+			trimmed = "[消息内容超出本批接收限额]"
 		}
 		storageMessages = append(storageMessages, storage.ChatMessage{
-			Role:       "user",
-			Content:    trimmed,
-			Quote:      quote,
-			ImagePaths: imagePaths,
-			Timestamp:  now.Add(time.Millisecond * time.Duration(index)),
+			Role:        "user",
+			Content:     trimmed,
+			Quote:       quote,
+			ImagePaths:  imagePaths,
+			Attachments: attachments,
+			Timestamp:   now.Add(time.Millisecond * time.Duration(index)),
 		})
 	}
 	if len(storageMessages) == 0 || s.validateSourceContext(ctx) != nil {

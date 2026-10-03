@@ -584,6 +584,8 @@ func TestNapCatProcessIncomingBatch_PersistsReplyQuoteImages(t *testing.T) {
 
 	service := newNapCatTestService(t, handler, func(req napCatActionRequest) napCatActionResponse {
 		switch req.Action {
+		case "get_image":
+			return napCatActionResponse{Data: mustJSONRawMessage(t, napCatGetImageData{File: quoteImagePath})}
 		case "get_login_info":
 			return napCatActionResponse{
 				Data: mustJSONRawMessage(t, napCatLoginInfo{UserID: 20002, Nickname: "CornerStone"}),
@@ -597,7 +599,7 @@ func TestNapCatProcessIncomingBatch_PersistsReplyQuoteImages(t *testing.T) {
 					Message: mustJSONRawMessage(t, []napCatMessageSegment{
 						{
 							Type: "image",
-							Data: napCatMessageSegmentData{Path: quoteImagePath},
+							Data: napCatMessageSegmentData{File: "quoted-image"},
 						},
 					}),
 					Sender: struct {

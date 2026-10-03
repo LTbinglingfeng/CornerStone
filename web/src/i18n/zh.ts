@@ -782,9 +782,10 @@ const zh = {
         wsUrlHint:
             '将此地址填写到 NapCat 的 reverse WebSocket 配置里。支持 query 参数 access_token 或 Authorization: Bearer <token>。',
         messagePostFormatHint:
-            '推荐 NapCat 使用 messagePostFormat=array 以获得完整私聊兼容；string 模式仅作 CQ 兼容回退，当前仍只支持私聊。',
+            '推荐 NapCat 使用 messagePostFormat=array；string 模式仅作 CQ 兼容回退。跨主机接收媒体需可访问的下载 URL、Base64 返回或共享存储。',
         enableChannel: '启用渠道',
-        m1PrivateOnly: '当前版本支持 NapCat 私聊文本、图片和戳一戳消息；群聊和其它消息类型仍未接入。',
+        m1PrivateOnly:
+            '仅支持私聊：文本、图片、语音、视频、文件、引用、合并转发解析和戳一戳。非图片附件会保存原文件，当前模型不会自动听取、观看或读取其内容。群聊不接入，也不会自动通过好友申请。',
         bindPersona: '绑定人设',
         noPersonaBind: '不绑定人设',
         accessToken: 'Access Token',

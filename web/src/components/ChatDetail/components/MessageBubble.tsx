@@ -89,7 +89,23 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
             onPointerLeave={onPointerLeave}
         >
             <div className="message-content">
-                {quoteLine && <div className="message-quote">{quoteLine}</div>}
+                {item.message.quote ? (
+                    <div className="message-quote">
+                        <div>
+                            {t('chat.quotedMessage')}
+                            {item.message.quote.sender_nickname || item.message.quote.sender_user_id || ''}
+                        </div>
+                        {item.message.quote.content && <div>{item.message.quote.content}</div>}
+                        <MessageImages
+                            timestamp={item.message.timestamp}
+                            imagePaths={item.message.quote.image_paths}
+                            getImageUrl={getImageUrl}
+                        />
+                        <MessageAttachments attachments={item.message.quote.attachments} />
+                    </div>
+                ) : (
+                    quoteLine && <div className="message-quote">{quoteLine}</div>
+                )}
                 <MessageImages
                     timestamp={item.message.timestamp}
                     imagePaths={item.message.image_paths}
