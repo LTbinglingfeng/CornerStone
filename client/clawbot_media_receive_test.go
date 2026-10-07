@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -23,22 +25,24 @@ func TestReceiveMediaEncryptedTypes(t *testing.T) {
 		req, _ := http.NewRequestWithContext(r.Context(), "GET", server.URL, nil)
 		return http.DefaultTransport.RoundTrip(req)
 	})
-	for _, typ := range []struct{ wire, kind string }{
-		{`{"type":3,"voice_item":{"text":"transcription","encode_type":6,"media":MEDIA}}`, "audio"},
-		{`{"type":4,"file_item":{"file_name":"notes.txt","len":"20","media":MEDIA}}`, "file"},
-		{`{"type":5,"video_item":{"video_size":32,"media":MEDIA}}`, "video"},
-	} {
-		media, _ := json.Marshal(ClawBotCDNMedia{FullURL: "https://cdn.example.test/media", AESKey: base64.StdEncoding.EncodeToString(key), EncryptType: 1})
-		var item ClawBotIncomingMessageItem
-		if err := json.Unmarshal([]byte(strings.ReplaceAll(typ.wire, "MEDIA", string(media))), &item); err != nil {
-			t.Fatal(err)
-		}
-		got, kind, _, err := c.DownloadMediaItem(context.Background(), item)
-		if err != nil || kind != typ.kind || !bytes.Equal(got, plain) {
-			t.Fatalf("%s: %q %s %v", typ.kind, got, kind, err)
-		}
-		if item.Type == 3 && ExtractTextFromClawBotMessage(ClawBotIncomingMessage{ItemList: []ClawBotIncomingMessageItem{item}}) != "transcription" {
-			t.Fatal("lost transcript")
+	for _, encryptType := range []int{0, 1, 42} {
+		for _, typ := range []struct{ wire, kind string }{
+			{`{"type":3,"voice_item":{"text":"transcription","encode_type":6,"media":MEDIA}}`, "audio"},
+			{`{"type":4,"file_item":{"file_name":"notes.txt","len":"20","media":MEDIA}}`, "file"},
+			{`{"type":5,"video_item":{"video_size":32,"media":MEDIA}}`, "video"},
+		} {
+			media, _ := json.Marshal(ClawBotCDNMedia{FullURL: "https://cdn.example.test/media", AESKey: base64.StdEncoding.EncodeToString(key), EncryptType: encryptType})
+			var item ClawBotIncomingMessageItem
+			if err := json.Unmarshal([]byte(strings.ReplaceAll(typ.wire, "MEDIA", string(media))), &item); err != nil {
+				t.Fatal(err)
+			}
+			got, kind, _, err := c.DownloadMediaItem(context.Background(), item)
+			if err != nil || kind != typ.kind || !bytes.Equal(got, plain) {
+				t.Fatalf("%s: %q %s %v", typ.kind, got, kind, err)
+			}
+			if item.Type == 3 && ExtractTextFromClawBotMessage(ClawBotIncomingMessage{ItemList: []ClawBotIncomingMessageItem{item}}) != "transcription" {
+				t.Fatal("lost transcript")
+			}
 		}
 	}
 }
@@ -107,5 +111,89 @@ func TestReceiveMediaNilTransportStillRejectsPrivateDNS(t *testing.T) {
 	_, err := c.DownloadImageItem(context.Background(), &ClawBotImageItem{Media: &ClawBotCDNMedia{FullURL: "https://localhost./private"}})
 	if err == nil {
 		t.Fatal("nil transport bypassed DNS address checking")
+	}
+}
+
+func TestReceiveImageEncryptionDependsOnKey(t *testing.T) {
+	key := []byte("0123456789abcdef")
+	plain := []byte("original image bytes")
+	encrypted := mustEncryptAESECBForTest(t, plain, key)
+	mediaKey := base64.StdEncoding.EncodeToString(key)
+	imageKey := hex.EncodeToString(key)
+	for _, encryptType := range []int{0, 1, 42} {
+		for _, tc := range []struct {
+			name, mediaKey, imageKey string
+			body                     []byte
+			wantErr                  bool
+			wantCalls                int
+		}{
+			{"plaintext", "", "", plain, false, 1},
+			{"media key", mediaKey, "", encrypted, false, 1},
+			{"image key", "", imageKey, encrypted, false, 1},
+			{"image key takes priority", base64.StdEncoding.EncodeToString([]byte("fedcba9876543210")), imageKey, encrypted, false, 1},
+			{"image key overrides malformed media key", "bad-key", imageKey, encrypted, false, 1},
+			{"malformed media key", "bad-key", "", plain, true, 0},
+			{"short media key", base64.StdEncoding.EncodeToString([]byte("short")), "", plain, true, 0},
+			{"malformed image key does not fall back", mediaKey, "not-hex", encrypted, true, 0},
+			{"short image key", mediaKey, "0123", encrypted, true, 0},
+			{"wrong AES key", base64.StdEncoding.EncodeToString([]byte("fedcba9876543210")), "", encrypted, true, 1},
+			{"invalid ciphertext length", mediaKey, "", []byte("broken"), true, 1},
+			{"invalid ciphertext padding", mediaKey, "", make([]byte, 16), true, 1},
+			{"plaintext with key does not fall back", mediaKey, "", plain, true, 1},
+		} {
+			t.Run(fmt.Sprintf("encrypt_type_%d/%s", encryptType, tc.name), func(t *testing.T) {
+				c := NewClawBotClient()
+				calls := 0
+				c.httpClient.Transport = clawBotProtocolTransport(func(r *http.Request) (*http.Response, error) {
+					calls++
+					return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(bytes.NewReader(tc.body)), Request: r}, nil
+				})
+				got, err := c.DownloadImageItem(context.Background(), &ClawBotImageItem{
+					AESKey: tc.imageKey,
+					Media:  &ClawBotCDNMedia{FullURL: "https://cdn.example.test/image", AESKey: tc.mediaKey, EncryptType: encryptType},
+				})
+				if (err != nil) != tc.wantErr {
+					t.Fatalf("error = %v, wantErr = %v", err, tc.wantErr)
+				}
+				if tc.wantErr {
+					if got != nil {
+						t.Fatalf("returned bytes on error: %q", got)
+					}
+				} else if !bytes.Equal(got, plain) {
+					t.Fatalf("got %q, want %q", got, plain)
+				}
+				if calls != tc.wantCalls {
+					t.Fatalf("requests = %d, want %d", calls, tc.wantCalls)
+				}
+			})
+		}
+	}
+}
+
+func TestReceiveNonImageMediaRequiresKeyBeforeRequest(t *testing.T) {
+	for _, encryptType := range []int{0, 1, 42} {
+		for _, key := range []string{"", " \t"} {
+			media := &ClawBotCDNMedia{FullURL: "https://cdn.example.test/media", AESKey: key, EncryptType: encryptType}
+			for _, tc := range []struct {
+				name string
+				item ClawBotIncomingMessageItem
+			}{
+				{"voice", ClawBotIncomingMessageItem{Type: 3, VoiceItem: &ClawBotVoiceItem{Media: media}}},
+				{"file", ClawBotIncomingMessageItem{Type: 4, FileItem: &ClawBotFileItem{Media: media}}},
+				{"video", ClawBotIncomingMessageItem{Type: 5, VideoItem: &ClawBotVideoItem{Media: media}}},
+			} {
+				t.Run(fmt.Sprintf("encrypt_type_%d/key_%q/%s", encryptType, key, tc.name), func(t *testing.T) {
+					c := NewClawBotClient()
+					c.httpClient.Transport = clawBotProtocolTransport(func(r *http.Request) (*http.Response, error) {
+						t.Fatal("missing key must be rejected before any network request")
+						return nil, nil
+					})
+					got, _, _, err := c.DownloadMediaItem(context.Background(), tc.item)
+					if err == nil || err.Error() != "missing media encryption key" || got != nil {
+						t.Fatalf("got %q, error = %v; want missing key error", got, err)
+					}
+				})
+			}
+		}
 	}
 }

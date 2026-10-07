@@ -119,7 +119,8 @@ func (s *ClawBotService) receiveDeliveryBatch(cfg config.ClawBotConfig, cursor, 
 				d.Receipts[key] = "ignored"
 				continue
 			}
-			if token := strings.TrimSpace(msg.ContextToken); token != "" {
+			// Echo opaque context tokens verbatim, including surrounding whitespace.
+			if token := msg.ContextToken; token != "" {
 				state.ContextTokens[user] = token
 			}
 			text := strings.TrimSpace(client.ExtractTextFromClawBotMessage(msg))

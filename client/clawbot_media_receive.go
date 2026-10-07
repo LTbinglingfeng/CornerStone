@@ -117,15 +117,11 @@ func (c *ClawBotClient) downloadClawBotMedia(ctx context.Context, media *ClawBot
 	if media == nil {
 		return nil, errors.New("missing media")
 	}
-	if media.EncryptType != 0 && media.EncryptType != 1 {
-		return nil, errors.New("unsupported media encryption")
-	}
+	// EncryptType describes fileid/packaging information, not content encryption.
+	// Only the presence of an AES key determines whether to decrypt the bytes.
 	key, err := parseClawBotImageAESKey(&ClawBotImageItem{Media: media, AESKey: hexKey})
 	if err != nil {
 		return nil, errors.New("invalid media encryption key")
-	}
-	if media.EncryptType == 1 && len(key) == 0 {
-		return nil, errors.New("missing media encryption key")
 	}
 	raw := strings.TrimSpace(media.FullURL)
 	if raw == "" {

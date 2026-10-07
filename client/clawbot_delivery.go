@@ -74,7 +74,7 @@ func (c *ClawBotClient) SendItemMessageWithID(ctx context.Context, baseURL, botT
 	body.Msg.ClientID = clientID
 	body.Msg.MessageType = 2
 	body.Msg.MessageState = 2
-	body.Msg.ContextToken = strings.TrimSpace(contextToken)
+	body.Msg.ContextToken = contextToken
 	body.Msg.ItemList = []ClawBotIncomingMessageItem{item}
 	body.BaseInfo = c.baseInfo()
 	payload, err := json.Marshal(body)

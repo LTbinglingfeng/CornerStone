@@ -10,14 +10,15 @@ import (
 )
 
 func (s *ClawBotService) cacheClawBotReference(cfg config.ClawBotConfig, msg client.ClawBotIncomingMessage) {
-	if s.stateManager == nil || msg.MessageID == "" || strings.TrimSpace(msg.FromUserID) == "" {
+	id := msg.EffectiveMessageID()
+	if s.stateManager == nil || id == "" || strings.TrimSpace(msg.FromUserID) == "" {
 		return
 	}
 	raw, err := json.Marshal(msg.ItemList)
 	if err != nil {
 		return
 	}
-	_ = s.stateManager.SaveClawBotReference(clawBotAccount(cfg), storage.ClawBotReferenceConversation(strings.TrimSpace(msg.FromUserID), msg.SessionID), string(msg.MessageID), raw)
+	_ = s.stateManager.SaveClawBotReference(clawBotAccount(cfg), storage.ClawBotReferenceConversation(strings.TrimSpace(msg.FromUserID), msg.SessionID), string(id), raw)
 }
 
 // restoreClawBotReferences must run before attachment preparation. Cache raw
@@ -77,10 +78,11 @@ func (s *ClawBotService) prepareClawBotReferences(cfg config.ClawBotConfig, msg 
 }
 
 func (s *ClawBotService) saveClawBotLocalReference(cfg config.ClawBotConfig, msg client.ClawBotIncomingMessage, media []storage.ClawBotReferenceMedia) {
-	if s.stateManager == nil || msg.MessageID == "" || len(media) == 0 {
+	id := msg.EffectiveMessageID()
+	if s.stateManager == nil || id == "" || len(media) == 0 {
 		return
 	}
-	_ = s.stateManager.SaveClawBotReferenceMedia(clawBotAccount(cfg), storage.ClawBotReferenceConversation(strings.TrimSpace(msg.FromUserID), msg.SessionID), string(msg.MessageID), media)
+	_ = s.stateManager.SaveClawBotReferenceMedia(clawBotAccount(cfg), storage.ClawBotReferenceConversation(strings.TrimSpace(msg.FromUserID), msg.SessionID), string(id), media)
 }
 
 // recordClawBotSentMediaReference must follow caching the confirmed full wire item.

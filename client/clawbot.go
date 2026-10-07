@@ -115,6 +115,20 @@ type ClawBotIncomingMessage struct {
 	ItemList     []ClawBotIncomingMessageItem `json:"item_list"`
 }
 
+// EffectiveMessageID falls back to item IDs used by some Weixin clients.
+// Keep uint64 IDs lossless and never use the zero sentinel for caching/deduplication.
+func (msg ClawBotIncomingMessage) EffectiveMessageID() ClawBotMessageID {
+	if msg.MessageID != "" && msg.MessageID != "0" {
+		return msg.MessageID
+	}
+	for _, item := range msg.ItemList {
+		if item.MsgID != "" && item.MsgID != "0" {
+			return item.MsgID
+		}
+	}
+	return ""
+}
+
 type ClawBotGetUpdatesResponse struct {
 	LongPollingTimeoutMS int                      `json:"longpolling_timeout_ms"`
 	Ret                  int                      `json:"ret"`
@@ -334,7 +348,7 @@ func (c *ClawBotClient) SendTextMessage(ctx context.Context, baseURL, botToken, 
 	body.Msg.ClientID = uuid.NewString()
 	body.Msg.MessageType = 2
 	body.Msg.MessageState = 2
-	body.Msg.ContextToken = strings.TrimSpace(contextToken)
+	body.Msg.ContextToken = contextToken
 	body.Msg.ItemList = []struct {
 		Type     int              `json:"type"`
 		TextItem *ClawBotItemText `json:"text_item,omitempty"`

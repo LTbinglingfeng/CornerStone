@@ -130,7 +130,8 @@ func (s *ClawBotService) saveIncomingContextTokens(cfg config.ClawBotConfig, mes
 	tokens := make(map[string]string)
 	s.stateMu.Lock()
 	for _, msg := range messages {
-		user, token := strings.TrimSpace(msg.FromUserID), strings.TrimSpace(msg.ContextToken)
+		// Context tokens are opaque: store exactly what getupdates returned.
+		user, token := strings.TrimSpace(msg.FromUserID), msg.ContextToken
 		if msg.MessageType != 1 || user == "" || token == "" {
 			continue
 		}
@@ -155,10 +156,11 @@ func (s *ClawBotService) saveIncomingContextTokens(cfg config.ClawBotConfig, mes
 }
 
 func clawBotMessageKey(msg client.ClawBotIncomingMessage) string {
-	if msg.MessageID == "" || msg.MessageID == "0" {
+	id := msg.EffectiveMessageID()
+	if id == "" {
 		return ""
 	}
-	return strings.TrimSpace(msg.FromUserID) + ":" + string(msg.MessageID)
+	return strings.TrimSpace(msg.FromUserID) + ":" + string(id)
 }
 
 func (s *ClawBotService) alreadyReceived(cfg config.ClawBotConfig, msg client.ClawBotIncomingMessage) bool {
