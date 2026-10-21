@@ -3,6 +3,45 @@ import { overview } from './overview'
 import { settingsManagementCopy } from './settingsManagement'
 
 const en = {
+    qqOfficial: {
+        title: 'QQ Official (WebSocket)',
+        hint: 'Independent official bot · Private chats only · Alongside NapCat',
+        scope: 'Private text and image chats only. No group chats; proactive reminders are not integrated. Uses the fixed official QQ platform; no API URL is needed.',
+        scanHint:
+            'Scan to create an independent official QQ bot, not to sign in to a personal QQ account. Credentials stay on the server. After creation, use “Scan to chat” for this bot on the QQ Open Platform to start a private chat. Manual editing is paused while scanning.',
+        idsHint:
+            'AppID identifies the bot application; OpenID identifies a platform user. Neither is a personal QQ number.',
+        scan: 'Create bot by QR code',
+        manual: 'Manual configuration',
+        secret: 'AppSecret',
+        secretSaved: 'Secret configured; leave blank to keep',
+        secretEmpty: 'No secret configured',
+        clear: 'Clear saved secret',
+        enable: 'Enable official private-chat channel',
+        allowlist: 'Allowed user OpenIDs (one per line)',
+        start: 'Create QR code / Retry',
+        cancel: 'Cancel scan',
+        pending: 'Scan with QQ to create your bot',
+        starting: 'Getting QR code',
+        created: 'Bot created; credentials saved',
+        expired: 'QR code expired; refresh to continue',
+        cancelled: 'Scan cancelled',
+        error: 'Scan failed; please retry',
+        refresh: 'Refresh QR code',
+        requestFailed: 'QQ Official channel request failed',
+        saved: 'QQ Official settings saved',
+        qrAlt: 'Official QQ bot creation QR code',
+        count: 'Connected channels {{count}} / {{total}}',
+        statuses: {
+            disabled: 'Disabled',
+            missing_credentials: 'Missing credentials',
+            connecting: 'Connecting',
+            connected: 'Connected',
+            reconnecting: 'Reconnecting',
+            error: 'Error',
+            disconnected: 'Disconnected',
+        },
+    },
     delivery: {
         title: 'WeChat delivery queue',
         refresh: 'Refresh queue',

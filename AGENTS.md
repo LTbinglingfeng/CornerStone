@@ -10,7 +10,7 @@ CornerStone 是自托管 AI 聊天应用，使用 Go 后端与 React + TypeScrip
 - 前端：React 19、TypeScript 5、Vite 7、React Router 7、`motion/react`；使用 npm 与 `web/package-lock.json`。
 - 聊天提供商：OpenAI Chat Completions、OpenAI Responses、Gemini、Anthropic；另有 Gemini 生图和 MiniMax TTS。
 - 功能包括人设、流式聊天、多模态消息、记忆提取与写入、工具调用、联网搜索、天气、时间、定时提醒和空闲主动问候。
-- 通道包括 Web、ClawBot / 微信 iLink、NapCat / QQ（当前仅私聊，使用 OneBot 反向 WebSocket）；修改共享回复逻辑时需考虑各通道。
+- 通道包括 Web、ClawBot / 微信 iLink、NapCat / QQ（仅私聊，OneBot 反向 WebSocket）和 QQ 官方机器人（仅 C2C 私聊，官方 WebSocket，支持扫码绑定）；修改共享回复逻辑时需考虑各通道。
 - ClawBot 有持久化 inbox / outbox、引用缓存和人工投递恢复；NapCat 支持私聊媒体接收、引用 / 合并转发展开及确认后写入投递历史，但不要假定它具有同样的持久化队列。
 - 数据使用本地 JSON / JSONL 文件持久化；前端构建文件由 Go 服务从磁盘提供，未嵌入二进制。
 
@@ -24,6 +24,8 @@ CornerStone 是自托管 AI 聊天应用，使用 Go 后端与 React + TypeScrip
 | `api/chat_tool_*.go`、`api/chat_tools_executor.go` | 工具循环、执行器、历史回放与各工具实现 |
 | `api/clawbot*.go` | iLink 连接、扫码、typing、入站媒体与引用、持久化投递及历史对账 |
 | `api/napcat*.go` | OneBot 反向 WebSocket、连接生命周期、私聊媒体与引用解析、确认投递 |
+| `api/qqofficial*.go`、`client/qqofficial*.go`、`config/qqofficial.go` | QQ 官方私聊、扫码绑定、token / 网关生命周期、文本与图片投递；不处理群或频道 |
+| `storage/qqofficial_receipts.go` | 独立于可删除会话的 QQ 官方入站去重回执（保留 30 天，上限 100000 条，满额或损坏时拒绝继续处理） |
 | `api/chat_tool_attachment.go`、`api/handler_attachment.go` | `send_attachment` 投递意图与受鉴权保护的附件下载 |
 | `api/reminder_service.go`、`api/idle_greeting_service.go` | 定时提醒与主动问候 |
 | `client/` | 上游 AI、图片、TTS、天气、ClawBot 客户端及共享 HTTP 客户端 |
@@ -111,6 +113,8 @@ go build -o cornerstone .
 - 区分“生成成功”“生成投递意图”“上游发送确认”“历史提交成功”。`send_attachment` 成功仅生成意图，不读任意文件、不发网络请求，也不代表已送达；实际发送和去重由通道投递层处理。
 - ClawBot 入站任务、去重回执、context 与游标保持原子提交；保留 outbox 分段状态、来源关联和恢复语义。发送结果不确定时等待人工处理，不自动盲重发；已确认发送但历史提交失败时只对账，不再发送。
 - NapCat action 响应通过 echo 关联等待者；维持连接 / 账号校验、断连取消和旧连接隔离。发送超时不等于未送达，不自动重试；部分发送失败应停止后续段，历史只提交已确认部分。
+- QQ 官方通道只消费 `C2C_MESSAGE_CREATE`，即使订阅位同时覆盖群事件，也必须丢弃群 / 频道事件。会话按 AppID、用户 OpenID、人设隔离；OpenID 不是 QQ 号。当前仅文本和图片，不启用提醒、主动问候或语音转写；`send_attachment` 仅允许当前会话登记的图片。
+- QQ 官方扫码绑定密钥及 AppSecret 不得返回浏览器或写日志；过期、取消、配置变更、新扫码必须使旧结果失效。官方 REST 消息 POST 不盲重试；恢复网关时允许 `RESUMED` 之前的重放事件。投递前及分段间检查历史未被编辑 / 删除，确认后条件提交，并保留工具调用的 provider replay 状态。
 - 调整提醒 / 主动问候启动顺序时，确保生产者领取任务前已挂载持久化通道；typing 是非阻塞的辅助状态，不应影响回复生成或投递可靠性。
 - iLink 的 `context_token` 是不透明字符串，原样存储和回传，不裁剪空白；空值不清除已有值，重复消息不覆盖较新的 context。消息 ID 要无损支持 uint64，优先顶层 ID，再取首个有效 item ID；缺失 / 零值保留现有 fallback 去重，不伪造稳定引用键。
 - 引用解析保留账号、会话和消息来源隔离；优先可信本地快照，不因引用恢复而跨会话读取附件。媒体失败、引用缺失或转发展开达到限制时，保留可用文本、顺序及失败占位，不能丢弃整条用户输入。
@@ -146,6 +150,7 @@ src/
   reminders/
   idle_greetings/
   clawbot/         # inbox / outbox、游标、回执、引用缓存等持久化状态
+  qqofficial/      # 官方 QQ 私聊入站去重回执（独立于聊天删除）
   attachments/     # 私有附件文件，使用 /api/attachments/<id> 引用
 ```
 

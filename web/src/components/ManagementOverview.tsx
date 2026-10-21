@@ -5,6 +5,7 @@ import { useT } from '../contexts/I18nContext'
 import { overview } from '../i18n/overview'
 import { appendQueryParam, getPromptAvatarUrl, getPrompts, getProviders, getSessions } from '../services/api'
 import { clawBotService } from '../services/clawbotService'
+import { qqOfficialService } from '../services/qqOfficialService'
 import { napCatService } from '../services/napcatService'
 import { reminderService } from '../services/reminderService'
 import { buildChatRoute } from '../utils/routes'
@@ -29,13 +30,17 @@ const loadQQ = async () => {
     const settings = await napCatService.getSettings()
     return { status: settings.status, persona: settings.prompt_name || '' }
 }
+const loadOfficial = async () => {
+    const settings = await qqOfficialService.getSettings()
+    return { status: settings.status, persona: settings.prompt_id }
+}
 const timestamp = (value: string) => {
     const time = Date.parse(value)
     return Number.isFinite(time) ? time : 0
 }
 
 export default function ManagementOverview() {
-    const { locale } = useT()
+    const { locale, t } = useT()
     const copy = overview[locale]
     const [revision, setRevision] = useState(0)
     const sessions = useManagementResource(getSessions, revision)
@@ -44,7 +49,8 @@ export default function ManagementOverview() {
     const model = useManagementResource(loadModel, revision)
     const wechat = useManagementResource(loadWechat, revision)
     const qq = useManagementResource(loadQQ, revision)
-    const resources = [sessions, personas, reminders, model, wechat, qq]
+    const official = useManagementResource(loadOfficial, revision)
+    const resources = [sessions, personas, reminders, model, wechat, qq, official]
     const loading = resources.some((item) => item.phase === 'loading')
     const failed = resources.some((item) => item.phase === 'error')
     const refresh = () => setRevision((value) => value + 1)
@@ -76,6 +82,7 @@ export default function ManagementOverview() {
     const channels = [
         { key: 'wechat', title: copy.wechat, icon: 'message', resource: wechat },
         { key: 'qq', title: copy.qq, icon: 'chat', resource: qq },
+        { key: 'qq-official', title: t('qqOfficial.title'), icon: 'chat', resource: official },
     ] as const
 
     return (
@@ -143,7 +150,21 @@ export default function ManagementOverview() {
 
             <div className="overview-columns">
                 <div className="overview-main">
-                    <Group title={copy.channels}>
+                    <Group
+                        title={copy.channels}
+                        footer={
+                            channels.every((c) => c.resource.phase === 'ready')
+                                ? t('qqOfficial.count', {
+                                      count: channels.filter(
+                                          (c) =>
+                                              c.resource.data?.status === 'connected' ||
+                                              c.resource.data?.status === 'running'
+                                      ).length,
+                                      total: channels.length,
+                                  })
+                                : undefined
+                        }
+                    >
                         {channels.map(({ key, title, icon, resource }) => (
                             <Row
                                 key={key}
@@ -153,14 +174,16 @@ export default function ManagementOverview() {
                                 detail={
                                     resource.phase === 'ready'
                                         ? resource.data.persona
-                                            ? `${copy.personaPrefix} · ${resource.data.persona}`
+                                            ? `${copy.personaPrefix} · ${key === 'qq-official' ? personaById.get(resource.data.persona)?.name || resource.data.persona : resource.data.persona}`
                                             : copy.noPersona
                                         : undefined
                                 }
                                 trailing={
                                     resource.phase === 'ready' ? (
                                         <Badge tone={channelStatusTone(resource.data.status)} dot>
-                                            {statusLabel(resource.data.status)}
+                                            {key === 'qq-official' && official.phase === 'ready'
+                                                ? t(`qqOfficial.statuses.${official.data.status}`)
+                                                : statusLabel(resource.data.status)}
                                         </Badge>
                                     ) : (
                                         <Badge>{placeholder(resource.phase)}</Badge>

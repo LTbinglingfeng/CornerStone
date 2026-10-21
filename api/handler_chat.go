@@ -984,9 +984,10 @@ func appendImagePathsToContent(content string, imagePaths []string) string {
 type chatToolChannel string
 
 const (
-	chatToolChannelDefault chatToolChannel = "default"
-	chatToolChannelClawBot chatToolChannel = "clawbot"
-	chatToolChannelNapCat  chatToolChannel = "napcat"
+	chatToolChannelQQOfficial chatToolChannel = "qq_official"
+	chatToolChannelDefault    chatToolChannel = "default"
+	chatToolChannelClawBot    chatToolChannel = "clawbot"
+	chatToolChannelNapCat     chatToolChannel = "napcat"
 )
 
 type chatToolOptions struct {
@@ -1238,8 +1239,12 @@ func getChatTools(options ...chatToolOptions) []client.Tool {
 		})
 	}
 
-	if channel == chatToolChannelClawBot || channel == chatToolChannelNapCat {
-		tools = append(tools, sendAttachmentTool())
+	if channel == chatToolChannelClawBot || channel == chatToolChannelNapCat || channel == chatToolChannelQQOfficial {
+		attachmentTool := sendAttachmentTool()
+		if channel == chatToolChannelQQOfficial {
+			attachmentTool.Function.Description = "仅请求发送当前会话已登记的 image 图片，不支持音频、视频、文件或引用附件。成功仅为投递意图，不代表已发送。"
+		}
+		tools = append(tools, attachmentTool)
 	}
 
 	if len(options) > 0 && options[0].ReminderFiring {
@@ -1275,6 +1280,16 @@ func getChatTools(options ...chatToolOptions) []client.Tool {
 		tools = filtered
 	}
 
+	if channel == chatToolChannelQQOfficial {
+		filtered := tools[:0]
+		for _, tool := range tools {
+			switch canonicalToolName(tool.Function.Name) {
+			case "get_time", "get_weather", cornerstoneWebSearchToolName, "write_memory", "no_reply", sendAttachmentToolName:
+				filtered = append(filtered, tool)
+			}
+		}
+		tools = filtered
+	}
 	if len(options) > 0 && len(options[0].RestrictToolNames) > 0 {
 		filtered := make([]client.Tool, 0, len(tools))
 		for _, tool := range tools {

@@ -476,7 +476,8 @@ type Config struct {
 	TLSCertPath                string             `json:"tls_cert_path,omitempty"` // TLS证书路径(PEM)，留空禁用HTTPS
 	TLSKeyPath                 string             `json:"tls_key_path,omitempty"`  // TLS私钥路径(PEM)，留空禁用HTTPS
 	ClawBot                    ClawBotConfig      `json:"clawbot"`                 // 微信 iLink ClawBot 配置
-	NapCat                     NapCatConfig       `json:"napcat"`                  // QQ NapCat 配置
+	QQOfficial                 QQOfficialConfig   `json:"qq_official"`
+	NapCat                     NapCatConfig       `json:"napcat"` // QQ NapCat 配置
 }
 
 // Manager 配置管理器
@@ -541,6 +542,7 @@ func DefaultConfig() Config {
 			BaseURL:            DefaultClawBotBaseURL,
 			CommandPermissions: DefaultClawBotCommandPermissions(),
 		},
+		QQOfficial: QQOfficialConfig{SourceFilterMode: "all", AllowedUserOpenIDs: []string{}},
 		NapCat: NapCatConfig{
 			Enabled:               false,
 			AccessToken:           "",
@@ -781,6 +783,7 @@ func (m *Manager) applyConfigDefaults() bool {
 		changed = true
 	}
 
+	m.config.QQOfficial = normalizeQQOfficial(m.config.QQOfficial)
 	napCatAccessToken := strings.TrimSpace(m.config.NapCat.AccessToken)
 	if napCatAccessToken != m.config.NapCat.AccessToken {
 		m.config.NapCat.AccessToken = napCatAccessToken
@@ -1142,7 +1145,9 @@ func (m *Manager) saveUnsafe() error {
 func (m *Manager) Get() Config {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.config
+	snapshot := m.config
+	snapshot.QQOfficial = normalizeQQOfficial(snapshot.QQOfficial)
+	return snapshot
 }
 
 // Update 更新配置

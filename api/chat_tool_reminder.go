@@ -17,6 +17,9 @@ type chatToolScheduleReminderArgs struct {
 
 func (e *chatToolExecutor) handleScheduleReminder(ctx context.Context, toolCall client.ToolCall, toolCtx chatToolContext) chatToolResult {
 	_ = ctx
+	if toolCtx.Channel == chatToolChannelQQOfficial {
+		return chatToolResult{Error: "reminders unavailable on QQ Official"}
+	}
 
 	if e.reminderService == nil {
 		return chatToolResult{OK: false, Data: nil, Error: "reminder service not configured"}

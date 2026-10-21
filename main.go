@@ -354,6 +354,8 @@ func main() {
 	napCatService := api.NewNapCatService(handler)
 	handler.SetNapCatService(napCatService)
 	defer napCatService.Close()
+	qqOfficialService := api.NewQQOfficialService(handler)
+	defer qqOfficialService.Close()
 	// Producers must see the durable channel before claiming scheduled tasks.
 	reminderService.Start(reminderCtx)
 	idleGreetingService.Start(idleGreetingCtx)

@@ -7,6 +7,8 @@ import { clawBotService } from '../services/clawbotService'
 import { napCatService } from '../services/napcatService'
 import ClawBotSettingsPanel from './ClawBotSettings'
 import NapCatSettingsPanel from './NapCatSettings'
+import QQOfficialSettingsPanel from './QQOfficialSettings'
+import { qqOfficialService } from '../services/qqOfficialService'
 import { Badge, Icon, Page, PageHeader } from './ui'
 import { channelStatusTone } from './channelStatus'
 import './ChannelsPage.css'
@@ -15,6 +17,7 @@ export default function ChannelsPage() {
     const [params, setParams] = useSearchParams()
     const channel = params.get('channel')
     if (channel === 'wechat') return <ClawBotSettingsPanel onBack={() => setParams({})} />
+    if (channel === 'qq-official') return <QQOfficialSettingsPanel onBack={() => setParams({})} />
     if (channel === 'qq') return <NapCatSettingsPanel onBack={() => setParams({})} />
     return <ChannelDirectory />
 }
@@ -25,14 +28,16 @@ function ChannelDirectory() {
     const [revision, setRevision] = useState(0)
     const wechat = useManagementResource(clawBotService.getSettings, revision)
     const qq = useManagementResource(napCatService.getSettings, revision)
-    const resources = { wechat, qq }
-    const loading = wechat.phase === 'loading' || qq.phase === 'loading'
-    const failed = wechat.phase === 'error' || qq.phase === 'error'
-    const statusLabel = (key: 'wechat' | 'qq') => {
+    const official = useManagementResource(qqOfficialService.getSettings, revision)
+    const resources = { wechat, qq, 'qq-official': official }
+    const loading = Object.values(resources).some((r) => r.phase === 'loading')
+    const failed = Object.values(resources).some((r) => r.phase === 'error')
+    const statusLabel = (key: 'wechat' | 'qq' | 'qq-official') => {
         const resource = resources[key]
         if (resource.phase !== 'ready') {
             return t(resource.phase === 'loading' ? 'common.loading' : 'console.unavailable')
         }
+        if (key === 'qq-official' && official.phase === 'ready') return t(`qqOfficial.statuses.${official.data.status}`)
         const labels: Record<string, string> = {
             disabled: t('common.disable'),
             missing_token: t('clawBot.missingToken'),
@@ -71,7 +76,7 @@ function ChannelDirectory() {
                 </p>
             )}
             <div className="channel-grid">
-                {(['wechat', 'qq'] as const).map((key) => {
+                {(['wechat', 'qq', 'qq-official'] as const).map((key) => {
                     const resource = resources[key]
                     const settings = resource.phase === 'ready' ? resource.data : null
                     const placeholder = resource.phase === 'loading' ? '—' : t('console.unavailable')
@@ -87,8 +92,20 @@ function ChannelDirectory() {
                                     <Icon name={key === 'wechat' ? 'message' : 'chat'} size={20} />
                                 </span>
                                 <div className="channel-card__text">
-                                    <h2 id={`channel-${key}-title`}>{key === 'wechat' ? copy.wechat : copy.qq}</h2>
-                                    <p>{key === 'wechat' ? copy.wechatHint : copy.qqHint}</p>
+                                    <h2 id={`channel-${key}-title`}>
+                                        {key === 'qq-official'
+                                            ? t('qqOfficial.title')
+                                            : key === 'wechat'
+                                              ? copy.wechat
+                                              : copy.qq}
+                                    </h2>
+                                    <p>
+                                        {key === 'qq-official'
+                                            ? t('qqOfficial.hint')
+                                            : key === 'wechat'
+                                              ? copy.wechatHint
+                                              : copy.qqHint}
+                                    </p>
                                 </div>
                                 <span role="status" className="channel-card__status">
                                     <Badge tone={settings ? channelStatusTone(settings.status) : 'neutral'} dot>
@@ -99,7 +116,12 @@ function ChannelDirectory() {
                             <dl className="channel-card__facts">
                                 <div>
                                     <dt>{copy.persona}</dt>
-                                    <dd>{settings ? settings.prompt_name || copy.defaultPersona : placeholder}</dd>
+                                    <dd>
+                                        {settings
+                                            ? ('prompt_name' in settings ? settings.prompt_name : settings.prompt_id) ||
+                                              copy.defaultPersona
+                                            : placeholder}
+                                    </dd>
                                 </div>
                                 <div>
                                     <dt>{copy.connection}</dt>

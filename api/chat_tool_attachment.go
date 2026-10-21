@@ -97,7 +97,7 @@ func sessionToolAttachments(messages []storage.ChatMessage) map[string]storage.C
 }
 
 func (e *chatToolExecutor) handleSendAttachment(ctx context.Context, call client.ToolCall, toolCtx chatToolContext) chatToolResult {
-	if (toolCtx.Channel != chatToolChannelClawBot && toolCtx.Channel != chatToolChannelNapCat) || (toolCtx.AllowedToolNames != nil && !toolCtx.AllowedToolNames[sendAttachmentToolName]) {
+	if (toolCtx.Channel != chatToolChannelClawBot && toolCtx.Channel != chatToolChannelNapCat && toolCtx.Channel != chatToolChannelQQOfficial) || (toolCtx.AllowedToolNames != nil && !toolCtx.AllowedToolNames[sendAttachmentToolName]) {
 		return chatToolResult{Error: "send_attachment is disabled or unavailable on this channel"}
 	}
 	var args struct {
@@ -109,6 +109,9 @@ func (e *chatToolExecutor) handleSendAttachment(ctx context.Context, call client
 	a, ok := toolCtx.Attachments[args.Path]
 	if !ok {
 		return chatToolResult{Error: "attachment is not registered in the current session"}
+	}
+	if toolCtx.Channel == chatToolChannelQQOfficial && a.Kind != "image" {
+		return chatToolResult{Error: "QQ Official only supports registered images"}
 	}
 	// No disk/network access or delivery side effects: the channel delivery layer
 	// consumes this intent later, deduplicating tool calls and attachment paths.

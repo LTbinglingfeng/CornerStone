@@ -33,6 +33,7 @@ type Handler struct {
 	sessionsMu      sync.RWMutex
 
 	clawBotService      *ClawBotService
+	qqOfficialService   *QQOfficialService
 	napCatService       *NapCatService
 	reminderService     *ReminderService
 	idleGreetingService *IdleGreetingService
@@ -117,6 +118,10 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	h.registerProtectedRoute(mux, "/api/settings/clawbot/qr-start", h.handleClawBotQRCodeStart)
 	h.registerProtectedRoute(mux, "/api/settings/clawbot/qr-poll", h.handleClawBotQRCodePoll)
 	h.registerProtectedRoute(mux, "/api/settings/napcat", h.handleNapCatSettings)
+	h.registerProtectedRoute(mux, "/api/settings/qq-official", h.handleQQOfficialSettings)
+	h.registerProtectedRoute(mux, "/api/channel/qq-official/login/start", h.handleQQOfficialLogin)
+	h.registerProtectedRoute(mux, "/api/channel/qq-official/login/status", h.handleQQOfficialLogin)
+	h.registerProtectedRoute(mux, "/api/channel/qq-official/login/cancel", h.handleQQOfficialLogin)
 	h.registerProtectedRoute(mux, "/api/settings/reminders", h.handleReminders)
 	h.registerProtectedRoute(mux, "/api/settings/reminders/", h.handleReminderByID)
 	h.registerProtectedRoute(mux, cornerstoneWebSearchSettingsPath, h.handleCornerstoneWebSearchSettings)
