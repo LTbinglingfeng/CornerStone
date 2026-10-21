@@ -505,6 +505,12 @@ const en = {
         model: 'Model',
         temperature: 'Temperature (0-2)',
         topP: 'Top P (0-1)',
+        sendTemperature: 'Set Temperature',
+        sendTopP: 'Set Top P',
+        samplingParamHint:
+            'When off, this parameter is not sent upstream. Newer models such as Claude Opus 4.7+ and OpenAI reasoning models reject it',
+        anthropicSamplingHint:
+            'Anthropic does not allow temperature and Top P together; only temperature is sent when both are on',
         context: 'Context',
         contextRounds: 'Context Rounds',
         roundUnit: 'rounds',

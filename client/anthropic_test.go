@@ -1,6 +1,14 @@
 package client
 
-import "testing"
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
+
+func float64Ptr(value float64) *float64 {
+	return &value
+}
 
 func TestBuildAnthropicRequestPrefersTemperatureOverTopP(t *testing.T) {
 	req, err := buildAnthropicRequest(ChatRequest{
@@ -8,17 +16,17 @@ func TestBuildAnthropicRequestPrefersTemperatureOverTopP(t *testing.T) {
 		Messages: []Message{
 			{Role: "user", Content: "hello"},
 		},
-		Temperature: 1,
-		TopP:        1,
+		Temperature: float64Ptr(1),
+		TopP:        float64Ptr(1),
 	})
 	if err != nil {
 		t.Fatalf("buildAnthropicRequest err = %v", err)
 	}
-	if req.Temperature != 1 {
+	if req.Temperature == nil || *req.Temperature != 1 {
 		t.Fatalf("buildAnthropicRequest temperature = %v, want 1", req.Temperature)
 	}
-	if req.TopP != 0 {
-		t.Fatalf("buildAnthropicRequest top_p = %v, want 0", req.TopP)
+	if req.TopP != nil {
+		t.Fatalf("buildAnthropicRequest top_p = %v, want nil", *req.TopP)
 	}
 }
 
@@ -28,16 +36,56 @@ func TestBuildAnthropicRequestUsesTopPWhenTemperatureMissing(t *testing.T) {
 		Messages: []Message{
 			{Role: "user", Content: "hello"},
 		},
-		TopP: 0.9,
+		TopP: float64Ptr(0.9),
 	})
 	if err != nil {
 		t.Fatalf("buildAnthropicRequest err = %v", err)
 	}
-	if req.Temperature != 0 {
-		t.Fatalf("buildAnthropicRequest temperature = %v, want 0", req.Temperature)
+	if req.Temperature != nil {
+		t.Fatalf("buildAnthropicRequest temperature = %v, want nil", *req.Temperature)
 	}
-	if req.TopP != 0.9 {
+	if req.TopP == nil || *req.TopP != 0.9 {
 		t.Fatalf("buildAnthropicRequest top_p = %v, want 0.9", req.TopP)
+	}
+}
+
+func TestBuildAnthropicRequestOmitsSamplingParamsWhenUnset(t *testing.T) {
+	req, err := buildAnthropicRequest(ChatRequest{
+		Model: "claude-opus",
+		Messages: []Message{
+			{Role: "user", Content: "hello"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("buildAnthropicRequest err = %v", err)
+	}
+	payload, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("json.Marshal err = %v", err)
+	}
+	body := string(payload)
+	if strings.Contains(body, "temperature") || strings.Contains(body, "top_p") {
+		t.Fatalf("payload = %s, want no sampling params", body)
+	}
+}
+
+func TestBuildAnthropicRequestKeepsZeroTemperature(t *testing.T) {
+	req, err := buildAnthropicRequest(ChatRequest{
+		Model: "claude-sonnet",
+		Messages: []Message{
+			{Role: "user", Content: "hello"},
+		},
+		Temperature: float64Ptr(0),
+	})
+	if err != nil {
+		t.Fatalf("buildAnthropicRequest err = %v", err)
+	}
+	payload, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("json.Marshal err = %v", err)
+	}
+	if !strings.Contains(string(payload), `"temperature":0`) {
+		t.Fatalf("payload = %s, want temperature 0", payload)
 	}
 }
 

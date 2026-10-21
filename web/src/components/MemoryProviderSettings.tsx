@@ -11,6 +11,7 @@ import {
     getGeminiThinkingBudgetRange,
     clampGeminiThinkingBudget,
     CustomSelect,
+    SamplingParamsFields,
 } from './provider'
 import { NumericInput } from './NumericInput'
 import { ModalOverlay } from './ModalOverlay'
@@ -48,7 +49,9 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
         api_key: '',
         model: '',
         temperature: 0.8,
+        temperature_enabled: false,
         top_p: 1,
+        top_p_enabled: false,
         thinking_budget: 0,
         prompt_caching: false,
         prompt_cache_ttl: '5m',
@@ -111,8 +114,10 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                   gemini_thinking_mode: memoryProvider.gemini_thinking_mode || 'none',
                   gemini_thinking_level: memoryProvider.gemini_thinking_level || 'low',
                   gemini_thinking_budget: memoryProvider.gemini_thinking_budget || 128,
-                  temperature: memoryProvider.type === 'anthropic' ? 1 : memoryProvider.temperature,
-                  top_p: memoryProvider.type === 'anthropic' ? 0 : memoryProvider.top_p,
+                  temperature: memoryProvider.temperature ?? 0.8,
+                  temperature_enabled: memoryProvider.temperature_enabled ?? false,
+                  top_p: memoryProvider.top_p || 1,
+                  top_p_enabled: memoryProvider.top_p_enabled ?? false,
               }
             : { ...emptyProvider }
 
@@ -144,8 +149,6 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
             const nextProvider: Provider = {
                 ...editingProvider,
                 type: nextType,
-                temperature: nextType === 'anthropic' ? 1 : editingProvider.temperature,
-                top_p: nextType === 'anthropic' ? 0 : editingProvider.top_p,
                 prompt_cache_ttl: editingProvider.prompt_cache_ttl || '5m',
             }
             setEditingProvider(nextProvider)
@@ -413,39 +416,7 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                                     <h4 className="provider-form-section__title">
                                         {t('settingsManagement.provider.parameters')}
                                     </h4>
-                                    <div className="provider-form-grid">
-                                        <div className="modal-group">
-                                            <label className="modal-label">{t('memoryProvider.temperature')}</label>
-                                            <NumericInput
-                                                className="modal-input"
-                                                min={0}
-                                                max={2}
-                                                step={0.1}
-                                                aria-label={t('memoryProvider.temperature')}
-                                                value={editingProvider.temperature}
-                                                parseAs="float"
-                                                onValueChange={(value) => handleProviderChange('temperature', value)}
-                                                placeholder="0.8"
-                                                disabled={editingProvider.type === 'anthropic'}
-                                            />
-                                        </div>
-
-                                        <div className="modal-group">
-                                            <label className="modal-label">{t('memoryProvider.topP')}</label>
-                                            <NumericInput
-                                                className="modal-input"
-                                                min={0}
-                                                max={1}
-                                                step={0.1}
-                                                aria-label={t('memoryProvider.topP')}
-                                                value={editingProvider.top_p}
-                                                parseAs="float"
-                                                onValueChange={(value) => handleProviderChange('top_p', value)}
-                                                placeholder="1"
-                                                disabled={editingProvider.type === 'anthropic'}
-                                            />
-                                        </div>
-                                    </div>
+                                    <SamplingParamsFields provider={editingProvider} onChange={handleProviderChange} />
 
                                     {(editingProvider.type === 'openai' ||
                                         editingProvider.type === 'openai_response') && (

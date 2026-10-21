@@ -128,7 +128,9 @@ export interface Provider {
     api_key: string
     model: string
     temperature: number
+    temperature_enabled?: boolean // 关闭时不向上游发送温度
     top_p: number
+    top_p_enabled?: boolean // 关闭时不向上游发送 Top P
     thinking_budget: number
     prompt_caching: boolean
     prompt_cache_ttl?: string

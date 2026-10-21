@@ -16,6 +16,7 @@ import {
     clampGeminiImageNumberOfImages,
     CustomSelect,
     ModelSelect,
+    SamplingParamsFields,
 } from './provider'
 import { ModalOverlay } from './ModalOverlay'
 import { NumericInput } from './NumericInput'
@@ -56,7 +57,9 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
         api_key: '',
         model: '',
         temperature: 0.8,
+        temperature_enabled: false,
         top_p: 1,
+        top_p_enabled: false,
         thinking_budget: 0,
         prompt_caching: false,
         prompt_cache_ttl: '5m',
@@ -122,8 +125,10 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
             gemini_image_size: provider.gemini_image_size || '',
             gemini_image_number_of_images: provider.gemini_image_number_of_images ?? 1,
             gemini_image_output_mime_type: provider.gemini_image_output_mime_type || 'image/jpeg',
-            temperature: provider.type === 'anthropic' ? 1 : provider.temperature,
-            top_p: provider.type === 'anthropic' ? 0 : provider.top_p,
+            temperature: provider.temperature ?? 0.8,
+            temperature_enabled: provider.temperature_enabled ?? false,
+            top_p: provider.top_p || 1,
+            top_p_enabled: provider.top_p_enabled ?? false,
         })
         setIsAddingNew(false)
         setShowModal(true)
@@ -226,8 +231,6 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
             const nextProvider: Provider = {
                 ...editingProvider,
                 type: nextType,
-                temperature: nextType === 'anthropic' ? 1 : editingProvider.temperature,
-                top_p: nextType === 'anthropic' ? 0 : editingProvider.top_p,
                 prompt_cache_ttl: editingProvider.prompt_cache_ttl || '5m',
             }
             if (nextType === 'gemini_image') {
@@ -626,41 +629,10 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                     )}
 
                                     {editingProvider.type !== 'gemini_image' && (
-                                        <div className="provider-form-grid">
-                                            <div className="modal-group">
-                                                <label className="modal-label">{t('provider.temperature')}</label>
-                                                <NumericInput
-                                                    aria-label={t('provider.temperature')}
-                                                    className="modal-input"
-                                                    min={0}
-                                                    max={2}
-                                                    step={0.1}
-                                                    value={editingProvider.temperature}
-                                                    parseAs="float"
-                                                    onValueChange={(value) =>
-                                                        handleProviderChange('temperature', value)
-                                                    }
-                                                    placeholder="0.8"
-                                                    disabled={editingProvider.type === 'anthropic'}
-                                                />
-                                            </div>
-
-                                            <div className="modal-group">
-                                                <label className="modal-label">{t('provider.topP')}</label>
-                                                <NumericInput
-                                                    aria-label={t('provider.topP')}
-                                                    className="modal-input"
-                                                    min={0}
-                                                    max={1}
-                                                    step={0.1}
-                                                    value={editingProvider.top_p}
-                                                    parseAs="float"
-                                                    onValueChange={(value) => handleProviderChange('top_p', value)}
-                                                    placeholder="1"
-                                                    disabled={editingProvider.type === 'anthropic'}
-                                                />
-                                            </div>
-                                        </div>
+                                        <SamplingParamsFields
+                                            provider={editingProvider}
+                                            onChange={handleProviderChange}
+                                        />
                                     )}
 
                                     {(editingProvider.type === 'openai' ||

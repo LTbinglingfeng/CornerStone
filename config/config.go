@@ -420,7 +420,9 @@ type Provider struct {
 	APIKey                    string       `json:"api_key"`                                 // API密钥
 	Model                     string       `json:"model"`                                   // 默认模型
 	Temperature               float64      `json:"temperature"`                             // 温度
+	TemperatureEnabled        bool         `json:"temperature_enabled"`                     // 是否向上游发送温度（默认关闭，部分新模型不支持）
 	TopP                      float64      `json:"top_p"`                                   // Top P
+	TopPEnabled               bool         `json:"top_p_enabled"`                           // 是否向上游发送 Top P（默认关闭，部分新模型不支持）
 	ThinkingBudget            int          `json:"thinking_budget"`                         // 思考预算（Anthropic）
 	PromptCaching             bool         `json:"prompt_caching"`                          // 是否启用 Anthropic Prompt Caching
 	PromptCacheTTL            string       `json:"prompt_cache_ttl,omitempty"`              // Anthropic Prompt Caching TTL (5m/1h)
@@ -435,6 +437,19 @@ type Provider struct {
 	ContextMessages           int          `json:"context_messages"`                        // 上下文轮数
 	Stream                    bool         `json:"stream"`                                  // 是否启用流式输出
 	ImageCapable              bool         `json:"image_capable"`                           // 是否支持识图
+}
+
+// SamplingParams 返回需要发送给上游的温度与 Top P；未启用时返回 nil，表示请求中省略该参数。
+func (p Provider) SamplingParams() (temperature *float64, topP *float64) {
+	if p.TemperatureEnabled {
+		value := p.Temperature
+		temperature = &value
+	}
+	if p.TopPEnabled {
+		value := p.TopP
+		topP = &value
+	}
+	return temperature, topP
 }
 
 // Config 存储应用配置信息
@@ -853,6 +868,11 @@ func (m *Manager) applyProviderDefaults(rawProviders []map[string]json.RawMessag
 				provider.TopP = DefaultProviderTopP
 				changed = true
 			}
+		}
+		// 旧版本会把 Anthropic 供应商的 top_p 强制写成 0；开启 Top P 后该值无意义，恢复默认值。
+		if provider.TopP <= 0 || provider.TopP > 1 {
+			provider.TopP = DefaultProviderTopP
+			changed = true
 		}
 		if raw == nil || raw["context_messages"] == nil {
 			if provider.ContextMessages == 0 {

@@ -28,8 +28,8 @@ type AnthropicRequest struct {
 	System       []AnthropicContentBlock `json:"system,omitempty"`
 	Stream       bool                    `json:"stream,omitempty"`
 	MaxTokens    int                     `json:"max_tokens"`
-	Temperature  float64                 `json:"temperature,omitempty"`
-	TopP         float64                 `json:"top_p,omitempty"`
+	Temperature  *float64                `json:"temperature,omitempty"`
+	TopP         *float64                `json:"top_p,omitempty"`
 	Thinking     *AnthropicThinking      `json:"thinking,omitempty"`
 	CacheControl *AnthropicCacheControl  `json:"cache_control,omitempty"`
 	Tools        []AnthropicTool         `json:"tools,omitempty"`
@@ -465,9 +465,9 @@ func buildAnthropicRequest(req ChatRequest) (AnthropicRequest, error) {
 		}
 	}
 	// Anthropic rejects temperature and top_p when both are provided.
-	if req.Temperature > 0 {
+	if req.Temperature != nil {
 		anthropicReq.Temperature = req.Temperature
-	} else if req.TopP > 0 {
+	} else if req.TopP != nil {
 		anthropicReq.TopP = req.TopP
 	}
 	if req.PromptCaching {

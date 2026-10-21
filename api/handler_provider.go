@@ -54,6 +54,8 @@ type ProviderRequest struct {
 	Model                     string   `json:"model"`
 	Temperature               *float64 `json:"temperature,omitempty"`
 	TopP                      *float64 `json:"top_p,omitempty"`
+	TemperatureEnabled        *bool    `json:"temperature_enabled,omitempty"`
+	TopPEnabled               *bool    `json:"top_p_enabled,omitempty"`
 	ThinkingBudget            *int     `json:"thinking_budget,omitempty"`
 	PromptCaching             *bool    `json:"prompt_caching,omitempty"`
 	PromptCacheTTL            *string  `json:"prompt_cache_ttl,omitempty"`
@@ -213,10 +215,6 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 		cfg := h.configManager.Get()
 		// 隐藏API密钥
 		for i := range providers {
-			if providers[i].Type == config.ProviderTypeAnthropic {
-				providers[i].Temperature = 1
-				providers[i].TopP = 0
-			}
 			if len(providers[i].APIKey) > 8 {
 				providers[i].APIKey = providers[i].APIKey[:4] + "****" + providers[i].APIKey[len(providers[i].APIKey)-4:]
 			} else if len(providers[i].APIKey) > 0 {
@@ -227,10 +225,6 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 		var memoryProvider *config.Provider
 		if cfg.MemoryProvider != nil {
 			clone := *cfg.MemoryProvider
-			if clone.Type == config.ProviderTypeAnthropic {
-				clone.Temperature = 1
-				clone.TopP = 0
-			}
 			if len(clone.APIKey) > 8 {
 				clone.APIKey = clone.APIKey[:4] + "****" + clone.APIKey[len(clone.APIKey)-4:]
 			} else if len(clone.APIKey) > 0 {
@@ -282,6 +276,8 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 		defaultProvider := config.DefaultProvider()
 		temperature := defaultProvider.Temperature
 		topP := defaultProvider.TopP
+		temperatureEnabled := defaultProvider.TemperatureEnabled
+		topPEnabled := defaultProvider.TopPEnabled
 		thinkingBudget := defaultProvider.ThinkingBudget
 		promptCaching := defaultProvider.PromptCaching
 		promptCacheTTL := defaultProvider.PromptCacheTTL
@@ -292,6 +288,12 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.TopP != nil {
 			topP = *req.TopP
+		}
+		if req.TemperatureEnabled != nil {
+			temperatureEnabled = *req.TemperatureEnabled
+		}
+		if req.TopPEnabled != nil {
+			topPEnabled = *req.TopPEnabled
 		}
 		if req.ThinkingBudget != nil {
 			thinkingBudget = *req.ThinkingBudget
@@ -307,10 +309,6 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.ContextMessages != nil {
 			contextMessages = *req.ContextMessages
-		}
-		if providerType == config.ProviderTypeAnthropic {
-			temperature = 1
-			topP = 0
 		}
 
 		baseURL := normalizeProviderBaseURL(providerType, req.BaseURL)
@@ -383,6 +381,8 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 			Model:                     req.Model,
 			Temperature:               temperature,
 			TopP:                      topP,
+			TemperatureEnabled:        temperatureEnabled,
+			TopPEnabled:               topPEnabled,
 			ThinkingBudget:            thinkingBudget,
 			PromptCaching:             promptCaching,
 			PromptCacheTTL:            promptCacheTTL,
@@ -444,9 +444,6 @@ func (h *Handler) handleProviderByID(w http.ResponseWriter, r *http.Request) {
 			h.jsonResponse(w, http.StatusNotFound, Response{Success: false, Error: "Provider not found"})
 			return
 		}
-		if provider.Type == config.ProviderTypeAnthropic {
-			provider.Temperature = 1
-		}
 		// 隐藏API密钥
 		if len(provider.APIKey) > 8 {
 			provider.APIKey = provider.APIKey[:4] + "****" + provider.APIKey[len(provider.APIKey)-4:]
@@ -507,6 +504,8 @@ func (h *Handler) handleProviderByID(w http.ResponseWriter, r *http.Request) {
 
 		temperature := defaultProvider.Temperature
 		topP := defaultProvider.TopP
+		temperatureEnabled := defaultProvider.TemperatureEnabled
+		topPEnabled := defaultProvider.TopPEnabled
 		thinkingBudget := defaultProvider.ThinkingBudget
 		promptCaching := defaultProvider.PromptCaching
 		promptCacheTTL := defaultProvider.PromptCacheTTL
@@ -523,6 +522,8 @@ func (h *Handler) handleProviderByID(w http.ResponseWriter, r *http.Request) {
 		if existingProvider != nil {
 			temperature = existingProvider.Temperature
 			topP = existingProvider.TopP
+			temperatureEnabled = existingProvider.TemperatureEnabled
+			topPEnabled = existingProvider.TopPEnabled
 			thinkingBudget = existingProvider.ThinkingBudget
 			promptCaching = existingProvider.PromptCaching
 			promptCacheTTL = normalizeAnthropicPromptCacheTTL(existingProvider.PromptCacheTTL)
@@ -560,6 +561,12 @@ func (h *Handler) handleProviderByID(w http.ResponseWriter, r *http.Request) {
 		if req.TopP != nil {
 			topP = *req.TopP
 		}
+		if req.TemperatureEnabled != nil {
+			temperatureEnabled = *req.TemperatureEnabled
+		}
+		if req.TopPEnabled != nil {
+			topPEnabled = *req.TopPEnabled
+		}
 		if req.ThinkingBudget != nil {
 			thinkingBudget = *req.ThinkingBudget
 		}
@@ -574,10 +581,6 @@ func (h *Handler) handleProviderByID(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.ContextMessages != nil {
 			contextMessages = *req.ContextMessages
-		}
-		if providerType == config.ProviderTypeAnthropic {
-			temperature = 1
-			topP = 0
 		}
 
 		var geminiThinkingMode *string
@@ -639,6 +642,8 @@ func (h *Handler) handleProviderByID(w http.ResponseWriter, r *http.Request) {
 			Model:                     model,
 			Temperature:               temperature,
 			TopP:                      topP,
+			TemperatureEnabled:        temperatureEnabled,
+			TopPEnabled:               topPEnabled,
 			ThinkingBudget:            thinkingBudget,
 			PromptCaching:             promptCaching,
 			PromptCacheTTL:            promptCacheTTL,
@@ -696,9 +701,6 @@ func (h *Handler) handleActiveProvider(w http.ResponseWriter, r *http.Request) {
 			h.jsonResponse(w, http.StatusNotFound, Response{Success: false, Error: "No active provider"})
 			return
 		}
-		if provider.Type == config.ProviderTypeAnthropic {
-			provider.Temperature = 1
-		}
 		// 隐藏API密钥
 		if len(provider.APIKey) > 8 {
 			provider.APIKey = provider.APIKey[:4] + "****" + provider.APIKey[len(provider.APIKey)-4:]
@@ -737,9 +739,6 @@ func (h *Handler) handleMemoryProvider(w http.ResponseWriter, r *http.Request) {
 		var memoryProvider *config.Provider
 		if cfg.MemoryProvider != nil {
 			clone := *cfg.MemoryProvider
-			if clone.Type == config.ProviderTypeAnthropic {
-				clone.Temperature = 1
-			}
 			if len(clone.APIKey) > 8 {
 				clone.APIKey = clone.APIKey[:4] + "****" + clone.APIKey[len(clone.APIKey)-4:]
 			} else if len(clone.APIKey) > 0 {
@@ -810,6 +809,8 @@ func (h *Handler) handleMemoryProvider(w http.ResponseWriter, r *http.Request) {
 		defaultProvider := config.DefaultProvider()
 		temperature := defaultProvider.Temperature
 		topP := defaultProvider.TopP
+		temperatureEnabled := defaultProvider.TemperatureEnabled
+		topPEnabled := defaultProvider.TopPEnabled
 		thinkingBudget := defaultProvider.ThinkingBudget
 		promptCaching := defaultProvider.PromptCaching
 		promptCacheTTL := defaultProvider.PromptCacheTTL
@@ -823,6 +824,8 @@ func (h *Handler) handleMemoryProvider(w http.ResponseWriter, r *http.Request) {
 		if existingProvider != nil {
 			temperature = existingProvider.Temperature
 			topP = existingProvider.TopP
+			temperatureEnabled = existingProvider.TemperatureEnabled
+			topPEnabled = existingProvider.TopPEnabled
 			thinkingBudget = existingProvider.ThinkingBudget
 			promptCaching = existingProvider.PromptCaching
 			promptCacheTTL = normalizeAnthropicPromptCacheTTL(existingProvider.PromptCacheTTL)
@@ -848,6 +851,12 @@ func (h *Handler) handleMemoryProvider(w http.ResponseWriter, r *http.Request) {
 		if req.Provider.TopP != nil {
 			topP = *req.Provider.TopP
 		}
+		if req.Provider.TemperatureEnabled != nil {
+			temperatureEnabled = *req.Provider.TemperatureEnabled
+		}
+		if req.Provider.TopPEnabled != nil {
+			topPEnabled = *req.Provider.TopPEnabled
+		}
 		if req.Provider.ThinkingBudget != nil {
 			thinkingBudget = *req.Provider.ThinkingBudget
 		}
@@ -862,10 +871,6 @@ func (h *Handler) handleMemoryProvider(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.Provider.ContextMessages != nil {
 			contextMessages = *req.Provider.ContextMessages
-		}
-		if providerType == config.ProviderTypeAnthropic {
-			temperature = 1
-			topP = 0
 		}
 
 		var geminiThinkingMode *string
@@ -910,6 +915,8 @@ func (h *Handler) handleMemoryProvider(w http.ResponseWriter, r *http.Request) {
 			Model:                model,
 			Temperature:          temperature,
 			TopP:                 topP,
+			TemperatureEnabled:   temperatureEnabled,
+			TopPEnabled:          topPEnabled,
 			ThinkingBudget:       thinkingBudget,
 			PromptCaching:        promptCaching,
 			PromptCacheTTL:       promptCacheTTL,
@@ -930,10 +937,6 @@ func (h *Handler) handleMemoryProvider(w http.ResponseWriter, r *http.Request) {
 		}
 
 		clone := provider
-		if clone.Type == config.ProviderTypeAnthropic {
-			clone.Temperature = 1
-			clone.TopP = 0
-		}
 		if len(clone.APIKey) > 8 {
 			clone.APIKey = clone.APIKey[:4] + "****" + clone.APIKey[len(clone.APIKey)-4:]
 		} else if len(clone.APIKey) > 0 {

@@ -54,8 +54,8 @@ type ChatRequest struct {
 	Model                string    `json:"model"`
 	Messages             []Message `json:"messages"`
 	Stream               bool      `json:"stream,omitempty"`
-	Temperature          float64   `json:"temperature,omitempty"`
-	TopP                 float64   `json:"top_p,omitempty"`
+	Temperature          *float64  `json:"temperature,omitempty"` // nil 表示不向上游发送
+	TopP                 *float64  `json:"top_p,omitempty"`       // nil 表示不向上游发送
 	MaxTokens            int       `json:"max_tokens,omitempty"`
 	ThinkingBudget       int       `json:"thinking_budget,omitempty"`        // Anthropic思考预算
 	PromptCaching        bool      `json:"prompt_caching,omitempty"`         // Anthropic Prompt Caching
@@ -88,8 +88,8 @@ type OpenAIChatRequest struct {
 	Model           string          `json:"model"`
 	Messages        []OpenAIMessage `json:"messages"`
 	Stream          bool            `json:"stream,omitempty"`
-	Temperature     float64         `json:"temperature,omitempty"`
-	TopP            float64         `json:"top_p,omitempty"`
+	Temperature     *float64        `json:"temperature,omitempty"`
+	TopP            *float64        `json:"top_p,omitempty"`
 	MaxTokens       int             `json:"max_tokens,omitempty"`
 	ReasoningEffort string          `json:"reasoning_effort,omitempty"`
 	Tools           []Tool          `json:"tools,omitempty"` // 工具列表

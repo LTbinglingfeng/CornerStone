@@ -703,17 +703,14 @@ func (e *MemoryExtractor) ExtractAndSave(promptID, sessionID string) error {
 		aiClient = client.NewClient(provider.BaseURL, provider.APIKey)
 	}
 
-	temperature := provider.Temperature
-	if provider.Type == config.ProviderTypeAnthropic {
-		temperature = 1
-	}
+	temperature, topP := provider.SamplingParams()
 
 	chatReq := client.ChatRequest{
 		Model:       provider.Model,
 		Messages:    e.buildExtractionMessages(promptID, messages, existingMemories),
 		Stream:      false,
 		Temperature: temperature,
-		TopP:        provider.TopP,
+		TopP:        topP,
 		Tools:       getMemoryExtractionTools(),
 	}
 

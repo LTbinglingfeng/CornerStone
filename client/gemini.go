@@ -444,11 +444,11 @@ func buildGenAIGenerateContentConfig(req ChatRequest, systemInstruction *genai.C
 		Tools:             tools,
 	}
 
-	if req.Temperature > 0 {
-		cfg.Temperature = genai.Ptr(float32(req.Temperature))
+	if req.Temperature != nil {
+		cfg.Temperature = genai.Ptr(float32(*req.Temperature))
 	}
-	if req.TopP > 0 {
-		cfg.TopP = genai.Ptr(float32(req.TopP))
+	if req.TopP != nil {
+		cfg.TopP = genai.Ptr(float32(*req.TopP))
 	}
 	if req.MaxTokens > 0 {
 		cfg.MaxOutputTokens = int32(req.MaxTokens)

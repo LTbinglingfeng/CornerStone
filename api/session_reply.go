@@ -46,12 +46,11 @@ func buildChatRequestForProvider(
 	maxTokens int,
 	temperatureOverride *float64,
 ) client.ChatRequest {
-	temperature := provider.Temperature
+	temperature, topP := provider.SamplingParams()
 	if temperatureOverride != nil {
-		temperature = *temperatureOverride
-	}
-	if provider.Type == config.ProviderTypeAnthropic {
-		temperature = 1
+		// 调用方显式传入的温度优先于供应商设置。
+		value := *temperatureOverride
+		temperature = &value
 	}
 
 	req := client.ChatRequest{
@@ -59,7 +58,7 @@ func buildChatRequestForProvider(
 		Messages:    normalizeLegacyToolIdentifiersInMessages(messages),
 		Stream:      stream,
 		Temperature: temperature,
-		TopP:        provider.TopP,
+		TopP:        topP,
 		MaxTokens:   maxTokens,
 		Tools:       normalizeLegacyToolIdentifiersInTools(tools),
 	}
