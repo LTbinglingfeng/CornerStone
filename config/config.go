@@ -1150,10 +1150,12 @@ func (m *Manager) Get() Config {
 	return snapshot
 }
 
-// Update 更新配置
+// Update 更新通用配置。QQ 官方凭据与访问规则只能通过
+// UpdateQQOfficialConfig 修改，避免其他设置的过期全量快照覆盖它们。
 func (m *Manager) Update(cfg Config) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	cfg.QQOfficial = m.config.QQOfficial
 	m.config = cfg
 	m.applyConfigDefaults()
 	return m.saveUnsafe()
