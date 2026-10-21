@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
+	"sort"
 	"strings"
 )
 
@@ -41,6 +43,9 @@ type AnthropicMessage struct {
 }
 
 type AnthropicContentBlock struct {
+	// raw preserves provider-owned fields, including opaque signed thinking.
+	raw          json.RawMessage
+	Data         string                  `json:"data,omitempty"`
 	Type         string                  `json:"type"`
 	Text         string                  `json:"text,omitempty"`
 	Signature    string                  `json:"signature,omitempty"`
@@ -53,6 +58,26 @@ type AnthropicContentBlock struct {
 	ToolUseID    string                  `json:"tool_use_id,omitempty"`
 	IsError      bool                    `json:"is_error,omitempty"`
 	Content      []AnthropicContentBlock `json:"content,omitempty"`
+}
+
+// MarshalJSON leaves received blocks unchanged rather than rebuilding signed data.
+func (b AnthropicContentBlock) MarshalJSON() ([]byte, error) {
+	if len(b.raw) > 0 {
+		return b.raw, nil
+	}
+	type plain AnthropicContentBlock
+	return json.Marshal(plain(b))
+}
+
+func (b *AnthropicContentBlock) UnmarshalJSON(data []byte) error {
+	type plain AnthropicContentBlock
+	var decoded plain
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*b = AnthropicContentBlock(decoded)
+	b.raw = append(json.RawMessage(nil), data...)
+	return nil
 }
 
 type AnthropicImageSource struct {
@@ -116,6 +141,7 @@ type anthropicStreamDelta struct {
 	PartialJSON string `json:"partial_json,omitempty"`
 	StopReason  string `json:"stop_reason,omitempty"`
 	Thinking    string `json:"thinking,omitempty"`
+	Signature   string `json:"signature,omitempty"`
 }
 
 type anthropicToolUseState struct {
@@ -242,6 +268,7 @@ func (c *AnthropicClient) ChatStream(ctx context.Context, req ChatRequest, callb
 
 	toolUses := make(map[int]anthropicToolUseState)
 	streamModel := req.Model
+	replayBlocks := make(map[int]*anthropicReplayBlock)
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -283,6 +310,19 @@ func (c *AnthropicClient) ChatStream(ctx context.Context, req ChatRequest, callb
 				return errCallback
 			}
 		case "content_block_start":
+			if event.ContentBlock != nil {
+				replayBlocks[event.Index] = newAnthropicReplayBlock(*event.ContentBlock)
+				// Some compatible servers provide nonempty initial text/thinking.
+				initial := Delta{Content: event.ContentBlock.Text, ReasoningContent: event.ContentBlock.Thinking}
+				if event.ContentBlock.Type != "text" {
+					initial.Content = ""
+				}
+				if initial.Content != "" || initial.ReasoningContent != "" {
+					if err := callback(StreamChunk{Model: streamModel, Choices: []Choice{{Index: 0, Delta: initial}}}); err != nil {
+						return err
+					}
+				}
+			}
 			if event.ContentBlock == nil || event.ContentBlock.Type != "tool_use" {
 				continue
 			}
@@ -319,6 +359,9 @@ func (c *AnthropicClient) ChatStream(ctx context.Context, req ChatRequest, callb
 		case "content_block_delta":
 			if event.Delta == nil {
 				continue
+			}
+			if block := replayBlocks[event.Index]; block != nil {
+				block.apply(event.Delta)
 			}
 			switch event.Delta.Type {
 			case "text_delta":
@@ -390,6 +433,10 @@ func (c *AnthropicClient) ChatStream(ctx context.Context, req ChatRequest, callb
 					return errCallback
 				}
 			}
+		case "message_stop":
+			if err := callback(StreamChunk{Model: streamModel, Choices: []Choice{{Index: 0, Delta: Delta{ProviderState: anthropicStreamProviderState(replayBlocks, req.Model)}}}}); err != nil {
+				return err
+			}
 		case "message_delta":
 			if event.Delta == nil || event.Delta.StopReason == "" {
 				continue
@@ -400,6 +447,7 @@ func (c *AnthropicClient) ChatStream(ctx context.Context, req ChatRequest, callb
 					{
 						Index:        0,
 						FinishReason: event.Delta.StopReason,
+						Delta:        Delta{ProviderState: anthropicStreamProviderState(replayBlocks, req.Model)},
 					},
 				},
 			}
@@ -427,7 +475,7 @@ func (c *AnthropicClient) buildMessagesURL() string {
 }
 
 func buildAnthropicRequest(req ChatRequest) (AnthropicRequest, error) {
-	messages, system, errBuild := buildAnthropicMessages(req.Messages)
+	messages, system, errBuild := buildAnthropicMessagesForModel(req.Messages, req.Model)
 	if errBuild != nil {
 		return AnthropicRequest{}, errBuild
 	}
@@ -516,7 +564,7 @@ func cloneAnthropicCacheControl(cacheControl *AnthropicCacheControl) *AnthropicC
 
 func applyAnthropicMessageCacheControl(messages []AnthropicMessage, cacheControl *AnthropicCacheControl) bool {
 	for messageIndex := len(messages) - 1; messageIndex >= 0; messageIndex-- {
-		if len(messages[messageIndex].Content) == 0 {
+		if len(messages[messageIndex].Content) == 0 || len(messages[messageIndex].Content[len(messages[messageIndex].Content)-1].raw) > 0 {
 			continue
 		}
 		messages[messageIndex].Content[len(messages[messageIndex].Content)-1].CacheControl = cloneAnthropicCacheControl(cacheControl)
@@ -526,6 +574,10 @@ func applyAnthropicMessageCacheControl(messages []AnthropicMessage, cacheControl
 }
 
 func buildAnthropicMessages(messages []Message) ([]AnthropicMessage, []AnthropicContentBlock, error) {
+	return buildAnthropicMessagesForModel(messages, "")
+}
+
+func buildAnthropicMessagesForModel(messages []Message, model string) ([]AnthropicMessage, []AnthropicContentBlock, error) {
 	if len(messages) == 0 {
 		return nil, nil, nil
 	}
@@ -560,6 +612,11 @@ func buildAnthropicMessages(messages []Message) ([]AnthropicMessage, []Anthropic
 					},
 				},
 			})
+			continue
+		}
+
+		if blocks, ok := anthropicReplayContent(msg, model); ok {
+			anthropicMessages = append(anthropicMessages, AnthropicMessage{Role: "assistant", Content: blocks})
 			continue
 		}
 
@@ -727,6 +784,12 @@ func convertAnthropicResponse(resp AnthropicResponse, fallbackModel string) *Cha
 		message.ReasoningContent = reasoningBuilder.String()
 	}
 
+	if payload, err := json.Marshal(resp.Content); err == nil && len(resp.Content) > 0 {
+		// Bind replay to the requested model, which may be an alias different
+		// from the resolved snapshot returned in resp.Model.
+		message.ProviderState = &ProviderState{Provider: "anthropic", Model: fallbackModel, Payload: payload}
+	}
+
 	var usage Usage
 	if resp.Usage != nil {
 		usage = Usage{
@@ -751,4 +814,112 @@ func convertAnthropicResponse(resp AnthropicResponse, fallbackModel string) *Cha
 		},
 		Usage: usage,
 	}
+}
+
+// Replay only a provider/model-matched, unedited semantic projection. Old history
+// has no authentic signature and must continue through ordinary text/tool encoding.
+func anthropicReplayContent(msg Message, model string) ([]AnthropicContentBlock, bool) {
+	state := msg.ProviderState
+	if msg.Role != "assistant" || state == nil || state.Provider != "anthropic" || model == "" || state.Model != model || len(msg.ImagePaths) > 0 {
+		return nil, false
+	}
+	var blocks []AnthropicContentBlock
+	if json.Unmarshal(state.Payload, &blocks) != nil || len(blocks) == 0 {
+		return nil, false
+	}
+	projected := convertAnthropicResponse(AnthropicResponse{Content: blocks}, model).Choices[0].Message
+	// External delivery history suppresses un-delivered commentary on tool
+	// turns. The original signed turn still belongs in the model's context.
+	// Explicit user edits clear ProviderState in storage instead.
+	toolCommentarySuppressed := msg.Content == "" && len(msg.ToolCalls) > 0
+	if (!toolCommentarySuppressed && strings.TrimSpace(projected.Content) != strings.TrimSpace(msg.Content)) || projected.ReasoningContent != msg.ReasoningContent || len(projected.ToolCalls) != len(msg.ToolCalls) {
+		return nil, false
+	}
+	for i, tool := range projected.ToolCalls {
+		current := msg.ToolCalls[i]
+		if tool.ID != current.ID || tool.Type != current.Type || tool.Function.Name != current.Function.Name || !anthropicJSONEqual(tool.Function.Arguments, current.Function.Arguments) {
+			return nil, false
+		}
+	}
+	return blocks, true
+}
+
+func anthropicJSONEqual(a, b string) bool {
+	var x, y interface{}
+	// UseNumber avoids losing precision in large tool argument integers.
+	dx, dy := json.NewDecoder(strings.NewReader(a)), json.NewDecoder(strings.NewReader(b))
+	dx.UseNumber()
+	dy.UseNumber()
+	if !json.Valid([]byte(a)) || !json.Valid([]byte(b)) || dx.Decode(&x) != nil || dy.Decode(&y) != nil {
+		return false
+	}
+	return reflect.DeepEqual(x, y)
+}
+
+// Keep the complete start block, changing only fields explicitly streamed by
+// Anthropic. Redacted data and unknown extension fields remain opaque.
+type anthropicReplayBlock struct {
+	fields map[string]json.RawMessage
+	input  strings.Builder
+}
+
+func newAnthropicReplayBlock(block AnthropicContentBlock) *anthropicReplayBlock {
+	data, _ := json.Marshal(block)
+	b := &anthropicReplayBlock{fields: make(map[string]json.RawMessage)}
+	_ = json.Unmarshal(data, &b.fields)
+	return b
+}
+
+func (b *anthropicReplayBlock) apply(delta *anthropicStreamDelta) {
+	var field, fragment string
+	switch delta.Type {
+	case "text_delta":
+		field, fragment = "text", delta.Text
+	case "thinking_delta":
+		field, fragment = "thinking", delta.Thinking
+	case "signature_delta":
+		// Unlike text/thinking deltas, a signature delta replaces the value.
+		b.fields["signature"], _ = json.Marshal(delta.Signature)
+		return
+	case "input_json_delta":
+		b.input.WriteString(delta.PartialJSON)
+		return
+	default:
+		return
+	}
+	var previous string
+	_ = json.Unmarshal(b.fields[field], &previous)
+	b.fields[field], _ = json.Marshal(previous + fragment)
+}
+
+func anthropicStreamProviderState(blocks map[int]*anthropicReplayBlock, model string) *ProviderState {
+	if len(blocks) == 0 {
+		return nil
+	}
+	indices := make([]int, 0, len(blocks))
+	for index := range blocks {
+		indices = append(indices, index)
+	}
+	sort.Ints(indices)
+	content := make([]json.RawMessage, 0, len(indices))
+	for _, index := range indices {
+		block := blocks[index]
+		if block.input.Len() > 0 {
+			input := json.RawMessage(block.input.String())
+			if !json.Valid(input) {
+				return nil
+			}
+			block.fields["input"] = input
+		}
+		raw, err := json.Marshal(block.fields)
+		if err != nil {
+			return nil
+		}
+		content = append(content, raw)
+	}
+	payload, err := json.Marshal(content)
+	if err != nil {
+		return nil
+	}
+	return &ProviderState{Provider: "anthropic", Model: model, Payload: payload}
 }
