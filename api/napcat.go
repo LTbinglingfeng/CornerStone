@@ -1622,36 +1622,9 @@ func (s *NapCatService) sendReminderPrivateText(ctx context.Context, target stor
 		return err
 	}
 	defer cancel()
-	if err := s.sendPrivateText(ctx, userID, text); err != nil {
-		if isRetryableNapCatReminderSendError(err) {
-			return newRetryableReminderError(err)
-		}
-		return err
-	}
-	return nil
-}
-
-func isRetryableNapCatReminderSendError(err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return true
-	}
-
-	message := strings.TrimSpace(err.Error())
-	switch {
-	case strings.Contains(message, "napcat websocket not connected"):
-		return true
-	case strings.Contains(message, "napcat websocket closed"):
-		return true
-	case strings.Contains(message, "napcat channel is unavailable"):
-		return true
-	case strings.Contains(message, "napcat channel self_id is unavailable"):
-		return true
-	default:
-		return false
-	}
+	// Once sending starts, a missing confirmation does not prove non-delivery.
+	// This also covers partial chunk delivery: never retry the whole reminder.
+	return s.sendPrivateText(ctx, userID, text)
 }
 
 func parseNapCatReminderTarget(target storage.ReminderTarget) (userID int64, selfID int64, err error) {
