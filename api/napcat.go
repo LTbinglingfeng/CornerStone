@@ -142,6 +142,9 @@ type napCatMessageSegmentData struct {
 }
 
 type napCatGetMsgData struct {
+	SelfID      int64           `json:"self_id,omitempty"`
+	GroupID     int64           `json:"group_id,omitempty"`
+	TargetID    int64           `json:"target_id,omitempty"`
 	MessageID   int64           `json:"message_id"`
 	MessageType string          `json:"message_type"`
 	UserID      int64           `json:"user_id"`
@@ -1154,6 +1157,9 @@ func (s *NapCatService) resolveQuotedMessage(ctx context.Context, source napCatC
 }
 
 func (s *NapCatService) buildQuotedMessageFromGetMsg(ctx context.Context, source napCatChatSource, replyMessageID int64, data napCatGetMsgData, budgets ...*napCatReceiveBudget) (*storage.QuotedMessage, error) {
+	if err := validateNapCatQuoteSource(source, replyMessageID, data); err != nil {
+		return nil, err
+	}
 	parsed, err := parseNapCatReceiveMessage(data.Message, data.RawMessage, false)
 	if err != nil {
 		return nil, err
