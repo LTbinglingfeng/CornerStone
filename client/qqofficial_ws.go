@@ -41,6 +41,20 @@ type qqOfficialCloseError struct{ code int }
 
 func (e *qqOfficialCloseError) Error() string { return "QQ gateway closed" }
 
+// Policy follows the official WebSocket error-code table:
+// https://bot.q.qq.com/wiki/develop/api-v2/dev-prepare/error-trace/websocket.html
+func (e *qqOfficialCloseError) canReconnect() bool {
+	switch e.code {
+	case 4001, 4002, 4010, 4011, 4012, 4013, 4014, 4914, 4915:
+		return false
+	}
+	return true
+}
+
+func (e *qqOfficialCloseError) requiresIdentify() bool {
+	return e.code == 4006 || e.code == 4007 || (e.code >= 4900 && e.code <= 4913)
+}
+
 func qqOfficialGatewayAllowed(raw string) bool {
 	u, err := url.Parse(raw)
 	if err != nil || u.Scheme != "wss" || u.User != nil || u.Fragment != "" || (u.Port() != "" && u.Port() != "443") {
@@ -127,6 +141,10 @@ func (c *QQOfficialClient) Run(ctx context.Context, onMessage func(context.Conte
 			return
 		}
 		emit("error", err)
+		var closed *qqOfficialCloseError
+		if errors.As(err, &closed) && !closed.canReconnect() {
+			return
+		}
 		if time.Since(started) > time.Minute {
 			delay = time.Second
 		}
@@ -170,7 +188,7 @@ func qqOfficialDecodeMessage(raw json.RawMessage) (QQOfficialMessage, error) {
 	return m, nil
 }
 
-func (c *QQOfficialClient) connection(parent context.Context, s *qqOfficialSession, jobs chan<- qqOfficialJob, connected func()) error {
+func (c *QQOfficialClient) connection(parent context.Context, s *qqOfficialSession, jobs chan<- qqOfficialJob, connected func()) (result error) {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	token, err := c.accessToken(ctx)
@@ -249,6 +267,21 @@ func (c *QQOfficialClient) connection(parent context.Context, s *qqOfficialSessi
 	resuming := false
 	accepted := make(chan qqOfficialAccepted, qqOfficialQueueLimit)
 	var terminalReadError error
+	defer func() {
+		var closed *qqOfficialCloseError
+		if errors.As(terminalReadError, &closed) {
+			// Apply after draining buffered frames: a queued READY must not
+			// restore a session that the close code has invalidated.
+			if closed.requiresIdentify() {
+				s.id = ""
+				s.seq = nil
+			}
+			if closed.code == 4004 {
+				c.rejectToken(token)
+			}
+			result = closed
+		}
+	}()
 	for {
 		var f qqOfficialFrame
 		if terminalReadError != nil {
@@ -264,11 +297,6 @@ func (c *QQOfficialClient) connection(parent context.Context, s *qqOfficialSessi
 			case <-ctx.Done():
 				return ctx.Err()
 			case err := <-readErr:
-				var closed *qqOfficialCloseError
-				if errors.As(err, &closed) && closed.code == 4004 {
-					// Official SDK treats 4004 as authentication failure.
-					c.rejectToken(token)
-				}
 				terminalReadError = err
 				continue
 			case <-handshake.C:
