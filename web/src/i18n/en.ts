@@ -7,6 +7,8 @@ const en = {
         title: 'QQ Official (WebSocket)',
         hint: 'Independent official bot · Private chats only · Alongside NapCat',
         scope: 'Private text and image chats only. No group chats; proactive reminders are not integrated. Uses the fixed official QQ platform; no API URL is needed.',
+        saveBeforeScan:
+            'You have unsaved changes. Save your settings (including persona and access rules) before scanning.',
         scanHint:
             'Scan to create an independent official QQ bot, not to sign in to a personal QQ account. Credentials stay on the server. After creation, use “Scan to chat” for this bot on the QQ Open Platform to start a private chat. Manual editing is paused while scanning.',
         idsHint:

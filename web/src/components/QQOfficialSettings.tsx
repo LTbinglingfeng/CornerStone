@@ -41,6 +41,15 @@ export default function QQOfficialSettingsPanel({ onBack }: { onBack: () => void
     const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
     const deadlineTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
     const busy = qrState === 'starting' || qrState === 'pending'
+    const dirty =
+        !!settings &&
+        (form.enabled !== settings.enabled ||
+            form.app_id !== settings.app_id ||
+            form.prompt_id !== settings.prompt_id ||
+            form.source_filter_mode !== settings.source_filter_mode ||
+            allowlist !== (settings.allowed_user_openids || []).join('\n') ||
+            !!form.app_secret ||
+            !!form.clear_secret)
     const report = (error: unknown) =>
         showToast(error instanceof Error ? error.message : t('qqOfficial.requestFailed'), 'error')
     const sync = (next: QQOfficialSettings) => {
@@ -105,6 +114,10 @@ export default function QQOfficialSettingsPanel({ onBack }: { onBack: () => void
 
     const start = async () => {
         if (busy || saving || cancelling || needsSync.current) return
+        if (dirty) {
+            showToast(t('qqOfficial.saveBeforeScan'), 'error')
+            return
+        }
         setQRState('starting')
         setQRImage('')
         const cancellation = stop()
@@ -323,9 +336,12 @@ export default function QQOfficialSettingsPanel({ onBack }: { onBack: () => void
                             </div>
                         )}
                     </Group>
-                    <Group title={t('qqOfficial.scan')} footer={t('qqOfficial.scanHint')}>
+                    <Group
+                        title={t('qqOfficial.scan')}
+                        footer={t(dirty ? 'qqOfficial.saveBeforeScan' : 'qqOfficial.scanHint')}
+                    >
                         <div className="channel-field">
-                            <button className="ui-btn" onClick={() => void start()} disabled={disabled}>
+                            <button className="ui-btn" onClick={() => void start()} disabled={disabled || dirty}>
                                 {t(qrState === 'expired' ? 'qqOfficial.refresh' : 'qqOfficial.start')}
                             </button>
                             {busy && (

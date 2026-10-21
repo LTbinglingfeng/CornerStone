@@ -14,7 +14,7 @@ function harness() {
         async getSettings() { return current },
         async start() { calls.push('start'); return { id: 'login', qr_url: 'fake', expires_at: new Date(Date.now() + 60000).toISOString() } },
         async cancel() { calls.push('cancel'); return cancelResult },
-        async updateSettings(form) { calls.push(['save', form]); return current },
+        async updateSettings(form) { calls.push(['save', form]); current = { ...current, ...form, revision: String(Number(current.revision) + 1) }; return current },
     }
     const react = {
         useState(value) { const i = cursor++; if (!(i in slots)) slots[i] = value; return [slots[i], next => { slots[i] = typeof next === 'function' ? next(slots[i]) : next }] },
@@ -33,7 +33,7 @@ function harness() {
         './provider': { CustomSelect: 'CustomSelect' }, './channelStatus': { channelStatusTone() {} }, './ClawBotSettings.css': {},
     }
     const source = fs.readFileSync(new URL('../src/components/QQOfficialSettings.tsx', import.meta.url), 'utf8')
-    const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText
+    const code = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText
     const exports = {}
     vm.runInNewContext(code, { exports, require: id => { assert(id in modules, id); return modules[id] }, AbortController,
         setTimeout: (fn, delay) => { timers.set(++timerID, { fn, delay }); return timerID }, clearTimeout: id => timers.delete(id), console })
@@ -74,4 +74,36 @@ test('cancel after server completion synchronizes the new account before saving'
     const saved = h.calls.find(c => Array.isArray(c))[1]
     assert.equal(saved.app_id, '456')
     assert.equal(saved.revision, '2')
+})
+
+for (const [name, edit] of [
+    ['persona', h => h.find(n => n.type === 'CustomSelect' && n.props.ariaLabel === 'napCat.bindPersona').props.onChange('new-persona')],
+    ['access mode', h => h.find(n => n.type === 'CustomSelect' && n.props.ariaLabel === 'napCat.sourceFilterMode').props.onChange('allowlist')],
+    ['allowlist', h => h.find(n => n.props?.id === 'qq-official-users').props.onChange({ target: { value: 'new-openid' } })],
+    ['AppID', h => h.find(n => n.props?.id === 'qq-official-app').props.onChange({ target: { value: '456' } })],
+    ['secret', h => h.find(n => n.props?.id === 'qq-official-secret').props.onChange({ target: { value: 'new-secret' } })],
+    ['clear secret', h => h.find(n => n.type === 'Toggle' && n.props.label === 'qqOfficial.clear').props.onChange(true)],
+    ['enabled', h => h.find(n => n.type === 'Toggle' && n.props.label === 'qqOfficial.enable').props.onChange(true)],
+]) {
+    test(`unsaved ${name} blocks QR creation with an explicit save-first message`, async () => {
+        const h = harness(); await h.flush()
+        edit(h)
+        const start = h.button('qqOfficial.start')
+        assert.equal(start.props.disabled, true)
+        assert(h.find(n => n.type === 'Group' && n.props.footer === 'qqOfficial.saveBeforeScan'))
+        start.props.onClick(); await h.flush()
+        assert.deepEqual(h.calls, [])
+        assert.equal(h.toasts[0][0], 'qqOfficial.saveBeforeScan')
+    })
+}
+
+test('saving edits restores the clean-form QR flow', async () => {
+    const h = harness(); await h.flush()
+    h.find(n => n.props?.id === 'qq-official-users').props.onChange({ target: { value: 'new-openid' } })
+    h.button('napCat.saveSettings').props.onClick(); await h.flush()
+    assert.equal(h.button('qqOfficial.start').props.disabled, false)
+    assert.equal(h.find(n => n.props?.id === 'qq-official-users').props.value, 'new-openid')
+    h.button('qqOfficial.start').props.onClick(); await h.flush()
+    assert.equal(h.calls.filter(c => c === 'start').length, 1)
+    assert.equal(h.button('napCat.saveSettings').props.disabled, true)
 })
