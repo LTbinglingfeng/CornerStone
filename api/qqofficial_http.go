@@ -30,7 +30,7 @@ func (s *QQOfficialService) settingsLocked() map[string]interface{} {
 	if !c.Enabled {
 		status = "disabled"
 	} else if strings.TrimSpace(c.AppID) == "" || strings.TrimSpace(c.AppSecret) == "" {
-		status = "missingcredentials"
+		status = "missing_credentials"
 	}
 	promptName := ""
 	if s.handler.promptManager != nil {

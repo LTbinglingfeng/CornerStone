@@ -90,7 +90,7 @@ func (s *QQOfficialService) applyLocked() {
 		return
 	}
 	if strings.TrimSpace(s.cfg.AppID) == "" || strings.TrimSpace(s.cfg.AppSecret) == "" {
-		s.status.Status = "missingcredentials"
+		s.status.Status = "missing_credentials"
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
