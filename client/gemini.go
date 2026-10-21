@@ -57,6 +57,10 @@ func (c *GeminiClient) newGenAIClient(ctx context.Context) (*genai.Client, error
 
 // convertToGenAIContents 将通用消息转换为 genai 格式
 func (c *GeminiClient) convertToGenAIContents(messages []Message) ([]*genai.Content, *genai.Content, error) {
+	return c.convertToGenAIContentsForModel(messages, "")
+}
+
+func (c *GeminiClient) convertToGenAIContentsForModel(messages []Message, model string) ([]*genai.Content, *genai.Content, error) {
 	contents := make([]*genai.Content, 0, len(messages))
 	var systemInstruction *genai.Content
 
@@ -110,6 +114,13 @@ func (c *GeminiClient) convertToGenAIContents(messages []Message) ([]*genai.Cont
 			role = string(genai.RoleUser)
 		}
 
+		if msg.Role == "assistant" && msg.ProviderState.Matches("gemini", model) {
+			var original []*genai.Part
+			if json.Unmarshal(msg.ProviderState.Payload, &original) == nil && len(original) > 0 {
+				contents = append(contents, &genai.Content{Role: role, Parts: original})
+				continue
+			}
+		}
 		parts := make([]*genai.Part, 0, len(msg.ImagePaths)+1+len(msg.ToolCalls))
 		if strings.TrimSpace(msg.Content) != "" {
 			parts = append(parts, genai.NewPartFromText(msg.Content))
@@ -186,7 +197,7 @@ func (c *GeminiClient) convertToGenAITools(tools []Tool) []*genai.Tool {
 
 // Chat 发送聊天请求（非流式）
 func (c *GeminiClient) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
-	contents, systemInstruction, errConvert := c.convertToGenAIContents(req.Messages)
+	contents, systemInstruction, errConvert := c.convertToGenAIContentsForModel(req.Messages, req.Model)
 	if errConvert != nil {
 		return nil, fmt.Errorf("build request: %w", errConvert)
 	}
@@ -213,7 +224,7 @@ func (c *GeminiClient) Chat(ctx context.Context, req ChatRequest) (*ChatResponse
 
 // ChatStream 发送聊天请求（流式）
 func (c *GeminiClient) ChatStream(ctx context.Context, req ChatRequest, callback func(chunk StreamChunk) error) error {
-	contents, systemInstruction, errConvert := c.convertToGenAIContents(req.Messages)
+	contents, systemInstruction, errConvert := c.convertToGenAIContentsForModel(req.Messages, req.Model)
 	if errConvert != nil {
 		return fmt.Errorf("build request: %w", errConvert)
 	}
@@ -227,6 +238,7 @@ func (c *GeminiClient) ChatStream(ctx context.Context, req ChatRequest, callback
 	}
 
 	nextToolCallIndex := 0
+	accumulatedParts := make(map[int][]json.RawMessage)
 	generationConfig := buildGenAIGenerateContentConfig(req, systemInstruction, c.convertToGenAITools(req.Tools))
 	for resp, err := range genaiClient.Models.GenerateContentStream(ctx, req.Model, contents, generationConfig) {
 		if err != nil {
@@ -235,6 +247,18 @@ func (c *GeminiClient) ChatStream(ctx context.Context, req ChatRequest, callback
 			return translated
 		}
 		chunk := c.convertToStreamChunk(resp, req.Model, &nextToolCallIndex)
+		// Every emitted state is a complete snapshot, including signature-only parts.
+		for i := range chunk.Choices {
+			choice := &chunk.Choices[i]
+			if state := choice.Delta.ProviderState; state != nil {
+				var parts []json.RawMessage
+				if json.Unmarshal(state.Payload, &parts) == nil {
+					accumulatedParts[choice.Index] = append(accumulatedParts[choice.Index], parts...)
+					payload, _ := json.Marshal(accumulatedParts[choice.Index])
+					choice.Delta.ProviderState = &ProviderState{Provider: "gemini", Model: req.Model, Payload: payload}
+				}
+			}
+		}
 		if errCallback := callback(chunk); errCallback != nil {
 			return errCallback
 		}
@@ -253,6 +277,25 @@ func (c *GeminiClient) convertToOpenAIResponse(resp *genai.GenerateContentRespon
 	for i, candidate := range resp.Candidates {
 		if candidate == nil {
 			continue
+		}
+		// ID alignment must not mutate SDK responses retained by callers.
+		candidateCopy := *candidate
+		candidate = &candidateCopy
+		if candidate.Content != nil {
+			contentCopy := *candidate.Content
+			candidate.Content = &contentCopy
+			contentCopy.Parts = append([]*genai.Part(nil), contentCopy.Parts...)
+			for j, part := range contentCopy.Parts {
+				if part == nil {
+					continue
+				}
+				partCopy := *part
+				contentCopy.Parts[j] = &partCopy
+				if part.FunctionCall != nil {
+					callCopy := *part.FunctionCall
+					partCopy.FunctionCall = &callCopy
+				}
+			}
 		}
 		var content strings.Builder
 		var reasoning strings.Builder
@@ -276,6 +319,7 @@ func (c *GeminiClient) convertToOpenAIResponse(resp *genai.GenerateContentRespon
 					if callID == "" {
 						callID = fmt.Sprintf("call_%d_%d", i, j)
 					}
+					part.FunctionCall.ID = callID
 					toolCalls = append(toolCalls, ToolCall{
 						ID:   callID,
 						Type: "function",
@@ -294,6 +338,7 @@ func (c *GeminiClient) convertToOpenAIResponse(resp *genai.GenerateContentRespon
 				Role:             "assistant",
 				Content:          content.String(),
 				ReasoningContent: reasoning.String(),
+				ProviderState:    geminiProviderState(candidate.Content, model),
 				ToolCalls:        toolCalls,
 			},
 			FinishReason: string(candidate.FinishReason),
@@ -328,6 +373,25 @@ func (c *GeminiClient) convertToStreamChunk(resp *genai.GenerateContentResponse,
 		if candidate == nil {
 			continue
 		}
+		// ID alignment must not mutate SDK responses retained by callers.
+		candidateCopy := *candidate
+		candidate = &candidateCopy
+		if candidate.Content != nil {
+			contentCopy := *candidate.Content
+			candidate.Content = &contentCopy
+			contentCopy.Parts = append([]*genai.Part(nil), contentCopy.Parts...)
+			for j, part := range contentCopy.Parts {
+				if part == nil {
+					continue
+				}
+				partCopy := *part
+				contentCopy.Parts[j] = &partCopy
+				if part.FunctionCall != nil {
+					callCopy := *part.FunctionCall
+					partCopy.FunctionCall = &callCopy
+				}
+			}
+		}
 		var content strings.Builder
 		var reasoning strings.Builder
 		var deltaToolCalls []DeltaToolCall
@@ -358,6 +422,7 @@ func (c *GeminiClient) convertToStreamChunk(resp *genai.GenerateContentResponse,
 						}
 						*nextToolCallIndex++
 					}
+					part.FunctionCall.ID = callID
 					deltaToolCalls = append(deltaToolCalls, DeltaToolCall{
 						Index: callIndex,
 						ID:    callID,
@@ -377,6 +442,7 @@ func (c *GeminiClient) convertToStreamChunk(resp *genai.GenerateContentResponse,
 				Role:             "assistant",
 				Content:          content.String(),
 				ReasoningContent: reasoning.String(),
+				ProviderState:    geminiProviderState(candidate.Content, model),
 				ToolCalls:        deltaToolCalls,
 			},
 			FinishReason: string(candidate.FinishReason),
@@ -554,4 +620,15 @@ func geminiThinkingBudgetRange(model string) (minBudget, maxBudget int) {
 	default:
 		return 128, 32768
 	}
+}
+
+func geminiProviderState(content *genai.Content, model string) *ProviderState {
+	if content == nil || len(content.Parts) == 0 {
+		return nil
+	}
+	payload, err := json.Marshal(content.Parts)
+	if err != nil {
+		return nil
+	}
+	return &ProviderState{Provider: "gemini", Model: model, Payload: payload}
 }

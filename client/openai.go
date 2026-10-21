@@ -14,13 +14,14 @@ import (
 
 // Message 表示对话消息
 type Message struct {
-	Role             string     `json:"role"`
-	Content          string     `json:"content"`
-	ReasoningContent string     `json:"reasoning_content,omitempty"` // 思考模型的推理内容
-	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`        // 工具调用
-	ToolCallID       string     `json:"tool_call_id,omitempty"`      // 工具调用ID (用于tool角色)
-	ImagePaths       []string   `json:"image_paths,omitempty"`       // 图片路径
-	TTSAudioPaths    []string   `json:"tts_audio_paths,omitempty"`   // TTS音频路径
+	ProviderState    *ProviderState `json:"provider_state,omitempty"`
+	Role             string         `json:"role"`
+	Content          string         `json:"content"`
+	ReasoningContent string         `json:"reasoning_content,omitempty"` // 思考模型的推理内容
+	ToolCalls        []ToolCall     `json:"tool_calls,omitempty"`        // 工具调用
+	ToolCallID       string         `json:"tool_call_id,omitempty"`      // 工具调用ID (用于tool角色)
+	ImagePaths       []string       `json:"image_paths,omitempty"`       // 图片路径
+	TTSAudioPaths    []string       `json:"tts_audio_paths,omitempty"`   // TTS音频路径
 }
 
 // Tool 工具定义
@@ -115,6 +116,7 @@ type Choice struct {
 
 // Delta 流式响应增量
 type Delta struct {
+	ProviderState    *ProviderState  `json:"provider_state,omitempty"`
 	Role             string          `json:"role,omitempty"`
 	Content          string          `json:"content,omitempty"`
 	ReasoningContent string          `json:"reasoning_content,omitempty"` // 思考模型的推理内容

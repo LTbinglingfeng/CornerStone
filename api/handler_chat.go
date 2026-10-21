@@ -161,6 +161,7 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 				Role:             msg.Role,
 				Content:          msg.Content,
 				ReasoningContent: msg.ReasoningContent,
+				ProviderState:    client.CloneProviderState(msg.ProviderState),
 				ToolCalls:        msg.ToolCalls,
 				ImagePaths:       msg.ImagePaths,
 				Timestamp:        now.Add(time.Millisecond * time.Duration(index)),
@@ -342,6 +343,7 @@ func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiCli
 					Role:             msg.Role,
 					Content:          msg.Content,
 					ReasoningContent: msg.ReasoningContent,
+					ProviderState:    client.CloneProviderState(msg.ProviderState),
 					ToolCalls:        msg.ToolCalls,
 					ToolCallID:       msg.ToolCallID,
 					ImagePaths:       msg.ImagePaths,
@@ -398,6 +400,7 @@ func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiCli
 			Role:             msg.Role,
 			Content:          msg.Content,
 			ReasoningContent: msg.ReasoningContent,
+			ProviderState:    client.CloneProviderState(msg.ProviderState),
 			ToolCalls:        msg.ToolCalls,
 			ToolCallID:       msg.ToolCallID,
 			ImagePaths:       msg.ImagePaths,
@@ -515,6 +518,7 @@ func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiCli
 			Role:             msg.Role,
 			Content:          msg.Content,
 			ReasoningContent: msg.ReasoningContent,
+			ProviderState:    client.CloneProviderState(msg.ProviderState),
 			ToolCalls:        msg.ToolCalls,
 			ToolCallID:       msg.ToolCallID,
 			ImagePaths:       msg.ImagePaths,
@@ -641,6 +645,7 @@ func convertChatMessages(messages []storage.ChatMessage) []client.Message {
 			Role:             msg.Role,
 			Content:          content,
 			ReasoningContent: msg.ReasoningContent,
+			ProviderState:    client.CloneProviderState(msg.ProviderState),
 			ToolCalls:        msg.ToolCalls,
 			ToolCallID:       msg.ToolCallID,
 			ImagePaths:       imagePaths,
@@ -651,6 +656,9 @@ func convertChatMessages(messages []storage.ChatMessage) []client.Message {
 
 func shouldDropEmptyAssistantStorageMessage(msg storage.ChatMessage) bool {
 	if strings.TrimSpace(msg.Role) != "assistant" {
+		return false
+	}
+	if msg.ProviderState != nil {
 		return false
 	}
 	if strings.TrimSpace(msg.Content) != "" {

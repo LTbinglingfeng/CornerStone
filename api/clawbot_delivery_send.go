@@ -122,10 +122,11 @@ func confirmedDeliveryMessages(job storage.ClawBotDeliveryJob) []storage.ChatMes
 	text := strings.Join(texts, "\n")
 	for i := len(messages) - 1; i >= 0; i-- {
 		if messages[i].Role == "assistant" && len(messages[i].ToolCalls) == 0 && strings.TrimSpace(messages[i].Content) != "" {
+			messages[i].ProviderState = nil
 			messages[i].Content = text
 			token := ""
 			messages[i].AssistantMessageSplitToken = &token
-			if shouldDropEmptyAssistantClientMessage(client.Message{Role: messages[i].Role, Content: messages[i].Content, ReasoningContent: messages[i].ReasoningContent, ToolCalls: messages[i].ToolCalls, ToolCallID: messages[i].ToolCallID, ImagePaths: messages[i].ImagePaths, TTSAudioPaths: messages[i].TTSAudioPaths}) {
+			if shouldDropEmptyAssistantClientMessage(client.Message{Role: messages[i].Role, Content: messages[i].Content, ReasoningContent: messages[i].ReasoningContent, ProviderState: messages[i].ProviderState, ToolCalls: messages[i].ToolCalls, ToolCallID: messages[i].ToolCallID, ImagePaths: messages[i].ImagePaths, TTSAudioPaths: messages[i].TTSAudioPaths}) {
 				messages = append(messages[:i], messages[i+1:]...)
 			}
 			return messages

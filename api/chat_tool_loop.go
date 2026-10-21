@@ -43,7 +43,10 @@ func runChatWithToolLoop(
 		return nil, fmt.Errorf("missing tool executor")
 	}
 
-	conversation := append([]client.Message(nil), baseReq.Messages...)
+	conversation := make([]client.Message, len(baseReq.Messages))
+	for i, message := range baseReq.Messages {
+		conversation[i] = client.CloneMessage(message)
+	}
 	newMessages := make([]client.Message, 0, 4)
 	allowedToolNames := toolCtx.AllowedToolNames
 	enforceToolAllowlist := allowedToolNames != nil
@@ -72,7 +75,7 @@ func runChatWithToolLoop(
 			}, fmt.Errorf("empty response")
 		}
 
-		assistant := resp.Choices[0].Message
+		assistant := client.CloneMessage(resp.Choices[0].Message)
 		if strings.TrimSpace(assistant.Role) == "" {
 			assistant.Role = "assistant"
 		}
@@ -91,7 +94,7 @@ func runChatWithToolLoop(
 
 		resp.Choices[0].Message = assistant
 
-		if len(assistant.ToolCalls) == 0 &&
+		if len(assistant.ToolCalls) == 0 && assistant.ProviderState == nil &&
 			strings.TrimSpace(assistant.Content) == "" &&
 			strings.TrimSpace(assistant.ReasoningContent) == "" &&
 			len(assistant.ImagePaths) == 0 &&
@@ -109,7 +112,7 @@ func runChatWithToolLoop(
 
 		if len(assistant.ToolCalls) == 0 {
 			if callbacks != nil && callbacks.OnFinalAssistant != nil {
-				callbacks.OnFinalAssistant(assistant)
+				callbacks.OnFinalAssistant(client.CloneMessage(assistant))
 			}
 			return &toolLoopResult{
 				FinalResponse: resp,
@@ -129,7 +132,7 @@ func runChatWithToolLoop(
 		}
 
 		if callbacks != nil && callbacks.OnToolStep != nil {
-			callbacks.OnToolStep(toolStepsUsed, assistant)
+			callbacks.OnToolStep(toolStepsUsed, client.CloneMessage(assistant))
 		}
 
 		toolMessages := make([]client.Message, 0, len(assistant.ToolCalls))

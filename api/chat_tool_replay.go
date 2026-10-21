@@ -19,7 +19,7 @@ func ensureToolResultMessagesForReplay(messages []client.Message) []client.Messa
 	out := make([]client.Message, 0, len(messages))
 
 	for i := 0; i < len(messages); i++ {
-		msg := messages[i]
+		msg := client.CloneMessage(messages[i])
 		if msg.Role == "assistant" && len(msg.ToolCalls) > 0 {
 			assistant := msg
 			expected := make([]struct {

@@ -16,7 +16,14 @@ export interface QuotedMessage {
     attachments?: ChatAttachment[]
 }
 
+export interface ProviderState {
+    provider: string
+    model?: string
+    payload: unknown
+}
+
 export interface ChatMessage {
+    provider_state?: ProviderState
     quote?: QuotedMessage
     role: string
     content: string

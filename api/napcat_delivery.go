@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"cornerstone/client"
 	"cornerstone/storage"
 	"encoding/base64"
 	"encoding/json"
@@ -194,6 +195,10 @@ func (s *NapCatService) sendGeneratedPrivateReply(ctx context.Context, source na
 			m.ImagePaths, m.TTSAudioPaths, m.Attachments = nil, nil, nil
 			if m.Role == "assistant" {
 				m.Content = ""
+				// Final visible text is stored in the delivered message below.
+				if len(m.ToolCalls) == 0 {
+					m.ProviderState = nil
+				}
 				for _, p := range original.ImagePaths {
 					if sent[p] {
 						m.ImagePaths = append(m.ImagePaths, p)
@@ -219,7 +224,7 @@ func (s *NapCatService) sendGeneratedPrivateReply(ctx context.Context, source na
 			}
 		}
 		// Preserve reasoning and tool-call pairs even when no visible output arrived.
-		if m.Role == "assistant" && m.Content == "" && m.ReasoningContent == "" && len(m.ToolCalls)+len(m.ImagePaths)+len(m.TTSAudioPaths)+len(m.Attachments) == 0 {
+		if m.Role == "assistant" && m.Content == "" && m.ReasoningContent == "" && m.ProviderState == nil && len(m.ToolCalls)+len(m.ImagePaths)+len(m.TTSAudioPaths)+len(m.Attachments) == 0 {
 			continue
 		}
 		messages = append(messages, m)
@@ -257,6 +262,15 @@ func (s *NapCatService) sendGeneratedPrivateReply(ctx context.Context, source na
 			separator = "\n"
 		}
 		delivered.Content = strings.Join(confirmedText, separator)
+		if deliveryErr == nil {
+			for i := len(reply.StorageMessages) - 1; i >= 0; i-- {
+				original := reply.StorageMessages[i]
+				if original.Role == "assistant" && len(original.ToolCalls) == 0 && strings.TrimSpace(original.Content) != "" {
+					delivered.ProviderState = client.CloneProviderState(original.ProviderState)
+					break
+				}
+			}
+		}
 	}
 	if delivered.Content != "" || len(delivered.ImagePaths)+len(delivered.TTSAudioPaths)+len(delivered.Attachments) > 0 {
 		messages = append(messages, delivered)

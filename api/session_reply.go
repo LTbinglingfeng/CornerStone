@@ -256,11 +256,19 @@ func buildGeneratedReplyStorageMessages(
 		if text == "" {
 			return nil
 		}
+		var state *client.ProviderState
+		if loopResult != nil && loopResult.FinalResponse != nil && len(loopResult.FinalResponse.Choices) > 0 {
+			final := loopResult.FinalResponse.Choices[0].Message
+			if len(final.ToolCalls) == 0 {
+				state = client.CloneProviderState(final.ProviderState)
+			}
+		}
 		return []storage.ChatMessage{
 			{
-				Role:      "assistant",
-				Content:   text,
-				Timestamp: baseTime,
+				ProviderState: state,
+				Role:          "assistant",
+				Content:       text,
+				Timestamp:     baseTime,
 			},
 		}
 	default:
@@ -289,6 +297,7 @@ func buildGeneratedReplyStorageMessages(
 				Role:             msg.Role,
 				Content:          content,
 				ReasoningContent: msg.ReasoningContent,
+				ProviderState:    client.CloneProviderState(msg.ProviderState),
 				ToolCalls:        msg.ToolCalls,
 				ToolCallID:       msg.ToolCallID,
 				ImagePaths:       msg.ImagePaths,
@@ -303,6 +312,9 @@ func buildGeneratedReplyStorageMessages(
 
 func shouldDropEmptyAssistantClientMessage(msg client.Message) bool {
 	if strings.TrimSpace(msg.Role) != "assistant" {
+		return false
+	}
+	if msg.ProviderState != nil {
 		return false
 	}
 	if strings.TrimSpace(msg.Content) != "" {

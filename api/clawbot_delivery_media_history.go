@@ -63,6 +63,7 @@ func confirmedClawBotMediaMessages(job storage.ClawBotDeliveryJob) []storage.Cha
 	}
 	if final >= 0 {
 		if job.NextChunk < len(job.Chunks) {
+			messages[final].ProviderState = nil
 			messages[final].Content = strings.Join(texts, "\n")
 			token := ""
 			messages[final].AssistantMessageSplitToken = &token
@@ -73,7 +74,7 @@ func confirmedClawBotMediaMessages(job storage.ClawBotDeliveryJob) []storage.Cha
 	filtered := make([]storage.ChatMessage, 0, len(messages))
 	var pendingReceipts []storage.ChatMessage
 	for index, m := range messages {
-		if len(m.Attachments) == 0 && shouldDropEmptyAssistantClientMessage(client.Message{Role: m.Role, Content: m.Content, ReasoningContent: m.ReasoningContent, ToolCalls: m.ToolCalls, ToolCallID: m.ToolCallID, ImagePaths: m.ImagePaths, TTSAudioPaths: m.TTSAudioPaths}) {
+		if len(m.Attachments) == 0 && shouldDropEmptyAssistantClientMessage(client.Message{Role: m.Role, Content: m.Content, ReasoningContent: m.ReasoningContent, ProviderState: m.ProviderState, ToolCalls: m.ToolCalls, ToolCallID: m.ToolCallID, ImagePaths: m.ImagePaths, TTSAudioPaths: m.TTSAudioPaths}) {
 			continue
 		}
 		filtered = append(filtered, m)
