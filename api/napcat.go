@@ -82,6 +82,8 @@ type napCatPendingReply struct {
 }
 
 type napCatGeneratedReply struct {
+	// Chain, when non-nil, is already ordered channel output, not shared history.
+	Chain           napCatMessageChain
 	Text            string
 	StorageMessages []storage.ChatMessage
 	MemSession      *storage.MemorySession
@@ -691,6 +693,7 @@ func (s *NapCatService) writeJSONContext(ctx context.Context, conn *websocket.Co
 		deadline = d
 	}
 	_ = conn.SetWriteDeadline(deadline)
+	markNapCatWriteAttempt(ctx)
 	return conn.WriteJSON(value)
 }
 
@@ -1574,20 +1577,8 @@ func (s *NapCatService) sendPrivateText(ctx context.Context, userID int64, text 
 	if s != nil && s.handler != nil {
 		configManager = s.handler.configManager
 	}
-	chunks := splitAssistantReplyMessages(text, configuredAssistantMessageSplitToken(configManager), napCatReplyChunkMaxRune)
-	if len(chunks) == 0 {
-		return nil
-	}
-
-	for _, chunk := range chunks {
-		if err := s.sendConfirmedAction(ctx, "send_private_msg", map[string]interface{}{
-			"user_id": userID,
-			"message": []napCatMessageSegment{{Type: "text", Data: napCatMessageSegmentData{Text: chunk}}},
-		}); err != nil {
-			return err
-		}
-	}
-	return nil
+	_, err := s.deliverNapCatChain(ctx, userID, napCatTextChain(text, configuredAssistantMessageSplitToken(configManager)))
+	return err
 }
 
 func (s *NapCatService) sendReminderPrivateText(ctx context.Context, target storage.ReminderTarget, text string) error {
@@ -1628,9 +1619,15 @@ func (s *NapCatService) sendReminderPrivateText(ctx context.Context, target stor
 		return err
 	}
 	defer cancel()
-	// Once sending starts, a missing confirmation does not prove non-delivery.
-	// This also covers partial chunk delivery: never retry the whole reminder.
-	return s.sendPrivateText(ctx, userID, text)
+	// Track the entire chain, not just its last action. Before the first write,
+	// cancellation (including while waiting for writeMu) proves no delivery.
+	// Once any write starts, a missing confirmation must never trigger a replay.
+	ctx, attempt := trackNapCatWriteAttempt(ctx)
+	err = s.sendPrivateText(ctx, userID, text)
+	if err != nil && !attempt.started.Load() && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
+		return newRetryableReminderError(err)
+	}
+	return err
 }
 
 func parseNapCatReminderTarget(target storage.ReminderTarget) (userID int64, selfID int64, err error) {

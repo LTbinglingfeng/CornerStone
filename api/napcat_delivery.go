@@ -73,8 +73,13 @@ func (h *Handler) readNapCatOutgoingAttachment(a storage.ChatAttachment) ([]byte
 // record, video and file, which supports base64://. upload_private_file uses the
 // same resolver and preserves the supplied name. No shared filesystem is needed.
 func (s *NapCatService) sendPrivateAttachment(ctx context.Context, userID int64, a storage.ChatAttachment) error {
-	if s == nil || s.handler == nil || userID <= 0 {
-		return errors.New("invalid private attachment destination")
+	_, err := s.deliverNapCatChain(ctx, userID, napCatMessageChain{{Attachment: &a}})
+	return err
+}
+
+func (s *NapCatService) encodeNapCatAttachment(userID int64, a storage.ChatAttachment) (string, map[string]interface{}, error) {
+	if s == nil || s.handler == nil {
+		return "", nil, errors.New("napcat attachment storage unavailable")
 	}
 	kind := a.Kind
 	switch kind {
@@ -82,27 +87,27 @@ func (s *NapCatService) sendPrivateAttachment(ctx context.Context, userID int64,
 		kind = "record"
 	case "image", "video", "file":
 	default:
-		return errors.New("unsupported attachment kind")
+		return "", nil, errors.New("unsupported attachment kind")
 	}
 	name := a.Name
 	if name == "" {
 		name = path.Base(a.Path)
 	}
 	if name == "." || name == ".." || len(name) > 240 || strings.ContainsAny(name, "/\\:") || strings.IndexFunc(name, func(r rune) bool { return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) }) >= 0 {
-		return errors.New("invalid attachment name")
+		return "", nil, errors.New("invalid attachment name")
 	}
 	data, err := s.handler.readNapCatOutgoingAttachment(a)
 	if err != nil {
-		return err
+		return "", nil, err
 	}
 	if len(data) == 0 {
-		return errors.New("empty outgoing attachment")
+		return "", nil, errors.New("empty outgoing attachment")
 	}
 	file := "base64://" + base64.StdEncoding.EncodeToString(data)
 	if kind == "file" {
-		return s.sendConfirmedAction(ctx, "upload_private_file", map[string]interface{}{"user_id": fmt.Sprint(userID), "file": file, "name": name, "upload_file": true})
+		return "upload_private_file", map[string]interface{}{"user_id": fmt.Sprint(userID), "file": file, "name": name, "upload_file": true}, nil
 	}
-	return s.sendConfirmedAction(ctx, "send_private_msg", map[string]interface{}{"user_id": userID, "message": []map[string]interface{}{{"type": kind, "data": map[string]string{"file": file, "name": name}}}})
+	return "send_private_msg", map[string]interface{}{"user_id": userID, "message": []map[string]interface{}{{"type": kind, "data": map[string]string{"file": file, "name": name}}}}, nil
 }
 
 func napCatAttachmentIntent(m storage.ChatMessage) (storage.ChatAttachment, bool) {
@@ -165,27 +170,23 @@ func (s *NapCatService) sendGeneratedPrivateReply(ctx context.Context, source na
 			silent = true
 		}
 	}
-	sent := map[string]bool{}
+	token := configuredAssistantMessageSplitToken(s.handler.configManager)
+	chain := legacyNapCatReplyChain(reply, token)
+	if reply.Chain != nil {
+		chain = reply.Chain
+	}
+	var confirmed napCatMessageChain
 	var deliveryErr error
 	if !silent {
-		for _, a := range napCatReplyAttachments(reply.StorageMessages) {
-			if err := s.sendPrivateAttachment(ctx, source.UserID, a); err != nil {
-				deliveryErr = fmt.Errorf("attachment delivery unconfirmed; do not automatically retry: %w", err)
-				break
-			}
-			sent[a.Path] = true
-		}
+		confirmed, deliveryErr = s.deliverNapCatChain(ctx, source.UserID, chain)
 	}
-	token := configuredAssistantMessageSplitToken(s.handler.configManager)
+	sent := map[string]bool{}
 	var confirmedText []string
-	if !silent && deliveryErr == nil {
-		for _, text := range splitAssistantReplyMessages(strings.TrimSpace(reply.Text), token, napCatReplyChunkMaxRune) {
-			// A structured text segment prevents CQ-code interpretation of model prose.
-			if err := s.sendConfirmedAction(ctx, "send_private_msg", map[string]interface{}{"user_id": source.UserID, "message": []map[string]interface{}{{"type": "text", "data": map[string]string{"text": text}}}}); err != nil {
-				deliveryErr = fmt.Errorf("text delivery unconfirmed; do not automatically retry: %w", err)
-				break
-			}
-			confirmedText = append(confirmedText, text)
+	for _, segment := range confirmed {
+		if segment.Attachment != nil {
+			sent[segment.Attachment.Path] = true
+		} else {
+			confirmedText = append(confirmedText, segment.Text)
 		}
 	}
 	messages := make([]storage.ChatMessage, 0, len(reply.StorageMessages)+1)
@@ -244,10 +245,15 @@ func (s *NapCatService) sendGeneratedPrivateReply(ctx context.Context, source na
 			represented[a.Path] = true
 		}
 	}
-	for _, a := range napCatReplyAttachments(reply.StorageMessages) {
+	for _, segment := range confirmed {
+		if segment.Attachment == nil {
+			continue
+		}
+		a := *segment.Attachment
 		if !sent[a.Path] || represented[a.Path] {
 			continue
 		}
+		represented[a.Path] = true
 		if a.Kind == "image" {
 			delivered.ImagePaths = append(delivered.ImagePaths, a.Path)
 		} else if a.Kind == "audio" && strings.HasPrefix(a.Path, "tts_audio/") {
@@ -262,7 +268,7 @@ func (s *NapCatService) sendGeneratedPrivateReply(ctx context.Context, source na
 			separator = "\n"
 		}
 		delivered.Content = strings.Join(confirmedText, separator)
-		if deliveryErr == nil {
+		if deliveryErr == nil && reply.Chain == nil {
 			for i := len(reply.StorageMessages) - 1; i >= 0; i-- {
 				original := reply.StorageMessages[i]
 				if original.Role == "assistant" && len(original.ToolCalls) == 0 && strings.TrimSpace(original.Content) != "" {

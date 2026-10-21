@@ -62,12 +62,12 @@ func TestNapCatReceiveForwardCycleAndAttachments(t *testing.T) {
 		return nil, nil
 	})
 	m.materialize(context.Background(), receiveTestParse(t, `[{"type":"forward","data":{"id":"fwd"}}]`), 0)
-	if calls != 1 || len(m.attachments) != 1 {
-		t.Fatalf("calls=%d attachments=%v", calls, m.attachments)
+	if calls != 1 || len(napCatTestReceivedAttachments(m)) != 1 {
+		t.Fatalf("calls=%d attachments=%v", calls, napCatTestReceivedAttachments(m))
 	}
 	for _, part := range []string{"Alice", "forward body", "Bob", "content alias", "循环", "未转写或读取"} {
-		if !strings.Contains(m.text.String(), part) {
-			t.Errorf("missing %q: %s", part, m.text.String())
+		if !strings.Contains(napCatTestReceivedText(m), part) {
+			t.Errorf("missing %q: %s", part, napCatTestReceivedText(m))
 		}
 	}
 	if m.budget.bytes != 5 {
@@ -85,8 +85,8 @@ func TestNapCatReceiveInlineForwardVariants(t *testing.T) {
 			return nil, nil
 		})
 		m.materialize(context.Background(), receiveTestParse(t, raw), 0)
-		if !strings.Contains(m.text.String(), "Alice") || !strings.Contains(m.text.String(), "hello") {
-			t.Fatal(m.text.String())
+		if !strings.Contains(napCatTestReceivedText(m), "Alice") || !strings.Contains(napCatTestReceivedText(m), "hello") {
+			t.Fatal(napCatTestReceivedText(m))
 		}
 	}
 }
@@ -110,15 +110,15 @@ func TestNapCatReceiveVoiceConversionAndFallback(t *testing.T) {
 			return json.RawMessage(`{"base64":"IyFTSUxLX1Yz"}`), nil
 		})
 		m.materialize(context.Background(), receiveTestParse(t, `[{"type":"record","data":{"file":"voice"}}]`), 0)
-		if len(m.attachments) != 1 || m.attachments[0].Kind != "audio" {
-			t.Fatal(m.attachments)
+		if len(napCatTestReceivedAttachments(m)) != 1 || napCatTestReceivedAttachments(m)[0].Kind != "audio" {
+			t.Fatal(napCatTestReceivedAttachments(m))
 		}
 		if convert {
-			if len(actions) != 1 || !strings.HasSuffix(m.attachments[0].Name, ".mp3") {
-				t.Fatal(actions, m.attachments)
+			if len(actions) != 1 || !strings.HasSuffix(napCatTestReceivedAttachments(m)[0].Name, ".mp3") {
+				t.Fatal(actions, napCatTestReceivedAttachments(m))
 			}
-		} else if len(actions) != 2 || m.attachments[0].MIMEType != "audio/silk" {
-			t.Fatal(actions, m.attachments)
+		} else if len(actions) != 2 || napCatTestReceivedAttachments(m)[0].MIMEType != "audio/silk" {
+			t.Fatal(actions, napCatTestReceivedAttachments(m))
 		}
 	}
 }
@@ -134,8 +134,8 @@ func TestNapCatReceiveLocalPathTrustBoundary(t *testing.T) {
 			return nil, nil
 		})
 		m.materialize(context.Background(), receiveTestParse(t, string(raw)), 0)
-		if len(m.attachments)+len(m.images) != 0 || !strings.Contains(m.text.String(), "接收失败") {
-			t.Fatal(m.text.String())
+		if len(napCatTestReceivedAttachments(m))+len(napCatTestReceivedImages(m)) != 0 || !strings.Contains(napCatTestReceivedText(m), "接收失败") {
+			t.Fatal(napCatTestReceivedText(m))
 		}
 	}
 	// A path returned by the authenticated NapCat API is a supported shared-storage fallback.
@@ -143,8 +143,8 @@ func TestNapCatReceiveLocalPathTrustBoundary(t *testing.T) {
 		return json.Marshal(map[string]string{"file": path})
 	})
 	m.materialize(context.Background(), receiveTestParse(t, `[{"type":"file","data":{"file_id":"opaque-id"}}]`), 0)
-	if len(m.attachments) != 1 {
-		t.Fatal(m.text.String())
+	if len(napCatTestReceivedAttachments(m)) != 1 {
+		t.Fatal(napCatTestReceivedText(m))
 	}
 }
 func TestNapCatReceiveURLAndFailedMediaPreserved(t *testing.T) {
@@ -161,8 +161,8 @@ func TestNapCatReceiveURLAndFailedMediaPreserved(t *testing.T) {
 	})
 	raw, _ := json.Marshal([]map[string]interface{}{{"type": "file", "data": map[string]string{"url": server.URL + "/ok", "name": "../../safe.txt"}}, {"type": "video", "data": map[string]string{"url": server.URL + "/bad"}}})
 	m.materialize(context.Background(), receiveTestParse(t, string(raw)), 0)
-	if len(m.attachments) != 1 || m.attachments[0].Name != "safe.txt" || !strings.Contains(m.text.String(), "视频附件接收失败") {
-		t.Fatal(m.attachments, m.text.String())
+	if len(napCatTestReceivedAttachments(m)) != 1 || napCatTestReceivedAttachments(m)[0].Name != "safe.txt" || !strings.Contains(napCatTestReceivedText(m), "视频附件接收失败") {
+		t.Fatal(napCatTestReceivedAttachments(m), napCatTestReceivedText(m))
 	}
 }
 func TestNapCatReceiveSharedLimits(t *testing.T) {
@@ -175,20 +175,20 @@ func TestNapCatReceiveSharedLimits(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		m.materialize(context.Background(), p, 0)
 	}
-	if calls != 16 || len(m.attachments) != 16 || !strings.Contains(m.text.String(), "超出接收限额") {
-		t.Fatal(calls, len(m.attachments))
+	if calls != 16 || len(napCatTestReceivedAttachments(m)) != 16 || !strings.Contains(napCatTestReceivedText(m), "超出接收限额") {
+		t.Fatal(calls, len(napCatTestReceivedAttachments(m)))
 	}
 	m.budget = &napCatReceiveBudget{bytes: storage.MaxAttachmentBytes - 1}
-	m.attachments = nil
+	m.chain = nil
 	m.action = func(context.Context, string, map[string]interface{}) (json.RawMessage, error) {
 		return json.RawMessage(`{"base64":"eHg="}`), nil
 	}
 	m.materialize(context.Background(), p, 0)
-	if len(m.attachments) != 0 || m.budget.bytes != storage.MaxAttachmentBytes-1 {
+	if len(napCatTestReceivedAttachments(m)) != 0 || m.budget.bytes != storage.MaxAttachmentBytes-1 {
 		t.Fatal("exceeded byte budget")
 	}
 	m.appendText(strings.Repeat("字", napCatReceiveMaxText))
-	if len(m.text.String()) > napCatReceiveMaxText+10000 || m.budget.text > napCatReceiveMaxText {
+	if len(napCatTestReceivedText(m)) > napCatReceiveMaxText+10000 || m.budget.text > napCatReceiveMaxText {
 		t.Fatal("text budget exceeded")
 	}
 	// Depth bound and node bound apply to all branches, not just one recursion path.
@@ -201,8 +201,8 @@ func TestNapCatReceiveSharedLimits(t *testing.T) {
 		raw = `[{"type":"node","data":{"content":` + raw + `}}]`
 	}
 	m.materialize(context.Background(), receiveTestParse(t, raw), 0)
-	if strings.Contains(m.text.String(), "deep leaf") || !strings.Contains(m.text.String(), "展开限额") {
-		t.Fatal(m.text.String())
+	if strings.Contains(napCatTestReceivedText(m), "deep leaf") || !strings.Contains(napCatTestReceivedText(m), "展开限额") {
+		t.Fatal(napCatTestReceivedText(m))
 	}
 	m.budget.nodes = napCatReceiveMaxNodes
 	m.materialize(context.Background(), receiveTestParse(t, `[{"type":"forward","data":{"id":"blocked"}}]`), 0)
@@ -220,8 +220,8 @@ func TestNapCatReceiveMalformedAndSizeBounds(t *testing.T) {
 		return json.RawMessage(`{"messages":false}`), nil
 	})
 	m.materialize(context.Background(), receiveTestParse(t, `[{"type":"forward","data":{"id":"bad"}}]`), 0)
-	if !strings.Contains(m.text.String(), "解析失败") {
-		t.Fatal(m.text.String())
+	if !strings.Contains(napCatTestReceivedText(m), "解析失败") {
+		t.Fatal(napCatTestReceivedText(m))
 	}
 	// Resource helper rejects base64 larger than remaining shared quota.
 	m.action = func(context.Context, string, map[string]interface{}) (json.RawMessage, error) {

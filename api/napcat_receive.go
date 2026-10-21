@@ -176,13 +176,11 @@ type napCatReceiveBudget struct {
 }
 
 type napCatReceiveMaterializer struct {
+	chain          napCatMessageChain
 	action         func(context.Context, string, map[string]interface{}) (json.RawMessage, error)
 	saveImage      func([]byte) (string, error)
 	saveAttachment func([]byte, string, string) (storage.ChatAttachment, error)
 	budget         *napCatReceiveBudget
-	text           strings.Builder
-	images         []string
-	attachments    []storage.ChatAttachment
 }
 
 func (s *NapCatService) materializeNapCatReceivedMessage(ctx context.Context, parsed *napCatReceiveParsedMessage, budget *napCatReceiveBudget) (string, []string, []storage.ChatAttachment) {
@@ -204,10 +202,13 @@ func (s *NapCatService) materializeNapCatReceivedMessage(ctx context.Context, pa
 		return r.Data, nil
 	}
 	m.materialize(ctx, parsed, 0)
-	return strings.TrimSpace(m.text.String()), m.images, m.attachments
+	return m.chain.legacyReceived()
 }
 
 func (m *napCatReceiveMaterializer) appendText(text string) {
+	if text == "" {
+		return
+	}
 	remaining := napCatReceiveMaxText - m.budget.text
 	if remaining <= 0 {
 		return
@@ -225,7 +226,7 @@ func (m *napCatReceiveMaterializer) appendText(text string) {
 		}
 		text += suffix
 	}
-	m.text.WriteString(text)
+	m.chain = append(m.chain, napCatChainSegment{Text: text})
 	m.budget.text += len(text)
 }
 func (m *napCatReceiveMaterializer) materialize(ctx context.Context, p *napCatReceiveParsedMessage, depth int) {
@@ -441,7 +442,7 @@ func (m *napCatReceiveMaterializer) media(ctx context.Context, seg napCatIncomin
 			m.appendText("\n[图片保存失败]")
 			return
 		}
-		m.images = append(m.images, path)
+		m.chain = append(m.chain, napCatChainSegment{Attachment: &storage.ChatAttachment{Path: path, Kind: "image"}})
 		m.appendText("\n[用户发送了图片]\n")
 		return
 	}
@@ -475,7 +476,7 @@ func (m *napCatReceiveMaterializer) media(ctx context.Context, seg napCatIncomin
 		m.appendText("\n[附件保存失败，内容不可用]")
 		return
 	}
-	m.attachments = append(m.attachments, a)
+	m.chain = append(m.chain, napCatChainSegment{Attachment: &a})
 	m.appendText(fmt.Sprintf("\n[收到%s附件：%s；已保存，仅作为附件提供，未转写或读取其内容]", label, name))
 }
 

@@ -17,7 +17,7 @@ func TestNapCatForwardPreservesInlineOrder(t *testing.T) {
 	})
 	p := receiveTestParse(t, `[{"type":"text","data":{"text":"BEFORE"}},{"type":"node","data":{"name":"Alice","content":[{"type":"text","data":{"text":"INNER_BEFORE"}},{"type":"node","data":{"name":"Bob","content":[{"type":"text","data":{"text":"BODY"}}]}},{"type":"text","data":{"text":"INNER_AFTER"}}]}},{"type":"text","data":{"text":"AFTER"}}]`)
 	m.materialize(context.Background(), p, 0)
-	text := m.text.String()
+	text := napCatTestReceivedText(m)
 	last := -1
 	for _, part := range []string{"BEFORE", "Alice", "INNER_BEFORE", "Bob", "BODY", "INNER_AFTER", "\n[合并转发结束]\nAFTER"} {
 		next := strings.Index(text, part)
@@ -51,8 +51,8 @@ func TestNapCatImageHTMLSuccessResponseStillFallsBack(t *testing.T) {
 		}
 		raw, _ := json.Marshal([]map[string]interface{}{{"type": "image", "data": data}})
 		m.materialize(context.Background(), receiveTestParse(t, string(raw)), 0)
-		if calls != 1 || len(m.images) != 1 || strings.Contains(m.text.String(), "失败") {
-			t.Fatalf("calls=%d images=%v text=%s", calls, m.images, m.text.String())
+		if calls != 1 || len(napCatTestReceivedImages(m)) != 1 || strings.Contains(napCatTestReceivedText(m), "失败") {
+			t.Fatalf("calls=%d images=%v text=%s", calls, napCatTestReceivedImages(m), napCatTestReceivedText(m))
 		}
 	}
 }
