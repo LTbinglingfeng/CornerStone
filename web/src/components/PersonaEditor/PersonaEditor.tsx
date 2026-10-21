@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion } from 'motion/react'
 import {
     getPrompt,
@@ -13,10 +13,14 @@ import {
 import { useT } from '../../contexts/I18nContext'
 import { useToast } from '../../contexts/ToastContext'
 import { useConfirm } from '../../contexts/ConfirmContext'
+import { memoryService, type MemoryStats } from '../../services/memoryService'
+import { getPersonaCopy } from '../../i18n/personas'
 import { drawerVariants } from '../../utils/motion'
+import MemoryManager from '../MemoryManager'
+import { Group, Icon, Row } from '../ui'
 import PersonaHero from './PersonaHero'
 import PersonaPromptSection from './PersonaPromptSection'
-import PersonaMemorySection from './PersonaMemorySection'
+import PersonaMemorySection, { PERSONA_MEMORY_ROW_ID } from './PersonaMemorySection'
 import './PersonaEditor.css'
 
 interface PersonaEditorProps {
@@ -25,7 +29,8 @@ interface PersonaEditorProps {
 }
 
 const PersonaEditor: React.FC<PersonaEditorProps> = ({ promptId, onBack }) => {
-    const { t } = useT()
+    const { t, locale } = useT()
+    const editorCopy = getPersonaCopy(locale).editor
     const { showToast } = useToast()
     const { confirm } = useConfirm()
     const isEditing = !!promptId
@@ -37,8 +42,23 @@ const PersonaEditor: React.FC<PersonaEditorProps> = ({ promptId, onBack }) => {
     const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
     const [hasExistingAvatar, setHasExistingAvatar] = useState(false)
     const [avatarDeleted, setAvatarDeleted] = useState(false)
-    const [memoryExpanded, setMemoryExpanded] = useState(false)
-    const [memoryCount, setMemoryCount] = useState(0)
+    const [view, setView] = useState<'main' | 'memory'>('main')
+    const [memoryStats, setMemoryStats] = useState<MemoryStats | null | undefined>(undefined)
+    const titleRef = useRef<HTMLHeadingElement>(null)
+
+    // 记忆摘要（只读），用于“记忆管理”行
+    const loadMemoryStats = useCallback(async () => {
+        if (!promptId) return
+        try {
+            setMemoryStats(await memoryService.getMemoryStats(promptId))
+        } catch {
+            setMemoryStats(null)
+        }
+    }, [promptId])
+
+    useEffect(() => {
+        void loadMemoryStats()
+    }, [loadMemoryStats])
 
     // 加载已有角色数据
     useEffect(() => {
@@ -148,30 +168,33 @@ const PersonaEditor: React.FC<PersonaEditorProps> = ({ promptId, onBack }) => {
         setAvatarDeleted(true)
     }, [])
 
-    if (loading) {
-        return (
-            <motion.div
-                className="persona-editor"
-                initial="hidden"
-                animate="visible"
-                exit="hidden"
-                variants={drawerVariants}
-            >
-                <div className="persona-editor-header">
-                    <div className="header-left">
-                        <button className="back-btn" onClick={onBack}>
-                            <svg viewBox="0 0 24 24">
-                                <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
-                            </svg>
-                            {t('common.back')}
-                        </button>
-                    </div>
-                    <div className="header-title">{t('common.loading')}</div>
-                    <div className="header-right" />
-                </div>
-            </motion.div>
-        )
-    }
+    const openMemory = useCallback(() => setView('memory'), [])
+    const closeMemory = useCallback(() => {
+        setView('main')
+        void loadMemoryStats()
+    }, [loadMemoryStats])
+
+    // Move focus with the view change so keyboard and screen-reader users keep their place.
+    const firstViewRef = useRef(true)
+    useEffect(() => {
+        if (firstViewRef.current) {
+            firstViewRef.current = false
+            return
+        }
+        if (view === 'memory') {
+            titleRef.current?.focus({ preventScroll: true })
+        } else {
+            document.getElementById(PERSONA_MEMORY_ROW_ID)?.focus({ preventScroll: true })
+        }
+    }, [view])
+
+    const title = loading
+        ? editorCopy.loading
+        : view === 'memory'
+          ? editorCopy.memoryTitle
+          : isEditing
+            ? editorCopy.editTitle
+            : editorCopy.createTitle
 
     return (
         <motion.div
@@ -181,63 +204,90 @@ const PersonaEditor: React.FC<PersonaEditorProps> = ({ promptId, onBack }) => {
             exit="hidden"
             variants={drawerVariants}
         >
-            {/* Header */}
-            <div className="persona-editor-header">
-                <div className="header-left">
-                    <button className="back-btn" onClick={onBack}>
-                        <svg viewBox="0 0 24 24">
-                            <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
-                        </svg>
-                        {t('common.back')}
-                    </button>
-                </div>
-                <h1 className="header-title">{isEditing ? t('persona.editTitle') : t('persona.createTitle')}</h1>
-                <div className="header-right">
-                    <button className="save-btn" onClick={handleSave} disabled={saving}>
+            <header className="persona-editor-header">
+                <button
+                    type="button"
+                    className="ui-icon-btn persona-editor-back"
+                    onClick={view === 'memory' ? closeMemory : onBack}
+                    aria-label={t('common.back')}
+                    title={t('common.back')}
+                >
+                    <Icon name="arrowLeft" size={20} />
+                </button>
+                <h1 className="persona-editor-title" ref={titleRef} tabIndex={-1}>
+                    {title}
+                    {view === 'memory' && formData.name.trim() && (
+                        <span className="persona-editor-title__context">{formData.name.trim()}</span>
+                    )}
+                </h1>
+                {!loading && (
+                    <button
+                        type="button"
+                        className="save-btn ui-btn ui-btn--primary ui-btn--sm"
+                        onClick={handleSave}
+                        disabled={saving}
+                    >
                         {saving ? t('common.saving') : t('common.save')}
                     </button>
-                </div>
-            </div>
-
-            {/* 滚动内容 */}
-            <div className="persona-editor-content">
-                {/* Hero: 头像 + 名称 + 描述 */}
-                <PersonaHero
-                    name={formData.name}
-                    description={formData.description}
-                    avatarUrl={avatarPreview}
-                    onNameChange={(name) => setFormData((prev) => ({ ...prev, name }))}
-                    onDescriptionChange={(description) => setFormData((prev) => ({ ...prev, description }))}
-                    onAvatarChange={handleAvatarChange}
-                    onAvatarDelete={handleAvatarDelete}
-                />
-
-                {/* 系统提示词 */}
-                <PersonaPromptSection
-                    content={formData.content}
-                    onContentChange={(content) => setFormData((prev) => ({ ...prev, content }))}
-                />
-
-                {/* 记忆管理（仅编辑时显示） */}
-                {isEditing && promptId && (
-                    <PersonaMemorySection
-                        promptId={promptId}
-                        expanded={memoryExpanded}
-                        onToggle={() => setMemoryExpanded((prev) => !prev)}
-                        memoryCount={memoryCount}
-                        onMemoryCountChange={setMemoryCount}
-                    />
                 )}
+            </header>
 
-                {/* 删除区域（仅编辑时显示） */}
-                {isEditing && (
-                    <div className="danger-zone">
-                        <button className="delete-persona-btn" onClick={handleDelete}>
-                            {t('persona.deleteThisPersona')}
-                        </button>
+            {loading ? (
+                <div className="persona-editor-content">
+                    <div className="persona-editor-loading" role="status">
+                        <span className="ui-spinner" aria-hidden="true" />
+                        <span>{editorCopy.loading}</span>
                     </div>
-                )}
-            </div>
+                </div>
+            ) : (
+                <>
+                    <div className="persona-editor-content" hidden={view !== 'main'}>
+                        <div className="persona-editor-inner">
+                            <PersonaHero
+                                name={formData.name}
+                                description={formData.description}
+                                avatarUrl={avatarPreview}
+                                onNameChange={(name) => setFormData((prev) => ({ ...prev, name }))}
+                                onDescriptionChange={(description) => setFormData((prev) => ({ ...prev, description }))}
+                                onAvatarChange={handleAvatarChange}
+                                onAvatarDelete={handleAvatarDelete}
+                            />
+
+                            <PersonaPromptSection
+                                content={formData.content}
+                                onContentChange={(content) => setFormData((prev) => ({ ...prev, content }))}
+                            />
+
+                            {isEditing && promptId && <PersonaMemorySection stats={memoryStats} onOpen={openMemory} />}
+
+                            {isEditing && (
+                                <Group title={editorCopy.dangerZone} className="persona-danger">
+                                    <Row
+                                        label={editorCopy.deleteLabel}
+                                        detail={editorCopy.deleteDetail}
+                                        trailing={
+                                            <button
+                                                type="button"
+                                                className="ui-btn ui-btn--danger ui-btn--sm delete-persona-btn"
+                                                onClick={handleDelete}
+                                            >
+                                                {editorCopy.deleteButton}
+                                            </button>
+                                        }
+                                    />
+                                </Group>
+                            )}
+                        </div>
+                    </div>
+                    {isEditing && promptId && view === 'memory' && (
+                        <div className="persona-editor-content persona-editor-content--memory">
+                            <div className="persona-editor-inner">
+                                <MemoryManager promptId={promptId} embedded />
+                            </div>
+                        </div>
+                    )}
+                </>
+            )}
         </motion.div>
     )
 }

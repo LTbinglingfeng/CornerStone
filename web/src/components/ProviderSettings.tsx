@@ -14,7 +14,6 @@ import {
     getGeminiThinkingBudgetRange,
     clampGeminiThinkingBudget,
     clampGeminiImageNumberOfImages,
-    maskApiKey,
     CustomSelect,
     ModelSelect,
 } from './provider'
@@ -23,6 +22,7 @@ import { NumericInput } from './NumericInput'
 import { useT } from '../contexts/I18nContext'
 import { useToast } from '../contexts/ToastContext'
 import { useConfirm } from '../contexts/ConfirmContext'
+import { Badge, EmptyState, Icon, Toggle } from './ui'
 import { centerModalVariants, drawerVariants, overlayVariants } from '../utils/motion'
 import './ProviderSettings.css'
 
@@ -285,6 +285,20 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
         setEditingProvider({ ...editingProvider, [field]: value })
     }
 
+    const renderSwitch = (field: 'stream' | 'image_capable' | 'prompt_caching', label: string, hint?: string) => (
+        <div className="provider-form-switch">
+            <span className="provider-form-switch__text">
+                <span className="modal-label">{label}</span>
+                {hint && <span className="provider-form-switch__hint">{hint}</span>}
+            </span>
+            <Toggle
+                label={label}
+                checked={Boolean(editingProvider?.[field])}
+                onChange={(checked) => handleProviderChange(field, checked)}
+            />
+        </div>
+    )
+
     return (
         <motion.div
             className="provider-settings"
@@ -301,128 +315,104 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                 </button>
                 <div className="provider-settings-title">{t('provider.title')}</div>
                 <button
-                    className="header-add-button"
+                    type="button"
+                    className="ui-btn ui-btn--primary ui-btn--sm"
                     onClick={handleAddNew}
-                    title={t('provider.addProvider')}
                     aria-label={t('provider.addProvider')}
                 >
-                    <svg viewBox="0 0 24 24">
-                        <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
-                    </svg>
+                    <Icon name="plus" />
+                    {t('settingsManagement.provider.add')}
                 </button>
             </div>
 
             {loading ? (
-                <div className="provider-settings-loading">{t('common.loading')}</div>
+                <div className="provider-settings-loading" role="status">
+                    <span className="ui-spinner" aria-hidden="true" />
+                    {t('common.loading')}
+                </div>
             ) : (
                 <div className="provider-settings-content">
-                    <div className="provider-cards">
-                        {providers.map((provider) => {
-                            const isActive = provider.id === activeProviderId
-                            const isChatSelectable = provider.type !== 'gemini_image'
-                            return (
-                                <div key={provider.id} className={`provider-card ${isActive ? 'active' : 'inactive'}`}>
-                                    <div className="provider-card-header">
-                                        <div className="provider-card-id">{provider.id}</div>
-                                        {isActive && (
-                                            <span className="active-indicator">{t('imageProvider.inUse')}</span>
-                                        )}
-                                    </div>
-                                    <div className="provider-card-body">
-                                        <div className="provider-card-row">
-                                            <span className="provider-card-label">{t('provider.type')}</span>
-                                            <span className="provider-card-value type">
-                                                {providerTypesAll.find((type) => type.value === provider.type)?.label ||
-                                                    provider.type ||
-                                                    t('provider.openaiCompatible')}
-                                            </span>
+                    {providers.length === 0 ? (
+                        <EmptyState
+                            icon="bot"
+                            title={t('settingsManagement.provider.empty')}
+                            description={t('settingsManagement.provider.emptyHint')}
+                            action={
+                                <button type="button" className="ui-btn ui-btn--primary" onClick={handleAddNew}>
+                                    <Icon name="plus" />
+                                    {t('provider.addProvider')}
+                                </button>
+                            }
+                        />
+                    ) : (
+                        <div className="ui-list provider-list">
+                            {providers.map((provider) => {
+                                const isActive = provider.id === activeProviderId
+                                const isChatSelectable = provider.type !== 'gemini_image'
+                                const displayName = provider.name || provider.id
+                                const typeLabel =
+                                    providerTypesAll.find((type) => type.value === provider.type)?.label ||
+                                    provider.type ||
+                                    t('provider.openaiCompatible')
+                                return (
+                                    <div key={provider.id} className={`provider-card${isActive ? ' active' : ''}`}>
+                                        <div className="provider-card-main">
+                                            <div className="provider-card-title">
+                                                <span className="provider-card-name">{displayName}</span>
+                                                <Badge>{typeLabel}</Badge>
+                                                {isActive && (
+                                                    <Badge tone="success" dot>
+                                                        {t('imageProvider.inUse')}
+                                                    </Badge>
+                                                )}
+                                            </div>
+                                            <div className="provider-card-meta">
+                                                <span className="settings-mono">
+                                                    {provider.model || t('common.notSet')}
+                                                </span>
+                                                {provider.base_url && (
+                                                    <span className="provider-card-url">{provider.base_url}</span>
+                                                )}
+                                            </div>
+                                            {!isChatSelectable && (
+                                                <p className="provider-card-note">{t('provider.imageOnly')}</p>
+                                            )}
                                         </div>
-                                        <div className="provider-card-row">
-                                            <span className="provider-card-label">URL</span>
-                                            <span className="provider-card-value">{provider.base_url}</span>
-                                        </div>
-                                        <div className="provider-card-row">
-                                            <span className="provider-card-label">Key</span>
-                                            <span className="provider-card-value masked">
-                                                {maskApiKey(provider.api_key)}
-                                            </span>
-                                        </div>
-                                        <div className="provider-card-row">
-                                            <span className="provider-card-label">{t('provider.model')}</span>
-                                            <span className="provider-card-value model">{provider.model}</span>
-                                        </div>
-                                        <div className="provider-card-row">
-                                            <span className="provider-card-label">{t('provider.temperature')}</span>
-                                            <span className="provider-card-value">{provider.temperature}</span>
-                                        </div>
-                                        <div className="provider-card-row">
-                                            <span className="provider-card-label">Top P</span>
-                                            <span className="provider-card-value">{provider.top_p}</span>
-                                        </div>
-                                        <div className="provider-card-row">
-                                            <span className="provider-card-label">{t('provider.context')}</span>
-                                            <span className="provider-card-value">
-                                                {provider.context_messages} {t('provider.roundUnit')}
-                                            </span>
-                                        </div>
-                                        <div className="provider-card-row">
-                                            <span className="provider-card-label">{t('provider.streaming')}</span>
-                                            <span
-                                                className={`provider-card-value ${provider.stream ? 'stream-on' : 'stream-off'}`}
+                                        <div className="provider-card-actions">
+                                            {!isActive && isChatSelectable && (
+                                                <button
+                                                    type="button"
+                                                    className="ui-btn ui-btn--sm card-action-btn use"
+                                                    onClick={() => handleSetActive(provider.id)}
+                                                >
+                                                    {t('console.useModel')}
+                                                </button>
+                                            )}
+                                            <button
+                                                type="button"
+                                                className="ui-btn ui-btn--sm card-action-btn edit"
+                                                onClick={() => handleEditProvider(provider)}
                                             >
-                                                {provider.stream ? t('common.enable') : t('common.disable')}
-                                            </span>
-                                        </div>
-                                        <div className="provider-card-row">
-                                            <span className="provider-card-label">{t('provider.vision')}</span>
-                                            <span
-                                                className={`provider-card-value ${provider.image_capable ? 'vision-on' : 'vision-off'}`}
+                                                {t('common.edit')}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="ui-icon-btn card-action-btn delete"
+                                                aria-label={`${t('common.delete')} ${displayName}`}
+                                                title={t('common.delete')}
+                                                onClick={() => handleDeleteProvider(provider.id)}
                                             >
-                                                {provider.image_capable
-                                                    ? t('common.supported')
-                                                    : t('common.notSupported')}
-                                            </span>
+                                                <Icon name="trash" />
+                                            </button>
                                         </div>
                                     </div>
-                                    {!isChatSelectable && (
-                                        <p className="provider-card-note">{t('provider.imageOnly')}</p>
-                                    )}
-                                    <div className="provider-card-actions">
-                                        <button
-                                            className="card-action-btn use"
-                                            disabled={isActive || !isChatSelectable}
-                                            title={!isChatSelectable ? t('provider.imageOnly') : undefined}
-                                            onClick={() => handleSetActive(provider.id)}
-                                        >
-                                            {isActive ? t('imageProvider.inUse') : t('console.useModel')}
-                                        </button>
-                                        <button
-                                            className="card-action-btn edit"
-                                            onClick={() => handleEditProvider(provider)}
-                                        >
-                                            <svg viewBox="0 0 24 24">
-                                                <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
-                                            </svg>
-                                            {t('common.edit')}
-                                        </button>
-                                        <button
-                                            className="card-action-btn delete"
-                                            onClick={() => handleDeleteProvider(provider.id)}
-                                        >
-                                            <svg viewBox="0 0 24 24">
-                                                <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
-                                            </svg>
-                                            {t('common.delete')}
-                                        </button>
-                                    </div>
-                                </div>
-                            )
-                        })}
-                    </div>
+                                )
+                            })}
+                        </div>
+                    )}
                 </div>
             )}
 
-            {/* 悬浮编辑/新增卡片 */}
             <AnimatePresence>
                 {showModal && editingProvider && (
                     <ModalOverlay
@@ -435,7 +425,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                         variants={overlayVariants}
                     >
                         <motion.div
-                            className="modal-card"
+                            className="modal-card provider-modal-card"
                             initial="hidden"
                             animate="visible"
                             exit="hidden"
@@ -456,330 +446,344 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                             </div>
 
                             <div className="modal-body">
-                                <div className="modal-group">
-                                    <label className="modal-label">{t('provider.id')}</label>
-                                    <input
-                                        aria-label={t('provider.id')}
-                                        type="text"
-                                        className="modal-input"
-                                        value={editingProvider.id}
-                                        onChange={(e) => handleProviderChange('id', e.target.value)}
-                                        placeholder="unique-id"
-                                        disabled={!isAddingNew}
-                                    />
-                                </div>
-
-                                <div className="modal-group">
-                                    <label className="modal-label">{t('provider.displayName')}</label>
-                                    <input
-                                        aria-label={t('provider.displayName')}
-                                        type="text"
-                                        className="modal-input"
-                                        value={editingProvider.name}
-                                        onChange={(e) => handleProviderChange('name', e.target.value)}
-                                        placeholder="OpenAI"
-                                    />
-                                </div>
-
-                                <div className="modal-group">
-                                    <label className="modal-label">{t('provider.type')}</label>
-                                    <CustomSelect
-                                        value={editingProvider.type || 'openai'}
-                                        options={providerTypesAll}
-                                        ariaLabel={t('provider.type')}
-                                        onChange={(value) => handleProviderChange('type', value)}
-                                    />
-                                </div>
-
-                                <div className="modal-group">
-                                    <label className="modal-label">{t('provider.apiUrl')}</label>
-                                    <input
-                                        aria-label={t('provider.apiUrl')}
-                                        type="text"
-                                        className="modal-input"
-                                        value={editingProvider.base_url}
-                                        onChange={(e) => handleProviderChange('base_url', e.target.value)}
-                                        placeholder="https://api.openai.com/v1"
-                                    />
-                                </div>
-
-                                <div className="modal-group">
-                                    <label className="modal-label">{t('provider.apiKey')}</label>
-                                    <input
-                                        aria-label={t('provider.apiKey')}
-                                        type="password"
-                                        className="modal-input"
-                                        value={editingProvider.api_key}
-                                        onChange={(e) => handleProviderChange('api_key', e.target.value)}
-                                        placeholder={isAddingNew ? 'sk-...' : t('memoryProvider.apiKeyHint')}
-                                    />
-                                </div>
-
-                                <div className="modal-group">
-                                    <label>
-                                        <span className="modal-label">{t('provider.model')}</span>
-                                        <ModelSelect
-                                            value={editingProvider.model}
-                                            providerId={editingProvider.id}
-                                            providerType={editingProvider.type}
-                                            baseUrl={editingProvider.base_url}
-                                            apiKey={editingProvider.api_key}
-                                            isNewProvider={isAddingNew}
-                                            placeholder={
-                                                editingProvider.type === 'gemini_image'
-                                                    ? 'nano banana / nanobanana Pro'
-                                                    : 'gpt-4'
-                                            }
-                                            onChange={(value) => handleProviderChange('model', value)}
-                                            onError={(message) => showToast(message, 'error')}
-                                        />
-                                    </label>
-                                </div>
-
-                                {editingProvider.type === 'gemini_image' && (
-                                    <>
+                                <section className="provider-form-section">
+                                    <h4 className="provider-form-section__title">
+                                        {t('settingsManagement.provider.basics')}
+                                    </h4>
+                                    <div className="provider-form-grid">
                                         <div className="modal-group">
-                                            <label className="modal-label">{t('provider.imageAspectRatio')}</label>
-                                            <select
-                                                aria-label={t('provider.imageAspectRatio')}
-                                                className="modal-input modal-select"
-                                                value={editingProvider.gemini_image_aspect_ratio || '1:1'}
-                                                onChange={(e) =>
-                                                    handleProviderChange('gemini_image_aspect_ratio', e.target.value)
-                                                }
-                                            >
-                                                {GEMINI_IMAGE_ASPECT_RATIOS.map((ratio) => (
-                                                    <option key={ratio.value} value={ratio.value}>
-                                                        {ratio.label}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </div>
-
-                                        <div className="modal-group">
-                                            <label className="modal-label">{t('provider.imageResolution')}</label>
-                                            <select
-                                                aria-label={t('provider.imageResolution')}
-                                                className="modal-input modal-select"
-                                                value={editingProvider.gemini_image_size || ''}
-                                                onChange={(e) =>
-                                                    handleProviderChange('gemini_image_size', e.target.value)
-                                                }
-                                            >
-                                                {geminiImageSizes.map((size) => (
-                                                    <option key={size.value || 'default'} value={size.value}>
-                                                        {size.label}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </div>
-
-                                        <div className="modal-group">
-                                            <label className="modal-label">{t('provider.imageQuantity')}</label>
-                                            <NumericInput
-                                                aria-label={t('provider.imageQuantity')}
+                                            <label className="modal-label">{t('provider.id')}</label>
+                                            <input
+                                                aria-label={t('provider.id')}
+                                                type="text"
                                                 className="modal-input"
-                                                min={1}
-                                                max={8}
-                                                step={1}
-                                                value={editingProvider.gemini_image_number_of_images ?? 1}
-                                                parseAs="int"
-                                                onValueChange={(value) =>
-                                                    handleProviderChange('gemini_image_number_of_images', value)
-                                                }
-                                                placeholder="1"
+                                                value={editingProvider.id}
+                                                onChange={(e) => handleProviderChange('id', e.target.value)}
+                                                placeholder="unique-id"
+                                                disabled={!isAddingNew}
                                             />
                                         </div>
 
                                         <div className="modal-group">
-                                            <label className="modal-label">{t('provider.outputFormat')}</label>
-                                            <select
-                                                aria-label={t('provider.outputFormat')}
-                                                className="modal-input modal-select"
-                                                value={editingProvider.gemini_image_output_mime_type || 'image/jpeg'}
-                                                onChange={(e) =>
-                                                    handleProviderChange(
-                                                        'gemini_image_output_mime_type',
-                                                        e.target.value
-                                                    )
-                                                }
-                                            >
-                                                {GEMINI_IMAGE_OUTPUT_MIME_TYPES.map((mime) => (
-                                                    <option key={mime.value} value={mime.value}>
-                                                        {mime.label}
-                                                    </option>
-                                                ))}
-                                            </select>
+                                            <label className="modal-label">{t('provider.displayName')}</label>
+                                            <input
+                                                aria-label={t('provider.displayName')}
+                                                type="text"
+                                                className="modal-input"
+                                                value={editingProvider.name}
+                                                onChange={(e) => handleProviderChange('name', e.target.value)}
+                                                placeholder="OpenAI"
+                                            />
                                         </div>
-                                    </>
-                                )}
-
-                                {editingProvider.type !== 'gemini_image' && (
-                                    <div className="modal-group">
-                                        <label className="modal-label">{t('provider.temperature')}</label>
-                                        <NumericInput
-                                            aria-label={t('provider.temperature')}
-                                            className="modal-input"
-                                            min={0}
-                                            max={2}
-                                            step={0.1}
-                                            value={editingProvider.temperature}
-                                            parseAs="float"
-                                            onValueChange={(value) => handleProviderChange('temperature', value)}
-                                            placeholder="0.8"
-                                            disabled={editingProvider.type === 'anthropic'}
-                                        />
                                     </div>
-                                )}
 
-                                {editingProvider.type !== 'gemini_image' && (
                                     <div className="modal-group">
-                                        <label className="modal-label">{t('provider.topP')}</label>
-                                        <NumericInput
-                                            aria-label={t('provider.topP')}
-                                            className="modal-input"
-                                            min={0}
-                                            max={1}
-                                            step={0.1}
-                                            value={editingProvider.top_p}
-                                            parseAs="float"
-                                            onValueChange={(value) => handleProviderChange('top_p', value)}
-                                            placeholder="1"
-                                            disabled={editingProvider.type === 'anthropic'}
-                                        />
-                                    </div>
-                                )}
-
-                                {(editingProvider.type === 'openai' || editingProvider.type === 'openai_response') && (
-                                    <div className="modal-group">
-                                        <label className="modal-label">{t('provider.reasoningEffort')}</label>
+                                        <label className="modal-label">{t('provider.type')}</label>
                                         <CustomSelect
-                                            value={editingProvider.reasoning_effort ?? ''}
-                                            options={openAIReasoningEffortOptions}
-                                            ariaLabel={t('provider.reasoningEffort')}
-                                            onChange={(value) => handleProviderChange('reasoning_effort', value)}
+                                            value={editingProvider.type || 'openai'}
+                                            options={providerTypesAll}
+                                            ariaLabel={t('provider.type')}
+                                            onChange={(value) => handleProviderChange('type', value)}
                                         />
                                     </div>
-                                )}
+                                </section>
 
-                                {editingProvider.type === 'gemini' && (
-                                    <>
-                                        <div className="modal-group">
-                                            <label className="modal-label">{t('provider.geminiThinkingMode')}</label>
-                                            <CustomSelect
-                                                value={editingProvider.gemini_thinking_mode || 'none'}
-                                                options={geminiThinkingModes}
-                                                ariaLabel={t('provider.geminiThinkingMode')}
-                                                onChange={(value) =>
-                                                    handleProviderChange('gemini_thinking_mode', value)
+                                <section className="provider-form-section">
+                                    <h4 className="provider-form-section__title">
+                                        {t('settingsManagement.provider.connection')}
+                                    </h4>
+                                    <div className="modal-group">
+                                        <label className="modal-label">{t('provider.apiUrl')}</label>
+                                        <input
+                                            aria-label={t('provider.apiUrl')}
+                                            type="text"
+                                            className="modal-input"
+                                            value={editingProvider.base_url}
+                                            onChange={(e) => handleProviderChange('base_url', e.target.value)}
+                                            placeholder="https://api.openai.com/v1"
+                                        />
+                                    </div>
+
+                                    <div className="modal-group">
+                                        <label className="modal-label">{t('provider.apiKey')}</label>
+                                        <input
+                                            aria-label={t('provider.apiKey')}
+                                            type="password"
+                                            className="modal-input"
+                                            value={editingProvider.api_key}
+                                            onChange={(e) => handleProviderChange('api_key', e.target.value)}
+                                            placeholder={isAddingNew ? 'sk-...' : t('memoryProvider.apiKeyHint')}
+                                        />
+                                    </div>
+
+                                    <div className="modal-group">
+                                        <label>
+                                            <span className="modal-label">{t('provider.model')}</span>
+                                            <ModelSelect
+                                                value={editingProvider.model}
+                                                providerId={editingProvider.id}
+                                                providerType={editingProvider.type}
+                                                baseUrl={editingProvider.base_url}
+                                                apiKey={editingProvider.api_key}
+                                                isNewProvider={isAddingNew}
+                                                placeholder={
+                                                    editingProvider.type === 'gemini_image'
+                                                        ? 'nano banana / nanobanana Pro'
+                                                        : 'gpt-4'
                                                 }
+                                                onChange={(value) => handleProviderChange('model', value)}
+                                                onError={(message) => showToast(message, 'error')}
                                             />
-                                        </div>
+                                        </label>
+                                    </div>
+                                </section>
 
-                                        <div className="modal-group">
-                                            <label className="modal-label">{t('provider.thinkingLevelBudget')}</label>
-                                            {editingProvider.gemini_thinking_mode === 'thinking_level' && (
+                                <section className="provider-form-section">
+                                    <h4 className="provider-form-section__title">
+                                        {t('settingsManagement.provider.parameters')}
+                                    </h4>
+                                    {editingProvider.type === 'gemini_image' && (
+                                        <div className="provider-form-grid">
+                                            <div className="modal-group">
+                                                <label className="modal-label">{t('provider.imageAspectRatio')}</label>
                                                 <select
-                                                    aria-label={t('provider.thinkingLevelBudget')}
+                                                    aria-label={t('provider.imageAspectRatio')}
                                                     className="modal-input modal-select"
-                                                    value={editingProvider.gemini_thinking_level}
+                                                    value={editingProvider.gemini_image_aspect_ratio || '1:1'}
                                                     onChange={(e) =>
-                                                        handleProviderChange('gemini_thinking_level', e.target.value)
+                                                        handleProviderChange(
+                                                            'gemini_image_aspect_ratio',
+                                                            e.target.value
+                                                        )
                                                     }
                                                 >
-                                                    {geminiThinkingLevels.map((level) => (
-                                                        <option key={level.value} value={level.value}>
-                                                            {level.label}
+                                                    {GEMINI_IMAGE_ASPECT_RATIOS.map((ratio) => (
+                                                        <option key={ratio.value} value={ratio.value}>
+                                                            {ratio.label}
                                                         </option>
                                                     ))}
                                                 </select>
-                                            )}
-                                            {editingProvider.gemini_thinking_mode === 'thinking_budget' && (
+                                            </div>
+
+                                            <div className="modal-group">
+                                                <label className="modal-label">{t('provider.imageResolution')}</label>
+                                                <select
+                                                    aria-label={t('provider.imageResolution')}
+                                                    className="modal-input modal-select"
+                                                    value={editingProvider.gemini_image_size || ''}
+                                                    onChange={(e) =>
+                                                        handleProviderChange('gemini_image_size', e.target.value)
+                                                    }
+                                                >
+                                                    {geminiImageSizes.map((size) => (
+                                                        <option key={size.value || 'default'} value={size.value}>
+                                                            {size.label}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+
+                                            <div className="modal-group">
+                                                <label className="modal-label">{t('provider.imageQuantity')}</label>
                                                 <NumericInput
-                                                    aria-label={t('provider.thinkingLevelBudget')}
+                                                    aria-label={t('provider.imageQuantity')}
                                                     className="modal-input"
-                                                    min={getGeminiThinkingBudgetRange(editingProvider.model).min}
-                                                    max={getGeminiThinkingBudgetRange(editingProvider.model).max}
+                                                    min={1}
+                                                    max={8}
                                                     step={1}
-                                                    value={editingProvider.gemini_thinking_budget}
+                                                    value={editingProvider.gemini_image_number_of_images ?? 1}
                                                     parseAs="int"
                                                     onValueChange={(value) =>
-                                                        handleProviderChange('gemini_thinking_budget', value)
+                                                        handleProviderChange('gemini_image_number_of_images', value)
                                                     }
-                                                    placeholder={`${getGeminiThinkingBudgetRange(editingProvider.model).min}-${getGeminiThinkingBudgetRange(editingProvider.model).max}`}
+                                                    placeholder="1"
                                                 />
-                                            )}
-                                            {editingProvider.gemini_thinking_mode === 'none' && (
-                                                <input
-                                                    aria-label={t('provider.thinkingLevelBudget')}
-                                                    type="text"
-                                                    className="modal-input"
-                                                    value={t('common.disabled')}
-                                                    disabled
-                                                />
-                                            )}
-                                        </div>
-                                    </>
-                                )}
+                                            </div>
 
-                                {editingProvider.type === 'anthropic' && (
-                                    <>
+                                            <div className="modal-group">
+                                                <label className="modal-label">{t('provider.outputFormat')}</label>
+                                                <select
+                                                    aria-label={t('provider.outputFormat')}
+                                                    className="modal-input modal-select"
+                                                    value={
+                                                        editingProvider.gemini_image_output_mime_type || 'image/jpeg'
+                                                    }
+                                                    onChange={(e) =>
+                                                        handleProviderChange(
+                                                            'gemini_image_output_mime_type',
+                                                            e.target.value
+                                                        )
+                                                    }
+                                                >
+                                                    {GEMINI_IMAGE_OUTPUT_MIME_TYPES.map((mime) => (
+                                                        <option key={mime.value} value={mime.value}>
+                                                            {mime.label}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {editingProvider.type !== 'gemini_image' && (
+                                        <div className="provider-form-grid">
+                                            <div className="modal-group">
+                                                <label className="modal-label">{t('provider.temperature')}</label>
+                                                <NumericInput
+                                                    aria-label={t('provider.temperature')}
+                                                    className="modal-input"
+                                                    min={0}
+                                                    max={2}
+                                                    step={0.1}
+                                                    value={editingProvider.temperature}
+                                                    parseAs="float"
+                                                    onValueChange={(value) =>
+                                                        handleProviderChange('temperature', value)
+                                                    }
+                                                    placeholder="0.8"
+                                                    disabled={editingProvider.type === 'anthropic'}
+                                                />
+                                            </div>
+
+                                            <div className="modal-group">
+                                                <label className="modal-label">{t('provider.topP')}</label>
+                                                <NumericInput
+                                                    aria-label={t('provider.topP')}
+                                                    className="modal-input"
+                                                    min={0}
+                                                    max={1}
+                                                    step={0.1}
+                                                    value={editingProvider.top_p}
+                                                    parseAs="float"
+                                                    onValueChange={(value) => handleProviderChange('top_p', value)}
+                                                    placeholder="1"
+                                                    disabled={editingProvider.type === 'anthropic'}
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {(editingProvider.type === 'openai' ||
+                                        editingProvider.type === 'openai_response') && (
                                         <div className="modal-group">
-                                            <label className="modal-label">{t('memoryProvider.thinkingBudget')}</label>
-                                            <NumericInput
-                                                aria-label={t('memoryProvider.thinkingBudget')}
-                                                className="modal-input"
-                                                min={0}
-                                                step={1}
-                                                value={editingProvider.thinking_budget}
-                                                parseAs="int"
-                                                onValueChange={(value) =>
-                                                    handleProviderChange('thinking_budget', value)
-                                                }
-                                                placeholder="0"
+                                            <label className="modal-label">{t('provider.reasoningEffort')}</label>
+                                            <CustomSelect
+                                                value={editingProvider.reasoning_effort ?? ''}
+                                                options={openAIReasoningEffortOptions}
+                                                ariaLabel={t('provider.reasoningEffort')}
+                                                onChange={(value) => handleProviderChange('reasoning_effort', value)}
                                             />
                                         </div>
+                                    )}
 
-                                        <div className="modal-group">
-                                            <label className="modal-label">{t('provider.promptCaching')}</label>
-                                            <div className="modal-toggle-wrapper">
-                                                <label className="toggle-switch">
-                                                    <input
-                                                        aria-label={t('provider.promptCaching')}
-                                                        type="checkbox"
-                                                        checked={editingProvider.prompt_caching}
-                                                        onChange={(e) =>
-                                                            handleProviderChange('prompt_caching', e.target.checked)
-                                                        }
-                                                    />
-                                                    <span className="toggle-slider"></span>
-                                                </label>
-                                                <span className="toggle-label">
-                                                    {editingProvider.prompt_caching
-                                                        ? t('common.enable')
-                                                        : t('common.disable')}
-                                                </span>
-                                            </div>
-                                        </div>
-
-                                        {editingProvider.prompt_caching && (
+                                    {editingProvider.type === 'gemini' && (
+                                        <div className="provider-form-grid">
                                             <div className="modal-group">
-                                                <label className="modal-label">{t('provider.promptCacheTTL')}</label>
+                                                <label className="modal-label">
+                                                    {t('provider.geminiThinkingMode')}
+                                                </label>
                                                 <CustomSelect
-                                                    value={editingProvider.prompt_cache_ttl || '5m'}
-                                                    options={anthropicPromptCacheTTLOptions}
-                                                    ariaLabel={t('provider.promptCacheTTL')}
+                                                    value={editingProvider.gemini_thinking_mode || 'none'}
+                                                    options={geminiThinkingModes}
+                                                    ariaLabel={t('provider.geminiThinkingMode')}
                                                     onChange={(value) =>
-                                                        handleProviderChange('prompt_cache_ttl', value)
+                                                        handleProviderChange('gemini_thinking_mode', value)
                                                     }
                                                 />
                                             </div>
-                                        )}
-                                    </>
-                                )}
 
-                                {editingProvider.type !== 'gemini_image' && (
-                                    <>
+                                            <div className="modal-group">
+                                                <label className="modal-label">
+                                                    {t('provider.thinkingLevelBudget')}
+                                                </label>
+                                                {editingProvider.gemini_thinking_mode === 'thinking_level' && (
+                                                    <select
+                                                        aria-label={t('provider.thinkingLevelBudget')}
+                                                        className="modal-input modal-select"
+                                                        value={editingProvider.gemini_thinking_level}
+                                                        onChange={(e) =>
+                                                            handleProviderChange(
+                                                                'gemini_thinking_level',
+                                                                e.target.value
+                                                            )
+                                                        }
+                                                    >
+                                                        {geminiThinkingLevels.map((level) => (
+                                                            <option key={level.value} value={level.value}>
+                                                                {level.label}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                )}
+                                                {editingProvider.gemini_thinking_mode === 'thinking_budget' && (
+                                                    <NumericInput
+                                                        aria-label={t('provider.thinkingLevelBudget')}
+                                                        className="modal-input"
+                                                        min={getGeminiThinkingBudgetRange(editingProvider.model).min}
+                                                        max={getGeminiThinkingBudgetRange(editingProvider.model).max}
+                                                        step={1}
+                                                        value={editingProvider.gemini_thinking_budget}
+                                                        parseAs="int"
+                                                        onValueChange={(value) =>
+                                                            handleProviderChange('gemini_thinking_budget', value)
+                                                        }
+                                                        placeholder={`${getGeminiThinkingBudgetRange(editingProvider.model).min}-${getGeminiThinkingBudgetRange(editingProvider.model).max}`}
+                                                    />
+                                                )}
+                                                {editingProvider.gemini_thinking_mode === 'none' && (
+                                                    <input
+                                                        aria-label={t('provider.thinkingLevelBudget')}
+                                                        type="text"
+                                                        className="modal-input"
+                                                        value={t('common.disabled')}
+                                                        disabled
+                                                    />
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {editingProvider.type === 'anthropic' && (
+                                        <>
+                                            <div className="modal-group">
+                                                <label className="modal-label">
+                                                    {t('memoryProvider.thinkingBudget')}
+                                                </label>
+                                                <NumericInput
+                                                    aria-label={t('memoryProvider.thinkingBudget')}
+                                                    className="modal-input"
+                                                    min={0}
+                                                    step={1}
+                                                    value={editingProvider.thinking_budget}
+                                                    parseAs="int"
+                                                    onValueChange={(value) =>
+                                                        handleProviderChange('thinking_budget', value)
+                                                    }
+                                                    placeholder="0"
+                                                />
+                                            </div>
+
+                                            {renderSwitch('prompt_caching', t('provider.promptCaching'))}
+
+                                            {editingProvider.prompt_caching && (
+                                                <div className="modal-group">
+                                                    <label className="modal-label">
+                                                        {t('provider.promptCacheTTL')}
+                                                    </label>
+                                                    <CustomSelect
+                                                        value={editingProvider.prompt_cache_ttl || '5m'}
+                                                        options={anthropicPromptCacheTTLOptions}
+                                                        ariaLabel={t('provider.promptCacheTTL')}
+                                                        onChange={(value) =>
+                                                            handleProviderChange('prompt_cache_ttl', value)
+                                                        }
+                                                    />
+                                                </div>
+                                            )}
+                                        </>
+                                    )}
+
+                                    {editingProvider.type !== 'gemini_image' && (
                                         <div className="modal-group">
                                             <label className="modal-label">{t('provider.contextRounds')}</label>
                                             <NumericInput
@@ -795,49 +799,19 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                                 placeholder="64"
                                             />
                                         </div>
+                                    )}
+                                </section>
 
-                                        <div className="modal-group">
-                                            <label className="modal-label">{t('provider.streamingOutput')}</label>
-                                            <div className="modal-toggle-wrapper">
-                                                <label className="toggle-switch">
-                                                    <input
-                                                        aria-label={t('provider.streamingOutput')}
-                                                        type="checkbox"
-                                                        checked={editingProvider.stream}
-                                                        onChange={(e) =>
-                                                            handleProviderChange('stream', e.target.checked)
-                                                        }
-                                                    />
-                                                    <span className="toggle-slider"></span>
-                                                </label>
-                                                <span className="toggle-label">
-                                                    {editingProvider.stream ? t('common.enable') : t('common.disable')}
-                                                </span>
-                                            </div>
+                                {editingProvider.type !== 'gemini_image' && (
+                                    <section className="provider-form-section">
+                                        <h4 className="provider-form-section__title">
+                                            {t('settingsManagement.provider.capabilities')}
+                                        </h4>
+                                        <div className="provider-form-switches">
+                                            {renderSwitch('stream', t('provider.streamingOutput'))}
+                                            {renderSwitch('image_capable', t('provider.visionSupport'))}
                                         </div>
-
-                                        <div className="modal-group">
-                                            <label className="modal-label">{t('provider.visionSupport')}</label>
-                                            <div className="modal-toggle-wrapper">
-                                                <label className="toggle-switch">
-                                                    <input
-                                                        aria-label={t('provider.visionSupport')}
-                                                        type="checkbox"
-                                                        checked={editingProvider.image_capable}
-                                                        onChange={(e) =>
-                                                            handleProviderChange('image_capable', e.target.checked)
-                                                        }
-                                                    />
-                                                    <span className="toggle-slider"></span>
-                                                </label>
-                                                <span className="toggle-label">
-                                                    {editingProvider.image_capable
-                                                        ? t('common.supported')
-                                                        : t('common.notSupported')}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </>
+                                    </section>
                                 )}
                             </div>
 

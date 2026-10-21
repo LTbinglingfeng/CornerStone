@@ -651,7 +651,6 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     const canSend = (inputText.trim() !== '' || pendingImages.length > 0) && !sending && !uploadingImage
     const userAvatarSrc = getUserAvatarSrc()
     const assistantAvatarSrc = getPromptAvatarSrc()
-    const userPlaceholder = userInfo?.username?.charAt(0)?.toUpperCase() || 'U'
     const assistantPlaceholder = prompt?.name?.charAt(0)?.toUpperCase() || 'A'
     const userDisplayName = userInfo?.username?.trim() || t('chat.defaultUserName')
     const assistantDisplayName = prompt?.name?.trim() || t('chat.defaultAIName')
@@ -667,6 +666,8 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
         >
             <ChatHeader
                 title={session?.title || t('chat.newChat')}
+                personaName={assistantDisplayName}
+                avatarSrc={assistantAvatarSrc}
                 sending={sending}
                 assistantVisibleSegments={assistantVisibleSegments}
                 showSettingsButton={!!prompt}
@@ -689,7 +690,6 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
                 getImageUrl={getChatImageUrl}
                 userAvatarSrc={userAvatarSrc}
                 assistantAvatarSrc={assistantAvatarSrc}
-                userPlaceholder={userPlaceholder}
                 assistantPlaceholder={assistantPlaceholder}
                 userDisplayName={userDisplayName}
                 assistantDisplayName={assistantDisplayName}

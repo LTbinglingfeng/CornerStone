@@ -15,6 +15,8 @@ import {
 import { NumericInput } from './NumericInput'
 import { ModalOverlay } from './ModalOverlay'
 import { useT } from '../contexts/I18nContext'
+import { useToast } from '../contexts/ToastContext'
+import { Group, Icon, Row, Toggle } from './ui'
 import { centerModalVariants, drawerVariants, overlayVariants } from '../utils/motion'
 import './ProviderSettings.css'
 
@@ -24,13 +26,12 @@ interface MemoryProviderSettingsProps {
 
 const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack }) => {
     const { t } = useT()
+    const { showToast } = useToast()
     const [providers, setProviders] = useState<Provider[]>([])
     const [activeProviderId, setActiveProviderId] = useState('')
     const [memoryProvider, setMemoryProvider] = useState<Provider | null>(null)
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
-    const [message, setMessage] = useState('')
-    const [messageType, setMessageType] = useState<'success' | 'error'>('success')
     const [showModal, setShowModal] = useState(false)
     const [editingProvider, setEditingProvider] = useState<Provider | null>(null)
     const providerTypesChat = getProviderTypesChat()
@@ -83,14 +84,7 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
         onBack()
     }
 
-    const showMessageToast = (msg: string, type: 'success' | 'error' = 'success') => {
-        setMessage(msg)
-        setMessageType(type)
-        setTimeout(() => {
-            setMessage('')
-            setMessageType('success')
-        }, 2000)
-    }
+    const showMessageToast = (msg: string, type: 'success' | 'error' = 'success') => showToast(msg, type)
 
     const handleUseFollowChat = async () => {
         if (saving) return
@@ -230,6 +224,12 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
     }
 
     const isFollowChat = memoryProvider == null
+    const check = (selected: boolean) =>
+        selected ? (
+            <Icon name="check" className="provider-choice-check" />
+        ) : (
+            <span className="provider-choice-placeholder" aria-hidden="true" />
+        )
 
     return (
         <motion.div
@@ -246,95 +246,47 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                     </svg>
                 </button>
                 <div className="provider-settings-title">{t('memoryProvider.title')}</div>
-                <div style={{ width: 44 }}></div>
             </div>
 
             {loading ? (
-                <div className="provider-settings-loading">{t('common.loading')}</div>
+                <div className="provider-settings-loading" role="status">
+                    <span className="ui-spinner" aria-hidden="true" />
+                    {t('common.loading')}
+                </div>
             ) : (
                 <div className="provider-settings-content">
-                    <div style={{ marginBottom: 12, color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.4 }}>
-                        {t('memoryProvider.hint')}
-                    </div>
-
-                    <div className="provider-cards">
-                        <div
-                            className={`provider-card ${isFollowChat ? 'active' : 'inactive'}`}
+                    <Group title={t('settings.memoryProvider')} description={t('memoryProvider.hint')}>
+                        <Row
+                            icon="message"
+                            label={t('settings.followChatModel')}
+                            detail={
+                                activeChatProvider
+                                    ? `${activeChatProvider.name || activeChatProvider.id}${activeChatProvider.model ? ` · ${activeChatProvider.model}` : ''}`
+                                    : t('settingsManagement.memoryProvider.followDetail')
+                            }
+                            aria-pressed={isFollowChat}
+                            disabled={saving}
+                            chevron={false}
+                            trailing={check(isFollowChat)}
                             onClick={() => {
                                 if (isFollowChat) return
-                                handleUseFollowChat()
+                                void handleUseFollowChat()
                             }}
-                        >
-                            <div className="provider-card-header">
-                                <div className="provider-card-id">{t('settings.followChatModel')}</div>
-                                {isFollowChat && <div className="active-indicator">{t('common.current')}</div>}
-                            </div>
-                            <div className="provider-card-body">
-                                <div className="provider-card-row">
-                                    <span className="provider-card-label">{t('imageProvider.name')}</span>
-                                    <span className="provider-card-value">
-                                        {activeChatProvider?.name || t('common.notSet')}
-                                    </span>
-                                </div>
-                                <div className="provider-card-row">
-                                    <span className="provider-card-label">{t('provider.model')}</span>
-                                    <span className="provider-card-value model">
-                                        {activeChatProvider?.model || t('common.notSet')}
-                                    </span>
-                                </div>
-                                <div className="provider-card-row">
-                                    <span className="provider-card-label">{t('imageProvider.type')}</span>
-                                    <span className="provider-card-value type">
-                                        {activeChatProvider?.type || t('memoryProvider.unknown')}
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div
-                            className={`provider-card ${!isFollowChat ? 'active' : 'inactive'}`}
-                            onClick={() => openEditModal()}
-                        >
-                            <div className="provider-card-header">
-                                <div className="provider-card-id">{t('memoryProvider.independent')}</div>
-                                {!isFollowChat && <div className="active-indicator">{t('common.current')}</div>}
-                            </div>
-                            <div className="provider-card-body">
-                                <div className="provider-card-row">
-                                    <span className="provider-card-label">{t('imageProvider.name')}</span>
-                                    <span className="provider-card-value">
-                                        {memoryProvider?.name || t('common.notConfigured')}
-                                    </span>
-                                </div>
-                                <div className="provider-card-row">
-                                    <span className="provider-card-label">{t('provider.model')}</span>
-                                    <span className="provider-card-value model">
-                                        {memoryProvider?.model || t('common.notConfigured')}
-                                    </span>
-                                </div>
-                                <div className="provider-card-row">
-                                    <span className="provider-card-label">{t('imageProvider.type')}</span>
-                                    <span className="provider-card-value type">
-                                        {memoryProvider?.type || t('memoryProvider.unknown')}
-                                    </span>
-                                </div>
-                            </div>
-                            <div className="provider-card-actions">
-                                <button
-                                    className="card-action-btn edit"
-                                    onClick={(e) => {
-                                        e.stopPropagation()
-                                        openEditModal()
-                                    }}
-                                >
-                                    <svg viewBox="0 0 24 24">
-                                        <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1.003 1.003 0 000-1.42l-2.34-2.34a1.003 1.003 0 00-1.42 0l-1.83 1.83 3.75 3.75 1.84-1.82z" />
-                                    </svg>
-                                    {memoryProvider ? t('common.edit') : t('common.configure')}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
+                        />
+                        <Row
+                            icon="bot"
+                            label={t('memoryProvider.independent')}
+                            detail={
+                                memoryProvider
+                                    ? `${memoryProvider.name || memoryProvider.id}${memoryProvider.model ? ` · ${memoryProvider.model}` : ''}`
+                                    : t('settingsManagement.memoryProvider.independentDetail')
+                            }
+                            aria-pressed={!isFollowChat}
+                            value={memoryProvider ? t('common.edit') : t('common.configure')}
+                            trailing={check(!isFollowChat)}
+                            onClick={openEditModal}
+                        />
+                    </Group>
                 </div>
             )}
 
@@ -352,7 +304,7 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                         variants={overlayVariants}
                     >
                         <motion.div
-                            className="modal-card"
+                            className="modal-card provider-modal-card"
                             initial="hidden"
                             animate="visible"
                             exit="hidden"
@@ -374,235 +326,249 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                             </div>
 
                             <div className="modal-body">
-                                <div className="modal-group">
-                                    <label className="modal-label">{t('memoryProvider.providerId')}</label>
-                                    <input
-                                        type="text"
-                                        className="modal-input"
-                                        aria-label={t('memoryProvider.providerId')}
-                                        value={editingProvider.id}
-                                        onChange={(e) => handleProviderChange('id', e.target.value)}
-                                        placeholder="memory"
-                                    />
-                                </div>
-
-                                <div className="modal-group">
-                                    <label className="modal-label">{t('provider.displayName')}</label>
-                                    <input
-                                        type="text"
-                                        className="modal-input"
-                                        aria-label={t('provider.displayName')}
-                                        value={editingProvider.name}
-                                        onChange={(e) => handleProviderChange('name', e.target.value)}
-                                        placeholder={t('memoryProvider.title')}
-                                    />
-                                </div>
-
-                                <div className="modal-group">
-                                    <label className="modal-label">{t('provider.type')}</label>
-                                    <CustomSelect
-                                        value={editingProvider.type || 'openai'}
-                                        options={providerTypesChat}
-                                        ariaLabel={t('provider.type')}
-                                        onChange={(value) => handleProviderChange('type', value)}
-                                    />
-                                </div>
-
-                                <div className="modal-group">
-                                    <label className="modal-label">{t('memoryProvider.apiUrl')}</label>
-                                    <input
-                                        type="text"
-                                        className="modal-input"
-                                        aria-label={t('memoryProvider.apiUrl')}
-                                        value={editingProvider.base_url}
-                                        onChange={(e) => handleProviderChange('base_url', e.target.value)}
-                                        placeholder="https://api.openai.com/v1"
-                                    />
-                                </div>
-
-                                <div className="modal-group">
-                                    <label className="modal-label">{t('memoryProvider.apiKey')}</label>
-                                    <input
-                                        type="password"
-                                        className="modal-input"
-                                        aria-label={t('memoryProvider.apiKey')}
-                                        value={editingProvider.api_key}
-                                        onChange={(e) => handleProviderChange('api_key', e.target.value)}
-                                        placeholder={memoryProvider ? t('memoryProvider.apiKeyHint') : 'sk-...'}
-                                    />
-                                </div>
-
-                                <div className="modal-group">
-                                    <label className="modal-label">{t('memoryProvider.model')}</label>
-                                    <input
-                                        type="text"
-                                        className="modal-input"
-                                        aria-label={t('memoryProvider.model')}
-                                        value={editingProvider.model}
-                                        onChange={(e) => handleProviderChange('model', e.target.value)}
-                                        placeholder="gpt-4"
-                                    />
-                                </div>
-
-                                <div className="modal-group">
-                                    <label className="modal-label">{t('memoryProvider.temperature')}</label>
-                                    <NumericInput
-                                        className="modal-input"
-                                        min={0}
-                                        max={2}
-                                        step={0.1}
-                                        aria-label={t('memoryProvider.temperature')}
-                                        value={editingProvider.temperature}
-                                        parseAs="float"
-                                        onValueChange={(value) => handleProviderChange('temperature', value)}
-                                        placeholder="0.8"
-                                        disabled={editingProvider.type === 'anthropic'}
-                                    />
-                                </div>
-
-                                <div className="modal-group">
-                                    <label className="modal-label">{t('memoryProvider.topP')}</label>
-                                    <NumericInput
-                                        className="modal-input"
-                                        min={0}
-                                        max={1}
-                                        step={0.1}
-                                        aria-label={t('memoryProvider.topP')}
-                                        value={editingProvider.top_p}
-                                        parseAs="float"
-                                        onValueChange={(value) => handleProviderChange('top_p', value)}
-                                        placeholder="1"
-                                        disabled={editingProvider.type === 'anthropic'}
-                                    />
-                                </div>
-
-                                {(editingProvider.type === 'openai' || editingProvider.type === 'openai_response') && (
-                                    <div className="modal-group">
-                                        <label className="modal-label">{t('memoryProvider.reasoningEffort')}</label>
-                                        <CustomSelect
-                                            value={editingProvider.reasoning_effort ?? ''}
-                                            options={openAIReasoningEffortOptions}
-                                            ariaLabel={t('memoryProvider.reasoningEffort')}
-                                            onChange={(value) => handleProviderChange('reasoning_effort', value)}
-                                        />
-                                    </div>
-                                )}
-
-                                {editingProvider.type === 'gemini' && (
-                                    <>
+                                <section className="provider-form-section">
+                                    <h4 className="provider-form-section__title">
+                                        {t('settingsManagement.provider.basics')}
+                                    </h4>
+                                    <div className="provider-form-grid">
                                         <div className="modal-group">
-                                            <label className="modal-label">
-                                                {t('memoryProvider.geminiThinkingMode')}
-                                            </label>
-                                            <CustomSelect
-                                                value={editingProvider.gemini_thinking_mode || 'none'}
-                                                options={geminiThinkingModes}
-                                                ariaLabel={t('memoryProvider.geminiThinkingMode')}
-                                                onChange={(value) =>
-                                                    handleProviderChange('gemini_thinking_mode', value)
-                                                }
+                                            <label className="modal-label">{t('memoryProvider.providerId')}</label>
+                                            <input
+                                                type="text"
+                                                className="modal-input"
+                                                aria-label={t('memoryProvider.providerId')}
+                                                value={editingProvider.id}
+                                                onChange={(e) => handleProviderChange('id', e.target.value)}
+                                                placeholder="memory"
                                             />
                                         </div>
 
                                         <div className="modal-group">
-                                            <label className="modal-label">
-                                                {t('memoryProvider.geminiThinkingParams')}
-                                            </label>
-                                            {editingProvider.gemini_thinking_mode === 'thinking_level' && (
-                                                <CustomSelect
-                                                    value={editingProvider.gemini_thinking_level || 'low'}
-                                                    options={geminiThinkingLevels}
-                                                    ariaLabel={t('memoryProvider.geminiThinkingParams')}
-                                                    onChange={(value) =>
-                                                        handleProviderChange('gemini_thinking_level', value)
-                                                    }
-                                                />
-                                            )}
-                                            {editingProvider.gemini_thinking_mode === 'thinking_budget' && (
-                                                <NumericInput
-                                                    className="modal-input"
-                                                    min={getGeminiThinkingBudgetRange(editingProvider.model).min}
-                                                    max={getGeminiThinkingBudgetRange(editingProvider.model).max}
-                                                    step={1}
-                                                    aria-label={t('memoryProvider.geminiThinkingParams')}
-                                                    value={editingProvider.gemini_thinking_budget}
-                                                    parseAs="int"
-                                                    onValueChange={(value) =>
-                                                        handleProviderChange('gemini_thinking_budget', value)
-                                                    }
-                                                    placeholder={`${getGeminiThinkingBudgetRange(editingProvider.model).min}-${getGeminiThinkingBudgetRange(editingProvider.model).max}`}
-                                                />
-                                            )}
-                                            {editingProvider.gemini_thinking_mode === 'none' && (
-                                                <input
-                                                    type="text"
-                                                    className="modal-input"
-                                                    aria-label={t('memoryProvider.geminiThinkingParams')}
-                                                    value={t('common.disabled')}
-                                                    disabled
-                                                />
-                                            )}
+                                            <label className="modal-label">{t('provider.displayName')}</label>
+                                            <input
+                                                type="text"
+                                                className="modal-input"
+                                                aria-label={t('provider.displayName')}
+                                                value={editingProvider.name}
+                                                onChange={(e) => handleProviderChange('name', e.target.value)}
+                                                placeholder={t('memoryProvider.title')}
+                                            />
                                         </div>
-                                    </>
-                                )}
+                                    </div>
 
-                                {editingProvider.type === 'anthropic' && (
-                                    <>
+                                    <div className="modal-group">
+                                        <label className="modal-label">{t('provider.type')}</label>
+                                        <CustomSelect
+                                            value={editingProvider.type || 'openai'}
+                                            options={providerTypesChat}
+                                            ariaLabel={t('provider.type')}
+                                            onChange={(value) => handleProviderChange('type', value)}
+                                        />
+                                    </div>
+                                </section>
+
+                                <section className="provider-form-section">
+                                    <h4 className="provider-form-section__title">
+                                        {t('settingsManagement.provider.connection')}
+                                    </h4>
+
+                                    <div className="modal-group">
+                                        <label className="modal-label">{t('memoryProvider.apiUrl')}</label>
+                                        <input
+                                            type="text"
+                                            className="modal-input"
+                                            aria-label={t('memoryProvider.apiUrl')}
+                                            value={editingProvider.base_url}
+                                            onChange={(e) => handleProviderChange('base_url', e.target.value)}
+                                            placeholder="https://api.openai.com/v1"
+                                        />
+                                    </div>
+
+                                    <div className="modal-group">
+                                        <label className="modal-label">{t('memoryProvider.apiKey')}</label>
+                                        <input
+                                            type="password"
+                                            className="modal-input"
+                                            aria-label={t('memoryProvider.apiKey')}
+                                            value={editingProvider.api_key}
+                                            onChange={(e) => handleProviderChange('api_key', e.target.value)}
+                                            placeholder={memoryProvider ? t('memoryProvider.apiKeyHint') : 'sk-...'}
+                                        />
+                                    </div>
+
+                                    <div className="modal-group">
+                                        <label className="modal-label">{t('memoryProvider.model')}</label>
+                                        <input
+                                            type="text"
+                                            className="modal-input"
+                                            aria-label={t('memoryProvider.model')}
+                                            value={editingProvider.model}
+                                            onChange={(e) => handleProviderChange('model', e.target.value)}
+                                            placeholder="gpt-4"
+                                        />
+                                    </div>
+                                </section>
+
+                                <section className="provider-form-section">
+                                    <h4 className="provider-form-section__title">
+                                        {t('settingsManagement.provider.parameters')}
+                                    </h4>
+                                    <div className="provider-form-grid">
                                         <div className="modal-group">
-                                            <label className="modal-label">{t('memoryProvider.thinkingBudget')}</label>
+                                            <label className="modal-label">{t('memoryProvider.temperature')}</label>
                                             <NumericInput
                                                 className="modal-input"
                                                 min={0}
-                                                step={1}
-                                                aria-label={t('memoryProvider.thinkingBudget')}
-                                                value={editingProvider.thinking_budget}
-                                                parseAs="int"
-                                                onValueChange={(value) =>
-                                                    handleProviderChange('thinking_budget', value)
-                                                }
-                                                placeholder="0"
+                                                max={2}
+                                                step={0.1}
+                                                aria-label={t('memoryProvider.temperature')}
+                                                value={editingProvider.temperature}
+                                                parseAs="float"
+                                                onValueChange={(value) => handleProviderChange('temperature', value)}
+                                                placeholder="0.8"
+                                                disabled={editingProvider.type === 'anthropic'}
                                             />
                                         </div>
 
                                         <div className="modal-group">
-                                            <label className="modal-label">{t('provider.promptCaching')}</label>
-                                            <div className="modal-toggle-wrapper">
-                                                <label className="toggle-switch">
-                                                    <input
-                                                        type="checkbox"
-                                                        aria-label={t('provider.promptCaching')}
-                                                        checked={editingProvider.prompt_caching}
-                                                        onChange={(e) =>
-                                                            handleProviderChange('prompt_caching', e.target.checked)
-                                                        }
-                                                    />
-                                                    <span className="toggle-slider"></span>
-                                                </label>
-                                                <span className="toggle-label">
-                                                    {editingProvider.prompt_caching
-                                                        ? t('common.enable')
-                                                        : t('common.disable')}
-                                                </span>
-                                            </div>
+                                            <label className="modal-label">{t('memoryProvider.topP')}</label>
+                                            <NumericInput
+                                                className="modal-input"
+                                                min={0}
+                                                max={1}
+                                                step={0.1}
+                                                aria-label={t('memoryProvider.topP')}
+                                                value={editingProvider.top_p}
+                                                parseAs="float"
+                                                onValueChange={(value) => handleProviderChange('top_p', value)}
+                                                placeholder="1"
+                                                disabled={editingProvider.type === 'anthropic'}
+                                            />
                                         </div>
+                                    </div>
 
-                                        {editingProvider.prompt_caching && (
+                                    {(editingProvider.type === 'openai' ||
+                                        editingProvider.type === 'openai_response') && (
+                                        <div className="modal-group">
+                                            <label className="modal-label">{t('memoryProvider.reasoningEffort')}</label>
+                                            <CustomSelect
+                                                value={editingProvider.reasoning_effort ?? ''}
+                                                options={openAIReasoningEffortOptions}
+                                                ariaLabel={t('memoryProvider.reasoningEffort')}
+                                                onChange={(value) => handleProviderChange('reasoning_effort', value)}
+                                            />
+                                        </div>
+                                    )}
+
+                                    {editingProvider.type === 'gemini' && (
+                                        <>
                                             <div className="modal-group">
-                                                <label className="modal-label">{t('provider.promptCacheTTL')}</label>
+                                                <label className="modal-label">
+                                                    {t('memoryProvider.geminiThinkingMode')}
+                                                </label>
                                                 <CustomSelect
-                                                    value={editingProvider.prompt_cache_ttl || '5m'}
-                                                    options={anthropicPromptCacheTTLOptions}
-                                                    ariaLabel={t('provider.promptCacheTTL')}
+                                                    value={editingProvider.gemini_thinking_mode || 'none'}
+                                                    options={geminiThinkingModes}
+                                                    ariaLabel={t('memoryProvider.geminiThinkingMode')}
                                                     onChange={(value) =>
-                                                        handleProviderChange('prompt_cache_ttl', value)
+                                                        handleProviderChange('gemini_thinking_mode', value)
                                                     }
                                                 />
                                             </div>
-                                        )}
-                                    </>
-                                )}
 
-                                {/* 记忆提取不需要上下文轮数、流式输出和识图能力配置 */}
+                                            <div className="modal-group">
+                                                <label className="modal-label">
+                                                    {t('memoryProvider.geminiThinkingParams')}
+                                                </label>
+                                                {editingProvider.gemini_thinking_mode === 'thinking_level' && (
+                                                    <CustomSelect
+                                                        value={editingProvider.gemini_thinking_level || 'low'}
+                                                        options={geminiThinkingLevels}
+                                                        ariaLabel={t('memoryProvider.geminiThinkingParams')}
+                                                        onChange={(value) =>
+                                                            handleProviderChange('gemini_thinking_level', value)
+                                                        }
+                                                    />
+                                                )}
+                                                {editingProvider.gemini_thinking_mode === 'thinking_budget' && (
+                                                    <NumericInput
+                                                        className="modal-input"
+                                                        min={getGeminiThinkingBudgetRange(editingProvider.model).min}
+                                                        max={getGeminiThinkingBudgetRange(editingProvider.model).max}
+                                                        step={1}
+                                                        aria-label={t('memoryProvider.geminiThinkingParams')}
+                                                        value={editingProvider.gemini_thinking_budget}
+                                                        parseAs="int"
+                                                        onValueChange={(value) =>
+                                                            handleProviderChange('gemini_thinking_budget', value)
+                                                        }
+                                                        placeholder={`${getGeminiThinkingBudgetRange(editingProvider.model).min}-${getGeminiThinkingBudgetRange(editingProvider.model).max}`}
+                                                    />
+                                                )}
+                                                {editingProvider.gemini_thinking_mode === 'none' && (
+                                                    <input
+                                                        type="text"
+                                                        className="modal-input"
+                                                        aria-label={t('memoryProvider.geminiThinkingParams')}
+                                                        value={t('common.disabled')}
+                                                        disabled
+                                                    />
+                                                )}
+                                            </div>
+                                        </>
+                                    )}
+
+                                    {editingProvider.type === 'anthropic' && (
+                                        <>
+                                            <div className="modal-group">
+                                                <label className="modal-label">
+                                                    {t('memoryProvider.thinkingBudget')}
+                                                </label>
+                                                <NumericInput
+                                                    className="modal-input"
+                                                    min={0}
+                                                    step={1}
+                                                    aria-label={t('memoryProvider.thinkingBudget')}
+                                                    value={editingProvider.thinking_budget}
+                                                    parseAs="int"
+                                                    onValueChange={(value) =>
+                                                        handleProviderChange('thinking_budget', value)
+                                                    }
+                                                    placeholder="0"
+                                                />
+                                            </div>
+
+                                            <div className="provider-form-switch">
+                                                <span className="modal-label">{t('provider.promptCaching')}</span>
+                                                <Toggle
+                                                    label={t('provider.promptCaching')}
+                                                    checked={Boolean(editingProvider.prompt_caching)}
+                                                    onChange={(checked) =>
+                                                        handleProviderChange('prompt_caching', checked)
+                                                    }
+                                                />
+                                            </div>
+
+                                            {editingProvider.prompt_caching && (
+                                                <div className="modal-group">
+                                                    <label className="modal-label">
+                                                        {t('provider.promptCacheTTL')}
+                                                    </label>
+                                                    <CustomSelect
+                                                        value={editingProvider.prompt_cache_ttl || '5m'}
+                                                        options={anthropicPromptCacheTTLOptions}
+                                                        ariaLabel={t('provider.promptCacheTTL')}
+                                                        onChange={(value) =>
+                                                            handleProviderChange('prompt_cache_ttl', value)
+                                                        }
+                                                    />
+                                                </div>
+                                            )}
+                                        </>
+                                    )}
+
+                                    {/* 记忆提取不需要上下文轮数、流式输出和识图能力配置 */}
+                                </section>
                             </div>
 
                             <div className="modal-footer">
@@ -617,8 +583,6 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                     </ModalOverlay>
                 )}
             </AnimatePresence>
-
-            {message && <div className={`provider-message ${messageType}`}>{message}</div>}
         </motion.div>
     )
 }

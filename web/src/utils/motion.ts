@@ -1,30 +1,36 @@
 import type { Transition, Variants } from 'motion/react'
 
-const easeOut = [0.22, 1, 0.36, 1] as const
-const easeIn = [0.32, 0, 0.67, 0] as const
+// Strong ease-out for anything entering; exits are shorter so the UI never feels in the way.
+const easeOut = [0.23, 1, 0.32, 1] as const
+const easeDrawer = [0.32, 0.72, 0, 1] as const
 
 export const fadeTransition: Transition = {
-    duration: 0.2,
-    ease: 'linear',
+    duration: 0.16,
+    ease: 'easeOut',
 }
 
 export const slideTransition: Transition = {
-    duration: 0.3,
-    ease: easeOut,
+    duration: 0.32,
+    ease: easeDrawer,
 }
 
 export const slideExitTransition: Transition = {
-    duration: 0.24,
-    ease: easeIn,
+    duration: 0.2,
+    ease: easeOut,
 }
 
 export const modalTransition: Transition = {
-    duration: 0.22,
+    duration: 0.2,
+    ease: easeOut,
+}
+
+const modalExitTransition: Transition = {
+    duration: 0.14,
     ease: easeOut,
 }
 
 export const bubbleTransition: Transition = {
-    duration: 0.25,
+    duration: 0.22,
     ease: easeOut,
 }
 
@@ -33,8 +39,9 @@ export const overlayVariants: Variants = {
     visible: { opacity: 1, transition: fadeTransition },
 }
 
+// Modals stay centred (no trigger origin) and never grow from nothing.
 export const centerModalVariants: Variants = {
-    hidden: { opacity: 0, scale: 0.92, y: 24, transition: modalTransition },
+    hidden: { opacity: 0, scale: 0.97, y: 6, transition: modalExitTransition },
     visible: { opacity: 1, scale: 1, y: 0, transition: modalTransition },
 }
 
@@ -51,6 +58,6 @@ export const drawerVariants: Variants = {
 }
 
 export const bubbleVariants: Variants = {
-    hidden: { opacity: 0, y: 12, transition: bubbleTransition },
+    hidden: { opacity: 0, y: 8, transition: bubbleTransition },
     visible: { opacity: 1, y: 0, transition: bubbleTransition },
 }

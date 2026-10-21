@@ -2,10 +2,13 @@ import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useT } from '../contexts/I18nContext'
 import { useManagementResource } from '../hooks/useManagementResource'
+import { getChannelsCopy } from '../i18n/channels'
 import { clawBotService } from '../services/clawbotService'
 import { napCatService } from '../services/napcatService'
 import ClawBotSettingsPanel from './ClawBotSettings'
 import NapCatSettingsPanel from './NapCatSettings'
+import { Badge, Icon, Page, PageHeader } from './ui'
+import { channelStatusTone } from './channelStatus'
 import './ChannelsPage.css'
 
 export default function ChannelsPage() {
@@ -17,7 +20,8 @@ export default function ChannelsPage() {
 }
 
 function ChannelDirectory() {
-    const { t } = useT()
+    const { t, locale } = useT()
+    const copy = getChannelsCopy(locale)
     const [revision, setRevision] = useState(0)
     const wechat = useManagementResource(clawBotService.getSettings, revision)
     const qq = useManagementResource(napCatService.getSettings, revision)
@@ -33,6 +37,8 @@ function ChannelDirectory() {
             disabled: t('common.disable'),
             missing_token: t('clawBot.missingToken'),
             running: t('clawBot.running'),
+            connecting: t('clawBot.connecting'),
+            token_expired: t('clawBot.tokenExpired'),
             stopped: t('clawBot.stopped'),
             error: t('clawBot.error'),
             connected: t('napCat.connected'),
@@ -42,49 +48,61 @@ function ChannelDirectory() {
     }
 
     return (
-        <section className="channels-page">
-            <header className="console-page-heading">
-                <div>
-                    <h1>{t('console.channels')}</h1>
-                    <p>{t('console.channelsHint')}</p>
-                </div>
-                <button className="console-button" disabled={loading} onClick={() => setRevision((value) => value + 1)}>
-                    {t('console.refresh')}
-                </button>
-            </header>
+        <Page className="channels-page">
+            <PageHeader
+                title={copy.title}
+                description={copy.description}
+                actions={
+                    <button
+                        type="button"
+                        className="ui-btn"
+                        disabled={loading}
+                        onClick={() => setRevision((value) => value + 1)}
+                    >
+                        <Icon name="refresh" />
+                        {copy.refresh}
+                    </button>
+                }
+            />
+            {failed && (
+                <p className="channel-notice" role="alert">
+                    <Icon name="alert" size={16} />
+                    {copy.loadFailed}
+                </p>
+            )}
             <div className="channel-grid">
                 {(['wechat', 'qq'] as const).map((key) => {
                     const resource = resources[key]
                     const settings = resource.phase === 'ready' ? resource.data : null
-                    const active = settings?.status === 'running' || settings?.status === 'connected'
                     const placeholder = resource.phase === 'loading' ? '—' : t('console.unavailable')
                     return (
                         <article
-                            className={`channel-card ${key === 'wechat' ? 'channel-primary' : ''}`}
+                            className={`channel-card channel-card--${key}`}
                             key={key}
                             aria-busy={resource.phase === 'loading'}
+                            aria-labelledby={`channel-${key}-title`}
                         >
-                            <div className="channel-card-top">
-                                <span className="channel-monogram" aria-hidden="true">
-                                    {key === 'wechat' ? 'W' : 'Q'}
+                            <div className="channel-card__head">
+                                <span className="channel-card__icon" aria-hidden="true">
+                                    <Icon name={key === 'wechat' ? 'message' : 'chat'} size={20} />
                                 </span>
-                                <span className={`channel-state ${active ? 'is-active' : ''}`} role="status">
-                                    {statusLabel(key)}
+                                <div className="channel-card__text">
+                                    <h2 id={`channel-${key}-title`}>{key === 'wechat' ? copy.wechat : copy.qq}</h2>
+                                    <p>{key === 'wechat' ? copy.wechatHint : copy.qqHint}</p>
+                                </div>
+                                <span role="status" className="channel-card__status">
+                                    <Badge tone={settings ? channelStatusTone(settings.status) : 'neutral'} dot>
+                                        {statusLabel(key)}
+                                    </Badge>
                                 </span>
                             </div>
-                            <div>
-                                <h2>{t(key === 'wechat' ? 'settings.wechatClawBot' : 'settings.qqNapCat')}</h2>
-                                <p>{t(key === 'wechat' ? 'console.wechatHint' : 'console.qqHint')}</p>
-                            </div>
-                            <dl>
+                            <dl className="channel-card__facts">
                                 <div>
-                                    <dt>{t('console.boundPersona')}</dt>
-                                    <dd>
-                                        {settings ? settings.prompt_name || t('console.defaultPersona') : placeholder}
-                                    </dd>
+                                    <dt>{copy.persona}</dt>
+                                    <dd>{settings ? settings.prompt_name || copy.defaultPersona : placeholder}</dd>
                                 </div>
                                 <div>
-                                    <dt>{t('console.connection')}</dt>
+                                    <dt>{copy.connection}</dt>
                                     <dd>
                                         {!settings
                                             ? placeholder
@@ -98,28 +116,18 @@ function ChannelDirectory() {
                                     </dd>
                                 </div>
                             </dl>
-                            <Link className="console-button" to={`/channels?channel=${key}`}>
-                                {t('console.configure')}
-                                <span aria-hidden="true">→</span>
+                            <Link
+                                className="channel-card__open"
+                                to={`/channels?channel=${key}`}
+                                aria-describedby={`channel-${key}-title`}
+                            >
+                                <span>{copy.configure}</span>
+                                <Icon name="chevronRight" size={16} />
                             </Link>
                         </article>
                     )
                 })}
             </div>
-            {failed && (
-                <p className="channel-notice" role="alert">
-                    {t('console.channelLoadFailed')}
-                </p>
-            )}
-            <div className="channel-web-note">
-                <div>
-                    <h2>{t('console.webTesting')}</h2>
-                    <p>{t('console.webTestingHint')}</p>
-                </div>
-                <Link className="console-button" to="/chat">
-                    {t('console.chat')}
-                </Link>
-            </div>
-        </section>
+        </Page>
     )
 }

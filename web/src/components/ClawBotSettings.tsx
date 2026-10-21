@@ -14,7 +14,9 @@ import type { Prompt } from '../types/chat'
 import { CustomSelect } from './provider'
 import { useToast } from '../contexts/ToastContext'
 import { drawerVariants } from '../utils/motion'
-import './ProviderSettings.css'
+import { getChannelsCopy } from '../i18n/channels'
+import { Badge, Group, Row, Toggle } from './ui'
+import { channelStatusTone } from './channelStatus'
 import './ClawBotSettings.css'
 import ClawBotDeliveryQueue from './ClawBotDeliveryQueue'
 
@@ -49,7 +51,8 @@ const normalizeCommandPermissions = (
 })
 
 const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
-    const { t } = useT()
+    const { t, locale } = useT()
+    const copy = getChannelsCopy(locale).detail
     const { showToast } = useToast()
     const pollTimerRef = useRef<number | null>(null)
     const qrGenerationRef = useRef(0)
@@ -380,7 +383,7 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
 
     const currentStatus = settings?.status || 'disabled'
     const statusLabelMap: Record<string, string> = {
-        disabled: t('clawBot.disabled'),
+        disabled: t('common.disable'),
         missing_token: t('clawBot.missingToken'),
         running: t('clawBot.running'),
         connecting: t('clawBot.connecting'),
@@ -392,7 +395,7 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
 
     return (
         <motion.div
-            className="provider-settings clawbot-settings"
+            className="provider-settings clawbot-settings channel-detail"
             initial="hidden"
             animate="visible"
             exit="hidden"
@@ -405,178 +408,158 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
                     </svg>
                 </button>
                 <div className="provider-settings-title">{t('clawBot.title')}</div>
-                <div style={{ width: 44 }}></div>
+                {settings && !loading && (
+                    <div className="clawbot-actions channel-detail-actions">
+                        <button
+                            type="button"
+                            className="save-button ui-btn ui-btn--primary ui-btn--sm"
+                            onClick={handleSave}
+                            disabled={saving}
+                        >
+                            {saving ? t('common.saving') : t('clawBot.saveSettings')}
+                        </button>
+                    </div>
+                )}
             </div>
 
             {loading ? (
-                <div className="provider-settings-loading">{t('common.loading')}</div>
+                <div className="provider-settings-loading">
+                    <span className="ui-spinner" aria-hidden="true" />
+                    {t('common.loading')}
+                </div>
             ) : !settings ? (
                 <div className="console-load-error" role="alert">
-                    <p>{t('common.loadFailed')}</p>
-                    <button className="console-button" onClick={() => void loadData()}>
+                    <p>{copy.loadFailed}</p>
+                    <button className="ui-btn" onClick={() => void loadData()}>
                         {t('console.refresh')}
                     </button>
                 </div>
             ) : (
                 <div className="provider-settings-content">
-                    {/* ── 运行状态卡片 ── */}
-                    <div className={`clawbot-status-card status-${currentStatus}`}>
-                        <div className="clawbot-status-top">
-                            <div className="clawbot-status-left">
-                                <div className="clawbot-status-icon">
-                                    <svg viewBox="0 0 24 24">
-                                        {currentStatus === 'running' ? (
-                                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
-                                        ) : currentStatus === 'error' || currentStatus === 'missing_token' ? (
-                                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
-                                        ) : (
-                                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z" />
-                                        )}
-                                    </svg>
-                                </div>
-                                <div className="clawbot-status-title">{t('clawBot.runStatus')}</div>
+                    <Group title={copy.status}>
+                        <Row
+                            label={copy.state}
+                            trailing={
+                                <Badge tone={channelStatusTone(currentStatus)} dot>
+                                    {statusLabel}
+                                </Badge>
+                            }
+                        />
+                        <Row
+                            label={copy.polling}
+                            value={settings.polling ? t('clawBot.backgroundPolling') : t('clawBot.notPolling')}
+                        />
+                        {settings.ilink_user_id && <Row label={copy.account} value={settings.ilink_user_id} />}
+                        {settings.last_error && (
+                            <div className="channel-field channel-error" role="alert">
+                                <span className="channel-error__label">{copy.lastError}</span>
+                                <span className="channel-error__text">{settings.last_error}</span>
                             </div>
-                            <div className={`clawbot-status-pill ${currentStatus}`}>{statusLabel}</div>
-                        </div>
+                        )}
+                    </Group>
 
-                        <div className="clawbot-status-meta">
-                            <div className="clawbot-status-meta-item">
-                                <span
-                                    className={`clawbot-status-meta-dot ${settings?.polling ? 'active' : 'inactive'}`}
-                                />
-                                {settings?.polling ? t('clawBot.backgroundPolling') : t('clawBot.notPolling')}
-                            </div>
-                            {settings?.prompt_name && (
-                                <div className="clawbot-status-meta-item">
-                                    <span className="clawbot-status-meta-dot active" />
-                                    {t('clawBot.bindPersona')}：{settings.prompt_name}
-                                </div>
-                            )}
-                            {settings?.ilink_user_id && (
-                                <div className="clawbot-status-meta-item">
-                                    <span className="clawbot-status-meta-dot active" />
-                                    {settings.ilink_user_id}
-                                </div>
-                            )}
-                        </div>
-
-                        {settings?.last_error && <div className="clawbot-status-error">{settings.last_error}</div>}
-                    </div>
-
-                    <ClawBotDeliveryQueue />
-
-                    {/* ── 基础设置 ── */}
-                    <div className="clawbot-section">
-                        <div className="clawbot-section-title">{t('settings.globalSettings')}</div>
-                        <div className="clawbot-section-card">
-                            <div className="settings-group">
-                                <label className="settings-label">{t('clawBot.enableChannel')}</label>
-                                <div className="modal-toggle-wrapper">
-                                    <label className="toggle-switch">
-                                        <input
-                                            type="checkbox"
-                                            aria-label={t('clawBot.enableChannel')}
-                                            checked={form.enabled}
-                                            onChange={(event) =>
-                                                setForm((current) => ({
-                                                    ...current,
-                                                    enabled: event.target.checked,
-                                                }))
-                                            }
-                                            disabled={saving}
-                                        />
-                                        <span className="toggle-slider"></span>
-                                    </label>
-                                    <span className="toggle-label">
-                                        {form.enabled ? t('common.enabled') : t('common.disabled')}
+                    <Group title={copy.connection}>
+                        <Row
+                            icon="qr"
+                            label={copy.scan}
+                            detail={copy.scanHint}
+                            trailing={
+                                <button
+                                    type="button"
+                                    className="ui-btn ui-btn--sm clawbot-scan-button"
+                                    onClick={handleStartQRCode}
+                                    disabled={qrLoading || saving}
+                                >
+                                    {qrLoading ? t('clawBot.getting') : t('clawBot.scanToGet')}
+                                </button>
+                            }
+                        />
+                        {qrData && (
+                            <div className="channel-field clawbot-qrcode">
+                                <div className="clawbot-qrcode-header">
+                                    <span className="clawbot-qrcode-title">{t('clawBot.scanLogin')}</span>
+                                    <span className="clawbot-qrcode-status" role="status">
+                                        {qrStatusLabels[qrStatus] || qrStatus}
                                     </span>
                                 </div>
-                                <p className="prompt-modal-hint memory-toggle-hint">{t('clawBot.chatMemoryOnly')}</p>
-                            </div>
-
-                            <div className="settings-group">
-                                <label className="settings-label">{t('clawBot.baseUrl')}</label>
-                                <input
-                                    className="settings-input"
-                                    aria-label={t('clawBot.baseUrl')}
-                                    value={form.base_url}
-                                    onChange={(event) =>
-                                        setForm((current) => ({ ...current, base_url: event.target.value }))
-                                    }
-                                    placeholder="https://ilinkai.weixin.qq.com"
-                                    disabled={saving}
-                                />
-                            </div>
-
-                            <div className="settings-group">
-                                <label className="settings-label">{t('clawBot.bindPersona')}</label>
-                                <CustomSelect
-                                    value={form.prompt_id}
-                                    options={promptOptions}
-                                    onChange={(value) => setForm((current) => ({ ...current, prompt_id: value }))}
-                                    ariaLabel={t('clawBot.bindPersona')}
-                                    disabled={saving}
-                                />
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* ── 命令权限 ── */}
-                    <div className="clawbot-section">
-                        <div className="clawbot-section-title">{t('clawBot.commandPermissions')}</div>
-                        <div className="clawbot-section-card">
-                            <div className="settings-group">
-                                <div className="clawbot-command-permissions-hint">
-                                    {t('clawBot.commandPermissionsHint')}
+                                <div className="clawbot-qrcode-body">
+                                    {qrDisplaySrc ? (
+                                        <img
+                                            className="clawbot-qrcode-image"
+                                            src={qrDisplaySrc}
+                                            alt="ClawBot QR Code"
+                                        />
+                                    ) : qrData.qrcode_img_content || qrData.qrcode ? (
+                                        <div className="clawbot-qrcode-loading">
+                                            <span className="ui-spinner" aria-hidden="true" />
+                                            {t('clawBot.qrGenerating')}
+                                        </div>
+                                    ) : (
+                                        <textarea
+                                            className="ui-textarea clawbot-qrcode-text"
+                                            readOnly
+                                            aria-label={t('clawBot.scanLogin')}
+                                            value={qrData.qrcode_img_content || qrData.qrcode}
+                                        />
+                                    )}
                                 </div>
-                                <div className="clawbot-command-permissions">
-                                    {commandPermissionItems.map((item) => {
-                                        const enabled = form.command_permissions[item.key]
-                                        return (
-                                            <div className="clawbot-command-row" key={item.key}>
-                                                <div className="clawbot-command-copy">
-                                                    <div className="clawbot-command-label">{item.label}</div>
-                                                    <div className="clawbot-command-desc">{item.description}</div>
-                                                </div>
-                                                <div className="modal-toggle-wrapper clawbot-command-toggle">
-                                                    <label className="toggle-switch">
-                                                        <input
-                                                            type="checkbox"
-                                                            aria-label={item.label}
-                                                            checked={enabled}
-                                                            onChange={(event) =>
-                                                                setForm((current) => ({
-                                                                    ...current,
-                                                                    command_permissions: {
-                                                                        ...current.command_permissions,
-                                                                        [item.key]: event.target.checked,
-                                                                    },
-                                                                }))
-                                                            }
-                                                            disabled={saving}
-                                                        />
-                                                        <span className="toggle-slider"></span>
-                                                    </label>
-                                                    <span className="toggle-label">
-                                                        {enabled ? t('common.enabled') : t('common.disabled')}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        )
-                                    })}
-                                </div>
+                                {qrStatus === 'need_verifycode' && (
+                                    <form
+                                        className="clawbot-verify-form"
+                                        onSubmit={(event) => {
+                                            event.preventDefault()
+                                            if (verifyCode.trim()) retryQRCode(verifyCode.trim())
+                                        }}
+                                    >
+                                        <label className="ui-field__label" htmlFor="clawbot-verify-code">
+                                            {t('clawBot.qrVerifyCode')}
+                                        </label>
+                                        <div className="clawbot-verify-row">
+                                            <input
+                                                id="clawbot-verify-code"
+                                                className="ui-input"
+                                                value={verifyCode}
+                                                onChange={(event) => setVerifyCode(event.target.value)}
+                                                autoComplete="one-time-code"
+                                                inputMode="numeric"
+                                                pattern="[0-9]*"
+                                                maxLength={32}
+                                                disabled={qrPolling}
+                                            />
+                                            <button
+                                                className="ui-btn"
+                                                type="submit"
+                                                disabled={qrPolling || !verifyCode.trim()}
+                                            >
+                                                {t('clawBot.qrSubmitCode')}
+                                            </button>
+                                        </div>
+                                    </form>
+                                )}
+                                {qrRetry && (
+                                    <div className="clawbot-qrcode-retry" role="alert">
+                                        <p>{t('clawBot.qrRetryHint')}</p>
+                                        <button
+                                            type="button"
+                                            className="ui-btn ui-btn--sm"
+                                            onClick={() => retryQRCode()}
+                                            disabled={qrPolling}
+                                        >
+                                            {t('clawBot.qrRetry')}
+                                        </button>
+                                    </div>
+                                )}
+                                <p className="clawbot-qrcode-hint">{t('clawBot.qrCodeHint')}</p>
                             </div>
-                        </div>
-                    </div>
-
-                    {/* ── 认证凭据 ── */}
-                    <div className="clawbot-section">
-                        <div className="clawbot-section-title">{t('settings.account')}</div>
-                        <div className="clawbot-section-card">
-                            <div className="settings-group">
-                                <label className="settings-label">{t('clawBot.botToken')}</label>
+                        )}
+                        <div className="channel-field">
+                            <div className="ui-field">
+                                <label className="ui-field__label" htmlFor="clawbot-bot-token">
+                                    {copy.manualToken}
+                                </label>
                                 <input
-                                    className="settings-input"
+                                    id="clawbot-bot-token"
+                                    className="ui-input"
                                     type="password"
                                     autoComplete="off"
                                     aria-label={t('clawBot.botToken')}
@@ -585,22 +568,23 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
                                         setForm((current) => ({ ...current, bot_token: event.target.value }))
                                     }
                                     placeholder={
-                                        settings?.has_bot_token
+                                        settings.has_bot_token
                                             ? t('clawBot.tokenKeepHint')
                                             : t('clawBot.tokenPlaceholder')
                                     }
                                     disabled={saving}
                                 />
-                                <div className="clawbot-token-row">
-                                    <span className="clawbot-token-status">
-                                        {settings?.has_bot_token
+                                <div className="channel-token-row">
+                                    <span className="ui-field__hint">
+                                        {settings.has_bot_token
                                             ? t('clawBot.savedToken', { token: settings.bot_token || '****' })
                                             : t('clawBot.currentNotSavedToken')}
                                     </span>
-                                    {settings?.has_bot_token && (
+                                    {settings.has_bot_token && (
                                         <button
                                             type="button"
-                                            className={`clawbot-inline-btn${form.clear_bot_token ? ' danger' : ''}`}
+                                            className={`ui-btn ui-btn--sm ${form.clear_bot_token ? 'ui-btn--danger-solid' : 'ui-btn--ghost'}`}
+                                            aria-pressed={form.clear_bot_token}
                                             onClick={() =>
                                                 setForm((current) => ({
                                                     ...current,
@@ -617,93 +601,81 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    </Group>
 
-                    {/* ── 操作按钮 ── */}
-                    <div className="clawbot-actions">
-                        <button
-                            type="button"
-                            className="clawbot-btn-secondary"
-                            onClick={handleStartQRCode}
-                            disabled={qrLoading || saving}
-                        >
-                            {qrLoading ? t('clawBot.getting') : t('clawBot.scanToGet')}
-                        </button>
-                        <button type="button" className="save-button" onClick={handleSave} disabled={saving}>
-                            {saving ? t('common.saving') : t('clawBot.saveSettings')}
-                        </button>
-                    </div>
-
-                    {/* ── 二维码扫码区 ── */}
-                    {qrData && (
-                        <div className="clawbot-qrcode-card">
-                            <div className="clawbot-qrcode-header">
-                                <div className="clawbot-qrcode-title">{t('clawBot.scanLogin')}</div>
-                                <div className="clawbot-qrcode-status" role="status">
-                                    {qrStatusLabels[qrStatus] || qrStatus}
-                                </div>
+                    <Group title={copy.basics} className="channel-group--overflow">
+                        <Row
+                            label={t('clawBot.enableChannel')}
+                            detail={copy.enableHintWechat}
+                            trailing={
+                                <Toggle
+                                    label={t('clawBot.enableChannel')}
+                                    checked={form.enabled}
+                                    onChange={(enabled) => setForm((current) => ({ ...current, enabled }))}
+                                    disabled={saving}
+                                />
+                            }
+                        />
+                        <div className="channel-field">
+                            <div className="ui-field">
+                                <label className="ui-field__label" htmlFor="clawbot-base-url">
+                                    {t('clawBot.baseUrl')}
+                                </label>
+                                <input
+                                    id="clawbot-base-url"
+                                    className="ui-input"
+                                    aria-label={t('clawBot.baseUrl')}
+                                    value={form.base_url}
+                                    onChange={(event) =>
+                                        setForm((current) => ({ ...current, base_url: event.target.value }))
+                                    }
+                                    placeholder="https://ilinkai.weixin.qq.com"
+                                    disabled={saving}
+                                />
                             </div>
-                            <div className="clawbot-qrcode-body">
-                                {qrDisplaySrc ? (
-                                    <img className="clawbot-qrcode-image" src={qrDisplaySrc} alt="ClawBot QR Code" />
-                                ) : qrData.qrcode_img_content || qrData.qrcode ? (
-                                    <div className="clawbot-qrcode-loading">{t('clawBot.qrGenerating')}</div>
-                                ) : (
-                                    <textarea
-                                        className="settings-textarea clawbot-qrcode-text"
-                                        readOnly
-                                        aria-label={t('clawBot.scanLogin')}
-                                        value={qrData.qrcode_img_content || qrData.qrcode}
-                                    />
-                                )}
-                            </div>
-                            {qrStatus === 'need_verifycode' && (
-                                <form
-                                    className="clawbot-verify-form"
-                                    onSubmit={(event) => {
-                                        event.preventDefault()
-                                        if (verifyCode.trim()) retryQRCode(verifyCode.trim())
-                                    }}
-                                >
-                                    <label className="settings-label" htmlFor="clawbot-verify-code">
-                                        {t('clawBot.qrVerifyCode')}
-                                    </label>
-                                    <input
-                                        id="clawbot-verify-code"
-                                        className="settings-input"
-                                        value={verifyCode}
-                                        onChange={(event) => setVerifyCode(event.target.value)}
-                                        autoComplete="one-time-code"
-                                        inputMode="numeric"
-                                        pattern="[0-9]*"
-                                        maxLength={32}
-                                        disabled={qrPolling}
-                                    />
-                                    <button
-                                        className="clawbot-btn-secondary"
-                                        type="submit"
-                                        disabled={qrPolling || !verifyCode.trim()}
-                                    >
-                                        {t('clawBot.qrSubmitCode')}
-                                    </button>
-                                </form>
-                            )}
-                            {qrRetry && (
-                                <div className="clawbot-qrcode-hint" role="alert">
-                                    <p>{t('clawBot.qrRetryHint')}</p>
-                                    <button
-                                        type="button"
-                                        className="clawbot-btn-secondary"
-                                        onClick={() => retryQRCode()}
-                                        disabled={qrPolling}
-                                    >
-                                        {t('clawBot.qrRetry')}
-                                    </button>
-                                </div>
-                            )}
-                            <div className="clawbot-qrcode-hint">{t('clawBot.qrCodeHint')}</div>
                         </div>
-                    )}
+                        <div className="channel-field">
+                            <div className="ui-field">
+                                <span className="ui-field__label">{t('clawBot.bindPersona')}</span>
+                                <CustomSelect
+                                    value={form.prompt_id}
+                                    options={promptOptions}
+                                    onChange={(value) => setForm((current) => ({ ...current, prompt_id: value }))}
+                                    ariaLabel={t('clawBot.bindPersona')}
+                                    disabled={saving}
+                                />
+                            </div>
+                        </div>
+                    </Group>
+
+                    <Group title={copy.commands} description={t('clawBot.commandPermissionsHint')}>
+                        {commandPermissionItems.map((item) => (
+                            <Row
+                                key={item.key}
+                                className="channel-command-row"
+                                label={<code className="channel-command">{item.label}</code>}
+                                detail={item.description}
+                                trailing={
+                                    <Toggle
+                                        label={item.label}
+                                        checked={form.command_permissions[item.key]}
+                                        onChange={(checked) =>
+                                            setForm((current) => ({
+                                                ...current,
+                                                command_permissions: {
+                                                    ...current.command_permissions,
+                                                    [item.key]: checked,
+                                                },
+                                            }))
+                                        }
+                                        disabled={saving}
+                                    />
+                                }
+                            />
+                        ))}
+                    </Group>
+
+                    <ClawBotDeliveryQueue />
                 </div>
             )}
         </motion.div>

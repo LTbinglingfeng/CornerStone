@@ -1,478 +1,373 @@
-/* PersonaEditor 全屏容器 */
+/* Persona editor — full-workspace overlay with a 56px bar and a 760px column. */
+
 .persona-editor {
     position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: var(--bg-primary);
+    inset: 0;
+    z-index: 100;
     display: flex;
     flex-direction: column;
-    z-index: 100;
-    transition: background-color 0.3s ease;
+    background: var(--bg-surface);
 }
 
-/* 56px sticky header */
 .persona-editor-header {
-    height: 56px;
-    min-height: 56px;
-    background-color: var(--bg-secondary);
-    border-bottom: 0.5px solid var(--border-color);
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 0 4px;
+    gap: var(--space-2);
     flex-shrink: 0;
-    transition:
-        background-color 0.3s ease,
-        border-color 0.3s ease;
+    height: var(--app-header-height);
+    padding: 0 var(--space-4) 0 var(--space-2);
+    border-bottom: 1px solid var(--line);
+    background: var(--bg-surface);
 }
 
-.persona-editor-header .header-left,
-.persona-editor-header .header-right {
+.persona-editor-title {
     display: flex;
-    align-items: center;
-    min-width: 72px;
-}
-
-.persona-editor-header .header-right {
-    justify-content: flex-end;
-}
-
-.persona-editor-header .header-title {
+    align-items: baseline;
+    gap: var(--space-2);
     flex: 1;
+    min-width: 0;
     margin: 0;
-    text-align: center;
-    font-size: 17px;
+    overflow: hidden;
+    color: var(--text);
+    font-size: var(--text-md);
     font-weight: 600;
-    color: var(--text-primary);
-    transition: color 0.3s ease;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
 }
 
-.persona-editor-header .back-btn {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    background: none;
-    border: none;
-    color: var(--text-primary);
-    min-height: 44px;
-    min-width: 44px;
-    font-size: 15px;
-    cursor: pointer;
-    padding: 8px 12px;
-    border-radius: 8px;
+.persona-editor-title:focus {
+    outline: none;
 }
 
-.persona-editor-header .back-btn svg {
-    width: 22px;
-    height: 22px;
-    fill: currentColor;
+.persona-editor-title__context {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-3);
+    font-weight: 500;
+    text-overflow: ellipsis;
 }
 
-.persona-editor-header .back-btn:active {
-    opacity: 0.8;
+.persona-editor-title__context::before {
+    content: '·';
+    margin-right: var(--space-2);
 }
 
 .persona-editor-header .save-btn {
-    background: none;
-    border: none;
-    color: var(--text-primary);
-    min-height: 44px;
-    min-width: 44px;
-    font-size: 15px;
-    font-weight: 600;
-    cursor: pointer;
-    padding: 8px 16px;
-    border-radius: 8px;
-    transition: opacity 0.2s;
+    min-width: 64px;
 }
 
-.persona-editor-header .save-btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-}
-
-.persona-editor-header .save-btn:active:not(:disabled) {
-    opacity: 0.8;
-}
-
-/* 滚动内容区域 */
 .persona-editor-content {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    padding-bottom: env(safe-area-inset-bottom, 20px);
+    overscroll-behavior: contain;
 }
 
-/* Hero 区域：头像 + 名称 + 描述 */
-.persona-hero {
+.persona-editor-content[hidden] {
+    display: none;
+}
+
+.persona-editor-inner {
+    width: 100%;
+    max-width: var(--content-width);
+    margin-inline: auto;
+    padding: var(--space-8) var(--space-6) calc(var(--space-10) + env(safe-area-inset-bottom));
+}
+
+.persona-editor-content--memory .persona-editor-inner {
+    animation: persona-view-in var(--duration-base) var(--ease-out);
+}
+
+@keyframes persona-view-in {
+    from {
+        opacity: 0;
+        transform: translateX(12px);
+    }
+}
+
+.persona-editor-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-3);
+    min-height: 240px;
+    color: var(--text-2);
+    font-size: 13px;
+}
+
+/* ───────── Identity card ───────── */
+
+.persona-identity {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-5);
+    margin-bottom: var(--space-8);
+    padding: var(--space-5);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    background: var(--bg-elevated);
+    box-shadow: var(--shadow-sm);
+}
+
+.persona-avatar {
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 32px 20px 24px;
-}
-
-.persona-hero .avatar-container {
-    position: relative;
-    padding: 0;
-    border: 0;
-    background: var(--bg-secondary);
-    width: 96px;
-    height: 96px;
-    border-radius: 50%;
-    overflow: hidden;
-    cursor: pointer;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
-    margin-bottom: 20px;
+    gap: var(--space-2);
     flex-shrink: 0;
 }
 
-.persona-hero .avatar-image {
+.persona-avatar__button {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 72px;
+    height: 72px;
+    padding: 0;
+    overflow: hidden;
+    border: 0;
+    border-radius: 50%;
+    background: var(--fill-strong);
+    color: var(--text-2);
+    cursor: pointer;
+    transition: transform var(--duration-press) var(--ease-out);
+}
+
+.persona-avatar__button::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 1px var(--line);
+    pointer-events: none;
+}
+
+.persona-avatar__button:active {
+    transform: scale(0.96);
+}
+
+.persona-avatar__button:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 3px;
+}
+
+.persona-avatar__image {
     width: 100%;
     height: 100%;
     object-fit: cover;
 }
 
-.persona-hero .avatar-fallback {
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(135deg, var(--accent-color), #726d67);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    font-size: 36px;
+.persona-avatar__initial {
+    font-size: 28px;
     font-weight: 600;
+    user-select: none;
 }
 
-.persona-hero .avatar-overlay {
+.persona-avatar__overlay {
     position: absolute;
     inset: 0;
-    background: rgba(0, 0, 0, 0.4);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    opacity: 0;
-    transition: opacity 0.2s;
-}
-
-.persona-hero .avatar-container:hover .avatar-overlay,
-.persona-hero .avatar-container:focus-visible .avatar-overlay {
-    opacity: 1;
-}
-
-.persona-hero .avatar-overlay svg {
-    width: 28px;
-    height: 28px;
-    fill: white;
-}
-
-.persona-hero .avatar-delete-link {
-    background: none;
-    border: none;
-    color: var(--danger-color);
-    font-size: 13px;
-    cursor: pointer;
-    padding: 8px;
-    min-height: 44px;
-    margin-top: -12px;
-    margin-bottom: 8px;
-}
-
-.persona-hero .avatar-delete-link:hover {
-    text-decoration: underline;
-}
-
-.persona-hero .name-input {
-    width: 100%;
-    box-sizing: border-box;
-    text-align: left;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    color: var(--text-primary);
-    font-size: 20px;
-    font-weight: 600;
-    padding: 10px 12px;
-    min-height: 44px;
-    outline: none;
-    transition:
-        border-color 0.3s ease,
-        color 0.3s ease;
-}
-
-.persona-hero .name-input::placeholder {
-    color: var(--text-placeholder);
-    font-weight: 400;
-}
-
-.persona-hero .name-input:focus {
-    border-bottom-color: var(--accent-color);
-}
-
-.persona-hero .description-input {
-    width: 100%;
-    box-sizing: border-box;
-    text-align: left;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    color: var(--text-primary);
-    font-size: 16px;
-    padding: 10px 12px;
-    min-height: 44px;
-    outline: none;
-    resize: none;
-    line-height: 1.5;
-    overflow: hidden;
-    font-family: inherit;
-    transition: color 0.3s ease;
-}
-
-.persona-hero .description-input::placeholder {
-    color: var(--text-placeholder);
-}
-
-.persona-hero .description-input:focus {
-    color: var(--text-primary);
-}
-
-/* Card 区块 */
-.persona-section {
-    margin: 0 16px 16px;
-    background-color: var(--bg-secondary);
-    border-radius: 12px;
-    padding: 16px;
-    transition: background-color 0.3s ease;
-}
-
-.persona-section-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 12px;
-}
-
-.persona-section-header .section-title {
-    font-size: 15px;
-    font-weight: 600;
-    color: var(--text-primary);
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    transition: color 0.3s ease;
-}
-
-.persona-section-header .section-icon {
-    width: 20px;
-    height: 20px;
-    color: var(--accent-color);
-    fill: currentColor;
-    flex-shrink: 0;
-    transition:
-        transform 0.2s ease,
-        filter 0.2s ease;
-}
-
-.persona-section-header .section-badge {
-    font-size: 12px;
-    color: var(--text-secondary);
-    transition: color 0.3s ease;
-}
-
-/* 系统提示词 textarea */
-.prompt-textarea {
-    width: 100%;
-    min-height: 200px;
-    background-color: var(--bg-primary);
-    border: 1px solid var(--border-color);
-    border-radius: 10px;
-    padding: 12px 14px;
-    color: var(--text-primary);
-    font-size: 16px;
-    font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
-    line-height: 1.6;
-    outline: none;
-    resize: vertical;
-    box-sizing: border-box;
-    transition:
-        background-color 0.3s ease,
-        color 0.3s ease,
-        border-color 0.3s ease;
-}
-
-.prompt-textarea::placeholder {
-    color: var(--text-placeholder);
-    font-family: inherit;
-}
-
-.prompt-textarea:focus {
-    border-color: var(--accent-color);
-}
-
-/* 记忆管理区域 */
-.persona-memory-section .persona-section-header {
-    width: 100%;
-    min-height: 44px;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    text-align: left;
-    font-family: inherit;
-    cursor: pointer;
-    user-select: none;
-    margin-bottom: 0;
-}
-
-.persona-memory-section .persona-section-header:hover .section-title {
-    color: var(--text-primary);
-}
-
-.persona-memory-section .section-icon-memory .memory-icon-back {
-    fill: currentColor;
-    opacity: 0.14;
-}
-
-.persona-memory-section .section-icon-memory .memory-icon-middle {
-    fill: currentColor;
-    opacity: 0.24;
-}
-
-.persona-memory-section .section-icon-memory .memory-icon-front,
-.persona-memory-section .section-icon-memory .memory-icon-spark {
-    fill: currentColor;
-}
-
-.persona-memory-section .section-icon-memory .memory-icon-line {
-    stroke: var(--bg-secondary);
-    opacity: 0.92;
-}
-
-.memory-count-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 22px;
-    height: 22px;
-    padding: 0 7px;
-    background-color: var(--bg-primary);
-    color: var(--text-primary);
-    font-size: 12px;
-    font-weight: 600;
-    border-radius: 11px;
-}
-
-.memory-chevron {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    color: var(--text-secondary);
-}
-
-.memory-chevron svg {
-    width: 16px;
-    height: 16px;
-    fill: var(--text-secondary);
-}
-
-.persona-memory-section .memory-content-wrapper {
-    padding-top: 12px;
-}
-
-/* 危险操作区 */
-.danger-zone {
-    margin: 16px 16px 32px;
-    padding: 16px;
-    border: 1px solid var(--danger-color);
-    border-radius: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.danger-zone .delete-persona-btn {
-    background: transparent;
-    border: none;
-    color: var(--danger-color);
-    font-size: 15px;
-    font-weight: 500;
-    cursor: pointer;
-    padding: 8px 16px;
-    min-height: 44px;
-    transition: opacity 0.2s;
-}
-
-.danger-zone .delete-persona-btn:hover {
-    opacity: 0.8;
-}
-
-.danger-zone .delete-persona-btn:active {
-    opacity: 0.8;
-}
-
-/* MemoryManager embedded 覆盖样式 */
-.persona-editor .memory-manager.embedded {
-    padding: 0;
-}
-
-.persona-editor .memory-manager.embedded .memory-header {
-    margin-top: 12px;
-}
-
-.persona-editor .memory-manager.embedded .batch-action-bar {
-    margin: 16px 0 0;
-}
-
-.persona-avatar-field {
     display: flex;
     flex-direction: column;
     align-items: center;
-}
-
-.persona-identity-fields {
-    width: 100%;
-    min-width: 0;
-    display: grid;
-    gap: 8px;
-}
-
-.persona-identity-fields label {
-    color: var(--text-primary);
-    font-size: 14px;
+    justify-content: center;
+    gap: 2px;
+    background: rgba(0, 0, 0, 0.48);
+    color: #fff;
+    font-size: var(--text-xs);
     font-weight: 600;
+    opacity: 0;
+    transition: opacity var(--duration-fast) ease;
 }
 
-.persona-identity-fields label:not(:first-child) {
-    margin-top: 8px;
+.persona-avatar__button:focus-visible .persona-avatar__overlay {
+    opacity: 1;
 }
 
-.persona-editor button:focus-visible,
-.persona-editor input:focus-visible,
-.persona-editor textarea:focus-visible {
-    outline: 2px solid var(--text-primary);
-    outline-offset: 3px;
+.persona-avatar__remove {
+    padding: 2px 6px;
+    border: 0;
+    border-radius: var(--radius-xs);
+    background: transparent;
+    color: var(--text-3);
+    font-size: var(--text-xs);
+    cursor: pointer;
+    transition: color var(--duration-fast) ease;
 }
 
-@media (min-width: 640px) {
-    .persona-hero {
-        flex-direction: row;
-        align-items: flex-start;
-        gap: 32px;
-        padding: 32px 24px;
+.persona-avatar__remove:focus-visible {
+    outline: 2px solid var(--focus-ring);
+}
+
+.persona-identity__fields {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    padding-top: 6px;
+}
+
+.persona-identity .name-input,
+.persona-identity .description-input {
+    display: block;
+    width: 100%;
+    margin: 0;
+    padding: 6px 10px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text);
+    font-family: inherit;
+    outline: none;
+    transition:
+        background-color var(--duration-fast) ease,
+        border-color var(--duration-fast) ease;
+}
+
+.persona-identity .name-input {
+    font-size: var(--text-xl);
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    line-height: 1.3;
+}
+
+.persona-identity .description-input {
+    min-height: 34px;
+    overflow: hidden;
+    resize: none;
+    color: var(--text-2);
+    font-size: var(--text-base);
+    line-height: 1.55;
+}
+
+.persona-identity .name-input::placeholder,
+.persona-identity .description-input::placeholder {
+    color: var(--text-3);
+}
+
+.persona-identity .name-input:focus,
+.persona-identity .description-input:focus {
+    border-color: var(--line);
+    background: var(--bg-sunken);
+}
+
+/* ───────── Prompt ───────── */
+
+.persona-prompt .ui-group__head {
+    align-items: baseline;
+}
+
+.persona-prompt__count {
+    color: var(--text-3);
+    font-size: var(--text-sm);
+    font-variant-numeric: tabular-nums;
+}
+
+.persona-prompt .prompt-textarea {
+    display: block;
+    width: 100%;
+    min-height: 280px;
+    padding: var(--space-4);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    background: var(--bg-elevated);
+    box-shadow: var(--shadow-sm);
+    color: var(--text);
+    font-family: inherit;
+    font-size: var(--text-base);
+    line-height: 1.75;
+    resize: vertical;
+    field-sizing: content;
+    outline: none;
+    transition:
+        border-color var(--duration-fast) ease,
+        box-shadow var(--duration-fast) ease;
+}
+
+.persona-prompt .prompt-textarea::placeholder {
+    color: var(--text-3);
+}
+
+.persona-prompt .prompt-textarea:focus {
+    border-color: var(--line-strong);
+    box-shadow: 0 0 0 3px var(--fill);
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .persona-avatar__button:hover .persona-avatar__overlay {
+        opacity: 1;
     }
 
-    .persona-avatar-field {
-        flex: 0 0 112px;
+    .persona-avatar__remove:hover {
+        color: var(--danger);
+    }
+
+    .persona-identity .name-input:hover:not(:focus),
+    .persona-identity .description-input:hover:not(:focus) {
+        background: var(--bg-hover);
+    }
+}
+
+@media (max-width: 760px) {
+    .persona-editor-header {
+        padding: 0 var(--space-3) 0 var(--space-1);
+    }
+
+    .persona-editor-back.ui-icon-btn {
+        width: 44px;
+        height: 44px;
+    }
+
+    .persona-editor-header .save-btn.ui-btn--sm {
+        height: 36px;
+        padding: 0 14px;
+    }
+
+    .persona-editor-inner {
+        padding: var(--space-5) var(--space-4) calc(var(--space-8) + env(safe-area-inset-bottom));
+    }
+
+    .persona-identity {
+        gap: var(--space-4);
+        margin-bottom: var(--space-6);
+        padding: var(--space-4);
+    }
+
+    .persona-avatar__button {
+        width: 64px;
+        height: 64px;
+    }
+
+    .persona-identity__fields {
+        padding-top: 2px;
+    }
+
+    .persona-identity .name-input {
+        font-size: var(--text-lg);
+    }
+
+    /* Avoid iOS zoom on focus. */
+    .persona-identity .description-input,
+    .persona-prompt .prompt-textarea {
+        font-size: 16px;
+    }
+
+    .persona-prompt .prompt-textarea {
+        min-height: 240px;
     }
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .persona-editor,
-    .persona-editor * {
-        transition: none !important;
+    .persona-editor-content--memory .persona-editor-inner {
+        animation: none;
+    }
+
+    .persona-avatar__button,
+    .persona-avatar__overlay {
+        transition-duration: 0ms;
+    }
+
+    .persona-avatar__button:active {
+        transform: none;
     }
 }

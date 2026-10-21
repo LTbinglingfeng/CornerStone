@@ -1,15 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useSearchParams } from 'react-router-dom'
-import { getProviders, searchWeatherCities, updateConfig, updateSystemPrompt } from '../services/api'
+import { getProviders, getUserInfo, searchWeatherCities, updateConfig, updateSystemPrompt } from '../services/api'
 import {
     memoryService,
     type MemoryExtractionPromptTemplate,
     type MemoryExtractionSettings,
 } from '../services/memoryService'
 import { ttsService, type TTSProviderConfig } from '../services/ttsService'
-import { clawBotService, type ClawBotSettings } from '../services/clawbotService'
-import { napCatService, type NapCatSettings } from '../services/napcatService'
 import { reminderService } from '../services/reminderService'
 import { cornerstoneWebSearchService, type CornerstoneWebSearchSettings } from '../services/cornerstoneWebSearchService'
 import { localeNames, type Locale } from '../i18n'
@@ -30,11 +28,12 @@ import ProviderSettings from './ProviderSettings'
 import { ModalOverlay } from './ModalOverlay'
 import MemoryProviderSettings from './MemoryProviderSettings'
 import ImageProviderSettings from './ImageProviderSettings'
-import ClawBotSettingsPanel from './ClawBotSettings'
-import NapCatSettingsPanel from './NapCatSettings'
 import CornerstoneWebSearchSettingsPanel from './CornerstoneWebSearchSettings'
 import { useT } from '../contexts/I18nContext'
 import { useToast } from '../contexts/ToastContext'
+import { useTheme } from '../contexts/ThemeContext'
+import { Group, Icon, Row, Toggle, type IconName } from './ui'
+import { tabRoutes } from '../utils/routes'
 import {
     getNotificationsEnabled,
     isNotificationSupported,
@@ -64,6 +63,13 @@ export interface SettingsProps {
 type SettingsSection = 'models' | 'automation' | 'memory' | 'general'
 
 const SETTINGS_SECTIONS: SettingsSection[] = ['models', 'automation', 'memory', 'general']
+
+const SECTION_ICONS: Record<SettingsSection, IconName> = {
+    models: 'sparkles',
+    automation: 'wrench',
+    memory: 'memory',
+    general: 'settings',
+}
 
 const isSettingsSection = (value: string | null): value is SettingsSection =>
     SETTINGS_SECTIONS.includes(value as SettingsSection)
@@ -107,10 +113,13 @@ const Settings: React.FC<SettingsProps> = ({
     const activeSection: SettingsSection = isSettingsSection(requestedSection) ? requestedSection : 'models'
     const managementCopy = getSettingsManagementCopy(locale)
     const { showToast } = useToast()
+    const { theme, toggleTheme } = useTheme()
     const appVersion = __CORNERSTONE_VERSION__.trim() || 'dev'
     const [systemPrompt, setSystemPrompt] = useState('')
     const [editingPrompt, setEditingPrompt] = useState('')
     const [activeProviderName, setActiveProviderName] = useState('')
+    const [activeProviderModel, setActiveProviderModel] = useState('')
+    const [accountName, setAccountName] = useState('')
     const [imageProviderPreview, setImageProviderPreview] = useState<{
         name: string
         detail: string
@@ -121,8 +130,6 @@ const Settings: React.FC<SettingsProps> = ({
         mode: 'none',
     })
     const [memoryProvider, setMemoryProvider] = useState<Provider | null>(null)
-    const [clawBotSettings, setClawBotSettings] = useState<ClawBotSettings | null>(null)
-    const [napCatSettings, setNapCatSettings] = useState<NapCatSettings | null>(null)
     const [memoryEnabled, setMemoryEnabled] = useState(false)
     const [ttsEnabled, setTTSEnabledState] = useState(false)
     const [ttsProvider, setTTSProvider] = useState<TTSProviderConfig | null>(null)
@@ -161,8 +168,6 @@ const Settings: React.FC<SettingsProps> = ({
     const showProviderSettings = searchParams.get('panel') === 'providers'
     const [showImageProviderSettings, setShowImageProviderSettings] = useState(false)
     const [showMemoryProviderSettings, setShowMemoryProviderSettings] = useState(false)
-    const [showClawBotSettings, setShowClawBotSettings] = useState(false)
-    const [showNapCatSettings, setShowNapCatSettings] = useState(false)
     const [cornerstoneWebSearchSettings, setCornerstoneWebSearchSettings] =
         useState<CornerstoneWebSearchSettings | null>(null)
     const [showCornerstoneWebSearchSettings, setShowCornerstoneWebSearchSettings] = useState(false)
@@ -213,8 +218,6 @@ const Settings: React.FC<SettingsProps> = ({
         showProviderSettings ||
         showImageProviderSettings ||
         showMemoryProviderSettings ||
-        showClawBotSettings ||
-        showNapCatSettings ||
         showCornerstoneWebSearchSettings ||
         showToolSettings ||
         showReminderSettings ||
@@ -252,6 +255,16 @@ const Settings: React.FC<SettingsProps> = ({
         setNotificationsSupported(supported)
         setNotificationPermission(supported ? Notification.permission : 'unsupported')
         setNotificationsEnabledState(getNotificationsEnabled())
+    }, [])
+
+    useEffect(() => {
+        let cancelled = false
+        void getUserInfo().then((info) => {
+            if (!cancelled && info) setAccountName(info.username || '')
+        })
+        return () => {
+            cancelled = true
+        }
     }, [])
 
     useEffect(() => {
@@ -317,13 +330,11 @@ const Settings: React.FC<SettingsProps> = ({
             timer = setTimeout(() => reject(new Error('Settings load timed out')), 20_000)
         })
         try {
-            const [providersData, tts, memory, clawBot, napCat, webSearch, reminderList] = await Promise.race([
+            const [providersData, tts, memory, webSearch, reminderList] = await Promise.race([
                 Promise.all([
                     getProviders(),
                     ttsService.getTTSSettings(),
                     memoryService.getMemoryExtractionSettings(),
-                    clawBotService.getSettings(),
-                    napCatService.getSettings(),
                     cornerstoneWebSearchService.getSettings(),
                     reminderService.listReminders(),
                 ]),
@@ -358,6 +369,7 @@ const Settings: React.FC<SettingsProps> = ({
             }
             const activeProvider = providersData.providers.find((p) => p.id === providersData.active_provider_id)
             setActiveProviderName(activeProvider?.name || '')
+            setActiveProviderModel(activeProvider?.model || '')
             const configuredImageProviderId = providersData.image_provider_id || ''
             const imageProviders = providersData.providers.filter((p) => p.type === 'gemini_image')
             if (configuredImageProviderId) {
@@ -393,8 +405,6 @@ const Settings: React.FC<SettingsProps> = ({
             setMemoryExtractionProviderName(memory.provider_name || '')
             setMemoryRefreshInterval(memory.refresh_interval)
             setMemoryRefreshMaxInterval(memory.max_refresh_interval)
-            setClawBotSettings(clawBot)
-            setNapCatSettings(napCat)
             setCornerstoneWebSearchSettings(webSearch)
             setReminders(reminderList)
         } catch {
@@ -846,14 +856,6 @@ const Settings: React.FC<SettingsProps> = ({
         setShowMemoryProviderSettings(false)
     }
 
-    const handleClawBotSettingsBack = () => {
-        setShowClawBotSettings(false)
-    }
-
-    const handleNapCatSettingsBack = () => {
-        setShowNapCatSettings(false)
-    }
-
     const handleCornerstoneWebSearchSettingsBack = () => {
         setShowCornerstoneWebSearchSettings(false)
     }
@@ -899,20 +901,11 @@ const Settings: React.FC<SettingsProps> = ({
     }
 
     const getAssistantMessageSplitTokenPreview = () => {
-        if (assistantMessageSplitToken === '') {
-            return {
-                title: t('common.disabled'),
-                detail: t('settings.assistantMessageSplitTokenHint'),
-            }
+        if (assistantMessageSplitToken === '') return t('common.disabled')
+        if (assistantMessageSplitToken === DEFAULT_ASSISTANT_MESSAGE_SPLIT_TOKEN) {
+            return `${assistantMessageSplitToken} · ${t('common.default')}`
         }
-
-        return {
-            title: assistantMessageSplitToken,
-            detail:
-                assistantMessageSplitToken === DEFAULT_ASSISTANT_MESSAGE_SPLIT_TOKEN
-                    ? `${t('common.default')} · ${t('settings.assistantMessageSplitTokenHint')}`
-                    : t('settings.assistantMessageSplitTokenHint'),
-        }
+        return assistantMessageSplitToken
     }
 
     const getTimeZonePreview = () => {
@@ -956,7 +949,7 @@ const Settings: React.FC<SettingsProps> = ({
         if (!idleGreetingConfig.enabled) {
             return {
                 title: t('common.disabled'),
-                detail: t('settings.idleGreetingHint'),
+                detail: '',
             }
         }
 
@@ -995,46 +988,6 @@ const Settings: React.FC<SettingsProps> = ({
         return t('settings.maxRounds', { max: maxInterval })
     }
 
-    const getClawBotPreview = () => {
-        if (!clawBotSettings) return { title: t('common.notConfigured'), detail: '' }
-        const statusMap: Record<string, string> = {
-            disabled: t('clawBot.disabled'),
-            missing_token: t('clawBot.missingToken'),
-            running: t('clawBot.running'),
-            error: t('clawBot.error'),
-            stopped: t('clawBot.stopped'),
-        }
-        const title = statusMap[clawBotSettings.status] || clawBotSettings.status || t('common.notConfigured')
-        const detail = clawBotSettings.prompt_name
-            ? `${t('settings.persona')}：${clawBotSettings.prompt_name}`
-            : clawBotSettings.ilink_user_id
-              ? `${t('settings.account')}：${clawBotSettings.ilink_user_id}`
-              : clawBotSettings.has_bot_token
-                ? t('settings.hasBotToken')
-                : t('settings.noBotToken')
-        return { title, detail }
-    }
-
-    const getNapCatPreview = () => {
-        if (!napCatSettings) return { title: t('common.notConfigured'), detail: '' }
-        const statusMap: Record<string, string> = {
-            disabled: t('napCat.disabled'),
-            missing_token: t('napCat.missingToken'),
-            connected: t('napCat.connected'),
-            disconnected: t('napCat.disconnected'),
-            error: t('napCat.error'),
-        }
-        const title = statusMap[napCatSettings.status] || napCatSettings.status || t('common.notConfigured')
-        const detail = napCatSettings.prompt_name
-            ? `${t('settings.persona')}：${napCatSettings.prompt_name}`
-            : napCatSettings.self_id
-              ? `${t('settings.account')}：${napCatSettings.self_id}${napCatSettings.nickname ? ` · ${napCatSettings.nickname}` : ''}`
-              : napCatSettings.has_access_token
-                ? t('napCat.savedToken')
-                : t('napCat.notSavedToken')
-        return { title, detail }
-    }
-
     const getCornerstoneWebSearchPreview = () => {
         if (!cornerstoneWebSearchSettings) return { title: t('common.notConfigured'), detail: '' }
         const activeId = (cornerstoneWebSearchSettings.active_provider_id || '').trim()
@@ -1055,22 +1008,23 @@ const Settings: React.FC<SettingsProps> = ({
         return { title, detail }
     }
 
-    const getToolControlPreview = () => {
-        const enabled = countEnabledToolToggles(toolToggles)
-        return {
-            title: t('settings.toolControlSummary', {
-                enabled,
-                total: TOOL_CONTROL_DEFINITIONS.length,
-            }),
-            detail: t('settings.toolControlHint'),
-        }
+    const formatDueAt = (value: string) => {
+        const date = new Date(value)
+        if (Number.isNaN(date.getTime())) return value
+        return date.toLocaleString(locale === 'zh' ? 'zh-CN' : 'en-US', {
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+        })
     }
 
     const getReminderPreview = () => {
         if (reminders.length === 0) {
             return {
                 title: t('settings.noReminders'),
-                detail: t('settings.reminderManagerHint'),
+                detail: '',
             }
         }
 
@@ -1084,514 +1038,345 @@ const Settings: React.FC<SettingsProps> = ({
                 pending: pendingReminders.length,
                 total: reminders.length,
             }),
-            detail: nextPending ? `${nextPending.title} · ${nextPending.due_at}` : t('settings.reminderNoPending'),
+            detail: nextPending
+                ? `${nextPending.title} · ${formatDueAt(nextPending.due_at)}`
+                : t('settings.reminderNoPending'),
         }
     }
 
     const memoryProviderPreview = getMemoryProviderPreview()
     const ttsProviderPreview = getTTSProviderPreview()
-    const clawBotPreview = getClawBotPreview()
-    const napCatPreview = getNapCatPreview()
     const cornerstoneWebSearchPreview = getCornerstoneWebSearchPreview()
-    const toolControlPreview = getToolControlPreview()
     const reminderPreview = getReminderPreview()
     const assistantMessageSplitTokenPreview = getAssistantMessageSplitTokenPreview()
     const timeZonePreview = getTimeZonePreview()
     const defaultWeatherCityPreview = getDefaultWeatherCityPreview()
     const idleGreetingPreview = getIdleGreetingPreview()
     const localeOptions = Object.entries(localeNames) as [Locale, string][]
+    const sectionCopy = managementCopy.sections[activeSection]
+    const notificationDetail = !notificationsSupported
+        ? managementCopy.rows.notificationsUnsupported
+        : notificationPermission === 'denied' && !notificationsEnabled
+          ? managementCopy.rows.notificationsDenied
+          : t('settings.notifyWhenNotInChat')
+
+    const renderModels = () => (
+        <>
+            <Group title={managementCopy.groups.services}>
+                <Row
+                    className="settings-entry-btn"
+                    icon="message"
+                    label={managementCopy.rows.chatProvider}
+                    detail={activeProviderModel ? <span className="settings-mono">{activeProviderModel}</span> : null}
+                    value={activeProviderName || t('common.notSet')}
+                    onClick={handleOpenProviderSettings}
+                />
+                <Row
+                    className="settings-entry-btn"
+                    icon="image"
+                    label={t('settings.imageProvider')}
+                    detail={
+                        imageProviderPreview.mode === 'none'
+                            ? t('imageProvider.noProviders')
+                            : imageProviderPreview.detail || null
+                    }
+                    value={
+                        imageProviderPreview.mode === 'auto'
+                            ? t('imageProvider.autoSelect')
+                            : imageProviderPreview.name || t('common.notConfigured')
+                    }
+                    onClick={() => setShowImageProviderSettings(true)}
+                />
+                <Row
+                    className="settings-entry-btn"
+                    icon="search"
+                    label={t('settings.webSearch')}
+                    detail={cornerstoneWebSearchPreview.detail || null}
+                    value={cornerstoneWebSearchPreview.title}
+                    onClick={() => setShowCornerstoneWebSearchSettings(true)}
+                />
+            </Group>
+            <Group title={t('settings.voice')}>
+                <Row
+                    icon="volume"
+                    label={t('settings.tts')}
+                    detail={t('settings.ttsHint')}
+                    trailing={
+                        <Toggle
+                            label={t('settings.tts')}
+                            checked={ttsEnabled}
+                            disabled={saving}
+                            onChange={(checked) => void handleTTSEnabledChange(checked)}
+                        />
+                    }
+                />
+                <Row
+                    className="settings-entry-btn"
+                    icon="cloud"
+                    label={t('settings.ttsProvider')}
+                    detail={
+                        ttsProviderPreview.detail ? (
+                            <span className="settings-mono">{ttsProviderPreview.detail}</span>
+                        ) : null
+                    }
+                    value={ttsProviderPreview.title}
+                    onClick={handleOpenTTSProviderModal}
+                />
+            </Group>
+        </>
+    )
+
+    const renderAutomation = () => (
+        <>
+            <Group title={managementCopy.groups.tools} footer={managementCopy.tools.description}>
+                <Row
+                    className="settings-entry-btn"
+                    icon="wrench"
+                    label={t('settings.tools')}
+                    value={t('settingsManagement.rows.toolsValue', {
+                        enabled: countEnabledToolToggles(toolToggles),
+                        total: TOOL_CONTROL_DEFINITIONS.length,
+                    })}
+                    onClick={() => setShowToolSettings(true)}
+                />
+            </Group>
+            <Group title={managementCopy.groups.automation}>
+                <Row
+                    className="settings-entry-btn"
+                    icon="bell"
+                    label={t('settings.reminders')}
+                    detail={reminderPreview.detail || null}
+                    value={reminderPreview.title}
+                    onClick={() => setShowReminderSettings(true)}
+                />
+                <Row
+                    className="settings-entry-btn"
+                    icon="smile"
+                    label={t('settings.idleGreeting')}
+                    detail={idleGreetingPreview.detail || null}
+                    value={idleGreetingPreview.title}
+                    onClick={() => setShowIdleGreetingSettings(true)}
+                />
+            </Group>
+        </>
+    )
+
+    const renderMemory = () => (
+        <>
+            <Group
+                title={managementCopy.groups.memory}
+                footer={t('settings.memoryHint', { rounds: memoryExtractionRounds || 5 })}
+            >
+                <Row
+                    icon="memory"
+                    label={t('settings.memoryFunction')}
+                    detail={t('settings.memoryDisableHint')}
+                    trailing={
+                        <Toggle
+                            label={t('settings.memoryFunction')}
+                            checked={memoryEnabled}
+                            disabled={saving}
+                            onChange={(checked) => void handleMemoryEnabledChange(checked)}
+                        />
+                    }
+                />
+            </Group>
+            <Group title={managementCopy.groups.extraction} footer={t('settings.memoryProviderHint')}>
+                <Row
+                    className="settings-entry-btn"
+                    icon="bot"
+                    label={t('settings.memoryProvider')}
+                    detail={<span className="settings-mono">{memoryProviderPreview.detail}</span>}
+                    value={memoryProviderPreview.title}
+                    onClick={() => setShowMemoryProviderSettings(true)}
+                />
+                <Row
+                    className="settings-entry-btn"
+                    icon="list"
+                    label={t('settings.memoryExtractionRounds')}
+                    detail={getMemoryExtractionRoundsDetail()}
+                    value={getMemoryExtractionRoundsPreview()}
+                    onClick={handleOpenMemoryExtractionRoundsModal}
+                />
+                <Row
+                    className="settings-entry-btn"
+                    icon="refresh"
+                    label={t('settings.memoryRefreshInterval')}
+                    detail={t('settings.memoryRefreshIntervalHint')}
+                    value={getMemoryRefreshIntervalPreview()}
+                    onClick={handleOpenMemoryRefreshIntervalModal}
+                />
+                <Row
+                    className="settings-entry-btn"
+                    icon="fileText"
+                    label={t('settings.memoryExtractionPrompt')}
+                    detail={t('settings.memoryExtractionPromptSupport')}
+                    onClick={handleOpenMemoryExtractionPromptModal}
+                />
+            </Group>
+        </>
+    )
+
+    const renderGeneral = () => (
+        <>
+            <Group title={managementCopy.groups.reply}>
+                <Row
+                    className="settings-entry-btn"
+                    icon="fileText"
+                    label={t('settings.defaultSystemPrompt')}
+                    value={getPromptPreview()}
+                    onClick={handleOpenPromptModal}
+                />
+                <Row
+                    className="settings-entry-btn"
+                    icon="scissors"
+                    label={t('settings.assistantMessageSplitToken')}
+                    value={assistantMessageSplitTokenPreview}
+                    onClick={handleOpenAssistantMessageSplitTokenModal}
+                />
+                <Row
+                    className="settings-entry-btn"
+                    icon="hourglass"
+                    label={t('settings.replyWaitWindow')}
+                    value={getReplyWaitPreview()}
+                    onClick={handleOpenReplyWaitModal}
+                />
+            </Group>
+            <Group title={managementCopy.groups.region}>
+                <Row
+                    className="settings-entry-btn"
+                    icon="clock"
+                    label={t('settings.timeZone')}
+                    detail={timeZonePreview.detail || null}
+                    value={timeZonePreview.title}
+                    onClick={handleOpenTimeZoneModal}
+                />
+                <Row
+                    className="settings-entry-btn"
+                    icon="cloud"
+                    label={t('settings.defaultWeatherCity')}
+                    detail={defaultWeatherCityPreview.detail || null}
+                    value={defaultWeatherCityPreview.title}
+                    onClick={handleOpenWeatherCityModal}
+                />
+            </Group>
+            <Group title={managementCopy.groups.preferences}>
+                <Row
+                    icon="bell"
+                    label={t('settings.systemNotifications')}
+                    detail={notificationDetail}
+                    trailing={
+                        <Toggle
+                            label={t('settings.systemNotifications')}
+                            checked={notificationsEnabled}
+                            disabled={saving || !notificationsSupported}
+                            onChange={(checked) => void handleNotificationsToggle(checked)}
+                        />
+                    }
+                />
+                <Row
+                    className="settings-entry-btn"
+                    icon="languages"
+                    label={t('settings.language')}
+                    value={localeNames[locale]}
+                    onClick={handleOpenLanguageModal}
+                />
+                <Row
+                    icon={theme === 'dark' ? 'moon' : 'sun'}
+                    label={managementCopy.rows.appearance}
+                    trailing={
+                        <div className="ui-segmented" role="group" aria-label={managementCopy.rows.appearance}>
+                            {(['light', 'dark'] as const).map((option) => (
+                                <button
+                                    key={option}
+                                    type="button"
+                                    aria-pressed={theme === option}
+                                    onClick={() => {
+                                        if (theme !== option) toggleTheme()
+                                    }}
+                                >
+                                    {managementCopy.rows[option]}
+                                </button>
+                            ))}
+                        </div>
+                    }
+                />
+            </Group>
+            <Group title={managementCopy.groups.account}>
+                <Row icon="user" label={managementCopy.rows.profile} value={accountName} to={tabRoutes.me} />
+            </Group>
+            <Group title={managementCopy.groups.about}>
+                <Row
+                    icon="info"
+                    label={managementCopy.rows.version}
+                    value={<span className="settings-mono">{appVersion}</span>}
+                />
+            </Group>
+        </>
+    )
 
     return (
         <div className="settings">
             {!embedded && (
                 <div className="settings-header">
                     <button className="back-button" onClick={onBack} aria-label={managementCopy.backLabel}>
-                        <svg viewBox="0 0 24 24" aria-hidden="true">
-                            <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
-                        </svg>
+                        <Icon name="arrowLeft" />
                     </button>
                     <div className="settings-title">{t('settings.title')}</div>
-                    <div style={{ width: 44 }} />
                 </div>
             )}
-            <nav className="settings-categories" aria-label={managementCopy.navigationLabel}>
-                {SETTINGS_SECTIONS.map((section) => (
-                    <button
-                        key={section}
-                        type="button"
-                        aria-current={activeSection === section ? 'page' : undefined}
-                        onClick={() => handleSectionChange(section)}
-                    >
-                        {managementCopy.sections[section].label}
-                    </button>
-                ))}
-            </nav>
+            <div className="settings-layout">
+                <aside className="settings-sidebar">
+                    <h1 className="settings-sidebar__title">{t('settings.title')}</h1>
+                    <nav className="settings-nav" aria-label={managementCopy.navigationLabel}>
+                        {SETTINGS_SECTIONS.map((section) => (
+                            <button
+                                key={section}
+                                type="button"
+                                className="settings-nav__item"
+                                aria-current={activeSection === section ? 'page' : undefined}
+                                onClick={() => handleSectionChange(section)}
+                            >
+                                <Icon name={SECTION_ICONS[section]} />
+                                <span>{managementCopy.sections[section].label}</span>
+                            </button>
+                        ))}
+                    </nav>
+                </aside>
 
-            {loading ? (
-                <div className="settings-loading" role="status">
-                    {t('common.loading')}
+                <div className="settings-main">
+                    {loading ? (
+                        <div className="settings-loading" role="status">
+                            <span className="ui-spinner" aria-hidden="true" />
+                            <span>{t('common.loading')}</span>
+                        </div>
+                    ) : loadFailed ? (
+                        <div className="settings-loading" role="alert">
+                            <span className="settings-loading__icon" aria-hidden="true">
+                                <Icon name="alert" />
+                            </span>
+                            <p>{t('common.loadFailed')}</p>
+                            <button type="button" className="ui-btn" onClick={() => void loadData()}>
+                                <Icon name="refresh" />
+                                {t('console.refresh')}
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="settings-content">
+                            <div className="settings-content__inner">
+                                <header className="settings-section-header">
+                                    <h2>{sectionCopy.label}</h2>
+                                    <p>{sectionCopy.description}</p>
+                                </header>
+                                {activeSection === 'models' && renderModels()}
+                                {activeSection === 'automation' && renderAutomation()}
+                                {activeSection === 'memory' && renderMemory()}
+                                {activeSection === 'general' && renderGeneral()}
+                            </div>
+                        </div>
+                    )}
                 </div>
-            ) : loadFailed ? (
-                <div className="settings-loading" role="alert">
-                    <p>{t('common.loadFailed')}</p>
-                    <button type="button" onClick={() => void loadData()}>
-                        {t('console.refresh')}
-                    </button>
-                </div>
-            ) : (
-                <div className="settings-content">
-                    <header className="settings-category-heading">
-                        <span>{managementCopy.eyebrow}</span>
-                        <h1>{managementCopy.sections[activeSection].label}</h1>
-                        <p>{managementCopy.sections[activeSection].description}</p>
-                    </header>
-                    {activeSection === 'models' && (
-                        <>
-                            <div className="settings-section">
-                                <h3>{t('settings.providers')}</h3>
-                                <button className="settings-entry-btn" onClick={handleOpenProviderSettings}>
-                                    <div className="settings-entry-info">
-                                        <span className="settings-entry-label">{t('settings.currentProvider')}</span>
-                                        <span className="settings-entry-value">
-                                            {activeProviderName || t('common.notSet')}
-                                        </span>
-                                    </div>
-                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                                    </svg>
-                                </button>
-
-                                <button
-                                    className="settings-entry-btn"
-                                    onClick={() => setShowImageProviderSettings(true)}
-                                    style={{ marginTop: 12 }}
-                                >
-                                    <div className="settings-entry-info">
-                                        <span className="settings-entry-label">{t('settings.imageProvider')}</span>
-                                        <span className="settings-entry-value">
-                                            {imageProviderPreview.mode === 'auto'
-                                                ? t('imageProvider.autoSelect')
-                                                : imageProviderPreview.name || t('common.notConfigured')}
-                                        </span>
-                                        {(imageProviderPreview.detail || imageProviderPreview.mode === 'none') && (
-                                            <span className="settings-entry-subvalue">
-                                                {imageProviderPreview.mode === 'none'
-                                                    ? t('imageProvider.noProviders')
-                                                    : imageProviderPreview.detail}
-                                            </span>
-                                        )}
-                                    </div>
-                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                                    </svg>
-                                </button>
-
-                                <button
-                                    className="settings-entry-btn"
-                                    onClick={() => setShowCornerstoneWebSearchSettings(true)}
-                                    style={{ marginTop: 12 }}
-                                >
-                                    <div className="settings-entry-info">
-                                        <span className="settings-entry-label">{t('settings.webSearch')}</span>
-                                        <span className="settings-entry-value">
-                                            {cornerstoneWebSearchPreview.title}
-                                        </span>
-                                        {cornerstoneWebSearchPreview.detail && (
-                                            <span className="settings-entry-subvalue">
-                                                {cornerstoneWebSearchPreview.detail}
-                                            </span>
-                                        )}
-                                    </div>
-                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                                    </svg>
-                                </button>
-                            </div>
-                            <div className="settings-section">
-                                <h3>{t('settings.voice')}</h3>
-
-                                <div className="settings-group">
-                                    <label className="settings-label">{t('settings.tts')}</label>
-                                    <div className="modal-toggle-wrapper">
-                                        <label className="toggle-switch">
-                                            <input
-                                                aria-label={t('settings.tts')}
-                                                type="checkbox"
-                                                checked={ttsEnabled}
-                                                onChange={(e) => handleTTSEnabledChange(e.target.checked)}
-                                                disabled={saving}
-                                            />
-                                            <span className="toggle-slider"></span>
-                                        </label>
-                                        <span className="toggle-label">
-                                            {ttsEnabled ? t('common.enable') : t('common.disable')}
-                                        </span>
-                                    </div>
-                                    <p className="prompt-modal-hint memory-toggle-hint">{t('settings.ttsHint')}</p>
-                                </div>
-
-                                <button
-                                    className="settings-entry-btn"
-                                    onClick={handleOpenTTSProviderModal}
-                                    style={{ marginTop: 12 }}
-                                >
-                                    <div className="settings-entry-info">
-                                        <span className="settings-entry-label">{t('settings.ttsProvider')}</span>
-                                        <span className="settings-entry-value">{ttsProviderPreview.title}</span>
-                                        {ttsProviderPreview.detail && (
-                                            <span className="settings-entry-subvalue">{ttsProviderPreview.detail}</span>
-                                        )}
-                                    </div>
-                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                                    </svg>
-                                </button>
-                            </div>
-                        </>
-                    )}
-                    {activeSection === 'automation' && (
-                        <>
-                            <div className="settings-section">
-                                <h3>{t('settings.tools')}</h3>
-                                <button className="settings-entry-btn" onClick={() => setShowToolSettings(true)}>
-                                    <div className="settings-entry-info">
-                                        <span className="settings-entry-label">{t('settings.tools')}</span>
-                                        <span className="settings-entry-value">{toolControlPreview.title}</span>
-                                        <span className="settings-entry-subvalue">{toolControlPreview.detail}</span>
-                                    </div>
-                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                                    </svg>
-                                </button>
-
-                                <button
-                                    className="settings-entry-btn"
-                                    onClick={() => setShowReminderSettings(true)}
-                                    style={{ marginTop: 12 }}
-                                >
-                                    <div className="settings-entry-info">
-                                        <span className="settings-entry-label">{t('settings.reminders')}</span>
-                                        <span className="settings-entry-value">{reminderPreview.title}</span>
-                                        <span className="settings-entry-subvalue">{reminderPreview.detail}</span>
-                                    </div>
-                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                                    </svg>
-                                </button>
-                                <button
-                                    className="settings-entry-btn"
-                                    onClick={() => setShowIdleGreetingSettings(true)}
-                                    style={{ marginTop: 12 }}
-                                >
-                                    <div className="settings-entry-info">
-                                        <span className="settings-entry-label">{t('settings.idleGreeting')}</span>
-                                        <span className="settings-entry-value">{idleGreetingPreview.title}</span>
-                                        {idleGreetingPreview.detail && (
-                                            <span className="settings-entry-subvalue">
-                                                {idleGreetingPreview.detail}
-                                            </span>
-                                        )}
-                                    </div>
-                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                                    </svg>
-                                </button>
-                            </div>
-                        </>
-                    )}
-                    {activeSection === 'memory' && (
-                        <>
-                            <div className="settings-section">
-                                <h3>{t('settings.longTermMemory')}</h3>
-
-                                <p className="prompt-modal-hint">
-                                    {t('settings.memoryHint', { rounds: memoryExtractionRounds || 5 })}
-                                </p>
-
-                                <div className="settings-group">
-                                    <label className="settings-label">{t('settings.memoryFunction')}</label>
-                                    <div className="modal-toggle-wrapper">
-                                        <label className="toggle-switch">
-                                            <input
-                                                aria-label={t('settings.memoryFunction')}
-                                                type="checkbox"
-                                                checked={memoryEnabled}
-                                                onChange={(e) => handleMemoryEnabledChange(e.target.checked)}
-                                                disabled={saving}
-                                            />
-                                            <span className="toggle-slider"></span>
-                                        </label>
-                                        <span className="toggle-label">
-                                            {memoryEnabled ? t('common.enable') : t('common.disable')}
-                                        </span>
-                                    </div>
-                                    <p className="prompt-modal-hint memory-toggle-hint">
-                                        {t('settings.memoryDisableHint')}
-                                    </p>
-                                </div>
-
-                                <button
-                                    className="settings-entry-btn"
-                                    onClick={() => setShowMemoryProviderSettings(true)}
-                                    style={{ marginTop: 12 }}
-                                >
-                                    <div className="settings-entry-info">
-                                        <span className="settings-entry-label">{t('settings.memoryProvider')}</span>
-                                        <span className="settings-entry-value">{memoryProviderPreview.title}</span>
-                                        <span className="settings-entry-subvalue">{memoryProviderPreview.detail}</span>
-                                    </div>
-                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                                    </svg>
-                                </button>
-                                <p className="prompt-modal-hint memory-provider-hint">
-                                    {t('settings.memoryProviderHint')}
-                                </p>
-
-                                <button
-                                    className="settings-entry-btn"
-                                    onClick={handleOpenMemoryExtractionRoundsModal}
-                                    style={{ marginTop: 12 }}
-                                >
-                                    <div className="settings-entry-info">
-                                        <span className="settings-entry-label">
-                                            {t('settings.memoryExtractionRounds')}
-                                        </span>
-                                        <span className="settings-entry-value">
-                                            {getMemoryExtractionRoundsPreview()}
-                                        </span>
-                                        <span className="settings-entry-subvalue">
-                                            {getMemoryExtractionRoundsDetail()}
-                                        </span>
-                                    </div>
-                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                                    </svg>
-                                </button>
-                                <p className="prompt-modal-hint memory-provider-hint">
-                                    {t('settings.memoryExtractionRoundsHint')}
-                                </p>
-
-                                <button
-                                    className="settings-entry-btn"
-                                    onClick={handleOpenMemoryRefreshIntervalModal}
-                                    style={{ marginTop: 12 }}
-                                >
-                                    <div className="settings-entry-info">
-                                        <span className="settings-entry-label">
-                                            {t('settings.memoryRefreshInterval')}
-                                        </span>
-                                        <span className="settings-entry-value">
-                                            {getMemoryRefreshIntervalPreview()}
-                                        </span>
-                                        <span className="settings-entry-subvalue">
-                                            {getMemoryRefreshIntervalDetail()}
-                                        </span>
-                                    </div>
-                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                                    </svg>
-                                </button>
-                                <p className="prompt-modal-hint memory-provider-hint">
-                                    {t('settings.memoryRefreshIntervalHint')}
-                                </p>
-
-                                <button
-                                    className="settings-entry-btn"
-                                    onClick={handleOpenMemoryExtractionPromptModal}
-                                    style={{ marginTop: 12 }}
-                                >
-                                    <div className="settings-entry-info">
-                                        <span className="settings-entry-label">
-                                            {t('settings.memoryExtractionPrompt')}
-                                        </span>
-                                        <span className="settings-entry-value">{t('common.edit')}</span>
-                                        <span className="settings-entry-subvalue">
-                                            {t('settings.memoryExtractionPromptSupport')}
-                                        </span>
-                                    </div>
-                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                                    </svg>
-                                </button>
-                            </div>
-                        </>
-                    )}
-                    {activeSection === 'general' && (
-                        <>
-                            <div className="settings-section">
-                                <h3>{t('settings.globalSettings')}</h3>
-                                <button className="settings-entry-btn" onClick={handleOpenPromptModal}>
-                                    <div className="settings-entry-info">
-                                        <span className="settings-entry-label">
-                                            {t('settings.defaultSystemPrompt')}
-                                        </span>
-                                        <span className="settings-entry-value">{getPromptPreview()}</span>
-                                    </div>
-                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                                    </svg>
-                                </button>
-
-                                <button
-                                    className="settings-entry-btn"
-                                    onClick={handleOpenAssistantMessageSplitTokenModal}
-                                    style={{ marginTop: 12 }}
-                                >
-                                    <div className="settings-entry-info">
-                                        <span className="settings-entry-label">
-                                            {t('settings.assistantMessageSplitToken')}
-                                        </span>
-                                        <span className="settings-entry-value">
-                                            {assistantMessageSplitTokenPreview.title}
-                                        </span>
-                                        {assistantMessageSplitTokenPreview.detail && (
-                                            <span className="settings-entry-subvalue">
-                                                {assistantMessageSplitTokenPreview.detail}
-                                            </span>
-                                        )}
-                                    </div>
-                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                                    </svg>
-                                </button>
-
-                                <button
-                                    className="settings-entry-btn"
-                                    onClick={handleOpenReplyWaitModal}
-                                    style={{ marginTop: 12 }}
-                                >
-                                    <div className="settings-entry-info">
-                                        <span className="settings-entry-label">{t('settings.replyWaitWindow')}</span>
-                                        <span className="settings-entry-value">{getReplyWaitPreview()}</span>
-                                    </div>
-                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                                    </svg>
-                                </button>
-
-                                <button
-                                    className="settings-entry-btn"
-                                    onClick={handleOpenTimeZoneModal}
-                                    style={{ marginTop: 12 }}
-                                >
-                                    <div className="settings-entry-info">
-                                        <span className="settings-entry-label">{t('settings.timeZone')}</span>
-                                        <span className="settings-entry-value">{timeZonePreview.title}</span>
-                                        {timeZonePreview.detail && (
-                                            <span className="settings-entry-subvalue">{timeZonePreview.detail}</span>
-                                        )}
-                                    </div>
-                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                                    </svg>
-                                </button>
-
-                                <button
-                                    className="settings-entry-btn"
-                                    onClick={handleOpenWeatherCityModal}
-                                    style={{ marginTop: 12 }}
-                                >
-                                    <div className="settings-entry-info">
-                                        <span className="settings-entry-label">{t('settings.defaultWeatherCity')}</span>
-                                        <span className="settings-entry-value">{defaultWeatherCityPreview.title}</span>
-                                        {defaultWeatherCityPreview.detail && (
-                                            <span className="settings-entry-subvalue">
-                                                {defaultWeatherCityPreview.detail}
-                                            </span>
-                                        )}
-                                    </div>
-                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                                    </svg>
-                                </button>
-
-                                <div className="settings-group" style={{ marginTop: 12 }}>
-                                    <label className="settings-label">{t('settings.systemNotifications')}</label>
-                                    <div className="modal-toggle-wrapper">
-                                        <label className="toggle-switch">
-                                            <input
-                                                aria-label={t('settings.systemNotifications')}
-                                                type="checkbox"
-                                                checked={notificationsEnabled}
-                                                onChange={(e) => void handleNotificationsToggle(e.target.checked)}
-                                                disabled={saving || !notificationsSupported}
-                                            />
-                                            <span className="toggle-slider"></span>
-                                        </label>
-                                        <span className="toggle-label">
-                                            {notificationsSupported
-                                                ? notificationsEnabled
-                                                    ? t('common.enable')
-                                                    : notificationPermission === 'denied'
-                                                      ? t('common.denied')
-                                                      : t('common.disable')
-                                                : t('common.notSupported')}
-                                        </span>
-                                    </div>
-                                    <p className="prompt-modal-hint memory-toggle-hint">
-                                        {t('settings.notifyWhenNotInChat')}
-                                    </p>
-                                </div>
-
-                                <button
-                                    className="settings-entry-btn"
-                                    onClick={handleOpenLanguageModal}
-                                    style={{ marginTop: 12 }}
-                                >
-                                    <div className="settings-entry-info">
-                                        <span className="settings-entry-label">{t('settings.language')}</span>
-                                        <span className="settings-entry-value">{localeNames[locale]}</span>
-                                        <span className="settings-entry-subvalue">{t('settings.languageHint')}</span>
-                                    </div>
-                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                                    </svg>
-                                </button>
-                            </div>
-                            <div className="settings-section">
-                                <h3>{t('settings.channels')}</h3>
-                                <button className="settings-entry-btn" onClick={() => setShowClawBotSettings(true)}>
-                                    <div className="settings-entry-info">
-                                        <span className="settings-entry-label">{t('settings.wechatClawBot')}</span>
-                                        <span className="settings-entry-value">{clawBotPreview.title}</span>
-                                        {clawBotPreview.detail && (
-                                            <span className="settings-entry-subvalue">{clawBotPreview.detail}</span>
-                                        )}
-                                    </div>
-                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                                    </svg>
-                                </button>
-
-                                <button
-                                    className="settings-entry-btn"
-                                    onClick={() => setShowNapCatSettings(true)}
-                                    style={{ marginTop: 12 }}
-                                >
-                                    <div className="settings-entry-info">
-                                        <span className="settings-entry-label settings-entry-label-row">
-                                            <span>{t('settings.qqNapCat')}</span>
-                                            <span className="feature-beta-badge">BETA</span>
-                                        </span>
-                                        <span className="settings-entry-value">{napCatPreview.title}</span>
-                                        {napCatPreview.detail && (
-                                            <span className="settings-entry-subvalue">{napCatPreview.detail}</span>
-                                        )}
-                                    </div>
-                                    <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                                    </svg>
-                                </button>
-                            </div>
-                        </>
-                    )}
-                    <div className="settings-footer">
-                        <span className="settings-footer-label">{t('settings.currentVersion')}</span>
-                        <span className="settings-footer-value">{appVersion}</span>
-                    </div>
-                </div>
-            )}
+            </div>
 
             <AnimatePresence onExitComplete={() => setRefreshRequested(true)}>
                 {showProviderSettings && <ProviderSettings onBack={handleProviderSettingsBack} />}
@@ -1603,14 +1388,6 @@ const Settings: React.FC<SettingsProps> = ({
 
             <AnimatePresence onExitComplete={() => setRefreshRequested(true)}>
                 {showMemoryProviderSettings && <MemoryProviderSettings onBack={handleMemoryProviderSettingsBack} />}
-            </AnimatePresence>
-
-            <AnimatePresence onExitComplete={() => setRefreshRequested(true)}>
-                {showClawBotSettings && <ClawBotSettingsPanel onBack={handleClawBotSettingsBack} />}
-            </AnimatePresence>
-
-            <AnimatePresence onExitComplete={() => setRefreshRequested(true)}>
-                {showNapCatSettings && <NapCatSettingsPanel onBack={handleNapCatSettingsBack} />}
             </AnimatePresence>
 
             <AnimatePresence onExitComplete={() => setRefreshRequested(true)}>
@@ -1992,12 +1769,18 @@ const Settings: React.FC<SettingsProps> = ({
                                                     key={city.location_key}
                                                     type="button"
                                                     className={`weather-city-item${isSelected ? ' selected' : ''}`}
+                                                    aria-pressed={isSelected}
                                                     onClick={() => setSelectedWeatherCity(city)}
                                                 >
-                                                    <span className="weather-city-item-name">{city.name}</span>
-                                                    <span className="weather-city-item-affiliation">
-                                                        {city.affiliation || city.location_key}
+                                                    <span className="weather-city-item-text">
+                                                        <span className="weather-city-item-name">{city.name}</span>
+                                                        <span className="weather-city-item-affiliation">
+                                                            {city.affiliation || city.location_key}
+                                                        </span>
                                                     </span>
+                                                    {isSelected && (
+                                                        <Icon name="check" className="settings-option-check" />
+                                                    )}
                                                 </button>
                                             )
                                         })}
@@ -2063,14 +1846,11 @@ const Settings: React.FC<SettingsProps> = ({
                                                 key={value}
                                                 type="button"
                                                 className={`settings-option-item${active ? ' selected' : ''}`}
+                                                aria-pressed={active}
                                                 onClick={() => handleSelectLocale(value)}
                                             >
                                                 <span className="settings-option-title">{label}</span>
-                                                {active && (
-                                                    <svg className="settings-option-check" viewBox="0 0 24 24">
-                                                        <path d="M9 16.17l-3.88-3.88L4 13.41 9 18.41 20 7.41 18.59 6z" />
-                                                    </svg>
-                                                )}
+                                                {active && <Icon name="check" className="settings-option-check" />}
                                             </button>
                                         )
                                     })}
@@ -2410,7 +2190,7 @@ const Settings: React.FC<SettingsProps> = ({
 
                                 <div className="memory-extraction-template-actions">
                                     <button
-                                        className="action-button edit"
+                                        className="ui-btn ui-btn--sm"
                                         onClick={() => setEditingMemoryExtractionPrompt(defaultMemoryExtractionPrompt)}
                                         disabled={loadingMemoryExtractionPrompt || defaultMemoryExtractionPrompt === ''}
                                         type="button"

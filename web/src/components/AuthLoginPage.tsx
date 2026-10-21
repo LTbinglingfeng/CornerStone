@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useT } from '../contexts/I18nContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { logoBlackDataUrl, logoWhiteDataUrl } from 'virtual:cornerstone-logos'
+import { getAccountCopy } from '../i18n/account'
 import './AuthLoginPage.css'
 
 interface AuthLoginPageProps {
@@ -11,7 +12,8 @@ interface AuthLoginPageProps {
 }
 
 const AuthLoginPage: React.FC<AuthLoginPageProps> = ({ username, onSubmit, loading = false }) => {
-    const { t } = useT()
+    const { t, locale } = useT()
+    const copy = getAccountCopy(locale).login
     const { theme } = useTheme()
     const [inputUsername, setInputUsername] = useState(username || '')
     const [password, setPassword] = useState('')
@@ -48,19 +50,17 @@ const AuthLoginPage: React.FC<AuthLoginPageProps> = ({ username, onSubmit, loadi
     return (
         <div className="auth-page">
             <div className="auth-card">
-                <div className="auth-logo-wrapper">
-                    <img className="auth-logo" src={logoSrc} alt="CornerStone" />
-                </div>
-                <div className="auth-title">{t('auth.enterPassword')}</div>
-                <div className="auth-subtitle">{t('auth.welcomeBack')}</div>
+                <img className="auth-logo" src={logoSrc} alt="CornerStone" />
+                <h1 className="auth-title">{copy.title}</h1>
+                <p className="auth-subtitle">{copy.subtitle}</p>
                 <form className="auth-form" onSubmit={handleSubmit}>
-                    <div className="auth-field">
-                        <label className="auth-label" htmlFor="auth-login-username">
+                    <div className="ui-field auth-field">
+                        <label className="ui-field__label auth-label" htmlFor="auth-login-username">
                             {t('auth.username')}
                         </label>
                         <input
                             id="auth-login-username"
-                            className="auth-input"
+                            className="ui-input auth-input"
                             value={inputUsername}
                             onChange={(event) => {
                                 if (error) setError(null)
@@ -71,13 +71,13 @@ const AuthLoginPage: React.FC<AuthLoginPageProps> = ({ username, onSubmit, loadi
                             disabled={loading || isUsernameLocked}
                         />
                     </div>
-                    <div className="auth-field">
-                        <label className="auth-label" htmlFor="auth-login-password">
+                    <div className="ui-field auth-field">
+                        <label className="ui-field__label auth-label" htmlFor="auth-login-password">
                             {t('auth.password')}
                         </label>
                         <input
                             id="auth-login-password"
-                            className="auth-input"
+                            className="ui-input auth-input"
                             type="password"
                             value={password}
                             onChange={(event) => {
@@ -89,9 +89,17 @@ const AuthLoginPage: React.FC<AuthLoginPageProps> = ({ username, onSubmit, loadi
                             disabled={loading}
                         />
                     </div>
-                    {error && <div className="auth-error">{error}</div>}
-                    <button className="auth-button" type="submit" disabled={loading}>
-                        {loading ? t('auth.verifying') : t('auth.enterApp')}
+                    {error && (
+                        <div className="auth-error" role="alert">
+                            {error}
+                        </div>
+                    )}
+                    <button
+                        className="auth-button ui-btn ui-btn--primary ui-btn--lg ui-btn--block"
+                        type="submit"
+                        disabled={loading}
+                    >
+                        {loading ? t('auth.verifying') : copy.submit}
                     </button>
                 </form>
             </div>

@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildChatRoute, getRouteState, normalizePathname, tabOrder, tabRoutes } from '../src/utils/routes.ts'
+import { buildChatRoute, getRouteState, navTabs, normalizePathname, tabOrder, tabRoutes } from '../src/utils/routes.ts'
+
+test('primary navigation is a subset of routable tabs and keeps the profile behind the account entry', () => {
+    assert.deepEqual(navTabs, ['overview', 'chat', 'contacts', 'channels', 'settings'])
+    for (const tab of navTabs) assert(tabOrder.includes(tab))
+    assert(!navTabs.includes('me'))
+    assert.equal(getRouteState(tabRoutes.me).activeTab, 'me')
+})
 
 test('management is the default entry and every navigation destination resolves', () => {
     for (const path of ['/', '/management', '/overview']) {

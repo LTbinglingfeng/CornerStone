@@ -1,66 +1,91 @@
+import { useCallback, useEffect, useState } from 'react'
 import { Link, NavLink } from 'react-router-dom'
 import { logoBlackDataUrl } from 'virtual:cornerstone-logos'
 import { useT } from '../contexts/I18nContext'
 import { useTheme } from '../contexts/ThemeContext'
-import { tabOrder, tabRoutes, type AppTab } from '../utils/routes'
+import { appendQueryParam, getUserAvatarUrl, getUserInfo } from '../services/api'
+import type { UserInfo } from '../types/chat'
+import { navTabs, tabRoutes, type AppTab } from '../utils/routes'
+import { Avatar, Icon, type IconName } from './ui'
 
-const icons: Record<AppTab, string> = {
-    overview: 'M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z',
-    channels: 'M8 7h8 M8 12h5 M21 11a8 8 0 0 1-8 8H7l-4 3V11a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8Z',
-    contacts: 'M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z M4 21v-2a8 8 0 0 1 16 0v2',
-    chat: 'M6 3h12v18H6z M9 7h6 M9 11h6 M9 15h4',
-    settings: 'M4 6h16 M4 12h16 M4 18h16 M8 3v6 M16 9v6 M10 15v6',
-    me: 'M16 9a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z M5 21a7 7 0 0 1 14 0',
+const tabIcons: Record<AppTab, IconName> = {
+    overview: 'overview',
+    chat: 'chat',
+    contacts: 'persona',
+    channels: 'channels',
+    settings: 'settings',
+    me: 'user',
 }
+
+/** Dispatched by the profile page after saving so the account entry stays current. */
+export const USER_UPDATED_EVENT = 'cornerstone:user-updated'
 
 export function ConsoleIcon({ name }: { name: AppTab }) {
-    return (
-        <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.6"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-        >
-            <path d={icons[name]} />
-        </svg>
-    )
+    return <Icon name={tabIcons[name]} />
 }
 
-export default function ConsoleNav() {
+function useAccount(fallbackName: string | null) {
+    const [user, setUser] = useState<UserInfo | null>(null)
+    const load = useCallback(() => {
+        void getUserInfo().then((info) => {
+            if (info) setUser(info)
+        })
+    }, [])
+    useEffect(() => {
+        load()
+        window.addEventListener(USER_UPDATED_EVENT, load)
+        return () => window.removeEventListener(USER_UPDATED_EVENT, load)
+    }, [load])
+    const name = user?.username || fallbackName || ''
+    const avatar = user?.avatar ? appendQueryParam(getUserAvatarUrl(), 't', new Date(user.updated_at).getTime()) : null
+    return { name, avatar }
+}
+
+export default function ConsoleNav({ username }: { username?: string | null }) {
     const { t } = useT()
     const { theme, toggleTheme } = useTheme()
+    const account = useAccount(username ?? null)
+    const themeLabel = theme === 'dark' ? t('console.lightMode') : t('console.darkMode')
+
     return (
-        <aside className="console-sidebar">
-            <Link to={tabRoutes.overview} className="console-brand">
-                <img className="console-mark" src={logoBlackDataUrl} alt="" width={36} height={36} />
-                <span>
-                    CornerStone<small>{t('console.title')}</small>
-                </span>
-            </Link>
-            <nav className="console-nav" aria-label={t('console.title')}>
-                {tabOrder.map((tab) => (
+        <>
+            <aside className="console-sidebar">
+                <Link to={tabRoutes.overview} className="console-brand" aria-label="CornerStone">
+                    <img className="console-mark" src={logoBlackDataUrl} alt="" width={28} height={28} />
+                    <span>CornerStone</span>
+                </Link>
+                <nav className="console-nav" aria-label={t('console.title')}>
+                    {navTabs.map((tab) => (
+                        <NavLink key={tab} to={tabRoutes[tab]}>
+                            <ConsoleIcon name={tab} />
+                            <span>{t(`console.${tab}`)}</span>
+                        </NavLink>
+                    ))}
+                </nav>
+                <div className="console-sidebar-footer">
+                    <NavLink to={tabRoutes.me} className="console-account" aria-label={t('console.me')}>
+                        <Avatar src={account.avatar} name={account.name || '?'} size="sm" />
+                        <span className="console-account-name">{account.name || t('console.me')}</span>
+                    </NavLink>
+                    <button
+                        type="button"
+                        className="ui-icon-btn console-theme"
+                        onClick={toggleTheme}
+                        aria-label={t('console.theme')}
+                        title={themeLabel}
+                    >
+                        <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
+                    </button>
+                </div>
+            </aside>
+            <nav className="console-tabbar" aria-label={t('console.title')}>
+                {navTabs.map((tab) => (
                     <NavLink key={tab} to={tabRoutes[tab]} aria-label={t(`console.${tab}`)}>
                         <ConsoleIcon name={tab} />
-                        <span className="console-nav-label">{t(`console.${tab}`)}</span>
-                        <span className="console-nav-short">{t(`console.short.${tab}`)}</span>
+                        <span>{t(`console.short.${tab}`)}</span>
                     </NavLink>
                 ))}
             </nav>
-            <div className="console-sidebar-footer">
-                <span className="console-version">CornerStone · {__CORNERSTONE_VERSION__.trim() || 'dev'}</span>
-                <button
-                    type="button"
-                    className="console-theme"
-                    onClick={toggleTheme}
-                    aria-label={t('console.theme')}
-                    title={t('console.theme')}
-                >
-                    <span aria-hidden="true">{theme === 'dark' ? '☀' : '☾'}</span>
-                </button>
-            </div>
-        </aside>
+        </>
     )
 }

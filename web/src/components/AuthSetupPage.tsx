@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useT } from '../contexts/I18nContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { logoBlackDataUrl, logoWhiteDataUrl } from 'virtual:cornerstone-logos'
+import { getAccountCopy } from '../i18n/account'
+import './AuthLoginPage.css'
 import './AuthSetupPage.css'
 
 interface AuthSetupPageProps {
@@ -10,7 +12,8 @@ interface AuthSetupPageProps {
 }
 
 const AuthSetupPage: React.FC<AuthSetupPageProps> = ({ onSubmit, loading = false }) => {
-    const { t } = useT()
+    const { t, locale } = useT()
+    const copy = getAccountCopy(locale).setup
     const { theme } = useTheme()
     const [username, setUsername] = useState('')
     const [password, setPassword] = useState('')
@@ -44,19 +47,17 @@ const AuthSetupPage: React.FC<AuthSetupPageProps> = ({ onSubmit, loading = false
     return (
         <div className="auth-page">
             <div className="auth-card">
-                <div className="auth-logo-wrapper">
-                    <img className="auth-logo" src={logoSrc} alt="CornerStone" />
-                </div>
-                <div className="auth-title">{t('auth.setupAccount')}</div>
-                <div className="auth-subtitle">{t('auth.firstLaunch')}</div>
+                <img className="auth-logo" src={logoSrc} alt="CornerStone" />
+                <h1 className="auth-title">{copy.title}</h1>
+                <p className="auth-subtitle">{copy.subtitle}</p>
                 <form className="auth-form" onSubmit={handleSubmit}>
-                    <div className="auth-field">
-                        <label className="auth-label" htmlFor="auth-setup-username">
+                    <div className="ui-field auth-field">
+                        <label className="ui-field__label auth-label" htmlFor="auth-setup-username">
                             {t('auth.username')}
                         </label>
                         <input
                             id="auth-setup-username"
-                            className="auth-input"
+                            className="ui-input auth-input"
                             value={username}
                             onChange={(event) => {
                                 if (error) setError(null)
@@ -67,13 +68,13 @@ const AuthSetupPage: React.FC<AuthSetupPageProps> = ({ onSubmit, loading = false
                             disabled={loading}
                         />
                     </div>
-                    <div className="auth-field">
-                        <label className="auth-label" htmlFor="auth-setup-password">
+                    <div className="ui-field auth-field">
+                        <label className="ui-field__label auth-label" htmlFor="auth-setup-password">
                             {t('auth.password')}
                         </label>
                         <input
                             id="auth-setup-password"
-                            className="auth-input"
+                            className="ui-input auth-input"
                             type="password"
                             value={password}
                             onChange={(event) => {
@@ -85,13 +86,13 @@ const AuthSetupPage: React.FC<AuthSetupPageProps> = ({ onSubmit, loading = false
                             disabled={loading}
                         />
                     </div>
-                    <div className="auth-field">
-                        <label className="auth-label" htmlFor="auth-setup-confirm">
+                    <div className="ui-field auth-field">
+                        <label className="ui-field__label auth-label" htmlFor="auth-setup-confirm">
                             {t('auth.confirmPassword')}
                         </label>
                         <input
                             id="auth-setup-confirm"
-                            className="auth-input"
+                            className="ui-input auth-input"
                             type="password"
                             value={confirmPassword}
                             onChange={(event) => {
@@ -103,9 +104,17 @@ const AuthSetupPage: React.FC<AuthSetupPageProps> = ({ onSubmit, loading = false
                             disabled={loading}
                         />
                     </div>
-                    {error && <div className="auth-error">{error}</div>}
-                    <button className="auth-button" type="submit" disabled={loading}>
-                        {loading ? t('auth.creating') : t('auth.createAccount')}
+                    {error && (
+                        <div className="auth-error" role="alert">
+                            {error}
+                        </div>
+                    )}
+                    <button
+                        className="auth-button ui-btn ui-btn--primary ui-btn--lg ui-btn--block"
+                        type="submit"
+                        disabled={loading}
+                    >
+                        {loading ? t('auth.creating') : copy.submit}
                     </button>
                 </form>
             </div>

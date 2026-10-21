@@ -6,6 +6,7 @@ import { useT } from '../contexts/I18nContext'
 import { getProviderTypesAll } from './provider'
 import { useToast } from '../contexts/ToastContext'
 import { drawerVariants } from '../utils/motion'
+import { Group, Icon, Row } from './ui'
 import './ProviderSettings.css'
 
 interface ImageProviderSettingsProps {
@@ -19,6 +20,7 @@ const ImageProviderSettings: React.FC<ImageProviderSettingsProps> = ({ onBack })
     const [imageProviderId, setImageProviderId] = useState('')
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
+    const providerTypes = getProviderTypesAll()
 
     useEffect(() => {
         loadData()
@@ -65,6 +67,18 @@ const ImageProviderSettings: React.FC<ImageProviderSettingsProps> = ({ onBack })
     }
 
     const isAuto = imageProviderId === ''
+    const check = (selected: boolean) =>
+        selected ? (
+            <Icon name="check" className="provider-choice-check" />
+        ) : (
+            <span className="provider-choice-placeholder" aria-hidden="true" />
+        )
+    const footer =
+        imageProviders.length === 0
+            ? t('imageProvider.noProviders')
+            : !isAuto && !selectedProvider
+              ? t('imageProvider.providerNotExist')
+              : undefined
 
     return (
         <motion.div
@@ -81,100 +95,68 @@ const ImageProviderSettings: React.FC<ImageProviderSettingsProps> = ({ onBack })
                     </svg>
                 </button>
                 <div className="provider-settings-title">{t('imageProvider.title')}</div>
-                <div style={{ width: 44 }}></div>
             </div>
 
             {loading ? (
-                <div className="provider-settings-loading">{t('common.loading')}</div>
+                <div className="provider-settings-loading" role="status">
+                    <span className="ui-spinner" aria-hidden="true" />
+                    {t('common.loading')}
+                </div>
             ) : (
                 <div className="provider-settings-content">
-                    <div style={{ marginBottom: 12, color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.4 }}>
-                        {t('imageProvider.hint')}
-                    </div>
-
-                    <div className="provider-cards">
-                        <div
-                            className={`provider-card ${isAuto ? 'active' : 'inactive'}`}
+                    <Group
+                        title={t('settingsManagement.imageProvider.listTitle')}
+                        description={t('imageProvider.hint')}
+                        footer={footer}
+                    >
+                        <Row
+                            icon="sparkles"
+                            label={t('imageProvider.autoSelect')}
+                            detail={
+                                autoProvider
+                                    ? `${autoProvider.name || autoProvider.id}${autoProvider.model ? ` · ${autoProvider.model}` : ''}`
+                                    : t('settingsManagement.imageProvider.autoDetail')
+                            }
+                            aria-pressed={isAuto}
+                            disabled={saving}
+                            chevron={false}
+                            trailing={check(isAuto)}
                             onClick={() => {
                                 if (isAuto) return
-                                handleSelect('')
+                                void handleSelect('')
                             }}
-                        >
-                            <div className="provider-card-header">
-                                <div className="provider-card-id">{t('imageProvider.autoSelect')}</div>
-                                {isAuto && <span className="active-indicator">{t('imageProvider.inUse')}</span>}
-                            </div>
-                            <div className="provider-card-body">
-                                <div className="provider-card-row">
-                                    <span className="provider-card-label">{t('common.current')}</span>
-                                    <span className="provider-card-value">
-                                        {autoProvider?.name || t('common.notConfigured')}
-                                    </span>
-                                </div>
-                                <div className="provider-card-row">
-                                    <span className="provider-card-label">{t('provider.model')}</span>
-                                    <span className="provider-card-value model">
-                                        {autoProvider?.model || t('common.notSet')}
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-
-                        {imageProviders.length === 0 ? (
-                            <div style={{ padding: 12, color: 'var(--text-secondary)', fontSize: 12 }}>
-                                {t('imageProvider.noProviders')}
-                            </div>
-                        ) : (
-                            imageProviders.map((provider) => {
-                                const isSelected = provider.id === imageProviderId
-                                const typeLabel =
-                                    getProviderTypesAll().find((type) => type.value === provider.type)?.label ||
-                                    provider.type ||
-                                    t('provider.geminiImage')
-                                return (
-                                    <div
-                                        key={provider.id}
-                                        className={`provider-card ${isSelected ? 'active' : 'inactive'}`}
-                                        onClick={() => {
-                                            if (isSelected) return
-                                            handleSelect(provider.id)
-                                        }}
-                                    >
-                                        <div className="provider-card-header">
-                                            <div className="provider-card-id">{provider.id}</div>
-                                            {isSelected && (
-                                                <span className="active-indicator">{t('imageProvider.inUse')}</span>
-                                            )}
-                                        </div>
-                                        <div className="provider-card-body">
-                                            <div className="provider-card-row">
-                                                <span className="provider-card-label">{t('imageProvider.name')}</span>
-                                                <span className="provider-card-value">
-                                                    {provider.name || t('common.unnamed')}
-                                                </span>
-                                            </div>
-                                            <div className="provider-card-row">
-                                                <span className="provider-card-label">{t('provider.model')}</span>
-                                                <span className="provider-card-value model">
-                                                    {provider.model || t('common.notSet')}
-                                                </span>
-                                            </div>
-                                            <div className="provider-card-row">
-                                                <span className="provider-card-label">{t('imageProvider.type')}</span>
-                                                <span className="provider-card-value type">{typeLabel}</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )
-                            })
-                        )}
-                    </div>
-
-                    {!isAuto && !selectedProvider && (
-                        <div style={{ marginTop: 12, color: 'var(--text-secondary)', fontSize: 12 }}>
-                            {t('imageProvider.providerNotExist')}
-                        </div>
-                    )}
+                        />
+                        {imageProviders.map((provider) => {
+                            const isSelected = provider.id === imageProviderId
+                            const typeLabel =
+                                providerTypes.find((type) => type.value === provider.type)?.label ||
+                                provider.type ||
+                                t('provider.geminiImage')
+                            return (
+                                <Row
+                                    key={provider.id}
+                                    icon="image"
+                                    label={provider.name || provider.id || t('common.unnamed')}
+                                    detail={
+                                        <>
+                                            <span className="settings-mono">
+                                                {provider.model || t('common.notSet')}
+                                            </span>
+                                            {` · ${typeLabel}`}
+                                        </>
+                                    }
+                                    aria-pressed={isSelected}
+                                    disabled={saving}
+                                    chevron={false}
+                                    trailing={check(isSelected)}
+                                    onClick={() => {
+                                        if (isSelected) return
+                                        void handleSelect(provider.id)
+                                    }}
+                                />
+                            )
+                        })}
+                    </Group>
                 </div>
             )}
         </motion.div>

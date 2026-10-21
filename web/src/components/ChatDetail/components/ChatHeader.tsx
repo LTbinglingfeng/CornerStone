@@ -1,5 +1,11 @@
+import { useT } from '../../../contexts/I18nContext'
+import { getManagementCopy } from '../../../i18n/archive'
+import { Avatar, Icon } from '../../ui'
+
 interface ChatHeaderProps {
     title: string
+    personaName: string
+    avatarSrc: string | null
     sending: boolean
     assistantVisibleSegments: number
     showSettingsButton: boolean
@@ -9,33 +15,46 @@ interface ChatHeaderProps {
 
 export const ChatHeader: React.FC<ChatHeaderProps> = ({
     title,
+    personaName,
+    avatarSrc,
     sending,
     assistantVisibleSegments,
     showSettingsButton,
     onBack,
     onOpenSettings,
 }) => {
-    const { t } = useT()
+    const { t, locale } = useT()
+    const copy = getManagementCopy(locale).conversation
     const showTyping = sending && assistantVisibleSegments === 0
 
     return (
-        <div className="chat-detail-header">
-            <button className="back-button" onClick={onBack} aria-label={t('common.back')}>
-                <svg viewBox="0 0 24 24">
-                    <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
-                </svg>
+        <header className="chat-detail-header">
+            <button
+                type="button"
+                className="back-button chat-detail-back"
+                onClick={onBack}
+                aria-label={t('common.back')}
+            >
+                <Icon name="arrowLeft" size={20} />
             </button>
-            <div className={`chat-detail-title${showTyping ? ' typing' : ''}`}>
-                {showTyping ? t('chat.typingIndicator') : title}
+            <Avatar src={avatarSrc} name={personaName} size="sm" className="chat-detail-avatar" />
+            <div className="chat-detail-heading">
+                <h2 className="chat-detail-title">{title}</h2>
+                <p className={`chat-detail-subtitle${showTyping ? ' typing' : ''}`} aria-live="polite">
+                    {showTyping ? t('chat.typingIndicator') : personaName}
+                </p>
             </div>
             {showSettingsButton && (
-                <button className="settings-button" onClick={onOpenSettings} aria-label={t('chatSettings.currentChat')}>
-                    <svg viewBox="0 0 24 24">
-                        <path d="M6 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
-                    </svg>
+                <button
+                    type="button"
+                    className="ui-icon-btn settings-button"
+                    onClick={onOpenSettings}
+                    aria-label={copy.more}
+                    title={copy.more}
+                >
+                    <Icon name="more" />
                 </button>
             )}
-        </div>
+        </header>
     )
 }
-import { useT } from '../../../contexts/I18nContext'

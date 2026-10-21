@@ -1,5 +1,8 @@
-import { createPortal } from 'react-dom'
+import { motion } from 'motion/react'
 import { useT } from '../../../contexts/I18nContext'
+import { centerModalVariants, overlayVariants } from '../../../utils/motion'
+import { ModalOverlay } from '../../ModalOverlay'
+import { Icon } from '../../ui'
 import type { MessageEditState } from '../types'
 
 interface MessageEditModalProps {
@@ -18,40 +21,50 @@ export const MessageEditModal: React.FC<MessageEditModalProps> = ({
     saveDisabled,
 }) => {
     const { t } = useT()
-    return createPortal(
-        <div className="message-edit-overlay" onClick={onClose}>
-            <div className="message-edit-card" onClick={(e) => e.stopPropagation()}>
-                <div className="message-edit-header">
-                    <div className="message-edit-title">{t('chat.editMessage')}</div>
+    return (
+        <ModalOverlay
+            className="prompt-modal-overlay"
+            aria-label={t('chat.editMessage')}
+            initial="hidden"
+            animate="visible"
+            exit="hidden"
+            variants={overlayVariants}
+            onDismiss={onClose}
+        >
+            <motion.div className="prompt-modal-card" variants={centerModalVariants}>
+                <div className="prompt-modal-header">
+                    <h3>{t('chat.editMessage')}</h3>
                     <button
                         type="button"
-                        className="message-edit-close"
+                        className="prompt-modal-close"
                         onClick={onClose}
                         aria-label={t('common.close')}
                     >
-                        ×
+                        <Icon name="x" />
                     </button>
                 </div>
 
-                {state.quoteLine && <div className="message-edit-quote">{state.quoteLine}</div>}
+                <div className="prompt-modal-body">
+                    {state.quoteLine && <div className="message-edit-quote">{state.quoteLine}</div>}
+                    <textarea
+                        className="prompt-modal-textarea message-edit-input"
+                        aria-label={t('chat.editMessage')}
+                        value={state.text}
+                        onChange={(e) => onChangeText(e.target.value)}
+                        rows={6}
+                        autoFocus
+                    />
+                </div>
 
-                <textarea
-                    className="message-edit-input"
-                    value={state.text}
-                    onChange={(e) => onChangeText(e.target.value)}
-                    rows={6}
-                />
-
-                <div className="message-edit-footer">
-                    <button type="button" className="message-edit-btn cancel" onClick={onClose}>
+                <div className="prompt-modal-footer">
+                    <button type="button" className="prompt-modal-btn cancel" onClick={onClose}>
                         {t('common.cancel')}
                     </button>
-                    <button type="button" className="message-edit-btn save" onClick={onSave} disabled={saveDisabled}>
+                    <button type="button" className="prompt-modal-btn save" onClick={onSave} disabled={saveDisabled}>
                         {t('common.save')}
                     </button>
                 </div>
-            </div>
-        </div>,
-        document.body
+            </motion.div>
+        </ModalOverlay>
     )
 }

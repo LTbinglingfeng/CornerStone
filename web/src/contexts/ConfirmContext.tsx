@@ -67,14 +67,15 @@ export const ConfirmProvider: React.FC<{ children: ReactNode }> = ({ children })
                     >
                         <div className="confirm-modal-card" onClick={(e) => e.stopPropagation()}>
                             <div className="confirm-modal-header">
-                                <div className="confirm-modal-title">{options.title || t('common.confirm')}</div>
+                                <h2 className="confirm-modal-title">{options.title || t('common.confirm')}</h2>
                             </div>
-                            <div className="confirm-modal-body">{options.message}</div>
+                            <p className="confirm-modal-body">{options.message}</p>
                             <div className="confirm-modal-footer">
-                                <button className="confirm-modal-btn cancel" onClick={handleCancel}>
+                                <button type="button" className="confirm-modal-btn cancel" onClick={handleCancel}>
                                     {options.cancelText || t('common.cancel')}
                                 </button>
                                 <button
+                                    type="button"
                                     className={`confirm-modal-btn confirm ${options.danger ? 'danger' : ''}`}
                                     onClick={handleConfirm}
                                 >

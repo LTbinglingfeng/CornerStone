@@ -114,7 +114,7 @@ async function freePort() {
         }
         const audit = async (name) => {
             await page.waitForFunction(() =>
-                Array.from(document.querySelectorAll('dialog[open], dialog[open] > *')).every(
+                Array.from(document.querySelectorAll('dialog[open], dialog[open] > *, .toast')).every(
                     (element) => Number.parseFloat(getComputedStyle(element).opacity) >= 0.99
                 )
             )
@@ -137,7 +137,7 @@ async function freePort() {
             const readmeLogo = fs.readFileSync(path.resolve(__dirname, '../public/logo_black.jpg')).toString('base64')
             assert.equal(await logo.getAttribute('src'), `data:image/jpeg;base64,${readmeLogo}`)
             assert(await logo.evaluate((image) => image.complete && image.naturalWidth > 0))
-            assert.equal((await logo.boundingBox()).width, 36)
+            assert.equal((await logo.boundingBox()).width, 28)
             await audit('overview-light')
             await page.screenshot({ path: path.join(artifacts, 'overview-empty.png') })
         })
@@ -333,7 +333,8 @@ async function freePort() {
         })
         await check('mobile, dark theme, reduced motion and short viewport navigation', async () => {
             await page.setViewportSize({ width: 390, height: 844 })
-            assert.equal((await page.locator('.console-brand img').boundingBox()).width, 28)
+            await page.locator('.console-tabbar').waitFor()
+            assert(!(await page.locator('.console-sidebar').isVisible()), 'sidebar collapses into the tab bar')
             for (const route of ['/overview', '/channels', '/contacts', '/chat', '/settings?section=general', '/me']) {
                 await goto(route)
                 await page.waitForTimeout(250)
@@ -343,11 +344,15 @@ async function freePort() {
                 )
                 await page.screenshot({ path: path.join(artifacts, `mobile-${route.split('?')[0].slice(1)}.png`) })
             }
-            await page.getByRole('button', { name: 'Toggle color theme' }).click()
-            await page.getByRole('link', { name: 'Overview', exact: true }).click()
+            await goto('/settings?section=general')
+            await page.getByRole('button', { name: 'Dark', exact: true }).click()
+            await page.locator('.console-tabbar').getByRole('link', { name: 'Overview', exact: true }).click()
             assert.equal(await page.locator('html').getAttribute('data-theme'), 'dark')
             await audit('overview-dark-mobile')
             await page.screenshot({ path: path.join(artifacts, 'overview-dark-mobile.png') })
+            await page.goto(base + `/chat/${sessions[1].id}?promptId=${persona.id}`)
+            await page.locator('.chat-input').waitFor()
+            assert(!(await page.locator('.console-tabbar').isVisible()), 'conversation is immersive on mobile')
             await page.setViewportSize({ width: 1100, height: 350 })
             await page.locator('.console-theme').scrollIntoViewIfNeeded()
             assert(await page.locator('.console-theme').isVisible())

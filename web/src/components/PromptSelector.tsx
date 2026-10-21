@@ -5,6 +5,10 @@ import { useT } from '../contexts/I18nContext'
 import type { Prompt } from '../types/chat'
 import { centerModalVariants, overlayVariants } from '../utils/motion'
 import { ModalOverlay } from './ModalOverlay'
+import { useNavigate } from 'react-router-dom'
+import { getManagementCopy } from '../i18n/archive'
+import { tabRoutes } from '../utils/routes'
+import { Avatar, EmptyState, Icon } from './ui'
 import './PromptSelector.css'
 
 interface PromptSelectorProps {
@@ -13,7 +17,9 @@ interface PromptSelectorProps {
 }
 
 const PromptSelector: React.FC<PromptSelectorProps> = ({ onSelect, onClose }) => {
-    const { t } = useT()
+    const { t, locale } = useT()
+    const copy = getManagementCopy(locale).conversation
+    const navigate = useNavigate()
     const [prompts, setPrompts] = useState<Prompt[]>([])
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
@@ -47,83 +53,91 @@ const PromptSelector: React.FC<PromptSelectorProps> = ({ onSelect, onClose }) =>
         return null
     }
 
+    const goToPersonas = () => {
+        onClose()
+        navigate(tabRoutes.contacts)
+    }
+
     return (
         <ModalOverlay
-            aria-label={t('promptSelector.title')}
+            aria-label={copy.pickPersona}
             onDismiss={onClose}
-            className="prompt-selector-overlay"
+            className="prompt-modal-overlay prompt-selector-overlay"
             initial="hidden"
             animate="visible"
             exit="hidden"
             variants={overlayVariants}
         >
-            <motion.div
-                className="prompt-selector-modal"
-                style={{ maxHeight: 'min(80vh, calc(100dvh - 40px))' }}
-                initial="hidden"
-                animate="visible"
-                exit="hidden"
-                variants={centerModalVariants}
-                onClick={(e) => e.stopPropagation()}
-            >
-                <div className="prompt-selector-header">
-                    <h3>{t('promptSelector.title')}</h3>
-                    <button className="prompt-selector-close" onClick={onClose} aria-label={t('common.close')}>
-                        <svg viewBox="0 0 24 24">
-                            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
-                        </svg>
+            <motion.div className="prompt-modal-card prompt-selector-modal" variants={centerModalVariants}>
+                <div className="prompt-modal-header prompt-selector-header">
+                    <div>
+                        <h3>{copy.pickPersona}</h3>
+                        <p className="prompt-selector-subtitle">{copy.pickPersonaHint}</p>
+                    </div>
+                    <button
+                        type="button"
+                        className="prompt-modal-close"
+                        onClick={onClose}
+                        aria-label={t('common.close')}
+                    >
+                        <Icon name="x" />
                     </button>
                 </div>
 
                 <div className="prompt-selector-content">
                     {loading ? (
-                        <div className="prompt-selector-loading">{t('common.loading')}</div>
+                        <div className="prompt-selector-loading" role="status">
+                            <span className="ui-spinner" aria-hidden="true" />
+                            <span className="ui-visually-hidden">{t('common.loading')}</span>
+                        </div>
                     ) : error ? (
-                        <div className="prompt-selector-empty">
-                            <p>{error}</p>
-                            <p className="hint">{t('common.tryAgainLater')}</p>
-                        </div>
+                        <EmptyState
+                            icon="alert"
+                            role="alert"
+                            title={copy.loadFailed}
+                            description={error}
+                            action={
+                                <button type="button" className="ui-btn ui-btn--sm" onClick={loadPrompts}>
+                                    {getManagementCopy(locale).archive.retry}
+                                </button>
+                            }
+                        />
                     ) : prompts.length === 0 ? (
-                        <div className="prompt-selector-empty">
-                            <p>{t('promptSelector.noPrompts')}</p>
-                            <p className="hint">{t('promptSelector.createFirst')}</p>
-                        </div>
+                        <EmptyState
+                            icon="persona"
+                            title={copy.noPersonas}
+                            description={copy.noPersonasHint}
+                            action={
+                                <button type="button" className="ui-btn ui-btn--primary" onClick={goToPersonas}>
+                                    {copy.createPersona}
+                                    <Icon name="arrowRight" size={16} />
+                                </button>
+                            }
+                        />
                     ) : (
-                        <div className="prompt-selector-list">
-                            {prompts.map((prompt) => (
-                                <div
-                                    key={prompt.id}
-                                    className="prompt-selector-item"
-                                    role="button"
-                                    tabIndex={0}
-                                    onKeyDown={(event) => {
-                                        if (event.key === 'Enter' || event.key === ' ') {
-                                            event.preventDefault()
-                                            handleSelect(prompt)
-                                        }
-                                    }}
-                                    onClick={() => handleSelect(prompt)}
-                                >
-                                    <div className="prompt-selector-avatar">
-                                        {getAvatarUrl(prompt) ? (
-                                            <img src={getAvatarUrl(prompt)!} alt={prompt.name} />
-                                        ) : (
-                                            <div className="avatar-placeholder">
-                                                {prompt.name.charAt(0).toUpperCase()}
-                                            </div>
-                                        )}
-                                    </div>
-                                    <div className="prompt-selector-info">
-                                        <div className="prompt-selector-name">{prompt.name}</div>
-                                        <div className="prompt-selector-desc">
-                                            {prompt.description ||
-                                                prompt.content.substring(0, 40) +
-                                                    (prompt.content.length > 40 ? '...' : '')}
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
+                        <ul className="prompt-selector-list">
+                            {prompts.map((prompt) => {
+                                const description = prompt.description || prompt.content
+                                return (
+                                    <li key={prompt.id}>
+                                        <button
+                                            type="button"
+                                            className="prompt-selector-item"
+                                            onClick={() => handleSelect(prompt)}
+                                        >
+                                            <Avatar src={getAvatarUrl(prompt)} name={prompt.name} />
+                                            <span className="prompt-selector-info">
+                                                <span className="prompt-selector-name">{prompt.name}</span>
+                                                {description && (
+                                                    <span className="prompt-selector-desc">{description}</span>
+                                                )}
+                                            </span>
+                                            <Icon name="chevronRight" size={16} className="prompt-selector-chevron" />
+                                        </button>
+                                    </li>
+                                )
+                            })}
+                        </ul>
                     )}
                 </div>
             </motion.div>

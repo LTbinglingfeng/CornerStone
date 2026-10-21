@@ -1,330 +1,220 @@
+/* Conversation list — lives in the 320px list column of the Conversations view. */
+
 .archive {
-    --archive-warm: color-mix(in srgb, var(--accent-color) 10%, var(--bg-secondary));
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    padding: 16px clamp(16px, 3vw, 32px) 32px;
-    background: var(--bg-primary);
-    color: var(--text-primary);
+    overscroll-behavior: contain;
+    padding: 0 var(--space-2) calc(var(--space-4) + env(safe-area-inset-bottom));
+    color: var(--text);
 }
 
 .archive-toolbar {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    max-width: 1120px;
-    margin: 0 auto 14px;
-}
-
-.archive-count {
-    margin: 0;
-    color: var(--text-secondary);
-    font-size: 14px;
-    font-variant-numeric: tabular-nums;
-}
-
-.archive-count strong {
-    color: var(--text-primary);
-    font-weight: 650;
+    padding: var(--space-1) var(--space-1) var(--space-2);
 }
 
 .archive-filter {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    color: var(--text-secondary);
-    font-size: 13px;
+    display: inline-flex;
+    max-width: 100%;
 }
 
-.archive-filter select {
-    min-width: 168px;
-    min-height: 44px;
-    padding: 0 36px 0 12px;
-    border: 1px solid var(--border-color);
-    border-radius: 10px;
-    background: var(--bg-secondary);
-    color: var(--text-primary);
-    font: inherit;
-    cursor: pointer;
+.archive-filter .ui-select {
+    width: auto;
+    max-width: 100%;
+    min-height: 0;
+    height: 28px;
+    padding: 0 26px 0 10px;
+    border: 0;
+    border-radius: var(--radius-full);
+    background-color: transparent;
+    background-position: right 8px center;
+    background-size: 12px;
+    color: var(--text-2);
+    font-size: var(--text-sm);
+    font-weight: 550;
+    transition:
+        background-color var(--duration-fast) ease,
+        color var(--duration-fast) ease;
+}
+
+.archive-filter .ui-select:focus {
+    box-shadow: none;
+    background-color: var(--fill);
+}
+
+.archive-filter .ui-select:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 1px;
 }
 
 .archive-list {
-    display: grid;
-    gap: 10px;
-    max-width: 1120px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    margin: 0;
     padding: 0;
-    margin: 0 auto;
     list-style: none;
 }
 
 .archive-card {
-    display: grid;
-    grid-template-columns: 48px minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 14px;
-    min-height: 88px;
-    padding: 14px;
-    border: 1px solid var(--border-color);
-    border-radius: 14px;
-    background: var(--bg-secondary);
-}
-
-.archive-avatar {
-    width: 48px;
-    height: 48px;
-    overflow: hidden;
-    border-radius: 12px;
-    background: var(--archive-warm);
-    color: var(--accent-color);
-    display: grid;
-    place-items: center;
-    font-size: 19px;
-    font-weight: 700;
-}
-
-.archive-avatar img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-}
-
-.archive-details {
-    min-width: 0;
-}
-
-.archive-title-row {
+    position: relative;
     display: flex;
     align-items: center;
-    gap: 10px;
+    border-radius: var(--radius-md);
+    transition: background-color var(--duration-fast) ease;
+}
+
+.archive-open {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex: 1;
+    min-width: 0;
+    min-height: 56px;
+    padding: 10px 44px 10px 10px;
+    border: 0;
+    border-radius: inherit;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.archive-open:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: -2px;
+}
+
+.archive-main {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
     min-width: 0;
 }
 
-.archive-title-row h2 {
+.archive-title,
+.archive-meta {
     overflow: hidden;
-    margin: 0;
-    color: var(--text-primary);
-    font-size: 16px;
-    font-weight: 650;
-    line-height: 1.35;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.archive-persona {
-    flex: 0 0 auto;
-    max-width: 180px;
-    overflow: hidden;
-    padding: 3px 8px;
-    border-radius: 999px;
-    background: var(--archive-warm);
-    color: var(--text-primary);
-    font-size: 12px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+.archive-title {
+    color: var(--text);
+    font-size: var(--text-base);
+    font-weight: 550;
+    line-height: 1.4;
+    letter-spacing: -0.005em;
 }
 
-.archive-dates {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px 18px;
-    margin: 8px 0 0;
-    color: var(--text-secondary);
-    font-size: 12px;
+.archive-meta {
+    color: var(--text-2);
+    font-size: var(--text-sm);
+    line-height: 1.4;
     font-variant-numeric: tabular-nums;
 }
 
-.archive-dates div {
-    display: flex;
-    gap: 5px;
+.archive-card.is-active {
+    background: var(--bg-elevated);
+    box-shadow:
+        0 0 0 1px var(--line),
+        var(--shadow-sm);
 }
 
-.archive-dates dt,
-.archive-dates dd {
-    margin: 0;
+.archive-card:active:not(:has(.archive-delete:active)) {
+    background: var(--bg-active);
 }
 
-.archive-actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+.archive-delete.ui-icon-btn {
+    position: absolute;
+    top: 50%;
+    right: 6px;
+    width: 32px;
+    height: 32px;
+    margin-top: -16px;
+    color: var(--text-3);
 }
 
-.archive-actions button,
-.archive-error button,
-.archive-state button {
-    min-width: 72px;
-    min-height: 44px;
-    padding: 0 14px;
-    border-radius: 10px;
-    font: inherit;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-    transition:
-        background-color 140ms ease,
-        transform 100ms ease-out;
+.archive-delete.ui-icon-btn:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: -2px;
 }
 
-.archive-actions button:active,
-.archive-error button:active,
-.archive-state button:active {
-    transform: scale(0.97);
-}
+@media (hover: hover) and (pointer: fine) {
+    .archive-card:hover:not(.is-active) {
+        background: var(--bg-hover);
+    }
 
-.archive-open,
-.archive-error button,
-.archive-state button {
-    border: 1px solid var(--accent-color);
-    background: var(--text-primary);
-    color: var(--bg-primary);
-}
+    .archive-filter .ui-select:hover {
+        background-color: var(--fill);
+        color: var(--text);
+    }
 
-.archive-delete {
-    border: 1px solid color-mix(in srgb, var(--danger-color) 35%, transparent);
-    background: transparent;
-    color: var(--danger-color);
-}
+    .archive-delete.ui-icon-btn {
+        opacity: 0;
+        transition:
+            opacity var(--duration-fast) ease,
+            background-color var(--duration-fast) ease,
+            color var(--duration-fast) ease;
+    }
 
-.archive-actions button:disabled {
-    cursor: wait;
-    opacity: 0.55;
-}
+    .archive-card:hover .archive-delete,
+    .archive-card:focus-within .archive-delete {
+        opacity: 1;
+    }
 
-.archive-filter select:focus-visible,
-.archive-actions button:focus-visible,
-.archive-error button:focus-visible,
-.archive-state button:focus-visible {
-    outline: 3px solid color-mix(in srgb, var(--accent-color) 28%, transparent);
-    outline-offset: 2px;
+    .archive-delete.ui-icon-btn:hover:not(:disabled) {
+        background: var(--danger-soft);
+        color: var(--danger);
+    }
 }
 
 .archive-state {
-    min-height: 240px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 14px;
-    color: var(--text-secondary);
-    text-align: center;
+    display: grid;
+    place-items: center;
+    padding: var(--space-10) 0;
 }
 
-.archive-state p {
-    max-width: 480px;
-    margin: 0;
-}
-
-.archive-spinner {
-    width: 22px;
-    height: 22px;
-    border: 2px solid var(--border-color);
-    border-top-color: var(--accent-color);
-    border-radius: 50%;
-    animation: archive-spin 700ms linear infinite;
-}
-
-@keyframes archive-spin {
-    to {
-        transform: rotate(360deg);
-    }
-}
-
-@media (hover: hover) {
-    .archive-card:hover {
-        border-color: color-mix(in srgb, var(--accent-color) 28%, var(--border-color));
-    }
-
-    .archive-delete:hover {
-        background: color-mix(in srgb, var(--danger-color) 9%, transparent);
-    }
-}
-
-@media (max-width: 680px) {
-    .archive {
-        padding: 12px 12px 24px;
-    }
-
-    .archive-toolbar {
-        align-items: stretch;
-        flex-direction: column;
-        gap: 8px;
-    }
-
-    .archive-filter {
-        justify-content: space-between;
-    }
-
-    .archive-filter select {
-        flex: 1;
-        min-width: 0;
-        max-width: 220px;
-    }
-
-    .archive-card {
-        grid-template-columns: 44px minmax(0, 1fr);
-        gap: 10px;
-        padding: 12px;
-    }
-
-    .archive-avatar {
-        width: 44px;
-        height: 44px;
-    }
-
-    .archive-title-row {
-        align-items: flex-start;
-        flex-direction: column;
-        gap: 5px;
-    }
-
-    .archive-persona {
-        max-width: 100%;
-    }
-
-    .archive-dates {
-        flex-direction: column;
-        gap: 3px;
-    }
-
-    .archive-actions {
-        grid-column: 1 / -1;
-        justify-content: flex-end;
-    }
-
-    .archive-actions button {
-        flex: 1;
-    }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .archive-actions button,
-    .archive-error button,
-    .archive-state button {
-        transition: none;
-    }
+.archive .ui-empty {
+    padding: var(--space-10) var(--space-4);
 }
 
 .archive-error {
-    max-width: 1120px;
-    margin: 0 auto 16px;
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
-    gap: 12px;
-    color: var(--danger-color);
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin: 0 var(--space-1) var(--space-2);
+    padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+    border-radius: var(--radius-sm);
+    background: var(--danger-soft);
+    color: var(--danger);
+    font-size: var(--text-sm);
 }
 
-.archive-title-row h2 {
-    max-width: 100%;
+@media (max-width: 760px) {
+    .archive-open {
+        min-height: 64px;
+        padding-right: 52px;
+    }
+
+    .archive-delete.ui-icon-btn {
+        width: 44px;
+        height: 44px;
+        margin-top: -22px;
+        right: 2px;
+    }
+
+    .archive-filter .ui-select {
+        height: 32px;
+    }
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .archive-spinner {
-        animation: none;
-    }
-    .archive-actions button:active,
-    .archive-state button:active {
-        transform: none;
+    .archive-card,
+    .archive-delete.ui-icon-btn {
+        transition-duration: 0ms !important;
     }
 }

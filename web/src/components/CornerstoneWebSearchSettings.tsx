@@ -7,10 +7,13 @@ import {
     type CornerstoneWebSearchSettings,
 } from '../services/cornerstoneWebSearchService'
 import { useT } from '../contexts/I18nContext'
+import { useToast } from '../contexts/ToastContext'
+import { Group, Toggle } from './ui'
+import { SettingsField } from './SettingsField'
 import { NumericInput } from './NumericInput'
 import { ModalOverlay } from './ModalOverlay'
 import { CustomSelect, type SelectOption } from './provider'
-import { centerModalVariants, drawerVariants, overlayVariants } from '../utils/motion'
+import { drawerVariants, overlayVariants } from '../utils/motion'
 import './ProviderSettings.css'
 
 interface CornerstoneWebSearchSettingsProps {
@@ -32,11 +35,10 @@ const ZHIPU_SEARCH_ENGINE_OPTIONS: SelectOption[] = [
 
 const CornerstoneWebSearchSettingsPanel: React.FC<CornerstoneWebSearchSettingsProps> = ({ onBack }) => {
     const { t } = useT()
+    const { showToast } = useToast()
 
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
-    const [message, setMessage] = useState('')
-    const [messageType, setMessageType] = useState<'success' | 'error'>('success')
 
     const [availableProviders, setAvailableProviders] = useState<CornerstoneWebSearchProviderInfo[]>([])
     const [providers, setProviders] = useState<Record<string, CornerstoneWebSearchProviderConfig>>({})
@@ -85,14 +87,7 @@ const CornerstoneWebSearchSettingsPanel: React.FC<CornerstoneWebSearchSettingsPr
     const showBasicAuthPasswordField =
         activeProviderId.trim() !== '' && (!!activeProviderInfo?.supports_basic_auth || hasStoredBasicAuthPassword)
 
-    const showMessageToast = (msg: string, type: 'success' | 'error' = 'success') => {
-        setMessage(msg)
-        setMessageType(type)
-        setTimeout(() => {
-            setMessage('')
-            setMessageType('success')
-        }, 2000)
-    }
+    const showMessageToast = (msg: string, type: 'success' | 'error' = 'success') => showToast(msg, type)
 
     const syncActiveProviderFields = (id: string, allProviders: Record<string, CornerstoneWebSearchProviderConfig>) => {
         const cfg = allProviders[id] || {}
@@ -201,210 +196,190 @@ const CornerstoneWebSearchSettingsPanel: React.FC<CornerstoneWebSearchSettingsPr
                     </svg>
                 </button>
                 <div className="provider-settings-title">{t('settings.webSearch')}</div>
-                <div style={{ width: 44 }}></div>
+                {!loading && (
+                    <button
+                        type="button"
+                        className="ui-btn ui-btn--primary ui-btn--sm"
+                        onClick={() => void handleSave()}
+                        disabled={saving}
+                    >
+                        {saving ? t('common.saving') : t('common.save')}
+                    </button>
+                )}
             </div>
 
             {loading ? (
-                <div className="provider-settings-loading">{t('common.loading')}</div>
+                <div className="provider-settings-loading" role="status">
+                    <span className="ui-spinner" aria-hidden="true" />
+                    {t('common.loading')}
+                </div>
             ) : (
                 <div className="provider-settings-content">
-                    <div className="settings-group">
-                        <label className="settings-label">{t('settings.webSearchProvider')}</label>
-                        <CustomSelect
-                            value={activeProviderId}
-                            options={providerOptions}
-                            ariaLabel={t('settings.webSearchProvider')}
-                            disabled={saving}
-                            onChange={(next) => {
-                                setActiveProviderId(next)
-                                syncActiveProviderFields(next, providers)
-                            }}
-                        />
-                        {activeProviderInfo && (
-                            <p className="prompt-modal-hint memory-toggle-hint">{activeProviderInfo.id}</p>
+                    <Group title={t('settingsManagement.webSearch.service')}>
+                        <SettingsField
+                            label={t('settings.webSearchProvider')}
+                            hint={
+                                activeProviderInfo ? (
+                                    <span className="settings-mono">{activeProviderInfo.id}</span>
+                                ) : null
+                            }
+                        >
+                            <CustomSelect
+                                value={activeProviderId}
+                                options={providerOptions}
+                                ariaLabel={t('settings.webSearchProvider')}
+                                disabled={saving}
+                                onChange={(next) => {
+                                    setActiveProviderId(next)
+                                    syncActiveProviderFields(next, providers)
+                                }}
+                            />
+                        </SettingsField>
+
+                        {activeProviderId.trim() !== '' && showApiHostField && (
+                            <SettingsField label={t('settings.webSearchApiHost')}>
+                                <input
+                                    className="settings-input"
+                                    aria-label={t('settings.webSearchApiHost')}
+                                    value={apiHost}
+                                    onChange={(e) => setApiHost(e.target.value)}
+                                    placeholder="https://..."
+                                    disabled={saving}
+                                />
+                            </SettingsField>
                         )}
-                    </div>
 
-                    <div className="settings-group">
-                        <label className="settings-label">{t('settings.webSearchMaxResults')}</label>
-                        <NumericInput
-                            className="settings-input"
-                            aria-label={t('settings.webSearchMaxResults')}
-                            value={maxResults}
-                            onValueChange={setMaxResults}
-                            parseAs="int"
-                            min={1}
-                            max={50}
-                            disabled={saving}
-                        />
-                    </div>
+                        {activeProviderId.trim() !== '' && showSearchEngineField && (
+                            <SettingsField label={t('settings.webSearchSearchEngine')}>
+                                <CustomSelect
+                                    value={searchEngine}
+                                    options={ZHIPU_SEARCH_ENGINE_OPTIONS}
+                                    ariaLabel={t('settings.webSearchSearchEngine')}
+                                    disabled={saving}
+                                    onChange={setSearchEngine}
+                                />
+                            </SettingsField>
+                        )}
 
-                    {supportsFetchResults && (
-                        <div className="settings-group">
-                            <label className="settings-label">{t('settings.webSearchFetchResults')}</label>
+                        {activeProviderId.trim() !== '' && showApiKeyField && (
+                            <SettingsField
+                                label={t('settings.webSearchApiKey')}
+                                hint={t('settings.webSearchApiKeyHint')}
+                            >
+                                <input
+                                    className="settings-input"
+                                    aria-label={t('settings.webSearchApiKey')}
+                                    value={apiKey}
+                                    onChange={(e) => {
+                                        setApiKey(e.target.value)
+                                        setApiKeyDirty(true)
+                                    }}
+                                    placeholder={hasStoredApiKey ? '****' : ''}
+                                    disabled={saving}
+                                />
+                            </SettingsField>
+                        )}
+
+                        {activeProviderId.trim() !== '' && showBasicAuthUsernameField && (
+                            <SettingsField label={t('settings.webSearchBasicAuthUsername')}>
+                                <input
+                                    className="settings-input"
+                                    aria-label={t('settings.webSearchBasicAuthUsername')}
+                                    value={basicAuthUsername}
+                                    onChange={(e) => setBasicAuthUsername(e.target.value)}
+                                    placeholder=""
+                                    disabled={saving}
+                                />
+                            </SettingsField>
+                        )}
+
+                        {activeProviderId.trim() !== '' && showBasicAuthPasswordField && (
+                            <SettingsField
+                                label={t('settings.webSearchBasicAuthPassword')}
+                                hint={t('settings.webSearchBasicAuthHint')}
+                            >
+                                <input
+                                    className="settings-input"
+                                    aria-label={t('settings.webSearchBasicAuthPassword')}
+                                    value={basicAuthPassword}
+                                    onChange={(e) => {
+                                        setBasicAuthPassword(e.target.value)
+                                        setBasicAuthPasswordDirty(true)
+                                    }}
+                                    placeholder={hasStoredBasicAuthPassword ? '****' : ''}
+                                    disabled={saving}
+                                />
+                            </SettingsField>
+                        )}
+                    </Group>
+
+                    <Group title={t('settingsManagement.webSearch.results')}>
+                        <SettingsField label={t('settings.webSearchMaxResults')}>
                             <NumericInput
                                 className="settings-input"
-                                aria-label={t('settings.webSearchFetchResults')}
-                                value={fetchResults}
-                                onValueChange={setFetchResults}
+                                aria-label={t('settings.webSearchMaxResults')}
+                                value={maxResults}
+                                onValueChange={setMaxResults}
                                 parseAs="int"
-                                min={maxResults}
+                                min={1}
                                 max={50}
                                 disabled={saving}
                             />
-                        </div>
-                    )}
+                        </SettingsField>
 
-                    <div className="settings-group">
-                        <label className="settings-label">{t('settings.webSearchTimeoutSeconds')}</label>
-                        <NumericInput
-                            className="settings-input"
-                            aria-label={t('settings.webSearchTimeoutSeconds')}
-                            value={timeoutSeconds}
-                            onValueChange={setTimeoutSeconds}
-                            parseAs="int"
-                            min={1}
-                            max={120}
-                            disabled={saving}
-                        />
-                    </div>
-
-                    <div className="settings-group">
-                        <label className="settings-label">{t('settings.webSearchExcludeDomains')}</label>
-                        <textarea
-                            className="settings-textarea"
-                            aria-label={t('settings.webSearchExcludeDomains')}
-                            value={excludeDomainsText}
-                            onChange={(e) => setExcludeDomainsText(e.target.value)}
-                            placeholder={t('settings.webSearchExcludeDomainsHint')}
-                            disabled={saving}
-                            rows={4}
-                        />
-                    </div>
-
-                    {supportsTimeFilter && (
-                        <div className="settings-group">
-                            <label className="settings-label">{t('settings.webSearchSearchWithTime')}</label>
-                            <div className="modal-toggle-wrapper">
-                                <label className="toggle-switch">
-                                    <input
-                                        type="checkbox"
-                                        aria-label={t('settings.webSearchSearchWithTime')}
-                                        checked={searchWithTime}
-                                        onChange={(e) => setSearchWithTime(e.target.checked)}
-                                        disabled={saving}
-                                    />
-                                    <span className="toggle-slider"></span>
-                                </label>
-                                <span className="toggle-label">
-                                    {searchWithTime ? t('common.enable') : t('common.disable')}
-                                </span>
-                            </div>
-                        </div>
-                    )}
-
-                    {activeProviderId.trim() !== '' && (
-                        <>
-                            {showApiHostField && (
-                                <div className="settings-group">
-                                    <label className="settings-label">{t('settings.webSearchApiHost')}</label>
-                                    <input
-                                        className="settings-input"
-                                        aria-label={t('settings.webSearchApiHost')}
-                                        value={apiHost}
-                                        onChange={(e) => setApiHost(e.target.value)}
-                                        placeholder="https://..."
-                                        disabled={saving}
-                                    />
-                                </div>
-                            )}
-
-                            {showSearchEngineField && (
-                                <div className="settings-group">
-                                    <label className="settings-label">{t('settings.webSearchSearchEngine')}</label>
-                                    <CustomSelect
-                                        value={searchEngine}
-                                        options={ZHIPU_SEARCH_ENGINE_OPTIONS}
-                                        ariaLabel={t('settings.webSearchSearchEngine')}
-                                        disabled={saving}
-                                        onChange={setSearchEngine}
-                                    />
-                                </div>
-                            )}
-
-                            {showApiKeyField && (
-                                <div className="settings-group">
-                                    <label className="settings-label">{t('settings.webSearchApiKey')}</label>
-                                    <input
-                                        className="settings-input"
-                                        aria-label={t('settings.webSearchApiKey')}
-                                        value={apiKey}
-                                        onChange={(e) => {
-                                            setApiKey(e.target.value)
-                                            setApiKeyDirty(true)
-                                        }}
-                                        placeholder={hasStoredApiKey ? '****' : ''}
-                                        disabled={saving}
-                                    />
-                                    <p className="prompt-modal-hint memory-toggle-hint">
-                                        {t('settings.webSearchApiKeyHint')}
-                                    </p>
-                                </div>
-                            )}
-
-                            {showBasicAuthUsernameField && (
-                                <div className="settings-group">
-                                    <label className="settings-label">{t('settings.webSearchBasicAuthUsername')}</label>
-                                    <input
-                                        className="settings-input"
-                                        aria-label={t('settings.webSearchBasicAuthUsername')}
-                                        value={basicAuthUsername}
-                                        onChange={(e) => setBasicAuthUsername(e.target.value)}
-                                        placeholder=""
-                                        disabled={saving}
-                                    />
-                                </div>
-                            )}
-
-                            {showBasicAuthPasswordField && (
-                                <div className="settings-group">
-                                    <label className="settings-label">{t('settings.webSearchBasicAuthPassword')}</label>
-                                    <input
-                                        className="settings-input"
-                                        aria-label={t('settings.webSearchBasicAuthPassword')}
-                                        value={basicAuthPassword}
-                                        onChange={(e) => {
-                                            setBasicAuthPassword(e.target.value)
-                                            setBasicAuthPasswordDirty(true)
-                                        }}
-                                        placeholder={hasStoredBasicAuthPassword ? '****' : ''}
-                                        disabled={saving}
-                                    />
-                                    <p className="prompt-modal-hint memory-toggle-hint">
-                                        {t('settings.webSearchBasicAuthHint')}
-                                    </p>
-                                </div>
-                            )}
-                        </>
-                    )}
-
-                    <button className="settings-save-btn" onClick={handleSave} disabled={saving}>
-                        {saving ? t('common.saving') : t('common.save')}
-                    </button>
-
-                    <AnimatePresence>
-                        {message && (
-                            <motion.div
-                                className={`settings-message ${messageType}`}
-                                initial="hidden"
-                                animate="visible"
-                                exit="hidden"
-                                variants={centerModalVariants}
-                            >
-                                {message}
-                            </motion.div>
+                        {supportsFetchResults && (
+                            <SettingsField label={t('settings.webSearchFetchResults')}>
+                                <NumericInput
+                                    className="settings-input"
+                                    aria-label={t('settings.webSearchFetchResults')}
+                                    value={fetchResults}
+                                    onValueChange={setFetchResults}
+                                    parseAs="int"
+                                    min={maxResults}
+                                    max={50}
+                                    disabled={saving}
+                                />
+                            </SettingsField>
                         )}
-                    </AnimatePresence>
+
+                        <SettingsField label={t('settings.webSearchTimeoutSeconds')}>
+                            <NumericInput
+                                className="settings-input"
+                                aria-label={t('settings.webSearchTimeoutSeconds')}
+                                value={timeoutSeconds}
+                                onValueChange={setTimeoutSeconds}
+                                parseAs="int"
+                                min={1}
+                                max={120}
+                                disabled={saving}
+                            />
+                        </SettingsField>
+
+                        {supportsTimeFilter && (
+                            <SettingsField label={t('settings.webSearchSearchWithTime')}>
+                                <Toggle
+                                    label={t('settings.webSearchSearchWithTime')}
+                                    checked={searchWithTime}
+                                    onChange={setSearchWithTime}
+                                    disabled={saving}
+                                />
+                            </SettingsField>
+                        )}
+                    </Group>
+
+                    <Group title={t('settingsManagement.webSearch.excludeDomains')}>
+                        <SettingsField label={t('settings.webSearchExcludeDomains')} stacked>
+                            <textarea
+                                className="settings-textarea"
+                                aria-label={t('settings.webSearchExcludeDomains')}
+                                value={excludeDomainsText}
+                                onChange={(e) => setExcludeDomainsText(e.target.value)}
+                                placeholder={t('settings.webSearchExcludeDomainsHint')}
+                                disabled={saving}
+                                rows={4}
+                            />
+                        </SettingsField>
+                    </Group>
                 </div>
             )}
 

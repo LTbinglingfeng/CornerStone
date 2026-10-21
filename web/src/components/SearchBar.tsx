@@ -1,4 +1,5 @@
 import { useT } from '../contexts/I18nContext'
+import { Icon } from './ui'
 import './SearchBar.css'
 
 interface SearchBarProps {
@@ -9,20 +10,34 @@ interface SearchBarProps {
 
 const SearchBar: React.FC<SearchBarProps> = ({ value, onChange, placeholder }) => {
     const { t } = useT()
+    const label = placeholder || t('chat.searchPlaceholder')
     return (
-        <div className="search-bar">
-            <div className="search-container">
-                <svg className="search-icon" viewBox="0 0 24 24">
-                    <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
-                </svg>
-                <input
-                    type="text"
-                    className="search-input"
-                    placeholder={placeholder || t('chat.searchPlaceholder')}
-                    value={value}
-                    onChange={(e) => onChange(e.target.value)}
-                />
-            </div>
+        <div className="search-bar" role="search">
+            <Icon name="search" className="search-icon" size={15} />
+            <input
+                type="search"
+                className="search-input"
+                placeholder={label}
+                aria-label={label}
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                onKeyDown={(e) => {
+                    if (e.key === 'Escape' && value) {
+                        e.preventDefault()
+                        onChange('')
+                    }
+                }}
+            />
+            {value && (
+                <button
+                    type="button"
+                    className="search-clear"
+                    onClick={() => onChange('')}
+                    aria-label={t('common.clear')}
+                >
+                    <Icon name="x" size={14} />
+                </button>
+            )}
         </div>
     )
 }

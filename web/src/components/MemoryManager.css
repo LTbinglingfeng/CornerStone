@@ -1,678 +1,523 @@
+/* Memory manager — one toolbar row, filters, then grouped lists of memories. */
+
 .memory-manager {
-    width: 100%;
+    position: relative;
 }
 
-.memory-manager.loading {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    min-height: 200px;
-    color: var(--text-secondary);
-}
+/* ───────── Toolbar ───────── */
 
 .memory-header {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    margin-bottom: 16px;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+}
+
+.memory-summary {
+    display: flex;
+    align-items: baseline;
     flex-wrap: wrap;
-    gap: 10px;
+    gap: 4px var(--space-3);
+    min-width: 0;
+    margin: 0;
+    color: var(--text);
+    font-size: var(--text-md);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+}
+
+.memory-summary__meta {
+    color: var(--text-3);
+    font-size: 13px;
+    font-weight: 400;
+    letter-spacing: 0;
+    font-variant-numeric: tabular-nums;
 }
 
 .memory-header-actions {
     display: flex;
-    gap: 8px;
     align-items: center;
-    flex-wrap: wrap;
+    gap: 2px;
+    flex-shrink: 0;
 }
 
-.action-btn {
-    padding: 8px 12px;
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 13px;
-    font-weight: 500;
+.memory-header-actions .ui-icon-btn {
+    width: 32px;
+    height: 32px;
 }
 
-.action-btn:hover {
-    background: var(--bg-secondary);
-    border-color: var(--accent-color);
+.memory-header-actions .ui-icon-btn[aria-pressed='true'] {
+    background: var(--bg-active);
+    color: var(--text);
 }
 
-.memory-hint {
-    font-size: 12px;
-    line-height: 1.5;
-    color: var(--text-secondary);
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    padding: 10px 12px;
-    margin-bottom: 16px;
+.memory-header-actions .add-btn {
+    margin-left: var(--space-2);
 }
 
-.memory-header h3 {
+.memory-header-actions .add-btn svg {
+    width: 14px;
+    height: 14px;
+}
+
+/* ───────── Stats ───────── */
+
+.memory-stats-panel {
+    margin-bottom: var(--space-5);
+    padding: var(--space-4);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    background: var(--bg-elevated);
+    box-shadow: var(--shadow-sm);
+}
+
+.memory-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+    gap: var(--space-4) var(--space-3);
     margin: 0;
-    color: var(--text-primary);
-    font-size: 16px;
+}
+
+.memory-stat dt {
+    color: var(--text-3);
+    font-size: var(--text-xs);
+}
+
+.memory-stat dd {
+    margin: 2px 0 0;
+    color: var(--text);
+    font-size: var(--text-lg);
     font-weight: 600;
+    font-variant-numeric: tabular-nums;
 }
 
-.add-btn {
-    padding: 8px 12px;
-    min-height: 44px;
-    background: var(--text-primary);
-    color: var(--bg-primary);
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
+.memory-stats-categories {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: var(--space-4);
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--line);
+}
+
+/* ───────── Filters ───────── */
+
+.memory-filters {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 150px 150px;
+    gap: var(--space-2);
+    margin-bottom: var(--space-6);
+}
+
+.memory-search {
+    position: relative;
+    display: block;
+}
+
+.memory-search__icon {
+    position: absolute;
+    top: 50%;
+    left: 11px;
+    color: var(--text-3);
+    transform: translateY(-50%);
+    pointer-events: none;
+}
+
+.memory-search .ui-input {
+    padding-left: 34px;
+}
+
+.memory-filter-select {
+    min-width: 0;
+}
+
+.filter-result-hint {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin: calc(var(--space-3) * -1) var(--space-1) var(--space-4);
+    color: var(--text-2);
     font-size: 13px;
-    font-weight: 500;
 }
 
-.add-btn:hover {
-    opacity: 0.9;
-}
+/* ───────── Sections & rows ───────── */
 
 .memory-section {
-    margin-bottom: 20px;
+    margin-bottom: var(--space-6);
 }
 
-.memory-section h4 {
-    color: var(--text-secondary);
-    font-size: 13px;
-    margin: 0;
-}
-
-.memory-section h4.collapsible {
-    cursor: pointer;
-    user-select: none;
-}
-
-.memory-section h4.collapsible:hover {
-    color: var(--text-primary);
-}
-
-/* Section header with actions */
 .memory-section-header {
     display: flex;
     align-items: center;
-    gap: 12px;
-    margin-bottom: 10px;
+    justify-content: space-between;
+    gap: var(--space-3);
+    min-height: 30px;
+    margin: 0 var(--space-1) var(--space-2);
+}
+
+.memory-section-title {
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    margin: 0;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.memory-section-count {
+    color: var(--text-3);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+}
+
+.memory-section-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 30px;
+    margin-left: -6px;
+    padding: 0 6px;
+    border: 0;
+    border-radius: var(--radius-xs);
+    background: transparent;
+    color: var(--text-2);
+    cursor: pointer;
+}
+
+.memory-section-toggle:focus-visible {
+    outline: 2px solid var(--focus-ring);
+}
+
+.memory-section-chevron {
+    color: var(--text-3);
+    transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.memory-section-chevron.is-open {
+    transform: rotate(90deg);
+}
+
+.memory-section-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
 }
 
 .memory-select-all {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: 4px;
-    font-size: 12px;
-    color: var(--text-secondary);
-    cursor: pointer;
-    user-select: none;
-}
-
-.memory-select-all input[type='checkbox'] {
-    cursor: pointer;
-}
-
-.empty-hint {
-    color: var(--text-secondary);
+    gap: 6px;
+    color: var(--text-2);
     font-size: 13px;
-    padding: 12px;
-    text-align: center;
-    background: var(--bg-tertiary);
-    border: 1px dashed var(--border-color);
-    border-radius: 10px;
+    cursor: pointer;
+}
+
+.memory-select-all input,
+.memory-checkbox {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    accent-color: var(--ink);
+    cursor: pointer;
 }
 
 .memory-item {
-    display: flex;
-    justify-content: flex-start;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 8px;
-    padding: 12px;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    margin-bottom: 10px;
-}
-
-/* 固定记忆高亮样式 */
-.memory-item-pinned {
-    border-color: var(--accent-color);
-    background: linear-gradient(135deg, var(--bg-tertiary), rgba(var(--accent-color-rgb, 99, 102, 241), 0.05));
-}
-
-/* 选中状态 */
-.memory-item-selected {
-    border-color: var(--accent-color);
-    background: rgba(var(--accent-color-rgb, 99, 102, 241), 0.08);
-}
-
-/* 选择模式 checkbox */
-.memory-checkbox {
-    flex-shrink: 0;
-    width: 18px;
-    height: 18px;
-    cursor: pointer;
-    accent-color: var(--accent-color);
-}
-
-.memory-content {
+    position: relative;
     display: flex;
     align-items: flex-start;
-    flex: 1 1 180px;
-    min-width: 180px;
+    gap: var(--space-3);
+    padding: 12px var(--space-3) 12px var(--space-4);
+    transition: background-color var(--duration-fast) ease;
 }
 
-.memory-category {
-    font-size: 12px;
-    padding: 2px 8px;
-    background: rgba(0, 0, 0, 0.06);
-    border: 1px solid var(--border-color);
-    color: var(--text-secondary);
-    border-radius: 999px;
-    margin-right: 8px;
+.memory-item + .memory-item::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: var(--space-4);
+    height: 1px;
+    background: var(--line);
+}
+
+.memory-item-selected {
+    background: var(--bg-active);
+}
+
+.memory-checkbox {
+    margin-top: 3px;
     flex-shrink: 0;
+}
+
+.memory-item__main {
+    flex: 1;
+    min-width: 0;
 }
 
 .memory-text {
-    flex: 1;
-    min-width: 0;
-    color: var(--text-primary);
-    white-space: pre-wrap;
+    margin: 0;
+    color: var(--text);
+    font-size: var(--text-base);
+    line-height: 1.55;
     overflow-wrap: anywhere;
-    word-break: break-word;
-    line-height: 1.4;
+    white-space: pre-wrap;
 }
 
 .memory-meta {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin-left: auto;
-    flex-shrink: 0;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    margin-top: 6px;
+    color: var(--text-3);
+    font-size: var(--text-sm);
+    font-variant-numeric: tabular-nums;
+}
+
+.memory-meta .ui-badge {
+    height: 20px;
+    padding: 0 7px;
+    font-size: var(--text-xs);
+}
+
+.memory-meta__pinned {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--text-2);
+    font-weight: 550;
+}
+
+.memory-strength {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 22px;
+    margin: 0 -6px;
+    padding: 0 6px;
+    border: 0;
+    border-radius: var(--radius-xs);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    transition: background-color var(--duration-fast) ease;
+}
+
+.memory-strength:focus-visible {
+    outline: 2px solid var(--focus-ring);
 }
 
 .strength-bar {
-    width: 70px;
-    height: 6px;
-    background: rgba(0, 0, 0, 0.08);
-    border-radius: 999px;
+    position: relative;
+    width: 36px;
+    height: 4px;
     overflow: hidden;
+    border-radius: var(--radius-full);
+    background: var(--fill-strong);
 }
 
 .strength-fill {
-    height: 100%;
-    background: linear-gradient(90deg, var(--accent-color), rgba(16, 185, 129, 0.9));
-    transition: width 0.3s;
+    position: absolute;
+    inset: 0 auto 0 0;
+    border-radius: inherit;
+    background: var(--text-2);
 }
 
-.strength-value {
-    font-size: 12px;
-    color: var(--text-secondary);
-    min-width: 36px;
-    text-align: right;
-}
-
-/* 可点击编辑的强度值 */
-.strength-value-editable {
-    cursor: pointer;
-    border-radius: 4px;
-    padding: 2px 4px;
-    transition: background 0.2s;
-}
-
-.strength-value-editable:hover {
-    background: rgba(0, 0, 0, 0.08);
-    color: var(--text-primary);
-}
-
-/* 强度编辑区域 */
 .strength-edit {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: 6px;
 }
 
 .strength-slider {
-    width: 80px;
-    height: 6px;
-    cursor: pointer;
-    accent-color: var(--accent-color);
+    width: 120px;
+    accent-color: var(--ink);
 }
 
-.strength-edit-confirm,
-.strength-edit-cancel {
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: 14px;
-    padding: 2px 4px;
-    border-radius: 4px;
-    line-height: 1;
+.strength-value {
+    min-width: 34px;
+    color: var(--text);
 }
 
-.strength-edit-confirm {
-    color: var(--accent-color);
+.strength-edit .strength-edit-btn {
+    width: 26px;
+    height: 26px;
 }
 
-.strength-edit-confirm:hover {
-    background: rgba(var(--accent-color-rgb, 99, 102, 241), 0.1);
+.strength-edit .strength-edit-btn svg {
+    width: 14px;
+    height: 14px;
 }
 
-.strength-edit-cancel {
-    color: var(--text-secondary);
+.memory-item__actions {
+    display: flex;
+    gap: 2px;
+    flex-shrink: 0;
+    margin: -4px 0;
 }
 
-.strength-edit-cancel:hover {
-    color: var(--danger-color);
-    background: rgba(198, 87, 70, 0.1);
+.memory-item__actions .ui-icon-btn {
+    width: 32px;
+    height: 32px;
 }
 
-/* 永久标签 */
-.pinned-label {
-    font-size: 12px;
-    color: var(--accent-color);
-    font-weight: 600;
-    padding: 2px 8px;
-    background: rgba(var(--accent-color-rgb, 99, 102, 241), 0.1);
-    border-radius: 999px;
+.memory-item__actions .ui-icon-btn svg {
+    width: 16px;
+    height: 16px;
 }
 
-/* 固定按钮 */
-.pin-btn {
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: 14px;
-    padding: 2px 4px;
-    opacity: 0.3;
-    transition: opacity 0.2s;
-    line-height: 1;
+.memory-item__actions .pin-btn-active {
+    color: var(--text);
 }
 
-.pin-btn:hover {
-    opacity: 0.7;
+/* Secondary row actions stay quiet until the row is hovered or focused. */
+@media (hover: hover) and (pointer: fine) {
+    .memory-item__actions .ui-icon-btn {
+        opacity: 0;
+        transition:
+            opacity var(--duration-fast) ease,
+            background-color var(--duration-fast) ease,
+            color var(--duration-fast) ease;
+    }
+
+    .memory-item:hover .memory-item__actions .ui-icon-btn,
+    .memory-item:focus-within .memory-item__actions .ui-icon-btn {
+        opacity: 1;
+    }
+
+    .memory-item:hover {
+        background: var(--bg-hover);
+    }
+
+    .memory-item-selected:hover {
+        background: var(--bg-active);
+    }
+
+    .memory-strength:hover {
+        background: var(--bg-hover);
+        color: var(--text-2);
+    }
+
+    .memory-section-toggle:hover {
+        background: var(--bg-hover);
+        color: var(--text);
+    }
+
+    .memory-item__actions .delete-btn:hover {
+        background: var(--danger-soft);
+        color: var(--danger);
+    }
 }
 
-.pin-btn-active {
-    opacity: 1;
+.clear-archived-btn.ui-btn--ghost {
+    --btn-fg: var(--danger);
 }
 
-.delete-btn {
-    background: none;
-    border: none;
-    color: var(--text-secondary);
-    cursor: pointer;
-    font-size: 18px;
-    padding: 0 4px;
-    line-height: 1;
+.memory-hint {
+    margin: var(--space-6) var(--space-1) 0;
+    color: var(--text-3);
+    font-size: var(--text-sm);
+    line-height: 1.55;
 }
 
-.delete-btn:hover {
-    color: var(--danger-color);
-}
+/* ───────── Batch bar ───────── */
 
-/* 清空归档按钮 */
-.clear-archived-btn {
-    padding: 4px 10px;
-    background: none;
-    color: var(--danger-color);
-    border: 1px solid var(--danger-color);
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 12px;
-    font-weight: 500;
-    transition:
-        background 0.2s,
-        color 0.2s;
-}
-
-.clear-archived-btn:hover {
-    background: var(--danger-color);
-    color: white;
-}
-
-/* 批量操作浮动栏 */
 .batch-action-bar {
     position: sticky;
-    bottom: 0;
+    bottom: max(var(--space-4), env(safe-area-inset-bottom));
+    z-index: 5;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    padding: 12px 16px;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.1);
-    margin-top: 16px;
-    font-size: 14px;
-    color: var(--text-primary);
-}
-
-.batch-delete-btn {
-    padding: 8px 16px;
-    background: var(--danger-color);
-    color: white;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
+    gap: var(--space-3);
+    margin-top: var(--space-4);
+    padding: 8px 8px 8px var(--space-4);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    background: var(--bg-elevated);
+    box-shadow: var(--shadow-lg);
+    color: var(--text);
     font-size: 13px;
-    font-weight: 500;
+    font-weight: 550;
+    animation: memory-bar-in var(--duration-base) var(--ease-out);
 }
 
-.batch-delete-btn:hover {
-    opacity: 0.9;
+.batch-action-bar .ui-btn svg {
+    width: 14px;
+    height: 14px;
 }
 
-/* 统计面板 - 固定记忆 */
-.stat-pinned {
-    color: var(--accent-color);
+@keyframes memory-bar-in {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
 }
 
-/* Modal */
-.memory-modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 300;
-    padding: 20px;
-}
-
-.memory-modal {
-    background: var(--bg-secondary);
-    border-radius: 16px;
-    padding: 20px;
-    width: 100%;
-    max-width: 420px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
-}
-
-.memory-modal h3 {
-    margin: 0 0 16px 0;
-    color: var(--text-primary);
-    font-size: 16px;
-    font-weight: 600;
-}
-
-.memory-form-group {
-    margin-bottom: 16px;
-}
-
-.memory-form-group label {
-    display: block;
-    margin-bottom: 8px;
-    font-size: 13px;
-    color: var(--text-secondary);
-}
-
-.memory-form-group input[type='text'] {
-    width: 100%;
-    padding: 12px 14px;
-    border: 1px solid var(--border-color);
-    border-radius: 10px;
-    font-size: 14px;
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
-    outline: none;
-    box-sizing: border-box;
-}
-
-.memory-form-group input[type='text']:focus {
-    border-color: var(--accent-color);
-}
-
-/* 永久记忆 toggle-switch */
-.memory-form-toggle .modal-toggle-wrapper {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.memory-form-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
-    margin-top: 20px;
-}
-
-.memory-form-actions button {
-    padding: 10px 16px;
-    border-radius: 10px;
-    cursor: pointer;
-    font-size: 14px;
-}
-
-.memory-form-actions button[type='button'] {
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
-    color: var(--text-primary);
-}
-
-.memory-form-actions button[type='submit'] {
-    min-height: 44px;
-    background: var(--text-primary);
-    color: var(--bg-primary);
-    border: none;
-}
-
-.memory-form-actions button[type='submit']:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-/* Stats Panel */
-.memory-stats-panel {
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    padding: 16px;
-    margin-bottom: 16px;
-}
-
-.stats-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 16px;
-    margin-bottom: 12px;
-}
-
-.stats-row:last-child {
-    margin-bottom: 0;
-}
-
-.stat-item {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    min-width: 60px;
-}
-
-.stat-label {
-    font-size: 12px;
-    color: var(--text-secondary);
-    margin-bottom: 4px;
-}
-
-.stat-value {
-    font-size: 18px;
-    font-weight: 600;
-    color: var(--text-primary);
-}
-
-.stat-active {
-    color: var(--accent-color);
-}
-
-.stat-weak {
-    color: #e0aa14;
-}
-
-.stat-archived {
-    color: var(--text-secondary);
-}
-
-.stats-categories {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    padding-top: 12px;
-    border-top: 1px solid var(--border-color);
-}
-
-.stats-category-tag {
-    font-size: 12px;
-    padding: 4px 10px;
-    background: rgba(0, 0, 0, 0.04);
-    border-radius: 999px;
-    color: var(--text-secondary);
-}
-
-/* Filters */
-.memory-filters {
-    display: flex;
-    gap: 10px;
-    margin-bottom: 16px;
-    flex-wrap: wrap;
-}
-
-.memory-search {
-    flex: 1;
-    min-width: 150px;
-    padding: 10px 14px;
-    border: 1px solid var(--border-color);
-    border-radius: 10px;
-    font-size: 14px;
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
-    outline: none;
-}
-
-.memory-search:focus {
-    border-color: var(--accent-color);
-}
-
-/* 筛选区 CustomSelect 容器 */
-.memory-filter-select-wrapper {
-    min-width: 120px;
-}
-
-.memory-filter-select-wrapper .modal-select-trigger {
-    padding: 10px 14px;
-    font-size: 14px;
-}
-
-.filter-result-hint {
-    font-size: 13px;
-    color: var(--text-secondary);
-    margin-bottom: 16px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.clear-filter-btn {
-    background: none;
-    border: none;
-    color: var(--accent-color);
-    cursor: pointer;
-    font-size: 13px;
-    padding: 0;
-}
-
-.clear-filter-btn:hover {
-    text-decoration: underline;
-}
-
-/* Import Modal */
-.memory-modal-wide {
-    max-width: 520px;
-}
-
-.memory-file-input {
-    width: 100%;
-    padding: 12px 14px;
-    border: 1px solid var(--border-color);
-    border-radius: 10px;
-    font-size: 14px;
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
-    box-sizing: border-box;
-}
-
-.import-preview {
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
-    border-radius: 10px;
-    padding: 12px;
-    margin-bottom: 16px;
-}
-
-.import-preview p {
-    margin: 0 0 10px 0;
-    font-size: 14px;
-    color: var(--text-primary);
-    font-weight: 500;
-}
-
-.import-preview-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.import-preview-item {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    font-size: 13px;
-}
-
-.import-preview-item .memory-text {
-    flex: 1;
-    color: var(--text-secondary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.import-preview-more {
-    font-size: 12px;
-    color: var(--text-secondary);
-    text-align: center;
-    padding-top: 4px;
-}
-
-@media (max-width: 520px) {
-    .memory-item {
-        align-items: flex-start;
+@media (max-width: 760px) {
+    .memory-header {
+        flex-wrap: wrap;
     }
 
-    .memory-content {
-        flex-basis: 100%;
-        min-width: 0;
-    }
-
-    .memory-meta {
+    .memory-header-actions {
         width: 100%;
-        margin-left: 0;
         justify-content: flex-end;
     }
 
+    .memory-header-actions .ui-icon-btn,
+    .memory-header-actions .ui-btn--sm {
+        height: 40px;
+    }
+
+    .memory-header-actions .ui-icon-btn {
+        width: 40px;
+    }
+
+    .memory-header-actions .add-btn {
+        margin-left: auto;
+        padding: 0 14px;
+    }
+
+    .memory-filters {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+
+    .memory-search {
+        grid-column: 1 / -1;
+    }
+
+    .memory-search .ui-input {
+        min-height: 44px;
+        font-size: 16px;
+    }
+
+    .memory-item__actions .ui-icon-btn {
+        width: 40px;
+        height: 40px;
+    }
+
+    .memory-item__actions {
+        gap: 0;
+        margin: -8px -6px -8px 0;
+    }
+
+    .memory-meta time {
+        display: none;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
     .batch-action-bar {
-        border-radius: 12px 12px 0 0;
-        margin: 16px -16px 0;
-        padding: 12px 16px;
+        animation: none;
+    }
+
+    .memory-section-chevron,
+    .memory-item,
+    .memory-item__actions .ui-icon-btn {
+        transition-duration: 0ms !important;
     }
 }

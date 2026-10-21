@@ -1,363 +1,380 @@
 .app-wrapper {
-  width: 100%;
-  height: 100%;
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  overflow: hidden;
-  position: relative;
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg-app);
+    color: var(--text);
 }
 
 .auth-loading {
-  height: 100%;
-  display: grid;
-  place-items: center;
-  color: var(--text-secondary);
+    display: grid;
+    place-items: center;
+    height: 100%;
+    color: var(--text-2);
 }
 
+/* ───────── Shell ───────── */
+
 .console-layout {
-  display: grid;
-  grid-template-columns: 228px minmax(0, 1fr);
+    display: grid;
+    grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
 }
+
 .console-sidebar {
-  display: flex;
-  flex-direction: column;
-  padding: 28px 16px 16px;
-  background: var(--bg-secondary);
-  border-right: 1px solid var(--border-color);
-  min-height: 0;
-  overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    padding: var(--space-4) var(--space-3) var(--space-3);
+    overflow-y: auto;
+    background: var(--bg-app);
 }
+
 .console-sidebar > * {
-  flex-shrink: 0;
+    flex-shrink: 0;
 }
+
 .console-brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 0 12px 32px;
-  color: var(--text-primary);
-  text-decoration: none;
-  font-size: 17px;
-  font-weight: 650;
-  letter-spacing: -0.025em;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 40px;
+    margin-bottom: var(--space-5);
+    padding: 0 var(--space-2);
+    color: var(--text);
+    font-size: var(--text-md);
+    font-weight: 650;
+    letter-spacing: -0.02em;
+    text-decoration: none;
 }
-.console-brand small {
-  display: block;
-  margin-top: 4px;
-  color: var(--text-secondary);
-  font-size: 11px;
-  letter-spacing: 0.035em;
-  font-weight: 500;
-}
+
 .console-mark {
-  display: block;
-  width: 36px;
-  height: 36px;
-  flex-shrink: 0;
-  object-fit: contain;
-  border-radius: 8px;
+    display: block;
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    border-radius: 7px;
+    object-fit: contain;
+    box-shadow: 0 0 0 1px var(--line);
 }
+
 .console-nav {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
 }
+
 .console-nav a {
-  min-height: 46px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  border-radius: 9px;
-  text-decoration: none;
-  color: var(--text-secondary);
-  font-size: 14px;
-  font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 36px;
+    padding: 0 10px;
+    border-radius: var(--radius-sm);
+    color: var(--text-2);
+    font-size: var(--text-base);
+    font-weight: 500;
+    text-decoration: none;
+    transition:
+        background-color var(--duration-fast) ease,
+        color var(--duration-fast) ease;
 }
+
+.console-nav a svg {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+}
+
 .console-nav a.active {
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  box-shadow: 0 1px 3px #00000009;
+    background: var(--bg-elevated);
+    color: var(--text);
+    box-shadow:
+        var(--shadow-sm),
+        0 0 0 1px var(--line);
 }
-.console-nav-short {
-  display: none;
-}
-.console-nav svg {
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-}
+
 .console-sidebar-footer {
-  margin-top: auto;
-  padding: 24px 8px 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    margin-top: auto;
+    padding-top: var(--space-4);
 }
-.console-version {
-  font-size: 11px;
-  color: var(--text-secondary);
-  overflow-wrap: anywhere;
+
+.console-account {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    height: 40px;
+    padding: 0 6px;
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 550;
+    text-decoration: none;
+    transition: background-color var(--duration-fast) ease;
 }
-.console-theme {
-  width: 44px;
-  height: 44px;
-  flex-shrink: 0;
-  background: transparent;
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  color: var(--text-primary);
-  font-size: 22px;
-  cursor: pointer;
+
+.console-account.active {
+    background: var(--bg-elevated);
+    box-shadow:
+        var(--shadow-sm),
+        0 0 0 1px var(--line);
 }
+
+.console-account-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .console-workspace {
-  position: relative;
-  min-width: 0;
-  min-height: 0;
-  height: 100%;
-  overflow: hidden;
-  isolation: isolate;
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+    overflow: hidden;
+    isolation: isolate;
+    background: var(--bg-surface);
+    border-left: 1px solid var(--line);
 }
+
 .console-workspace:focus {
-  outline: none;
+    outline: none;
 }
+
 .console-base-view {
-  height: 100%;
-  min-height: 0;
+    height: 100%;
+    min-height: 0;
 }
+
+.console-tabbar {
+    display: none;
+}
+
+/* ───────── Conversations: list + detail ───────── */
+
+.conversations {
+    display: grid;
+    grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
+    height: 100%;
+    min-height: 0;
+}
+
+.conversations-list {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border-right: 1px solid var(--line);
+    background: var(--bg-surface);
+}
+
+.conversations-list-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    height: var(--app-header-height);
+    padding: 0 var(--space-3) 0 var(--space-4);
+    flex-shrink: 0;
+}
+
+.conversations-list-header h1 {
+    margin: 0;
+    font-size: var(--text-lg);
+    font-weight: 650;
+    letter-spacing: -0.015em;
+}
+
+.conversations-list > .search-bar {
+    margin: 0 var(--space-3) var(--space-2);
+    flex-shrink: 0;
+}
+
+.conversations-detail {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-surface);
+}
+
+/* ───────── Legacy console helpers still used by a few screens ───────── */
+
 .console-load-error {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  padding: 24px;
-  color: var(--text-secondary);
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-4);
+    padding: var(--space-6);
+    color: var(--text-2);
 }
-.console-page-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 36px 36px 24px;
-  flex-shrink: 0;
-}
-.console-page-heading h1 {
-  margin: 0;
-  font-size: clamp(24px, 2.4vw, 30px);
-  line-height: 1.2;
-  font-weight: 650;
-  letter-spacing: -0.035em;
-}
-.console-page-heading p {
-  margin: 10px 0 0;
-  color: var(--text-secondary);
-  font-size: 14px;
-  line-height: 1.6;
-}
-.console-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 44px;
-  padding: 10px 16px;
-  border: 1px solid var(--border-color);
-  border-radius: 9px;
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  text-decoration: none;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 550;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.console-button:disabled {
-  opacity: 0.5;
-  cursor: wait;
-}
-.console-conversations {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-.console-conversations > .search-bar {
-  margin-inline: 20px;
-}
+
 .console-skip {
-  position: absolute;
-  left: 12px;
-  top: -80px;
-  z-index: 1000;
-  background: var(--text-primary);
-  color: var(--bg-primary);
-  padding: 12px 20px;
-  border-radius: 8px;
+    position: absolute;
+    top: -80px;
+    left: 12px;
+    z-index: 1000;
+    padding: 10px 16px;
+    border-radius: var(--radius-sm);
+    background: var(--ink);
+    color: var(--on-ink);
 }
+
 .console-skip:focus {
-  top: 12px;
+    top: 12px;
 }
+
 .console-layout :is(button, a, input, select, textarea, [tabindex]):not(.console-workspace):focus-visible {
-  outline: 2px solid var(--text-primary);
-  outline-offset: 3px;
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
 }
+
 .console-workspace > .provider-settings,
 .console-workspace > .settings,
 .console-workspace > .profile-page {
-  height: 100%;
-}
-.console-workspace .provider-settings-header {
-  flex-shrink: 0;
-  min-height: 64px;
-  background: var(--bg-primary);
-  border-bottom: 1px solid var(--border-color);
-}
-.console-workspace .provider-settings-title {
-  text-align: left;
-  margin-left: 12px;
-}
-.console-workspace .provider-settings-content {
-  width: 100%;
-  padding: 28px max(24px, calc((100% - 940px) / 2));
-}
-.console-workspace .provider-card {
-  transition:
-    border-color 150ms ease,
-    background-color 150ms ease;
-}
-.console-workspace .persona-editor-content {
-  padding-inline: max(0px, calc((100% - 960px) / 2));
-}
-.console-workspace .chat-detail .message-list {
-  padding-inline: max(16px, calc((100% - 920px) / 2));
-}
-.console-workspace .chat-detail .chat-input-area {
-  padding-inline: max(16px, calc((100% - 920px) / 2));
+    height: 100%;
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .console-nav a:not(.active):hover,
-  .console-button:hover,
-  .console-theme:hover {
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
-  }
-}
-.console-button:active,
-.console-theme:active {
-  transform: scale(0.98);
+    .console-nav a:not(.active):hover,
+    .console-account:not(.active):hover {
+        background: var(--bg-hover);
+        color: var(--text);
+    }
 }
 
 @media (min-width: 1500px) {
-  .console-layout {
-    grid-template-columns: 248px minmax(0, 1fr);
-  }
+    .conversations {
+        grid-template-columns: 340px minmax(0, 1fr);
+    }
 }
+
+/* ───────── Compact: list and detail stack ───────── */
+
+@media (max-width: 960px) {
+    .conversations {
+        position: relative;
+        display: block;
+    }
+
+    .conversations-list {
+        height: 100%;
+        border-right: 0;
+    }
+
+    .conversations-detail {
+        position: absolute;
+        inset: 0;
+        z-index: 5;
+        visibility: hidden;
+    }
+
+    .conversations--open .conversations-detail {
+        visibility: visible;
+    }
+
+    .conversations--open .conversations-list {
+        visibility: hidden;
+    }
+}
+
+/* ───────── Mobile: bottom tab bar ───────── */
+
 @media (max-width: 760px) {
-  .console-layout {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr);
-  }
-  .console-sidebar {
-    padding: max(8px, env(safe-area-inset-top)) 10px 8px;
-    border-right: 0;
-    border-bottom: 1px solid var(--border-color);
-    display: grid;
-    grid-template-columns: 1fr auto;
-  }
-  .console-brand {
-    padding: 4px 8px 10px;
-    font-size: 15px;
-    gap: 9px;
-  }
-  .console-brand small {
-    display: none;
-  }
-  .console-mark {
-    width: 28px;
-    height: 28px;
-    border-radius: 6px;
-  }
-  .console-nav {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-    gap: 2px;
-  }
-  .console-nav a {
-    flex-direction: column;
-    justify-content: flex-start;
-    gap: 6px;
-    padding: 8px 2px;
-    min-height: 58px;
-    font-size: 11px;
-    line-height: 1.3;
-    text-align: center;
-    overflow-wrap: anywhere;
-  }
-  .console-nav svg {
-    width: 18px;
-    height: 18px;
-  }
-  .console-nav-label {
-    display: none;
-  }
-  .console-nav-short {
-    display: inline;
-  }
-  .profile-content {
-    padding-inline: 20px;
-  }
-  .console-sidebar-footer {
-    padding: 0;
-    margin: 0;
-    grid-row: 1;
-    grid-column: 2;
-  }
-  .console-version {
-    display: none;
-  }
-  .console-theme {
-    border: 0;
-    width: 44px;
-    height: 44px;
-  }
-  .console-page-heading {
-    padding: 24px 20px 20px;
-    align-items: flex-start;
-    flex-wrap: wrap;
-    gap: 16px;
-  }
-  .console-page-heading p {
-    font-size: 13px;
-  }
-  .console-workspace .provider-settings-content {
-    padding: 20px 16px max(24px, env(safe-area-inset-bottom));
-  }
-  .console-conversations > .search-bar {
-    margin-inline: 4px;
-  }
+    .console-layout {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr) auto;
+    }
+
+    .console-sidebar {
+        display: none;
+    }
+
+    .console-workspace {
+        grid-row: 1;
+        border-left: 0;
+    }
+
+    .console-tabbar {
+        grid-row: 2;
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        padding: 4px 4px max(4px, env(safe-area-inset-bottom));
+        border-top: 1px solid var(--line);
+        background: color-mix(in srgb, var(--bg-surface) 86%, transparent);
+        backdrop-filter: blur(20px) saturate(160%);
+        -webkit-backdrop-filter: blur(20px) saturate(160%);
+    }
+
+    .console-tabbar a {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 3px;
+        height: 48px;
+        border-radius: var(--radius-sm);
+        color: var(--text-3);
+        font-size: 10px;
+        font-weight: 550;
+        text-decoration: none;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .console-tabbar a svg {
+        width: 22px;
+        height: 22px;
+    }
+
+    .console-tabbar a.active {
+        color: var(--text);
+    }
+
+    .console-tabbar a:active {
+        background: var(--bg-active);
+    }
+
+    .console-layout--immersive .console-tabbar {
+        display: none;
+    }
+
+    .conversations-list-header {
+        height: auto;
+        padding: max(var(--space-5), env(safe-area-inset-top)) var(--space-3) var(--space-3) var(--space-4);
+    }
+
+    .conversations-list-header h1 {
+        font-size: 24px;
+    }
 }
+
 @media (prefers-reduced-motion: reduce) {
-  .console-layout *,
-  .console-layout *::before,
-  .console-layout *::after {
-    scroll-behavior: auto !important;
-    transition-duration: 0s !important;
-    animation-duration: 0s !important;
-  }
-  .console-button:active,
-  .console-theme:active {
-    transform: none;
-  }
+    .console-layout *,
+    .console-layout *::before,
+    .console-layout *::after {
+        scroll-behavior: auto !important;
+    }
 }
+
+@media (prefers-reduced-transparency: reduce) {
+    .console-tabbar {
+        background: var(--bg-surface) !important;
+        backdrop-filter: none !important;
+    }
+}
+
 @media (prefers-contrast: more) {
-  .console-nav a.active {
-    outline: 1px solid currentColor;
-  }
+    .console-nav a.active {
+        outline: 1px solid currentColor;
+    }
 }

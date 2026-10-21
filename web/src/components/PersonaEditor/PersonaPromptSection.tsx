@@ -1,25 +1,25 @@
 import { useId } from 'react'
 import { useT } from '../../contexts/I18nContext'
+import { getPersonaCopy } from '../../i18n/personas'
+
 interface PersonaPromptSectionProps {
     content: string
     onContentChange: (content: string) => void
 }
 
 const PersonaPromptSection: React.FC<PersonaPromptSectionProps> = ({ content, onContentChange }) => {
-    const { t } = useT()
+    const { locale } = useT()
+    const copy = getPersonaCopy(locale).editor
     const promptId = useId()
-    const charCount = content.length
+    const hintId = useId()
 
     return (
-        <div className="persona-section">
-            <div className="persona-section-header">
-                <label className="section-title" htmlFor={promptId}>
-                    <svg aria-hidden="true" className="section-icon" viewBox="0 0 24 24">
-                        <path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm-1 2l5 5h-5V4zM6 20V4h6v6h6v10H6zm2-6h8v2H8v-2zm0-3h8v2H8v-2z" />
-                    </svg>
-                    <span>{t('persona.personaPrompt')}</span>
-                </label>
-                <span className="section-badge">{charCount}</span>
+        <section className="ui-group persona-prompt">
+            <div className="ui-group__head">
+                <h2 className="ui-group__title">
+                    <label htmlFor={promptId}>{copy.prompt}</label>
+                </h2>
+                <span className="persona-prompt__count">{copy.characters(content.length)}</span>
             </div>
             <textarea
                 id={promptId}
@@ -27,9 +27,14 @@ const PersonaPromptSection: React.FC<PersonaPromptSectionProps> = ({ content, on
                 className="prompt-textarea"
                 value={content}
                 onChange={(e) => onContentChange(e.target.value)}
-                placeholder={t('persona.promptPlaceholder')}
+                placeholder={copy.promptPlaceholder}
+                aria-describedby={hintId}
+                rows={14}
             />
-        </div>
+            <p id={hintId} className="ui-group__foot">
+                {copy.promptHint}
+            </p>
+        </section>
     )
 }
 

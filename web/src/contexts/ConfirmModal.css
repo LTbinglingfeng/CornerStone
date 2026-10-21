@@ -1,86 +1,141 @@
+/* Global confirm dialog — same visual language as the ui.css modal shell. */
+
 .confirm-modal-overlay {
-  position: fixed;
-  inset: 0;
-  background-color: rgba(0, 0, 0, 0.55);
-  z-index: 10000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-  animation: confirm-fade-in 0.2s ease-out;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--scrim);
+    animation: confirm-fade-in var(--duration-fast) ease-out;
+}
+
+dialog.native-modal-overlay.confirm-modal-overlay > .confirm-modal-card {
+    width: calc(100% - 32px);
+    max-width: 400px;
 }
 
 .confirm-modal-card {
-  width: min(320px, 100%);
-  background-color: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 14px;
-  overflow: hidden;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
-  animation: confirm-scale-in 0.2s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-xl);
+    background-color: var(--bg-elevated);
+    box-shadow: var(--shadow-lg);
+    animation: confirm-card-in var(--duration-base) var(--ease-out);
 }
 
 .confirm-modal-header {
-  padding: 16px 16px 0;
-  text-align: center;
+    padding: var(--space-6) var(--space-6) 0;
 }
 
 .confirm-modal-title {
-  font-size: 17px;
-  font-weight: 600;
-  color: var(--text-primary);
+    margin: 0;
+    color: var(--text);
+    font-size: var(--text-lg);
+    font-weight: 600;
+    line-height: 1.35;
+    letter-spacing: -0.012em;
 }
 
 .confirm-modal-body {
-  padding: 8px 16px 16px;
-  text-align: center;
-  color: var(--text-secondary);
-  font-size: 14px;
-  line-height: 1.4;
+    margin: 0;
+    padding: var(--space-2) var(--space-6) var(--space-6);
+    color: var(--text-2);
+    font-size: var(--text-base);
+    line-height: 1.6;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
 }
 
 .confirm-modal-footer {
-  display: flex;
-  border-top: 0.5px solid var(--border-color);
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-2);
+    padding: 0 var(--space-6) var(--space-6);
 }
 
 .confirm-modal-btn {
-  flex: 1;
-  padding: 12px;
-  background: none;
-  border: none;
-  font-size: 16px;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.confirm-modal-btn:not(:last-child) {
-  border-right: 0.5px solid var(--border-color);
-}
-
-.confirm-modal-btn.cancel {
-  color: var(--text-primary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 88px;
+    height: var(--control-height);
+    padding: 0 16px;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-sm);
+    background: var(--bg-elevated);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 550;
+    cursor: pointer;
+    box-shadow: var(--shadow-sm);
+    transition:
+        background-color var(--duration-fast) ease,
+        opacity var(--duration-fast) ease,
+        transform var(--duration-press) var(--ease-out);
 }
 
 .confirm-modal-btn.confirm {
-  color: var(--accent-color);
-  font-weight: 600;
+    border-color: var(--ink);
+    background: var(--ink);
+    color: var(--on-ink);
 }
 
 .confirm-modal-btn.confirm.danger {
-  color: var(--danger-color);
+    border-color: var(--danger);
+    background: var(--danger);
+    /* --on-ink keeps AA contrast on the lighter dark-theme red as well. */
+    color: var(--on-ink);
 }
 
 .confirm-modal-btn:active {
-  background-color: var(--bg-tertiary);
+    transform: scale(0.97);
+}
+
+.confirm-modal-btn:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .confirm-modal-btn.cancel:hover {
+        background: var(--bg-sunken);
+    }
+
+    .confirm-modal-btn.confirm:hover {
+        opacity: 0.88;
+    }
+}
+
+@media (max-width: 560px) {
+    .confirm-modal-footer {
+        padding-bottom: max(var(--space-6), env(safe-area-inset-bottom));
+    }
+
+    .confirm-modal-btn {
+        flex: 1;
+        height: 44px;
+        font-size: var(--text-md);
+    }
 }
 
 @keyframes confirm-fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+    from {
+        opacity: 0;
+    }
 }
 
-@keyframes confirm-scale-in {
-  from { transform: scale(0.9); opacity: 0; }
-  to { transform: scale(1); opacity: 1; }
+@keyframes confirm-card-in {
+    from {
+        opacity: 0;
+        transform: scale(0.96);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .confirm-modal-card {
+        animation-name: confirm-fade-in;
+    }
+
+    .confirm-modal-btn:active {
+        transform: none;
+    }
 }

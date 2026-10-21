@@ -7,7 +7,10 @@ import type { Prompt } from '../types/chat'
 import { CustomSelect } from './provider'
 import { useToast } from '../contexts/ToastContext'
 import { drawerVariants } from '../utils/motion'
-import './ProviderSettings.css'
+import { getChannelsCopy } from '../i18n/channels'
+import { Badge, Group, Icon, Row, Toggle } from './ui'
+import { channelStatusTone } from './channelStatus'
+import './ClawBotSettings.css'
 
 interface NapCatSettingsProps {
     onBack: () => void
@@ -44,7 +47,8 @@ const parseAllowlistText = (text: string): string[] => {
 }
 
 const NapCatSettingsPanel: React.FC<NapCatSettingsProps> = ({ onBack }) => {
-    const { t } = useT()
+    const { t, locale } = useT()
+    const copy = getChannelsCopy(locale).detail
     const { showToast } = useToast()
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
@@ -112,7 +116,7 @@ const NapCatSettingsPanel: React.FC<NapCatSettingsProps> = ({ onBack }) => {
     const statusLabel = useMemo(() => {
         const status = (settings?.status || '').trim()
         const statusMap: Record<string, string> = {
-            disabled: t('napCat.disabled'),
+            disabled: t('common.disable'),
             missing_token: t('napCat.missingToken'),
             connected: t('napCat.connected'),
             disconnected: t('napCat.disconnected'),
@@ -159,7 +163,7 @@ const NapCatSettingsPanel: React.FC<NapCatSettingsProps> = ({ onBack }) => {
 
     return (
         <motion.div
-            className="provider-settings napcat-settings"
+            className="provider-settings napcat-settings channel-detail"
             initial="hidden"
             animate="visible"
             exit="hidden"
@@ -177,240 +181,208 @@ const NapCatSettingsPanel: React.FC<NapCatSettingsProps> = ({ onBack }) => {
                         <span className="feature-beta-badge">BETA</span>
                     </span>
                 </div>
-                <div style={{ width: 44 }}></div>
+                {settings && !loading && (
+                    <div className="channel-detail-actions">
+                        <button
+                            type="button"
+                            className="save-button ui-btn ui-btn--primary ui-btn--sm"
+                            onClick={handleSave}
+                            disabled={saving}
+                        >
+                            {saving ? t('common.saving') : t('napCat.saveSettings')}
+                        </button>
+                    </div>
+                )}
             </div>
 
             {loading ? (
-                <div className="provider-settings-loading">{t('common.loading')}</div>
+                <div className="provider-settings-loading">
+                    <span className="ui-spinner" aria-hidden="true" />
+                    {t('common.loading')}
+                </div>
             ) : !settings ? (
                 <div className="console-load-error" role="alert">
-                    <p>{t('common.loadFailed')}</p>
-                    <button className="console-button" onClick={() => void loadData()}>
+                    <p>{copy.loadFailed}</p>
+                    <button className="ui-btn" onClick={() => void loadData()}>
                         {t('console.refresh')}
                     </button>
                 </div>
             ) : (
                 <div className="provider-settings-content">
-                    <div className="provider-card active" style={{ cursor: 'default' }}>
-                        <div
-                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}
-                        >
-                            <div style={{ color: 'var(--text-primary)', fontSize: 15, fontWeight: 600 }}>
-                                {t('napCat.runStatus')}
-                            </div>
-                            <div style={{ color: 'var(--text-secondary)', fontSize: 13 }}>{statusLabel}</div>
-                        </div>
-
-                        <div
-                            style={{
-                                marginTop: 10,
-                                display: 'flex',
-                                flexWrap: 'wrap',
-                                gap: 8,
-                                color: 'var(--text-secondary)',
-                                fontSize: 12,
-                            }}
-                        >
-                            <div>
-                                {t('napCat.selfId')}：{settings?.self_id || '-'}
-                            </div>
-                            <div>
-                                {t('napCat.nickname')}：{settings?.nickname || '-'}
-                            </div>
-                        </div>
-
-                        {settings?.last_error && (
-                            <div
-                                style={{
-                                    marginTop: 12,
-                                    color: '#c65746',
-                                    fontSize: 12,
-                                    lineHeight: 1.5,
-                                    wordBreak: 'break-word',
-                                }}
-                            >
-                                {settings.last_error}
+                    <Group title={copy.status}>
+                        <Row
+                            label={t('napCat.runStatus')}
+                            trailing={
+                                <Badge tone={channelStatusTone(settings.status)} dot>
+                                    {statusLabel}
+                                </Badge>
+                            }
+                        />
+                        <Row label={t('napCat.nickname')} value={settings.nickname || '—'} />
+                        <Row label={t('napCat.selfId')} value={settings.self_id || '—'} />
+                        {settings.last_error && (
+                            <div className="channel-field channel-error" role="alert">
+                                <span className="channel-error__label">{copy.lastError}</span>
+                                <span className="channel-error__text">{settings.last_error}</span>
                             </div>
                         )}
-                    </div>
+                    </Group>
 
-                    <div className="settings-group" style={{ marginTop: 16 }}>
-                        <label className="settings-label">{t('napCat.wsUrl')}</label>
-                        <div
-                            style={{
-                                padding: '12px 14px',
-                                borderRadius: 10,
-                                border: '1px solid var(--border-color)',
-                                background: 'var(--bg-tertiary)',
-                                color: 'var(--text-primary)',
-                                fontSize: 13,
-                                wordBreak: 'break-all',
-                            }}
-                        >
-                            {wsUrlDisplay}
+                    <Group title={copy.connection}>
+                        <div className="channel-field">
+                            <div className="ui-field">
+                                <span className="ui-field__label">{t('napCat.wsUrl')}</span>
+                                <div className="channel-code">
+                                    <code>{wsUrlDisplay}</code>
+                                    <button
+                                        type="button"
+                                        className="ui-icon-btn channel-code__copy"
+                                        aria-label={copy.copy}
+                                        title={copy.copy}
+                                        onClick={() => {
+                                            navigator.clipboard
+                                                ?.writeText(wsUrlDisplay)
+                                                .then(() => showToast(copy.copied, 'success'))
+                                                .catch(() => showToast(copy.copyFailed, 'error'))
+                                        }}
+                                    >
+                                        <Icon name="copy" />
+                                    </button>
+                                </div>
+                                <span className="ui-field__hint">{t('napCat.wsUrlHint')}</span>
+                                <span className="ui-field__hint">{t('napCat.messagePostFormatHint')}</span>
+                            </div>
                         </div>
-                        <p className="prompt-modal-hint" style={{ marginTop: 8 }}>
-                            {t('napCat.wsUrlHint')}
-                        </p>
-                        <p className="prompt-modal-hint" style={{ marginTop: 8 }}>
-                            {t('napCat.messagePostFormatHint')}
-                        </p>
-                    </div>
-
-                    <div className="settings-group">
-                        <label className="settings-label">{t('napCat.enableChannel')}</label>
-                        <div className="modal-toggle-wrapper">
-                            <label className="toggle-switch">
+                        <div className="channel-field">
+                            <div className="ui-field">
+                                <label className="ui-field__label" htmlFor="napcat-access-token">
+                                    {t('napCat.accessToken')}
+                                </label>
                                 <input
-                                    type="checkbox"
-                                    aria-label={t('napCat.enableChannel')}
+                                    id="napcat-access-token"
+                                    className="ui-input"
+                                    aria-label={t('napCat.accessToken')}
+                                    value={form.access_token}
+                                    onChange={(event) =>
+                                        setForm((current) => ({ ...current, access_token: event.target.value }))
+                                    }
+                                    placeholder={
+                                        settings.has_access_token
+                                            ? t('napCat.tokenKeepHint')
+                                            : t('napCat.tokenPlaceholder')
+                                    }
+                                    disabled={saving || form.clear_access_token}
+                                    type="password"
+                                />
+                                <div className="channel-token-row">
+                                    <span className="ui-field__hint">
+                                        {settings.has_access_token ? t('napCat.savedToken') : t('napCat.notSavedToken')}
+                                    </span>
+                                    {settings.has_access_token && (
+                                        <button
+                                            type="button"
+                                            className={`ui-btn ui-btn--sm ${form.clear_access_token ? 'ui-btn--danger-solid' : 'ui-btn--ghost'}`}
+                                            aria-pressed={form.clear_access_token}
+                                            onClick={() =>
+                                                setForm((current) => ({
+                                                    ...current,
+                                                    clear_access_token: !current.clear_access_token,
+                                                    access_token: '',
+                                                }))
+                                            }
+                                            disabled={saving}
+                                        >
+                                            {form.clear_access_token
+                                                ? t('napCat.markedCleared')
+                                                : t('napCat.clearToken')}
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </Group>
+
+                    <Group title={copy.basics} footer={t('napCat.m1PrivateOnly')} className="channel-group--overflow">
+                        <Row
+                            label={t('napCat.enableChannel')}
+                            trailing={
+                                <Toggle
+                                    label={t('napCat.enableChannel')}
                                     checked={form.enabled}
-                                    onChange={(event) =>
-                                        setForm((current) => ({
-                                            ...current,
-                                            enabled: event.target.checked,
-                                        }))
-                                    }
+                                    onChange={(enabled) => setForm((current) => ({ ...current, enabled }))}
                                     disabled={saving}
                                 />
-                                <span className="toggle-slider"></span>
-                            </label>
-                            <span className="toggle-label">
-                                {form.enabled ? t('common.enabled') : t('common.disabled')}
-                            </span>
-                        </div>
-                        <p className="prompt-modal-hint memory-toggle-hint">{t('napCat.m1PrivateOnly')}</p>
-                    </div>
-
-                    <div className="settings-group">
-                        <label className="settings-label">{t('napCat.bindPersona')}</label>
-                        <CustomSelect
-                            value={form.prompt_id}
-                            options={promptOptions}
-                            onChange={(value) => setForm((current) => ({ ...current, prompt_id: value }))}
-                            ariaLabel={t('napCat.bindPersona')}
-                            disabled={saving}
-                        />
-                    </div>
-
-                    <div className="settings-group">
-                        <label className="settings-label">{t('napCat.accessToken')}</label>
-                        <input
-                            className="settings-input"
-                            aria-label={t('napCat.accessToken')}
-                            value={form.access_token}
-                            onChange={(event) =>
-                                setForm((current) => ({ ...current, access_token: event.target.value }))
                             }
-                            placeholder={
-                                settings?.has_access_token ? t('napCat.tokenKeepHint') : t('napCat.tokenPlaceholder')
-                            }
-                            disabled={saving || form.clear_access_token}
-                            type="password"
                         />
-                        <div
-                            style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                gap: 10,
-                                marginTop: 10,
-                            }}
-                        >
-                            <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
-                                {settings?.has_access_token ? t('napCat.savedToken') : t('napCat.notSavedToken')}
-                            </span>
-                            {settings?.has_access_token && (
-                                <button
-                                    type="button"
-                                    className="add-button"
-                                    style={{
-                                        background: form.clear_access_token
-                                            ? 'rgba(198, 87, 70, 0.9)'
-                                            : 'var(--bg-secondary)',
-                                        border: form.clear_access_token
-                                            ? '1px solid rgba(198, 87, 70, 0.8)'
-                                            : '1px solid var(--border-color)',
-                                        color: form.clear_access_token ? '#fff' : 'var(--text-secondary)',
-                                    }}
-                                    onClick={() =>
-                                        setForm((current) => ({
-                                            ...current,
-                                            clear_access_token: !current.clear_access_token,
-                                            access_token: '',
-                                        }))
-                                    }
+                        <div className="channel-field">
+                            <div className="ui-field">
+                                <span className="ui-field__label">{t('napCat.bindPersona')}</span>
+                                <CustomSelect
+                                    value={form.prompt_id}
+                                    options={promptOptions}
+                                    onChange={(value) => setForm((current) => ({ ...current, prompt_id: value }))}
+                                    ariaLabel={t('napCat.bindPersona')}
                                     disabled={saving}
-                                >
-                                    {form.clear_access_token ? t('napCat.markedCleared') : t('napCat.clearToken')}
-                                </button>
-                            )}
+                                />
+                            </div>
                         </div>
-                    </div>
+                    </Group>
 
-                    <div className="settings-group">
-                        <label className="settings-label">{t('napCat.allowPrivate')}</label>
-                        <div className="modal-toggle-wrapper">
-                            <label className="toggle-switch">
-                                <input
-                                    type="checkbox"
-                                    aria-label={t('napCat.allowPrivate')}
+                    <Group title={copy.access} className="channel-group--overflow">
+                        <Row
+                            label={t('napCat.allowPrivate')}
+                            trailing={
+                                <Toggle
+                                    label={t('napCat.allowPrivate')}
                                     checked={form.allow_private}
-                                    onChange={(event) =>
-                                        setForm((current) => ({ ...current, allow_private: event.target.checked }))
-                                    }
+                                    onChange={(allow_private) => setForm((current) => ({ ...current, allow_private }))}
                                     disabled={saving}
                                 />
-                                <span className="toggle-slider"></span>
-                            </label>
-                            <span className="toggle-label">
-                                {form.allow_private ? t('common.enabled') : t('common.disabled')}
-                            </span>
+                            }
+                        />
+                        <div className="channel-field">
+                            <div className="ui-field">
+                                <span className="ui-field__label">{t('napCat.sourceFilterMode')}</span>
+                                <CustomSelect
+                                    value={form.source_filter_mode}
+                                    options={[
+                                        { value: 'all', label: t('napCat.filterAll') },
+                                        { value: 'allowlist', label: t('napCat.filterAllowlist') },
+                                    ]}
+                                    onChange={(value) =>
+                                        setForm((current) => ({
+                                            ...current,
+                                            source_filter_mode: value === 'allowlist' ? 'allowlist' : 'all',
+                                        }))
+                                    }
+                                    ariaLabel={t('napCat.sourceFilterMode')}
+                                    disabled={saving}
+                                />
+                                <span className="ui-field__hint">{t('napCat.sourceFilterHint')}</span>
+                            </div>
                         </div>
-                    </div>
-
-                    <div className="settings-group">
-                        <label className="settings-label">{t('napCat.sourceFilterMode')}</label>
-                        <CustomSelect
-                            value={form.source_filter_mode}
-                            options={[
-                                { value: 'all', label: t('napCat.filterAll') },
-                                { value: 'allowlist', label: t('napCat.filterAllowlist') },
-                            ]}
-                            onChange={(value) =>
-                                setForm((current) => ({
-                                    ...current,
-                                    source_filter_mode: value === 'allowlist' ? 'allowlist' : 'all',
-                                }))
-                            }
-                            ariaLabel={t('napCat.sourceFilterMode')}
-                            disabled={saving}
-                        />
-                        <p className="prompt-modal-hint" style={{ marginTop: 8 }}>
-                            {t('napCat.sourceFilterHint')}
-                        </p>
-                    </div>
-
-                    <div className="settings-group">
-                        <label className="settings-label">{t('napCat.allowedPrivateUserIds')}</label>
-                        <textarea
-                            className="settings-textarea"
-                            aria-label={t('napCat.allowedPrivateUserIds')}
-                            value={form.allowed_private_user_ids_text}
-                            onChange={(event) =>
-                                setForm((current) => ({
-                                    ...current,
-                                    allowed_private_user_ids_text: event.target.value,
-                                }))
-                            }
-                            placeholder={t('napCat.allowlistPlaceholder')}
-                            disabled={saving || allowlistDisabled}
-                        />
-                    </div>
-
-                    <button type="button" className="save-button full-width" onClick={handleSave} disabled={saving}>
-                        {saving ? t('common.saving') : t('napCat.saveSettings')}
-                    </button>
+                        <div className="channel-field">
+                            <div className="ui-field">
+                                <label className="ui-field__label" htmlFor="napcat-allowlist">
+                                    {t('napCat.allowedPrivateUserIds')}
+                                </label>
+                                <textarea
+                                    id="napcat-allowlist"
+                                    className="ui-textarea channel-allowlist"
+                                    aria-label={t('napCat.allowedPrivateUserIds')}
+                                    value={form.allowed_private_user_ids_text}
+                                    onChange={(event) =>
+                                        setForm((current) => ({
+                                            ...current,
+                                            allowed_private_user_ids_text: event.target.value,
+                                        }))
+                                    }
+                                    placeholder={t('napCat.allowlistPlaceholder')}
+                                    disabled={saving || allowlistDisabled}
+                                />
+                            </div>
+                        </div>
+                    </Group>
                 </div>
             )}
         </motion.div>

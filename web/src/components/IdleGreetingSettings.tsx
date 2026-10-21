@@ -3,10 +3,12 @@ import { motion } from 'motion/react'
 import { updateConfig } from '../services/api'
 import type { IdleGreetingConfig, IdleGreetingTimeWindow } from '../types/chat'
 import { useT } from '../contexts/I18nContext'
+import { useToast } from '../contexts/ToastContext'
+import { Group, Icon, Row, Toggle } from './ui'
+import { SettingsField } from './SettingsField'
 import { drawerVariants } from '../utils/motion'
 import { NumericInput } from './NumericInput'
 import './ProviderSettings.css'
-import './Settings.css'
 
 interface IdleGreetingSettingsProps {
     config: IdleGreetingConfig
@@ -61,10 +63,9 @@ const isValidClockTime = (value: string) => {
 
 const IdleGreetingSettingsPanel: React.FC<IdleGreetingSettingsProps> = ({ config, onBack, onSaved }) => {
     const { t } = useT()
+    const { showToast } = useToast()
 
     const [saving, setSaving] = useState(false)
-    const [message, setMessage] = useState('')
-    const [messageType, setMessageType] = useState<'success' | 'error'>('success')
     const [draft, setDraft] = useState<IdleGreetingConfig>(() => normalizeIdleGreetingConfig(config))
     const [showValidationErrors, setShowValidationErrors] = useState(false)
 
@@ -73,14 +74,8 @@ const IdleGreetingSettingsPanel: React.FC<IdleGreetingSettingsProps> = ({ config
         setShowValidationErrors(false)
     }, [config])
 
-    const showMessageToast = (nextMessage: string, type: 'success' | 'error' = 'success') => {
-        setMessage(nextMessage)
-        setMessageType(type)
-        window.setTimeout(() => {
-            setMessage('')
-            setMessageType('success')
-        }, 2000)
-    }
+    const showMessageToast = (nextMessage: string, type: 'success' | 'error' = 'success') =>
+        showToast(nextMessage, type)
 
     const validationError = useMemo(() => {
         if (!Number.isFinite(draft.idle_min_minutes) || draft.idle_min_minutes <= 0) {
@@ -164,153 +159,115 @@ const IdleGreetingSettingsPanel: React.FC<IdleGreetingSettingsProps> = ({ config
                     </svg>
                 </button>
                 <div className="provider-settings-title">{t('settings.idleGreeting')}</div>
-                <div style={{ width: 44 }}></div>
+                <button
+                    type="button"
+                    className="ui-btn ui-btn--primary ui-btn--sm"
+                    onClick={() => void handleSave()}
+                    disabled={saving}
+                >
+                    {saving ? t('common.saving') : t('common.save')}
+                </button>
             </div>
 
             <div className="provider-settings-content">
-                <div className="settings-section">
-                    <h3>{t('settings.idleGreeting')}</h3>
-                    <p className="prompt-modal-hint">{t('settings.idleGreetingHint')}</p>
+                <Group footer={t('settings.idleGreetingHint')}>
+                    <Row
+                        icon="smile"
+                        label={t('settingsManagement.idleGreeting.enable')}
+                        trailing={
+                            <Toggle
+                                label={t('settingsManagement.idleGreeting.enable')}
+                                checked={draft.enabled}
+                                disabled={saving}
+                                onChange={(checked) => setDraft((current) => ({ ...current, enabled: checked }))}
+                            />
+                        }
+                    />
+                </Group>
 
-                    <div className="settings-group">
-                        <label className="settings-label">{t('settings.idleGreetingEnabled')}</label>
-                        <div className="modal-toggle-wrapper">
-                            <label className="toggle-switch">
-                                <input
-                                    type="checkbox"
-                                    checked={draft.enabled}
-                                    onChange={(event) =>
-                                        setDraft((current) => ({ ...current, enabled: event.target.checked }))
-                                    }
-                                    disabled={saving}
-                                />
-                                <span className="toggle-slider"></span>
-                            </label>
-                            <span className="toggle-label">
-                                {draft.enabled ? t('common.enable') : t('common.disable')}
-                            </span>
-                        </div>
-                    </div>
-                </div>
+                <Group title={t('settings.idleGreetingIdleRange')} footer={t('settings.idleGreetingIdleRangeHint')}>
+                    <SettingsField label={t('settings.idleGreetingMinMinutes')}>
+                        <NumericInput
+                            className="settings-input"
+                            aria-label={t('settings.idleGreetingMinMinutes')}
+                            value={draft.idle_min_minutes}
+                            onValueChange={(value) =>
+                                setDraft((current) => ({ ...current, idle_min_minutes: Math.round(value) }))
+                            }
+                            parseAs="int"
+                            min={1}
+                            max={10080}
+                            disabled={saving}
+                        />
+                        <span className="settings-field__suffix">{t('settingsManagement.idleGreeting.minutes')}</span>
+                    </SettingsField>
+                    <SettingsField label={t('settings.idleGreetingMaxMinutes')}>
+                        <NumericInput
+                            className="settings-input"
+                            aria-label={t('settings.idleGreetingMaxMinutes')}
+                            value={draft.idle_max_minutes}
+                            onValueChange={(value) =>
+                                setDraft((current) => ({ ...current, idle_max_minutes: Math.round(value) }))
+                            }
+                            parseAs="int"
+                            min={1}
+                            max={10080}
+                            disabled={saving}
+                        />
+                        <span className="settings-field__suffix">{t('settingsManagement.idleGreeting.minutes')}</span>
+                    </SettingsField>
+                </Group>
 
-                <div className="settings-section">
-                    <h3>{t('settings.idleGreetingIdleRange')}</h3>
-                    <div
-                        style={{
-                            display: 'grid',
-                            gridTemplateColumns: '1fr 1fr',
-                            gap: 12,
-                        }}
-                    >
-                        <div className="settings-group" style={{ marginTop: 0 }}>
-                            <label className="settings-label">{t('settings.idleGreetingMinMinutes')}</label>
-                            <NumericInput
+                <Group title={t('settings.idleGreetingWindows')} footer={t('settings.idleGreetingWindowsHint')}>
+                    {draft.time_windows.map((window, index) => (
+                        <div className="idle-window-row" key={index}>
+                            <input
                                 className="settings-input"
-                                value={draft.idle_min_minutes}
-                                onValueChange={(value) =>
-                                    setDraft((current) => ({ ...current, idle_min_minutes: Math.round(value) }))
-                                }
-                                parseAs="int"
-                                min={1}
-                                max={10080}
+                                aria-label={`${t('settings.idleGreetingWindowStart')} ${index + 1}`}
+                                value={window.start}
+                                onChange={(event) => handleWindowChange(index, { start: event.target.value })}
+                                placeholder="09:00"
+                                inputMode="numeric"
                                 disabled={saving}
                             />
-                        </div>
-
-                        <div className="settings-group" style={{ marginTop: 0 }}>
-                            <label className="settings-label">{t('settings.idleGreetingMaxMinutes')}</label>
-                            <NumericInput
+                            <span className="idle-window-row__sep">{t('settingsManagement.idleGreeting.to')}</span>
+                            <input
                                 className="settings-input"
-                                value={draft.idle_max_minutes}
-                                onValueChange={(value) =>
-                                    setDraft((current) => ({ ...current, idle_max_minutes: Math.round(value) }))
-                                }
-                                parseAs="int"
-                                min={1}
-                                max={10080}
+                                aria-label={`${t('settings.idleGreetingWindowEnd')} ${index + 1}`}
+                                value={window.end}
+                                onChange={(event) => handleWindowChange(index, { end: event.target.value })}
+                                placeholder="22:00"
+                                inputMode="numeric"
                                 disabled={saving}
                             />
-                        </div>
-                    </div>
-                    <p className="prompt-modal-hint">{t('settings.idleGreetingIdleRangeHint')}</p>
-                </div>
-
-                <div className="settings-section">
-                    <h3>{t('settings.idleGreetingWindows')}</h3>
-                    <p className="prompt-modal-hint">{t('settings.idleGreetingWindowsHint')}</p>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                        {draft.time_windows.map((window, index) => (
-                            <div
-                                key={index}
-                                style={{
-                                    display: 'grid',
-                                    gridTemplateColumns: '1fr 1fr auto',
-                                    gap: 12,
-                                    alignItems: 'end',
-                                }}
+                            <button
+                                type="button"
+                                className="ui-icon-btn"
+                                aria-label={`${t('settingsManagement.idleGreeting.removeWindow')} ${index + 1}`}
+                                title={t('settingsManagement.idleGreeting.removeWindow')}
+                                onClick={() => handleRemoveWindow(index)}
+                                disabled={saving || draft.time_windows.length <= 1}
                             >
-                                <div className="settings-group" style={{ marginTop: 0 }}>
-                                    <label className="settings-label">{t('settings.idleGreetingWindowStart')}</label>
-                                    <input
-                                        className="settings-input"
-                                        value={window.start}
-                                        onChange={(event) => handleWindowChange(index, { start: event.target.value })}
-                                        placeholder="09:00"
-                                        disabled={saving}
-                                    />
-                                </div>
-
-                                <div className="settings-group" style={{ marginTop: 0 }}>
-                                    <label className="settings-label">{t('settings.idleGreetingWindowEnd')}</label>
-                                    <input
-                                        className="settings-input"
-                                        value={window.end}
-                                        onChange={(event) => handleWindowChange(index, { end: event.target.value })}
-                                        placeholder="22:00"
-                                        disabled={saving}
-                                    />
-                                </div>
-
-                                <button
-                                    type="button"
-                                    className="settings-save-btn"
-                                    onClick={() => handleRemoveWindow(index)}
-                                    disabled={saving || draft.time_windows.length <= 1}
-                                    style={{ minWidth: 92, marginBottom: 0, padding: '0 16px' }}
-                                >
-                                    {t('common.delete')}
-                                </button>
-                            </div>
-                        ))}
-                    </div>
-
-                    <button
-                        type="button"
-                        className="settings-entry-btn"
-                        onClick={handleAddWindow}
-                        style={{ marginTop: 12 }}
-                        disabled={saving}
-                    >
-                        <div className="settings-entry-info">
-                            <span className="settings-entry-label">{t('settings.idleGreetingAddWindow')}</span>
-                            <span className="settings-entry-subvalue">{t('settings.idleGreetingWindowFormat')}</span>
+                                <Icon name="trash" />
+                            </button>
                         </div>
-                        <svg className="settings-entry-arrow" viewBox="0 0 24 24">
-                            <path d="M19 11H13V5h-2v6H5v2h6v6h2v-6h6z" />
-                        </svg>
-                    </button>
-                </div>
+                    ))}
+                    <Row
+                        className="idle-window-add"
+                        icon="plus"
+                        label={t('settingsManagement.idleGreeting.addWindow')}
+                        detail={t('settings.idleGreetingWindowFormat')}
+                        chevron={false}
+                        disabled={saving}
+                        onClick={handleAddWindow}
+                    />
+                </Group>
 
                 {showValidationErrors && validationError && (
-                    <div className="settings-message error">{validationError}</div>
+                    <p className="settings-inline-error" role="alert">
+                        {validationError}
+                    </p>
                 )}
-
-                <button className="settings-save-btn" onClick={handleSave} disabled={saving}>
-                    {saving ? t('common.saving') : t('common.save')}
-                </button>
-
-                {message && <div className={`settings-message ${messageType}`}>{message}</div>}
             </div>
         </motion.div>
     )

@@ -1,6 +1,140 @@
-/* Native top-layer dialogs also fit when opened inside the persona editor. */
+/* Memory dialogs reuse the shared prompt-modal shell from ui.css; only local layout lives here. */
+
 dialog.memory-modal-overlay > .memory-modal {
+    max-width: 480px;
     box-sizing: border-box;
-    overflow-y: auto;
-    overscroll-behavior: contain;
+    /* Let the custom select menus escape the card instead of scrolling the body. */
+    overflow: visible;
+}
+
+.memory-modal .prompt-modal-body {
+    overflow: visible;
+}
+
+.memory-modal .prompt-modal-footer {
+    border-radius: 0 0 var(--radius-xl) var(--radius-xl);
+}
+
+.memory-modal-form {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.memory-modal .memory-content-input {
+    min-height: 88px;
+}
+
+.memory-form-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3);
+    margin-top: var(--space-4);
+}
+
+.memory-modal .memory-form-row .ui-field + .ui-field {
+    margin-top: 0;
+}
+
+.memory-form-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    margin-top: var(--space-5);
+}
+
+.memory-form-toggle__text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.memory-modal .ui-field + .ui-field {
+    margin-top: var(--space-4);
+}
+
+.memory-file-input {
+    width: 100%;
+    color: var(--text-2);
+    font-size: 13px;
+}
+
+.memory-file-input::file-selector-button {
+    height: 32px;
+    margin-right: var(--space-3);
+    padding: 0 12px;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-sm);
+    background: var(--bg-elevated);
+    color: var(--text);
+    font: inherit;
+    font-weight: 550;
+    cursor: pointer;
+}
+
+.memory-file-input:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+}
+
+.import-preview {
+    margin-top: var(--space-4);
+}
+
+.import-preview-title {
+    margin: 0 0 var(--space-2);
+    color: var(--text-2);
+    font-size: 13px;
+}
+
+.import-preview-list {
+    box-shadow: none;
+}
+
+.import-preview-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: 8px var(--space-3);
+    font-size: 13px;
+}
+
+.import-preview-item + .import-preview-item,
+.import-preview-more {
+    border-top: 1px solid var(--line);
+}
+
+.import-preview-item .ui-badge {
+    flex-shrink: 0;
+    height: 20px;
+    font-size: var(--text-xs);
+}
+
+.import-preview-text {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.import-preview-more {
+    padding: 8px var(--space-3);
+    color: var(--text-3);
+    font-size: var(--text-sm);
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .memory-file-input::file-selector-button:hover {
+        background: var(--bg-sunken);
+    }
+}
+
+@media (max-width: 560px) {
+    .memory-modal .memory-content-input {
+        font-size: 16px;
+    }
 }

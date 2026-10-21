@@ -1,3 +1,6 @@
+import { useT } from '../../../contexts/I18nContext'
+import { Icon } from '../../ui'
+
 interface AttachmentPanelProps {
     open: boolean
     panelRef: React.RefObject<HTMLDivElement | null>
@@ -9,6 +12,7 @@ interface AttachmentPanelProps {
     onOpenRedPacket: () => void
 }
 
+/** Small popover anchored to the composer's attach button. */
 export const AttachmentPanel: React.FC<AttachmentPanelProps> = ({
     open,
     panelRef,
@@ -23,47 +27,52 @@ export const AttachmentPanel: React.FC<AttachmentPanelProps> = ({
     if (!open) return null
 
     return (
-        <div className="attachment-expand-panel" ref={panelRef} role="menu">
-            <div className="attachment-grid">
-                <button
-                    type="button"
-                    className="attachment-tile"
-                    onClick={() => {
-                        onClose()
-                        onUpload()
-                    }}
-                    disabled={!imageCapable || uploadingImage}
-                    aria-label={t('chat.album')}
-                    role="menuitem"
-                >
-                    <div className="attachment-tile-icon">
-                        <svg viewBox="0 0 24 24" aria-hidden="true">
-                            <path d="M19 7h-3V5c0-1.1-.9-2-2-2h-4c-1.1 0-2 .9-2 2v2H5c-1.1 0-2 .9-2 2v9c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V9c0-1.1-.9-2-2-2zm-9 0V5h4v2h-4zm7 13H5V9h14v11zM7 18l3-4 2 3 3-4 2 5H7z" />
-                        </svg>
-                    </div>
-                    <div className="attachment-tile-label">{t('chat.album')}</div>
-                </button>
+        <div
+            className="attachment-expand-panel"
+            ref={panelRef}
+            role="menu"
+            onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                    event.stopPropagation()
+                    onClose()
+                }
+            }}
+        >
+            <button
+                type="button"
+                className="attachment-tile"
+                onClick={() => {
+                    onClose()
+                    onUpload()
+                }}
+                disabled={!imageCapable || uploadingImage}
+                role="menuitem"
+            >
+                <span className="attachment-tile-icon" aria-hidden="true">
+                    <Icon name="image" size={16} />
+                </span>
+                <span className="attachment-tile-label">{t('chat.album')}</span>
+            </button>
 
-                <button
-                    type="button"
-                    className="attachment-tile"
-                    onClick={() => {
-                        onClose()
-                        onOpenRedPacket()
-                    }}
-                    disabled={sending}
-                    aria-label={t('chat.redPacket')}
-                    role="menuitem"
-                >
-                    <div className="attachment-tile-icon">
-                        <svg viewBox="0 0 24 24" aria-hidden="true">
-                            <path d="M7 3h10a2 2 0 0 1 2 2v4a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V5a2 2 0 0 1 2-2zm0 12h10a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-2a2 2 0 0 1 2-2zm5-10a1.2 1.2 0 1 0 0 2.4A1.2 1.2 0 0 0 12 5zm0 12a1.2 1.2 0 1 0 0 2.4A1.2 1.2 0 0 0 12 17z" />
-                        </svg>
-                    </div>
-                    <div className="attachment-tile-label">{t('chat.redPacket')}</div>
-                </button>
-            </div>
+            <button
+                type="button"
+                className="attachment-tile"
+                onClick={() => {
+                    onClose()
+                    onOpenRedPacket()
+                }}
+                disabled={sending}
+                role="menuitem"
+            >
+                <span className="attachment-tile-icon attachment-tile-icon--packet" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round">
+                        <rect x="5" y="3" width="14" height="18" rx="2.5" />
+                        <path d="M5 8.5c2 1.6 4.4 2.5 7 2.5s5-.9 7-2.5" />
+                        <circle cx="12" cy="11" r="1.6" fill="currentColor" stroke="none" />
+                    </svg>
+                </span>
+                <span className="attachment-tile-label">{t('chat.redPacket')}</span>
+            </button>
         </div>
     )
 }
-import { useT } from '../../../contexts/I18nContext'

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import {
     getPrompts,
     deletePrompt,
@@ -11,7 +11,8 @@ import type { Prompt } from '../types/chat'
 import { useT } from '../contexts/I18nContext'
 import { useToast } from '../contexts/ToastContext'
 import { useConfirm } from '../contexts/ConfirmContext'
-import { getManagementCopy } from '../i18n/archive'
+import { getPersonaCopy } from '../i18n/personas'
+import { Avatar, EmptyState, Icon, Page, PageHeader } from './ui'
 import './Contacts.css'
 
 interface ContactsProps {
@@ -21,8 +22,8 @@ interface ContactsProps {
 }
 
 const Contacts: React.FC<ContactsProps> = ({ onStartChat, onEditPersona, refreshToken }) => {
-    const { t, locale } = useT()
-    const copy = getManagementCopy(locale).personas
+    const { locale } = useT()
+    const copy = getPersonaCopy(locale).list
     const { showToast } = useToast()
     const { confirm } = useConfirm()
     const [prompts, setPrompts] = useState<Prompt[]>([])
@@ -32,6 +33,11 @@ const Contacts: React.FC<ContactsProps> = ({ onStartChat, onEditPersona, refresh
     const [busy, setBusy] = useState(false)
     const busyRef = useRef(false)
     const requestRef = useRef(0)
+
+    const dateFormat = useMemo(
+        () => new Intl.DateTimeFormat(locale === 'zh' ? 'zh-CN' : 'en', { month: 'short', day: 'numeric' }),
+        [locale]
+    )
 
     const loadPrompts = async () => {
         const request = ++requestRef.current
@@ -98,119 +104,177 @@ const Contacts: React.FC<ContactsProps> = ({ onStartChat, onEditPersona, refresh
         }
     }
 
+    const formatDate = (value: string) => {
+        const date = new Date(value)
+        return Number.isNaN(date.getTime()) ? '' : copy.updated(dateFormat.format(date))
+    }
+
     const normalizedQuery = query.trim().toLocaleLowerCase(locale)
     const filteredPrompts = prompts.filter((prompt) =>
         `${prompt.name} ${prompt.description || prompt.content}`.toLocaleLowerCase(locale).includes(normalizedQuery)
     )
 
-    return (
-        <section className="contacts" aria-labelledby="personas-heading">
-            <header className="contacts-header">
-                <div>
-                    <h1 id="personas-heading">{copy.title}</h1>
-                    <p>{copy.subtitle}</p>
-                </div>
-                {onEditPersona && (
-                    <button type="button" className="contacts-primary" onClick={() => onEditPersona()}>
-                        {copy.add}
-                    </button>
-                )}
-            </header>
-            <div className="contacts-toolbar">
-                <label className="contacts-search">
-                    <span>{copy.searchLabel}</span>
-                    <input
-                        type="search"
-                        value={query}
-                        onChange={(event) => setQuery(event.target.value)}
-                        placeholder={copy.searchPlaceholder}
-                    />
-                </label>
-                <p className="contacts-count" aria-live="polite">
-                    {normalizedQuery
-                        ? copy.results(filteredPrompts.length, prompts.length)
-                        : copy.count(prompts.length)}
-                </p>
-            </div>
-            <div className="contacts-content">
-                {error && (
-                    <div className="contacts-error" role="alert">
-                        <p>{error}</p>
-                        <button type="button" disabled={loading} onClick={() => loadPrompts()}>
+    const renderBody = () => {
+        if (loading && prompts.length === 0) {
+            return <EmptyState role="status" title={copy.loading} />
+        }
+        if (error && prompts.length === 0) {
+            return (
+                <EmptyState
+                    role="alert"
+                    icon="alert"
+                    title={error}
+                    action={
+                        <button type="button" className="ui-btn" disabled={loading} onClick={() => loadPrompts()}>
                             {copy.retry}
                         </button>
-                    </div>
-                )}
-                {loading && prompts.length === 0 ? (
-                    <div className="contacts-empty" role="status">
-                        {t('common.loading')}
-                    </div>
-                ) : error && prompts.length === 0 ? null : filteredPrompts.length === 0 ? (
-                    <div className="contacts-empty">
-                        <p>{normalizedQuery ? copy.noResults : copy.empty}</p>
-                        {!normalizedQuery && <p>{copy.emptyHint}</p>}
-                    </div>
-                ) : (
-                    <ul className="contacts-list">
-                        {filteredPrompts.map((prompt) => (
-                            <li key={prompt.id} className="contact-card">
-                                <div className="contact-summary">
-                                    <div className="contact-avatar" aria-hidden="true">
-                                        {prompt.avatar ? (
-                                            <img
-                                                src={appendQueryParam(
-                                                    getPromptAvatarUrl(prompt.id),
-                                                    't',
-                                                    new Date(prompt.updated_at).getTime()
-                                                )}
-                                                alt=""
-                                            />
-                                        ) : (
-                                            prompt.name.charAt(0).toUpperCase() || '?'
-                                        )}
-                                    </div>
-                                    <h2>{prompt.name}</h2>
-                                </div>
-                                <p className="contact-description">
-                                    {prompt.description || prompt.content || copy.noDescription}
-                                </p>
-                                <div className="contact-actions">
-                                    {onEditPersona && (
-                                        <button
-                                            type="button"
-                                            className="contacts-primary"
-                                            aria-label={`${copy.edit}: ${prompt.name}`}
-                                            onClick={() => onEditPersona(prompt.id)}
-                                        >
-                                            {copy.edit}
-                                        </button>
-                                    )}
-                                    {onStartChat && (
-                                        <button
-                                            type="button"
-                                            disabled={busy}
-                                            aria-label={`${copy.testChat}: ${prompt.name}`}
-                                            onClick={() => handleStartChat(prompt)}
-                                        >
-                                            {copy.testChat}
-                                        </button>
-                                    )}
-                                    <button
-                                        type="button"
-                                        className="contact-delete"
-                                        disabled={busy}
-                                        aria-label={`${copy.delete}: ${prompt.name}`}
-                                        onClick={() => handleDelete(prompt)}
-                                    >
-                                        {copy.delete}
-                                    </button>
-                                </div>
-                            </li>
-                        ))}
-                    </ul>
-                )}
-            </div>
-        </section>
+                    }
+                />
+            )
+        }
+        if (prompts.length === 0) {
+            return (
+                <EmptyState
+                    icon="persona"
+                    title={copy.empty}
+                    description={copy.emptyHint}
+                    action={
+                        onEditPersona && (
+                            <button type="button" className="ui-btn" onClick={() => onEditPersona()}>
+                                <Icon name="plus" />
+                                {copy.add}
+                            </button>
+                        )
+                    }
+                />
+            )
+        }
+        if (filteredPrompts.length === 0) {
+            return (
+                <EmptyState
+                    icon="search"
+                    title={copy.noResults}
+                    description={copy.noResultsHint}
+                    action={
+                        <button type="button" className="ui-btn" onClick={() => setQuery('')}>
+                            {copy.clearSearch}
+                        </button>
+                    }
+                />
+            )
+        }
+        return (
+            <ul className="contacts-grid">
+                {filteredPrompts.map((prompt) => (
+                    <li key={prompt.id} className="contact-card">
+                        {onEditPersona && (
+                            <button
+                                type="button"
+                                className="contact-card__open"
+                                aria-label={copy.edit(prompt.name)}
+                                onClick={() => onEditPersona(prompt.id)}
+                            />
+                        )}
+                        <div className="contact-card__head">
+                            <Avatar
+                                className="contact-card__avatar"
+                                name={prompt.name}
+                                src={
+                                    prompt.avatar
+                                        ? appendQueryParam(
+                                              getPromptAvatarUrl(prompt.id),
+                                              't',
+                                              new Date(prompt.updated_at).getTime()
+                                          )
+                                        : null
+                                }
+                            />
+                            <h2 className="contact-card__name">{prompt.name}</h2>
+                            <button
+                                type="button"
+                                className="ui-icon-btn contact-card__delete"
+                                disabled={busy}
+                                aria-label={copy.deleteLabel(prompt.name)}
+                                title={copy.delete}
+                                onClick={() => handleDelete(prompt)}
+                            >
+                                <Icon name="trash" />
+                            </button>
+                        </div>
+                        <p className={`contact-card__desc${prompt.description ? '' : ' is-muted'}`}>
+                            {prompt.description || prompt.content || copy.noDescription}
+                        </p>
+                        <div className="contact-card__foot">
+                            <span className="contact-card__meta">{formatDate(prompt.updated_at)}</span>
+                            {onStartChat && (
+                                <button
+                                    type="button"
+                                    className="ui-btn ui-btn--sm contact-card__chat"
+                                    disabled={busy}
+                                    aria-label={copy.testChatLabel(prompt.name)}
+                                    onClick={() => handleStartChat(prompt)}
+                                >
+                                    <Icon name="chat" />
+                                    {copy.testChat}
+                                </button>
+                            )}
+                        </div>
+                    </li>
+                ))}
+            </ul>
+        )
+    }
+
+    return (
+        <Page wide className="contacts">
+            <PageHeader
+                title={copy.title}
+                description={copy.subtitle}
+                actions={
+                    onEditPersona && (
+                        <button type="button" className="ui-btn ui-btn--primary" onClick={() => onEditPersona()}>
+                            <Icon name="plus" />
+                            {copy.add}
+                        </button>
+                    )
+                }
+            />
+            {prompts.length > 0 && (
+                <div className="contacts-toolbar">
+                    <label className="contacts-search">
+                        <span className="ui-visually-hidden">{copy.searchLabel}</span>
+                        <Icon name="search" size={16} className="contacts-search__icon" />
+                        <input
+                            type="search"
+                            className="ui-input"
+                            value={query}
+                            onChange={(event) => setQuery(event.target.value)}
+                            placeholder={copy.searchPlaceholder}
+                        />
+                    </label>
+                    <p className="contacts-count" aria-live="polite">
+                        {normalizedQuery
+                            ? copy.results(filteredPrompts.length, prompts.length)
+                            : copy.count(prompts.length)}
+                    </p>
+                </div>
+            )}
+            {error && prompts.length > 0 && (
+                <div className="contacts-alert" role="alert">
+                    <Icon name="alert" size={16} />
+                    <span>{error}</span>
+                    <button
+                        type="button"
+                        className="ui-btn ui-btn--ghost ui-btn--sm"
+                        disabled={loading}
+                        onClick={() => loadPrompts()}
+                    >
+                        {copy.retry}
+                    </button>
+                </div>
+            )}
+            {renderBody()}
+        </Page>
     )
 }
 

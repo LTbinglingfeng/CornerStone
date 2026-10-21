@@ -8,6 +8,10 @@ import { useConfirm } from '../contexts/ConfirmContext'
 import CustomSelect from './provider/CustomSelect'
 import type { SelectOption } from './provider/constants'
 import { ModalOverlay } from './ModalOverlay'
+import { AnimatePresence, motion } from 'motion/react'
+import { centerModalVariants, overlayVariants } from '../utils/motion'
+import { getPersonaCopy } from '../i18n/personas'
+import { Badge, EmptyState, Icon } from './ui'
 import './MemoryManager.css'
 import './MemoryManagerModal.css'
 
@@ -21,7 +25,8 @@ const THRESHOLD_ACTIVE = 0.3
 const THRESHOLD_ARCHIVE = 0.15
 
 const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId, embedded, onMemoryCountChange }) => {
-    const { t } = useT()
+    const { t, locale } = useT()
+    const copy = getPersonaCopy(locale).memory
     const { showToast } = useToast()
     const { confirm } = useConfirm()
     const [memories, setMemories] = useState<Memory[]>([])
@@ -264,335 +269,315 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({ promptId, embedded, onMem
     }, [filterSubject, filterCategory, availableCategories])
 
     const rootCls = `memory-manager${embedded ? ' embedded' : ''}`
+    const hasFilters = Boolean(searchQuery || filterSubject !== 'all' || filterCategory !== 'all')
+    const clearFilters = () => {
+        setSearchQuery('')
+        setFilterSubject('all')
+        setFilterCategory('all')
+    }
 
     if (!promptId) {
-        return <div className={`${rootCls} loading`}>{t('memory.selectCharacterFirst')}</div>
+        return (
+            <div className={rootCls}>
+                <EmptyState icon="memory" title={t('memory.selectCharacterFirst')} />
+            </div>
+        )
     }
 
-    if (loading) {
-        return <div className={`${rootCls} loading`}>{t('common.loading')}</div>
+    // Only the first load blocks the view; later refreshes keep the list in place.
+    if (loading && stats === null && memories.length === 0) {
+        return (
+            <div className={rootCls}>
+                <EmptyState role="status" title={t('common.loading')} />
+            </div>
+        )
     }
+
+    const renderItems = (list: Memory[]) =>
+        list.map((m) => (
+            <MemoryItem
+                key={m.id}
+                memory={m}
+                onDelete={() => handleDelete(m.id)}
+                onTogglePin={() => handleTogglePin(m)}
+                selectMode={selectMode}
+                selected={selectedIds.has(m.id)}
+                onToggleSelect={() => toggleSelect(m.id)}
+                editingStrength={editingStrengthId === m.id}
+                editingStrengthValue={editingStrengthValue}
+                onStrengthEdit={() => handleStrengthEdit(m)}
+                onStrengthChange={setEditingStrengthValue}
+                onStrengthConfirm={() => handleStrengthConfirm(m.id)}
+                onStrengthCancel={handleStrengthCancel}
+            />
+        ))
+
+    const renderSelectAll = (list: Memory[]) =>
+        selectMode &&
+        list.length > 0 && (
+            <label className="memory-select-all">
+                <input
+                    type="checkbox"
+                    checked={list.every((m) => selectedIds.has(m.id))}
+                    onChange={() => toggleSelectAll(list)}
+                />
+                {t('common.selectAll')}
+            </label>
+        )
+
+    const renderSection = (title: string, list: Memory[]) =>
+        list.length > 0 && (
+            <section className="memory-section">
+                <div className="memory-section-header">
+                    <h4 className="memory-section-title">
+                        {title}
+                        <span className="memory-section-count">{list.length}</span>
+                    </h4>
+                    {renderSelectAll(list)}
+                </div>
+                <div className="ui-list memory-list">{renderItems(list)}</div>
+            </section>
+        )
 
     return (
         <div className={rootCls}>
             <div className="memory-header">
-                <h3>{t('memory.title')}</h3>
+                <p className="memory-summary">
+                    {copy.summary(memories.length)}
+                    {stats && stats.total > 0 && (
+                        <span className="memory-summary__meta">
+                            {copy.avgStrength} {Math.round(stats.avg_strength * 100)}%
+                        </span>
+                    )}
+                </p>
                 <div className="memory-header-actions">
-                    <button className="action-btn" onClick={() => setShowStats(!showStats)} title={t('memory.stats')}>
-                        {showStats ? t('memory.hideStats') : t('memory.stats')}
+                    <button
+                        type="button"
+                        className="ui-icon-btn"
+                        onClick={() => setShowStats(!showStats)}
+                        aria-pressed={showStats}
+                        aria-label={showStats ? copy.hideStats : copy.stats}
+                        title={showStats ? copy.hideStats : copy.stats}
+                    >
+                        <Icon name="chart" />
                     </button>
-                    <button className="action-btn" onClick={handleExport} title={t('common.export')}>
-                        {t('common.export')}
+                    <button
+                        type="button"
+                        className="ui-icon-btn"
+                        onClick={() => setShowImportModal(true)}
+                        aria-label={copy.import}
+                        title={copy.import}
+                    >
+                        <Icon name="upload" />
                     </button>
-                    <button className="action-btn" onClick={() => setShowImportModal(true)} title={t('common.import')}>
-                        {t('common.import')}
+                    <button
+                        type="button"
+                        className="ui-icon-btn"
+                        onClick={handleExport}
+                        aria-label={copy.export}
+                        title={copy.export}
+                    >
+                        <Icon name="download" />
                     </button>
-                    {selectMode ? (
-                        <button className="action-btn" onClick={exitSelectMode}>
-                            {t('common.cancelSelect')}
-                        </button>
-                    ) : (
-                        <button className="action-btn" onClick={() => setSelectMode(true)}>
-                            {t('common.select')}
+                    {memories.length > 0 && (
+                        <button
+                            type="button"
+                            className="ui-btn ui-btn--ghost ui-btn--sm"
+                            aria-pressed={selectMode}
+                            onClick={selectMode ? exitSelectMode : () => setSelectMode(true)}
+                        >
+                            {selectMode ? copy.done : copy.select}
                         </button>
                     )}
-                    <button className="add-btn" onClick={() => setShowAddModal(true)}>
-                        + {t('common.add')}
+                    <button
+                        type="button"
+                        className="add-btn ui-btn ui-btn--primary ui-btn--sm"
+                        onClick={() => setShowAddModal(true)}
+                    >
+                        <Icon name="plus" />
+                        {copy.add}
                     </button>
                 </div>
             </div>
 
-            <div className="memory-hint">{t('memory.hint')}</div>
-
-            {/* 统计面板 */}
             {showStats && stats && <StatsPanel stats={stats} />}
 
-            {/* 搜索和筛选 */}
-            <div className="memory-filters">
-                <input
-                    type="text"
-                    className="memory-search"
-                    placeholder={t('memory.searchPlaceholder')}
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                />
-                <div className="memory-filter-select-wrapper">
-                    <CustomSelect
-                        value={filterSubject}
-                        options={subjectOptions}
-                        onChange={(v) => setFilterSubject(v as 'all' | 'user' | 'self')}
-                        ariaLabel={t('memory.typeFilter')}
-                    />
+            {memories.length > 0 && (
+                <div className="memory-filters">
+                    <label className="memory-search">
+                        <span className="ui-visually-hidden">{copy.searchLabel}</span>
+                        <Icon name="search" size={16} className="memory-search__icon" />
+                        <input
+                            type="search"
+                            className="ui-input"
+                            placeholder={t('memory.searchPlaceholder')}
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                        />
+                    </label>
+                    <div className="memory-filter-select">
+                        <CustomSelect
+                            value={filterSubject}
+                            options={subjectOptions}
+                            onChange={(v) => setFilterSubject(v as 'all' | 'user' | 'self')}
+                            ariaLabel={t('memory.typeFilter')}
+                        />
+                    </div>
+                    <div className="memory-filter-select">
+                        <CustomSelect
+                            value={filterCategory}
+                            options={categoryOptions}
+                            onChange={setFilterCategory}
+                            ariaLabel={t('memory.categoryFilter')}
+                        />
+                    </div>
                 </div>
-                <div className="memory-filter-select-wrapper">
-                    <CustomSelect
-                        value={filterCategory}
-                        options={categoryOptions}
-                        onChange={setFilterCategory}
-                        ariaLabel={t('memory.categoryFilter')}
-                    />
-                </div>
-            </div>
+            )}
 
-            {/* 筛选结果提示 */}
-            {(searchQuery || filterSubject !== 'all' || filterCategory !== 'all') && (
-                <div className="filter-result-hint">
-                    {t('memory.foundCount', { count: filteredMemories.length })}
-                    {filteredMemories.length !== memories.length && t('memory.totalCount', { count: memories.length })}
-                    <button
-                        className="clear-filter-btn"
-                        onClick={() => {
-                            setSearchQuery('')
-                            setFilterSubject('all')
-                            setFilterCategory('all')
-                        }}
-                    >
+            {hasFilters && filteredMemories.length > 0 && (
+                <div className="filter-result-hint" aria-live="polite">
+                    <span>
+                        {t('memory.foundCount', { count: filteredMemories.length })}
+                        {filteredMemories.length !== memories.length &&
+                            t('memory.totalCount', { count: memories.length })}
+                    </span>
+                    <button type="button" className="ui-btn ui-btn--ghost ui-btn--sm" onClick={clearFilters}>
                         {t('memory.clearFilter')}
                     </button>
                 </div>
             )}
 
-            {/* 永久记忆区域 */}
-            {pinnedMemories.length > 0 && (
-                <section className="memory-section">
-                    <div className="memory-section-header">
-                        <h4>
-                            {t('memory.pinnedMemories')} ({pinnedMemories.length})
-                        </h4>
-                        {selectMode && (
-                            <label className="memory-select-all">
-                                <input
-                                    type="checkbox"
-                                    checked={pinnedMemories.every((m) => selectedIds.has(m.id))}
-                                    onChange={() => toggleSelectAll(pinnedMemories)}
-                                />
-                                {t('common.selectAll')}
-                            </label>
-                        )}
-                    </div>
-                    {pinnedMemories.map((m) => (
-                        <MemoryItem
-                            key={m.id}
-                            memory={m}
-                            onDelete={() => handleDelete(m.id)}
-                            onTogglePin={() => handleTogglePin(m)}
-                            selectMode={selectMode}
-                            selected={selectedIds.has(m.id)}
-                            onToggleSelect={() => toggleSelect(m.id)}
-                            editingStrength={editingStrengthId === m.id}
-                            editingStrengthValue={editingStrengthValue}
-                            onStrengthEdit={() => handleStrengthEdit(m)}
-                            onStrengthChange={setEditingStrengthValue}
-                            onStrengthConfirm={() => handleStrengthConfirm(m.id)}
-                            onStrengthCancel={handleStrengthCancel}
-                        />
-                    ))}
-                </section>
-            )}
+            {memories.length === 0 ? (
+                <EmptyState icon="memory" title={copy.empty} description={copy.emptyHint} />
+            ) : filteredMemories.length === 0 ? (
+                <EmptyState
+                    icon="search"
+                    title={copy.noResults}
+                    action={
+                        <button type="button" className="ui-btn" onClick={clearFilters}>
+                            {t('memory.clearFilter')}
+                        </button>
+                    }
+                />
+            ) : (
+                <>
+                    {renderSection(t('memory.pinnedMemories'), pinnedMemories)}
+                    {renderSection(t('memory.activeMemories'), activeMemories)}
+                    {renderSection(t('memory.weakMemories'), weakMemories)}
 
-            {/* 活跃记忆 */}
-            <section className="memory-section">
-                <div className="memory-section-header">
-                    <h4>
-                        {t('memory.activeMemories')} ({activeMemories.length})
-                    </h4>
-                    {selectMode && activeMemories.length > 0 && (
-                        <label className="memory-select-all">
-                            <input
-                                type="checkbox"
-                                checked={activeMemories.every((m) => selectedIds.has(m.id))}
-                                onChange={() => toggleSelectAll(activeMemories)}
-                            />
-                            {t('common.selectAll')}
-                        </label>
-                    )}
-                </div>
-                {activeMemories.length === 0 ? (
-                    <p className="empty-hint">{t('memory.noActiveMemories')}</p>
-                ) : (
-                    activeMemories.map((m) => (
-                        <MemoryItem
-                            key={m.id}
-                            memory={m}
-                            onDelete={() => handleDelete(m.id)}
-                            onTogglePin={() => handleTogglePin(m)}
-                            selectMode={selectMode}
-                            selected={selectedIds.has(m.id)}
-                            onToggleSelect={() => toggleSelect(m.id)}
-                            editingStrength={editingStrengthId === m.id}
-                            editingStrengthValue={editingStrengthValue}
-                            onStrengthEdit={() => handleStrengthEdit(m)}
-                            onStrengthChange={setEditingStrengthValue}
-                            onStrengthConfirm={() => handleStrengthConfirm(m.id)}
-                            onStrengthCancel={handleStrengthCancel}
-                        />
-                    ))
-                )}
-            </section>
-
-            {/* 待激活 */}
-            {weakMemories.length > 0 && (
-                <section className="memory-section">
-                    <div className="memory-section-header">
-                        <h4>
-                            {t('memory.weakMemories')} ({weakMemories.length})
-                        </h4>
-                        {selectMode && (
-                            <label className="memory-select-all">
-                                <input
-                                    type="checkbox"
-                                    checked={weakMemories.every((m) => selectedIds.has(m.id))}
-                                    onChange={() => toggleSelectAll(weakMemories)}
-                                />
-                                {t('common.selectAll')}
-                            </label>
-                        )}
-                    </div>
-                    {weakMemories.map((m) => (
-                        <MemoryItem
-                            key={m.id}
-                            memory={m}
-                            onDelete={() => handleDelete(m.id)}
-                            onTogglePin={() => handleTogglePin(m)}
-                            selectMode={selectMode}
-                            selected={selectedIds.has(m.id)}
-                            onToggleSelect={() => toggleSelect(m.id)}
-                            editingStrength={editingStrengthId === m.id}
-                            editingStrengthValue={editingStrengthValue}
-                            onStrengthEdit={() => handleStrengthEdit(m)}
-                            onStrengthChange={setEditingStrengthValue}
-                            onStrengthConfirm={() => handleStrengthConfirm(m.id)}
-                            onStrengthCancel={handleStrengthCancel}
-                        />
-                    ))}
-                </section>
-            )}
-
-            {/* 归档区域 */}
-            {archivedMemories.length > 0 && (
-                <section className="memory-section">
-                    <div className="memory-section-header">
-                        <h4 className="collapsible" onClick={() => setArchivedCollapsed(!archivedCollapsed)}>
-                            {t('memory.archivedMemories')} ({archivedMemories.length}){' '}
-                            {archivedCollapsed ? t('memory.expand') : t('memory.collapse')}
-                        </h4>
-                        {!archivedCollapsed && (
-                            <>
-                                <button className="clear-archived-btn" onClick={handleClearArchived}>
-                                    {t('memory.clearArchived')}
+                    {archivedMemories.length > 0 && (
+                        <section className="memory-section">
+                            <div className="memory-section-header">
+                                <button
+                                    type="button"
+                                    className="memory-section-toggle"
+                                    aria-expanded={!archivedCollapsed}
+                                    onClick={() => setArchivedCollapsed(!archivedCollapsed)}
+                                >
+                                    <Icon
+                                        name="chevronRight"
+                                        size={16}
+                                        className={`memory-section-chevron${archivedCollapsed ? '' : ' is-open'}`}
+                                    />
+                                    <span className="memory-section-title">
+                                        {t('memory.archivedMemories')}
+                                        <span className="memory-section-count">{archivedMemories.length}</span>
+                                    </span>
                                 </button>
-                                {selectMode && (
-                                    <label className="memory-select-all">
-                                        <input
-                                            type="checkbox"
-                                            checked={archivedMemories.every((m) => selectedIds.has(m.id))}
-                                            onChange={() => toggleSelectAll(archivedMemories)}
-                                        />
-                                        {t('common.selectAll')}
-                                    </label>
+                                {!archivedCollapsed && (
+                                    <div className="memory-section-actions">
+                                        {renderSelectAll(archivedMemories)}
+                                        <button
+                                            type="button"
+                                            className="clear-archived-btn ui-btn ui-btn--ghost ui-btn--sm"
+                                            onClick={handleClearArchived}
+                                        >
+                                            {t('memory.clearArchived')}
+                                        </button>
+                                    </div>
                                 )}
-                            </>
-                        )}
-                    </div>
-                    {!archivedCollapsed &&
-                        archivedMemories.map((m) => (
-                            <MemoryItem
-                                key={m.id}
-                                memory={m}
-                                onDelete={() => handleDelete(m.id)}
-                                onTogglePin={() => handleTogglePin(m)}
-                                selectMode={selectMode}
-                                selected={selectedIds.has(m.id)}
-                                onToggleSelect={() => toggleSelect(m.id)}
-                                editingStrength={editingStrengthId === m.id}
-                                editingStrengthValue={editingStrengthValue}
-                                onStrengthEdit={() => handleStrengthEdit(m)}
-                                onStrengthChange={setEditingStrengthValue}
-                                onStrengthConfirm={() => handleStrengthConfirm(m.id)}
-                                onStrengthCancel={handleStrengthCancel}
-                            />
-                        ))}
-                </section>
+                            </div>
+                            {!archivedCollapsed && (
+                                <div className="ui-list memory-list">{renderItems(archivedMemories)}</div>
+                            )}
+                        </section>
+                    )}
+                </>
             )}
 
-            {/* 批量操作浮动栏 */}
+            <p className="memory-hint">{t('memory.hint')}</p>
+
             {selectMode && selectedIds.size > 0 && (
-                <div className="batch-action-bar">
+                <div className="batch-action-bar" role="region" aria-label={t('memory.batchDelete')}>
                     <span>{t('memory.selectedCount', { count: selectedIds.size })}</span>
-                    <button className="batch-delete-btn" onClick={handleBatchDelete}>
+                    <button
+                        type="button"
+                        className="batch-delete-btn ui-btn ui-btn--danger-solid ui-btn--sm"
+                        onClick={handleBatchDelete}
+                    >
+                        <Icon name="trash" />
                         {t('memory.deleteSelected')}
                     </button>
                 </div>
             )}
 
-            {showAddModal && (
-                <AddMemoryModal promptId={promptId} onClose={() => setShowAddModal(false)} onSuccess={loadMemories} />
-            )}
-
-            {showImportModal && (
-                <ImportMemoryModal
-                    promptId={promptId}
-                    onClose={() => setShowImportModal(false)}
-                    onSuccess={loadMemories}
-                />
-            )}
+            <AnimatePresence>
+                {showAddModal && (
+                    <AddMemoryModal
+                        key="add-memory"
+                        promptId={promptId}
+                        onClose={() => setShowAddModal(false)}
+                        onSuccess={loadMemories}
+                    />
+                )}
+                {showImportModal && (
+                    <ImportMemoryModal
+                        key="import-memory"
+                        promptId={promptId}
+                        onClose={() => setShowImportModal(false)}
+                        onSuccess={loadMemories}
+                    />
+                )}
+            </AnimatePresence>
         </div>
     )
 }
 
 function StatsPanel({ stats }: { stats: MemoryStats }) {
-    const { t } = useT()
-    const avgStrengthPercent = Math.round(stats.avg_strength * 100)
+    const { t, locale } = useT()
+    const copy = getPersonaCopy(locale).memory
+    const cells: Array<[string, string | number]> = [
+        [t('common.total'), stats.total],
+        [t('memory.pinned'), stats.pinned],
+        [t('memory.active'), stats.active],
+        [t('memory.weak'), stats.weak],
+        [t('memory.archived'), stats.archived],
+        [copy.avgStrength, `${Math.round(stats.avg_strength * 100)}%`],
+        [t('memory.totalUsageCount'), stats.total_seen_count],
+        [t('memory.aboutUser'), stats.by_subject['user'] || 0],
+        [t('memory.aboutCharacter'), stats.by_subject['self'] || 0],
+    ]
+    const categories = Object.entries(stats.by_category)
 
     return (
         <div className="memory-stats-panel">
-            <div className="stats-row">
-                <div className="stat-item">
-                    <span className="stat-label">{t('common.total')}</span>
-                    <span className="stat-value">{stats.total}</span>
-                </div>
-                <div className="stat-item">
-                    <span className="stat-label">{t('memory.pinned')}</span>
-                    <span className="stat-value stat-pinned">{stats.pinned}</span>
-                </div>
-                <div className="stat-item">
-                    <span className="stat-label">{t('memory.active')}</span>
-                    <span className="stat-value stat-active">{stats.active}</span>
-                </div>
-                <div className="stat-item">
-                    <span className="stat-label">{t('memory.weak')}</span>
-                    <span className="stat-value stat-weak">{stats.weak}</span>
-                </div>
-                <div className="stat-item">
-                    <span className="stat-label">{t('memory.archived')}</span>
-                    <span className="stat-value stat-archived">{stats.archived}</span>
-                </div>
-            </div>
-            <div className="stats-row">
-                <div className="stat-item">
-                    <span className="stat-label">{t('memory.avgStrength')}</span>
-                    <span className="stat-value">{avgStrengthPercent}%</span>
-                </div>
-                <div className="stat-item">
-                    <span className="stat-label">{t('memory.totalUsageCount')}</span>
-                    <span className="stat-value">{stats.total_seen_count}</span>
-                </div>
-                <div className="stat-item">
-                    <span className="stat-label">{t('memory.aboutUser')}</span>
-                    <span className="stat-value">{stats.by_subject['user'] || 0}</span>
-                </div>
-                <div className="stat-item">
-                    <span className="stat-label">{t('memory.aboutCharacter')}</span>
-                    <span className="stat-value">{stats.by_subject['self'] || 0}</span>
-                </div>
-            </div>
-            <div className="stats-categories">
-                {Object.entries(stats.by_category).map(([cat, count]) => (
-                    <span key={cat} className="stats-category-tag">
-                        {getCategoryLabel(cat)}: {count}
-                    </span>
+            <dl className="memory-stats-grid">
+                {cells.map(([label, value]) => (
+                    <div key={label} className="memory-stat">
+                        <dt>{label}</dt>
+                        <dd>{value}</dd>
+                    </div>
                 ))}
-            </div>
+            </dl>
+            {categories.length > 0 && (
+                <div className="memory-stats-categories">
+                    {categories.map(([cat, count]) => (
+                        <Badge key={cat}>
+                            {getCategoryLabel(cat)} {count}
+                        </Badge>
+                    ))}
+                </div>
+            )}
         </div>
     )
 }
@@ -624,73 +609,165 @@ function MemoryItem({
     onStrengthConfirm: () => void
     onStrengthCancel: () => void
 }) {
-    const { t } = useT()
+    const { t, locale } = useT()
+    const copy = getPersonaCopy(locale).memory
     const strengthPercent = Math.round((memory.current_strength || 0) * 100)
+    const created = new Date(memory.created_at)
+    const createdLabel = Number.isNaN(created.getTime())
+        ? ''
+        : created.toLocaleDateString(locale === 'zh' ? 'zh-CN' : 'en', { month: 'short', day: 'numeric' })
 
     return (
         <div
             className={`memory-item${memory.pinned ? ' memory-item-pinned' : ''}${selected ? ' memory-item-selected' : ''}`}
         >
             {selectMode && (
-                <input type="checkbox" className="memory-checkbox" checked={selected} onChange={onToggleSelect} />
+                <input
+                    type="checkbox"
+                    className="memory-checkbox"
+                    checked={selected}
+                    onChange={onToggleSelect}
+                    aria-label={`${copy.selectMemory}: ${memory.content}`}
+                />
             )}
-            <div className="memory-content">
-                <span className="memory-category">{getCategoryLabel(memory.category)}</span>
-                <span className="memory-text" title={memory.content}>
-                    {memory.content}
-                </span>
-            </div>
-            <div className="memory-meta">
-                {memory.pinned ? (
-                    <span className="pinned-label">{t('memory.pinned')}</span>
-                ) : editingStrength ? (
-                    <div className="strength-edit">
-                        <input
-                            type="range"
-                            className="strength-slider"
-                            min="0"
-                            max="100"
-                            value={editingStrengthValue}
-                            onChange={(e) => onStrengthChange(Number(e.target.value))}
-                        />
-                        <span className="strength-value">{editingStrengthValue}%</span>
+            <div className="memory-item__main">
+                <p className="memory-text">{memory.content}</p>
+                <div className="memory-meta">
+                    <Badge>{getCategoryLabel(memory.category)}</Badge>
+                    <span>{memory.subject === 'self' ? t('memory.aboutCharacter') : t('memory.aboutUser')}</span>
+                    {memory.pinned ? (
+                        <span className="memory-meta__pinned">
+                            <Icon name="pin" size={12} />
+                            {t('memory.pinned')}
+                        </span>
+                    ) : editingStrength ? (
+                        <span className="strength-edit">
+                            <input
+                                type="range"
+                                className="strength-slider"
+                                min="0"
+                                max="100"
+                                value={editingStrengthValue}
+                                aria-label={copy.strength}
+                                onChange={(e) => onStrengthChange(Number(e.target.value))}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') onStrengthConfirm()
+                                    if (e.key === 'Escape') {
+                                        e.stopPropagation()
+                                        onStrengthCancel()
+                                    }
+                                }}
+                                autoFocus
+                            />
+                            <span className="strength-value">{editingStrengthValue}%</span>
+                            <button
+                                type="button"
+                                className="ui-icon-btn strength-edit-btn"
+                                onClick={onStrengthConfirm}
+                                aria-label={t('common.confirm')}
+                                title={t('common.confirm')}
+                            >
+                                <Icon name="check" />
+                            </button>
+                            <button
+                                type="button"
+                                className="ui-icon-btn strength-edit-btn"
+                                onClick={onStrengthCancel}
+                                aria-label={t('common.cancel')}
+                                title={t('common.cancel')}
+                            >
+                                <Icon name="x" />
+                            </button>
+                        </span>
+                    ) : (
                         <button
-                            className="strength-edit-confirm"
-                            onClick={onStrengthConfirm}
-                            title={t('common.confirm')}
-                        >
-                            ✓
-                        </button>
-                        <button className="strength-edit-cancel" onClick={onStrengthCancel} title={t('common.cancel')}>
-                            ✗
-                        </button>
-                    </div>
-                ) : (
-                    <>
-                        <div className="strength-bar">
-                            <div className="strength-fill" style={{ width: `${strengthPercent}%` }} />
-                        </div>
-                        <span
-                            className="strength-value strength-value-editable"
+                            type="button"
+                            className="memory-strength"
                             onClick={onStrengthEdit}
+                            aria-label={copy.editStrength(strengthPercent)}
                             title={t('memory.clickToModifyStrength')}
                         >
+                            <span className="strength-bar" aria-hidden="true">
+                                <span className="strength-fill" style={{ width: `${strengthPercent}%` }} />
+                            </span>
                             {strengthPercent}%
-                        </span>
-                    </>
-                )}
+                        </button>
+                    )}
+                    {memory.seen_count > 0 && <span>{copy.seen(memory.seen_count)}</span>}
+                    {createdLabel && <time dateTime={memory.created_at}>{createdLabel}</time>}
+                </div>
+            </div>
+            <div className="memory-item__actions">
                 <button
-                    className={`pin-btn${memory.pinned ? ' pin-btn-active' : ''}`}
+                    type="button"
+                    className={`ui-icon-btn pin-btn${memory.pinned ? ' pin-btn-active' : ''}`}
                     onClick={onTogglePin}
+                    aria-pressed={memory.pinned}
+                    aria-label={memory.pinned ? copy.unpin : copy.pin}
                     title={memory.pinned ? t('memory.unpin') : t('memory.pinAsPermament')}
                 >
-                    📌
+                    <Icon name="pin" size={16} />
                 </button>
-                <button className="delete-btn" onClick={onDelete} title={t('common.delete')}>
-                    ×
+                <button
+                    type="button"
+                    className="ui-icon-btn delete-btn"
+                    onClick={onDelete}
+                    aria-label={copy.delete}
+                    title={copy.delete}
+                >
+                    <Icon name="trash" size={16} />
                 </button>
             </div>
         </div>
+    )
+}
+
+function MemoryModal({
+    label,
+    busy,
+    onClose,
+    children,
+}: {
+    label: string
+    busy: boolean
+    onClose: () => void
+    children: React.ReactNode
+}) {
+    const { t } = useT()
+    return (
+        <ModalOverlay
+            className="prompt-modal-overlay memory-modal-overlay"
+            aria-label={label}
+            initial="hidden"
+            animate="visible"
+            exit="hidden"
+            variants={overlayVariants}
+            onDismiss={() => {
+                if (!busy) onClose()
+            }}
+        >
+            <motion.div
+                className="prompt-modal-card memory-modal"
+                initial="hidden"
+                animate="visible"
+                exit="hidden"
+                variants={centerModalVariants}
+            >
+                <div className="prompt-modal-header">
+                    <h3>{label}</h3>
+                    <button
+                        type="button"
+                        className="prompt-modal-close"
+                        aria-label={t('common.close')}
+                        onClick={onClose}
+                        disabled={busy}
+                    >
+                        <Icon name="x" />
+                    </button>
+                </div>
+                {children}
+            </motion.div>
+        </ModalOverlay>
     )
 }
 
@@ -703,10 +780,13 @@ function AddMemoryModal({
     onClose: () => void
     onSuccess: () => void
 }) {
-    const { t } = useT()
+    const { t, locale } = useT()
+    const copy = getPersonaCopy(locale).memory
     const { showToast } = useToast()
     const contentId = useId()
+    const contentHintId = useId()
     const pinnedId = useId()
+    const pinnedHintId = useId()
     const [subject, setSubject] = useState<'user' | 'self'>('user')
     const [category, setCategory] = useState('identity')
     const [content, setContent] = useState('')
@@ -742,81 +822,96 @@ function AddMemoryModal({
     }
 
     return (
-        <ModalOverlay
-            className="memory-modal-overlay"
-            aria-label={t('memory.addMemory')}
-            onDismiss={() => {
-                if (!submitting) onClose()
-            }}
-        >
-            <div className="memory-modal" onClick={(e) => e.stopPropagation()}>
-                <h3>{t('memory.addMemory')}</h3>
-                <form onSubmit={handleSubmit}>
-                    <div className="memory-form-group">
-                        <label>{t('memory.memoryType')}</label>
-                        <CustomSelect
-                            value={subject}
-                            options={[
-                                { value: 'user', label: t('memory.aboutUser') },
-                                { value: 'self', label: t('memory.aboutCharacter') },
-                            ]}
-                            onChange={(v) => setSubject(v as 'user' | 'self')}
-                            ariaLabel={t('memory.memoryType')}
-                        />
-                    </div>
-
-                    <div className="memory-form-group">
-                        <label>{t('memory.memoryCategory')}</label>
-                        <CustomSelect
-                            value={category}
-                            options={categories.map((c) => ({ value: c, label: getCategoryLabel(c) }))}
-                            onChange={setCategory}
-                            ariaLabel={t('memory.memoryCategory')}
-                        />
-                    </div>
-
-                    <div className="memory-form-group">
-                        <label htmlFor={contentId}>{t('memory.content')}</label>
-                        <input
+        <MemoryModal label={t('memory.addMemory')} busy={submitting} onClose={onClose}>
+            <form className="memory-modal-form" onSubmit={handleSubmit}>
+                <div className="prompt-modal-body">
+                    <div className="ui-field">
+                        <label className="ui-field__label" htmlFor={contentId}>
+                            {t('memory.content')}
+                        </label>
+                        <textarea
                             id={contentId}
-                            type="text"
+                            className="ui-textarea memory-content-input"
                             value={content}
                             onChange={(e) => setContent(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                                    e.preventDefault()
+                                    e.currentTarget.form?.requestSubmit()
+                                }
+                            }}
                             placeholder={subject === 'user' ? t('memory.userPlaceholder') : t('memory.selfPlaceholder')}
+                            aria-describedby={contentHintId}
+                            rows={3}
                             required
                             autoFocus
                         />
+                        <span id={contentHintId} className="ui-field__hint">
+                            {copy.contentHint}
+                        </span>
                     </div>
 
-                    <div className="memory-form-group memory-form-toggle">
-                        <div className="modal-toggle-wrapper">
-                            <label className="toggle-switch">
-                                <input
-                                    id={pinnedId}
-                                    aria-label={t('memory.setPinned')}
-                                    type="checkbox"
-                                    checked={pinned}
-                                    onChange={(e) => setPinned(e.target.checked)}
-                                />
-                                <span className="toggle-slider"></span>
-                            </label>
-                            <label htmlFor={pinnedId} className="toggle-label">
-                                {t('memory.setPinned')}
-                            </label>
+                    <div className="memory-form-row">
+                        <div className="ui-field">
+                            <span className="ui-field__label" aria-hidden="true">
+                                {t('memory.memoryType')}
+                            </span>
+                            <CustomSelect
+                                value={subject}
+                                options={[
+                                    { value: 'user', label: t('memory.aboutUser') },
+                                    { value: 'self', label: t('memory.aboutCharacter') },
+                                ]}
+                                onChange={(v) => setSubject(v as 'user' | 'self')}
+                                ariaLabel={t('memory.memoryType')}
+                            />
+                        </div>
+                        <div className="ui-field">
+                            <span className="ui-field__label" aria-hidden="true">
+                                {t('memory.memoryCategory')}
+                            </span>
+                            <CustomSelect
+                                value={category}
+                                options={categories.map((c) => ({ value: c, label: getCategoryLabel(c) }))}
+                                onChange={setCategory}
+                                ariaLabel={t('memory.memoryCategory')}
+                            />
                         </div>
                     </div>
 
-                    <div className="memory-form-actions">
-                        <button type="button" onClick={onClose} disabled={submitting}>
-                            {t('common.cancel')}
-                        </button>
-                        <button type="submit" disabled={submitting || !content.trim()}>
-                            {submitting ? t('common.adding') : t('common.add')}
-                        </button>
+                    <div className="memory-form-toggle">
+                        <div className="memory-form-toggle__text">
+                            <label htmlFor={pinnedId} className="ui-field__label">
+                                {t('memory.setPinned')}
+                            </label>
+                            <span id={pinnedHintId} className="ui-field__hint">
+                                {copy.pinnedHint}
+                            </span>
+                        </div>
+                        <label className="toggle-switch">
+                            <input
+                                id={pinnedId}
+                                type="checkbox"
+                                role="switch"
+                                aria-describedby={pinnedHintId}
+                                checked={pinned}
+                                onChange={(e) => setPinned(e.target.checked)}
+                            />
+                            <span className="toggle-slider" aria-hidden="true"></span>
+                        </label>
                     </div>
-                </form>
-            </div>
-        </ModalOverlay>
+                </div>
+
+                <div className="prompt-modal-footer">
+                    <button type="button" className="prompt-modal-btn cancel" onClick={onClose} disabled={submitting}>
+                        {t('common.cancel')}
+                    </button>
+                    <button type="submit" className="prompt-modal-btn save" disabled={submitting || !content.trim()}>
+                        {submitting ? t('common.adding') : t('common.add')}
+                    </button>
+                </div>
+            </form>
+        </MemoryModal>
     )
 }
 
@@ -829,10 +924,12 @@ function ImportMemoryModal({
     onClose: () => void
     onSuccess: () => void
 }) {
-    const { t } = useT()
+    const { t, locale } = useT()
+    const copy = getPersonaCopy(locale).memory
     const { showToast } = useToast()
     const { confirm } = useConfirm()
     const fileId = useId()
+    const fileHintId = useId()
     const [mode, setMode] = useState<'merge' | 'replace'>('merge')
     const [importing, setImporting] = useState(false)
     const [previewData, setPreviewData] = useState<MemoryExportItem[] | null>(null)
@@ -884,18 +981,12 @@ function ImportMemoryModal({
     }
 
     return (
-        <ModalOverlay
-            className="memory-modal-overlay"
-            aria-label={t('memory.importMemory')}
-            onDismiss={() => {
-                if (!importing) onClose()
-            }}
-        >
-            <div className="memory-modal memory-modal-wide" onClick={(e) => e.stopPropagation()}>
-                <h3>{t('memory.importMemory')}</h3>
-
-                <div className="memory-form-group">
-                    <label htmlFor={fileId}>{t('memory.selectFile')}</label>
+        <MemoryModal label={t('memory.importMemory')} busy={importing} onClose={onClose}>
+            <div className="prompt-modal-body">
+                <div className="ui-field">
+                    <label className="ui-field__label" htmlFor={fileId}>
+                        {t('memory.selectFile')}
+                    </label>
                     <input
                         id={fileId}
                         ref={fileInputRef}
@@ -903,30 +994,36 @@ function ImportMemoryModal({
                         accept=".json"
                         onChange={handleFileSelect}
                         className="memory-file-input"
+                        aria-describedby={fileHintId}
                     />
+                    <span id={fileHintId} className="ui-field__hint">
+                        {copy.fileHint}
+                    </span>
                 </div>
 
                 {previewData && (
                     <>
                         <div className="import-preview">
-                            <p>{t('memory.importCount', { count: previewData.length })}</p>
-                            <div className="import-preview-list">
+                            <p className="import-preview-title">{copy.preview(previewData.length)}</p>
+                            <div className="ui-list import-preview-list">
                                 {previewData.slice(0, 5).map((m, i) => (
                                     <div key={i} className="import-preview-item">
-                                        <span className="memory-category">{getCategoryLabel(m.category)}</span>
-                                        <span className="memory-text">{m.content}</span>
+                                        <Badge>{getCategoryLabel(m.category)}</Badge>
+                                        <span className="import-preview-text">{m.content}</span>
                                     </div>
                                 ))}
                                 {previewData.length > 5 && (
                                     <div className="import-preview-more">
-                                        ...{t('memory.moreItems', { count: previewData.length - 5 })}
+                                        {t('memory.moreItems', { count: previewData.length - 5 })}
                                     </div>
                                 )}
                             </div>
                         </div>
 
-                        <div className="memory-form-group">
-                            <label>{t('common.import')}</label>
+                        <div className="ui-field">
+                            <span className="ui-field__label" aria-hidden="true">
+                                {copy.mode}
+                            </span>
                             <CustomSelect
                                 value={mode}
                                 options={[
@@ -939,21 +1036,22 @@ function ImportMemoryModal({
                         </div>
                     </>
                 )}
-
-                <div className="memory-form-actions">
-                    <button type="button" onClick={onClose} disabled={importing}>
-                        {t('common.cancel')}
-                    </button>
-                    <button
-                        type="button"
-                        onClick={handleImport}
-                        disabled={importing || !previewData || previewData.length === 0}
-                    >
-                        {importing ? t('common.importing') : t('common.import')}
-                    </button>
-                </div>
             </div>
-        </ModalOverlay>
+
+            <div className="prompt-modal-footer">
+                <button type="button" className="prompt-modal-btn cancel" onClick={onClose} disabled={importing}>
+                    {t('common.cancel')}
+                </button>
+                <button
+                    type="button"
+                    className="prompt-modal-btn save"
+                    onClick={handleImport}
+                    disabled={importing || !previewData || previewData.length === 0}
+                >
+                    {importing ? t('common.importing') : t('common.import')}
+                </button>
+            </div>
+        </MemoryModal>
     )
 }
 

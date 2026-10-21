@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { motion } from 'motion/react'
 import { useT } from '../../../contexts/I18nContext'
 import { useToast } from '../../../contexts/ToastContext'
+import { centerModalVariants, overlayVariants } from '../../../utils/motion'
+import { ModalOverlay } from '../../ModalOverlay'
+import { Icon } from '../../ui'
 
 interface SelectTextModalProps {
     text: string
@@ -70,34 +73,53 @@ export const SelectTextModal: React.FC<SelectTextModalProps> = ({ text, onClose 
         }, 1500)
     }
 
-    return createPortal(
-        <div className="select-text-overlay" onClick={onClose}>
-            <div className="select-text-card" onClick={(e) => e.stopPropagation()}>
-                <div className="select-text-header">
-                    <div className="select-text-title">{t('chat.selectText')}</div>
+    return (
+        <ModalOverlay
+            className="prompt-modal-overlay"
+            aria-label={t('chat.selectText')}
+            initial="hidden"
+            animate="visible"
+            exit="hidden"
+            variants={overlayVariants}
+            onDismiss={onClose}
+        >
+            <motion.div className="prompt-modal-card" variants={centerModalVariants}>
+                <div className="prompt-modal-header">
+                    <h3>{t('chat.selectText')}</h3>
                     <button
                         type="button"
-                        className="select-text-close"
+                        className="prompt-modal-close"
                         onClick={onClose}
                         aria-label={t('chat.closeSelectText')}
                     >
-                        ×
+                        <Icon name="x" />
                     </button>
                 </div>
 
-                <textarea ref={textareaRef} className="select-text-textarea" value={text} readOnly rows={6} />
+                <div className="prompt-modal-body">
+                    <textarea
+                        ref={textareaRef}
+                        className="prompt-modal-textarea select-text-textarea"
+                        aria-label={t('chat.selectText')}
+                        value={text}
+                        readOnly
+                        rows={6}
+                    />
+                </div>
 
-                <div className="select-text-footer">
-                    {copied && <div className="select-text-hint">{t('common.copied')}</div>}
-                    <button type="button" className="select-text-btn copy" onClick={handleCopy}>
-                        {t('common.copy')}
-                    </button>
-                    <button type="button" className="select-text-btn" onClick={onClose}>
+                <div className="prompt-modal-footer">
+                    <span className="select-text-hint" role="status">
+                        {copied ? t('common.copied') : ''}
+                    </span>
+                    <button type="button" className="prompt-modal-btn cancel" onClick={onClose}>
                         {t('common.close')}
                     </button>
+                    <button type="button" className="prompt-modal-btn save" onClick={handleCopy}>
+                        {copied ? <Icon name="check" size={16} /> : null}
+                        {t('common.copy')}
+                    </button>
                 </div>
-            </div>
-        </div>,
-        document.body
+            </motion.div>
+        </ModalOverlay>
     )
 }

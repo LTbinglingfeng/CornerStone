@@ -6,6 +6,8 @@ import type { ActiveRedPacketState, DisplayItem } from '../types'
 import type { PacketStep } from '../RedPacket'
 import { PatBanner, RedPacketBubble, RedPacketReceivedBanner, derivePacketKeys } from '../RedPacket'
 import { bubbleVariants } from '../../../utils/motion'
+import { getManagementCopy } from '../../../i18n/archive'
+import { EmptyState } from '../../ui'
 import { MessageAvatar } from './MessageAvatar'
 import { MessageBubble } from './MessageBubble'
 
@@ -24,7 +26,6 @@ interface MessageListProps {
     getImageUrl: (imagePath: string) => string
     userAvatarSrc: string | null
     assistantAvatarSrc: string | null
-    userPlaceholder: string
     assistantPlaceholder: string
     userDisplayName: string
     assistantDisplayName: string
@@ -53,7 +54,6 @@ export const MessageList: React.FC<MessageListProps> = ({
     getImageUrl,
     userAvatarSrc,
     assistantAvatarSrc,
-    userPlaceholder,
     assistantPlaceholder,
     userDisplayName,
     assistantDisplayName,
@@ -66,7 +66,8 @@ export const MessageList: React.FC<MessageListProps> = ({
     onPointerCancel,
     onPointerLeave,
 }) => {
-    const { t } = useT()
+    const { t, locale } = useT()
+    const copy = getManagementCopy(locale).conversation
     const animatedBubbleKeysRef = useRef<Set<string>>(new Set())
     const bubbleKeysSeededRef = useRef(false)
     const shouldScrollToBottomRef = useRef(true)
@@ -123,17 +124,23 @@ export const MessageList: React.FC<MessageListProps> = ({
     return (
         <div className="message-list" ref={listRef} onScroll={handleScroll}>
             {loading ? (
-                <div className="empty-messages">{t('common.loading')}</div>
+                <div className="empty-messages" role="status">
+                    <span className="ui-spinner" aria-hidden="true" />
+                    <span className="ui-visually-hidden">{t('common.loading')}</span>
+                </div>
             ) : displayItems.length === 0 ? (
-                <div className="empty-messages">{t('chat.startNewChat')}</div>
+                <div className="empty-messages">
+                    <EmptyState icon="message" title={copy.emptyMessages} description={copy.emptyMessagesHint} />
+                </div>
             ) : (
                 <>
                     {hasMoreBefore && (
                         <div className="message-load-more">
+                            {loadingOlder && <span className="ui-spinner" aria-hidden="true" />}
                             {loadingOlder ? t('common.loading') : t('chat.loadMore')}
                         </div>
                     )}
-                    {displayItems.map((item) => {
+                    {displayItems.map((item, index) => {
                         const isRedPacket = item.type === 'red-packet'
                         const isRedPacketReceivedBanner = item.type === 'red-packet-received-banner'
                         const isPatBanner = item.type === 'pat-banner'
@@ -186,8 +193,14 @@ export const MessageList: React.FC<MessageListProps> = ({
                         }
 
                         const role: 'user' | 'assistant' = item.role === 'user' ? 'user' : 'assistant'
+                        const previous = index > 0 ? displayItems[index - 1] : null
+                        // Consecutive bubbles from the same sender read as one turn: one avatar, tighter spacing.
+                        const grouped =
+                            !!previous &&
+                            (previous.type === 'text' || previous.type === 'red-packet') &&
+                            (previous.role === 'user' ? 'user' : 'assistant') === role
                         const leftAvatar =
-                            role === 'assistant' ? (
+                            role === 'assistant' && !grouped ? (
                                 <MessageAvatar
                                     role="assistant"
                                     avatarSrc={assistantAvatarSrc}
@@ -198,10 +211,8 @@ export const MessageList: React.FC<MessageListProps> = ({
                                     }}
                                     title={t('chat.doubleTapPoke')}
                                 />
-                            ) : null
-                        const rightAvatar =
-                            role === 'user' ? (
-                                <MessageAvatar role="user" avatarSrc={userAvatarSrc} placeholder={userPlaceholder} />
+                            ) : role === 'assistant' ? (
+                                <span className="message-avatar-spacer" aria-hidden="true" />
                             ) : null
 
                         const content = isRedPacket ? (
@@ -251,7 +262,7 @@ export const MessageList: React.FC<MessageListProps> = ({
                             />
                         )
 
-                        const className = `message-item ${item.role} ${isRedPacket ? 'red-packet-item' : ''}`
+                        const className = `message-item ${role}${isRedPacket ? ' red-packet-item' : ''}${grouped ? ' is-grouped' : ''}`
                         const animateBubble = shouldAnimateBubble(item)
 
                         return (
@@ -264,7 +275,6 @@ export const MessageList: React.FC<MessageListProps> = ({
                             >
                                 {leftAvatar}
                                 {content}
-                                {rightAvatar}
                             </motion.div>
                         )
                     })}

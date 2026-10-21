@@ -36,6 +36,8 @@ export const MessageContextMenu: React.FC<MessageContextMenuProps> = ({
         items.push({ label: t('chat.selectText'), onClick: () => onSelectText(selectableText) })
     }
 
+    items.push({ label: t('chat.quote'), onClick: () => onQuote(state.message) })
+
     if (!sending && state.message.role === 'user' && !isRecalledMessage(state.message)) {
         items.push({ label: t('chat.recall'), onClick: () => onRecall(state.messageIndex) })
     }
@@ -58,8 +60,6 @@ export const MessageContextMenu: React.FC<MessageContextMenuProps> = ({
         items.push({ label: t('common.edit'), onClick: () => onEdit(state.messageIndex) })
         items.push({ label: t('common.delete'), danger: true, onClick: () => onDelete(state.messageIndex) })
     }
-
-    items.push({ label: t('chat.quote'), onClick: () => onQuote(state.message) })
 
     return <ContextMenu items={items} position={state.position} onClose={onClose} />
 }

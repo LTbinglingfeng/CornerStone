@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { motion } from 'motion/react'
+import { AnimatePresence, motion } from 'motion/react'
 import type { ChatSession, Prompt } from '../types/chat'
 import {
     getSessionsByPromptId,
@@ -10,7 +10,10 @@ import {
 } from '../services/api'
 import { useT } from '../contexts/I18nContext'
 import { formatTime } from '../utils/time'
-import { bottomSheetVariants, overlayVariants } from '../utils/motion'
+import { centerModalVariants, overlayVariants } from '../utils/motion'
+import { getManagementCopy } from '../i18n/archive'
+import { ModalOverlay } from './ModalOverlay'
+import { Avatar, Icon } from './ui'
 import './ChatSettings.css'
 
 interface ChatSettingsProps {
@@ -32,7 +35,8 @@ const ChatSettings: React.FC<ChatSettingsProps> = ({
     onTitleUpdated,
     onExitChat,
 }) => {
-    const { t } = useT()
+    const { t, locale } = useT()
+    const copy = getManagementCopy(locale).conversation
     const [sessions, setSessions] = useState<ChatSession[]>([])
     const [loading, setLoading] = useState(true)
     const [editingTitle, setEditingTitle] = useState(false)
@@ -91,6 +95,8 @@ const ChatSettings: React.FC<ChatSettingsProps> = ({
             e.preventDefault()
             handleSaveTitle()
         } else if (e.key === 'Escape') {
+            // Leave the dialog open; Escape only cancels the inline rename.
+            e.preventDefault()
             handleCancelEdit()
         }
     }
@@ -160,169 +166,169 @@ const ChatSettings: React.FC<ChatSettingsProps> = ({
     const isDeletingConfirm = confirmDeleteId !== null && deletingSessionId === confirmDeleteId
 
     return (
-        <motion.div
-            className="chat-settings-overlay"
+        <ModalOverlay
+            className="prompt-modal-overlay chat-settings-overlay"
+            aria-label={copy.more}
             initial="hidden"
             animate="visible"
             exit="hidden"
             variants={overlayVariants}
-            onClick={handleClose}
+            onDismiss={handleClose}
         >
-            <motion.div
-                className="chat-settings-container"
-                initial="hidden"
-                animate="visible"
-                exit="hidden"
-                variants={bottomSheetVariants}
-                onClick={(e) => e.stopPropagation()}
-            >
-                {/* 顶部拖动条 */}
-                <div className="chat-settings-handle">
-                    <div className="handle-bar"></div>
-                </div>
-
-                {/* 角色信息 */}
-                <div className="chat-settings-header">
-                    <div className="prompt-avatar-large">
-                        {getAvatarSrc() ? (
-                            <img src={getAvatarSrc()!} alt={prompt.name} />
-                        ) : (
-                            <div className="avatar-placeholder">{prompt.name.charAt(0).toUpperCase()}</div>
-                        )}
+            <motion.div className="prompt-modal-card chat-settings-container" variants={centerModalVariants}>
+                <div className="prompt-modal-header chat-settings-header">
+                    <Avatar src={getAvatarSrc()} name={prompt.name} />
+                    <div className="chat-settings-persona">
+                        <h3>{prompt.name}</h3>
+                        {prompt.description && <p>{prompt.description}</p>}
                     </div>
-                    <div className="prompt-name">{prompt.name}</div>
-                    {prompt.description && <div className="prompt-description">{prompt.description}</div>}
+                    <button
+                        type="button"
+                        className="prompt-modal-close"
+                        onClick={handleClose}
+                        aria-label={t('common.close')}
+                    >
+                        <Icon name="x" />
+                    </button>
                 </div>
 
-                {/* 当前聊天设置 */}
-                <div className="chat-settings-section">
-                    <div className="section-title">{t('chatSettings.currentChat')}</div>
-                    <div className="current-chat-card">
-                        <div className="setting-row">
-                            <span className="setting-label">{t('chatSettings.chatTitle')}</span>
-                            {editingTitle ? (
-                                <div className="title-edit-container">
-                                    <input
-                                        ref={titleInputRef}
-                                        type="text"
-                                        className="title-input"
-                                        value={titleInput}
-                                        onChange={(e) => setTitleInput(e.target.value)}
-                                        onKeyDown={handleTitleKeyDown}
-                                        placeholder={t('chatSettings.chatTitlePlaceholder')}
+                <div className="prompt-modal-body chat-settings-body">
+                    <section className="chat-settings-section">
+                        <h4 className="chat-settings-section-title">{copy.title}</h4>
+                        {editingTitle ? (
+                            <div className="title-edit-container">
+                                <input
+                                    ref={titleInputRef}
+                                    type="text"
+                                    className="ui-input title-input"
+                                    aria-label={t('chatSettings.chatTitle')}
+                                    value={titleInput}
+                                    onChange={(e) => setTitleInput(e.target.value)}
+                                    onKeyDown={handleTitleKeyDown}
+                                    placeholder={t('chatSettings.chatTitlePlaceholder')}
+                                    disabled={savingTitle}
+                                />
+                                <div className="title-edit-actions">
+                                    <button
+                                        type="button"
+                                        className="ui-btn ui-btn--sm ui-btn--ghost"
+                                        onClick={handleCancelEdit}
                                         disabled={savingTitle}
-                                    />
-                                    <div className="title-edit-actions">
-                                        <button
-                                            className="title-btn cancel"
-                                            onClick={handleCancelEdit}
-                                            disabled={savingTitle}
-                                        >
-                                            {t('common.cancel')}
-                                        </button>
-                                        <button
-                                            className="title-btn save"
-                                            onClick={handleSaveTitle}
-                                            disabled={!titleInput.trim() || savingTitle}
-                                        >
-                                            {savingTitle ? t('common.saving') : t('common.save')}
-                                        </button>
-                                    </div>
+                                    >
+                                        {t('common.cancel')}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="ui-btn ui-btn--sm ui-btn--primary"
+                                        onClick={handleSaveTitle}
+                                        disabled={!titleInput.trim() || savingTitle}
+                                    >
+                                        {savingTitle ? t('common.saving') : t('common.save')}
+                                    </button>
                                 </div>
-                            ) : (
-                                <div className="setting-value-row" onClick={() => setEditingTitle(true)}>
-                                    <span className="setting-value">{currentSessionTitle || t('common.unnamed')}</span>
-                                    <svg className="edit-icon" viewBox="0 0 24 24">
-                                        <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
-                                    </svg>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
+                            </div>
+                        ) : (
+                            <button
+                                type="button"
+                                className="chat-settings-title-row"
+                                onClick={() => setEditingTitle(true)}
+                                aria-label={`${copy.rename}: ${currentSessionTitle || t('common.unnamed')}`}
+                            >
+                                <span className="chat-settings-title-text">
+                                    {currentSessionTitle || t('common.unnamed')}
+                                </span>
+                                <Icon name="pencil" size={16} />
+                            </button>
+                        )}
+                    </section>
 
-                {/* 聊天记录列表 */}
-                <div className="chat-settings-section">
-                    <div className="section-title">{t('chatSettings.chatHistory')}</div>
-                    <div className="sessions-card">
+                    <section className="chat-settings-section">
+                        <h4 className="chat-settings-section-title">{copy.history}</h4>
                         {loading ? (
-                            <div className="sessions-loading">{t('common.loading')}</div>
+                            <div className="sessions-loading" role="status">
+                                <span className="ui-spinner" aria-hidden="true" />
+                                <span className="ui-visually-hidden">{t('common.loading')}</span>
+                            </div>
                         ) : sessions.length === 0 ? (
                             <div className="sessions-empty">{t('chatSettings.noChatHistory')}</div>
                         ) : (
-                            <div className="sessions-list">
-                                {sessions.map((session) => (
-                                    <div
-                                        key={session.id}
-                                        className={`session-item ${session.id === currentSessionId ? 'active' : ''}`}
-                                        onClick={() => handleSessionClick(session.id)}
-                                    >
-                                        <div className="session-info">
-                                            <div className="session-title">{session.title}</div>
-                                            <div className="session-time">{formatTime(session.updated_at)}</div>
-                                        </div>
-                                        <div className="session-actions">
-                                            {session.id === currentSessionId && (
-                                                <div className="session-current-badge">{t('common.current')}</div>
-                                            )}
+                            <ul className="sessions-list">
+                                {sessions.map((session) => {
+                                    const current = session.id === currentSessionId
+                                    return (
+                                        <li key={session.id} className={`session-item${current ? ' active' : ''}`}>
                                             <button
                                                 type="button"
-                                                className="session-delete-btn"
-                                                onClick={(event) => {
-                                                    event.stopPropagation()
-                                                    handleDeleteConfirm(session.id)
-                                                }}
-                                                disabled={deletingSessionId === session.id}
-                                                title={t('chatSettings.deleteSession')}
+                                                className="session-open"
+                                                onClick={() => handleSessionClick(session.id)}
+                                                aria-current={current ? 'true' : undefined}
                                             >
-                                                <svg viewBox="0 0 24 24" aria-hidden="true">
-                                                    <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
-                                                </svg>
+                                                <span className="session-title">{session.title}</span>
+                                                <span className="session-time">{formatTime(session.updated_at)}</span>
                                             </button>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
+                                            {current && <span className="session-current-badge">{copy.current}</span>}
+                                            <button
+                                                type="button"
+                                                className="ui-icon-btn session-delete-btn"
+                                                onClick={() => handleDeleteConfirm(session.id)}
+                                                disabled={deletingSessionId === session.id}
+                                                aria-label={`${t('common.delete')}: ${session.title}`}
+                                                title={t('common.delete')}
+                                            >
+                                                <Icon name="trash" size={16} />
+                                            </button>
+                                        </li>
+                                    )
+                                })}
+                            </ul>
                         )}
-                    </div>
+                    </section>
                 </div>
             </motion.div>
 
-            {confirmDeleteId && (
-                <div
-                    className="chat-settings-confirm-overlay"
-                    onClick={(event) => {
-                        event.stopPropagation()
-                        handleCloseDeleteConfirm()
-                    }}
-                >
-                    <div className="chat-settings-confirm-card" onClick={(event) => event.stopPropagation()}>
-                        <div className="chat-settings-confirm-title">{t('chatSettings.deleteSession')}</div>
-                        <div className="chat-settings-confirm-desc">
-                            {t('chatSettings.deleteSessionConfirm', { title: confirmSessionTitle })}
-                        </div>
-                        <div className="chat-settings-confirm-actions">
-                            <button
-                                type="button"
-                                className="chat-settings-confirm-btn cancel"
-                                onClick={handleCloseDeleteConfirm}
-                                disabled={isDeletingConfirm}
-                            >
-                                {t('common.cancel')}
-                            </button>
-                            <button
-                                type="button"
-                                className="chat-settings-confirm-btn delete"
-                                onClick={handleDeleteSession}
-                                disabled={isDeletingConfirm}
-                            >
-                                {isDeletingConfirm ? t('common.deleting') : t('common.delete')}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-        </motion.div>
+            <AnimatePresence>
+                {confirmDeleteId && (
+                    <ModalOverlay
+                        className="modal-overlay"
+                        aria-label={t('chatSettings.deleteSession')}
+                        initial="hidden"
+                        animate="visible"
+                        exit="hidden"
+                        variants={overlayVariants}
+                        onDismiss={handleCloseDeleteConfirm}
+                    >
+                        <motion.div className="modal-card" variants={centerModalVariants}>
+                            <div className="modal-header">
+                                <h3>{t('chatSettings.deleteSession')}</h3>
+                            </div>
+                            <div className="modal-body">
+                                <p className="chat-settings-confirm-desc">
+                                    {t('chatSettings.deleteSessionConfirm', { title: confirmSessionTitle })}
+                                </p>
+                            </div>
+                            <div className="modal-footer">
+                                <button
+                                    type="button"
+                                    className="modal-btn cancel"
+                                    onClick={handleCloseDeleteConfirm}
+                                    disabled={isDeletingConfirm}
+                                >
+                                    {t('common.cancel')}
+                                </button>
+                                <button
+                                    type="button"
+                                    className="modal-btn danger"
+                                    onClick={handleDeleteSession}
+                                    disabled={isDeletingConfirm}
+                                >
+                                    {isDeletingConfirm ? t('common.deleting') : t('common.delete')}
+                                </button>
+                            </div>
+                        </motion.div>
+                    </ModalOverlay>
+                )}
+            </AnimatePresence>
+        </ModalOverlay>
     )
 }
 

@@ -3,9 +3,17 @@ import { useT } from '../contexts/I18nContext'
 import { useConfirm } from '../contexts/ConfirmContext'
 import { useToast } from '../contexts/ToastContext'
 import { clawbotDeliveryService, type DeliveryAction, type DeliveryJob } from '../services/clawbotDeliveryService'
+import { Badge, Toggle, type Tone } from './ui'
 import './ClawBotDeliveryQueue.css'
 
 const actions: DeliveryAction[] = ['retry', 'confirm_sent', 'cancel']
+
+const jobTone = (status: DeliveryJob['status']): Tone => {
+    if (status === 'done') return 'success'
+    if (status === 'uncertain' || status === 'blocked') return 'warning'
+    if (status === 'cancelled') return 'neutral'
+    return 'info'
+}
 
 export default function ClawBotDeliveryQueue() {
     const { t, locale } = useT()
@@ -110,65 +118,89 @@ export default function ClawBotDeliveryQueue() {
     const visible = jobs.filter((job) => showFinished || !finished(job))
 
     return (
-        <section className="clawbot-delivery" aria-labelledby="clawbot-delivery-title">
-            <div className="clawbot-delivery-header">
-                <h2 id="clawbot-delivery-title">{t('delivery.title')}</h2>
-                <button type="button" onClick={() => void refresh()} disabled={busy || loading}>
+        <section className="ui-group clawbot-delivery" aria-labelledby="clawbot-delivery-title">
+            <div className="ui-group__head">
+                <div>
+                    <h2 className="ui-group__title" id="clawbot-delivery-title">
+                        {t('delivery.title')}
+                    </h2>
+                    <p className="ui-group__desc">{t('delivery.hint')}</p>
+                </div>
+                <button
+                    type="button"
+                    className="ui-btn ui-btn--sm"
+                    onClick={() => void refresh()}
+                    disabled={busy || loading}
+                >
                     {loading ? t('common.loading') : t('delivery.refresh')}
                 </button>
             </div>
-            <p className="clawbot-delivery-hint">{t('delivery.hint')}</p>
-            <label className="clawbot-delivery-filter">
-                <input
-                    type="checkbox"
-                    checked={showFinished}
-                    onChange={(event) => setShowFinished(event.target.checked)}
-                />
-                {t('delivery.showFinished', { count: jobs.filter(finished).length })}
-            </label>
-            {error && (
-                <p className="clawbot-delivery-error" role="alert">
-                    {t(`delivery.${error}`)}
-                </p>
-            )}
-            {!loading && !error && visible.length === 0 && <p>{t('delivery.empty')}</p>}
-            <div className="clawbot-delivery-list">
+            <div className="ui-list clawbot-delivery-list">
+                <div className="ui-row">
+                    <span className="ui-row__main">
+                        <span className="ui-row__label">
+                            {t('delivery.showFinished', { count: jobs.filter(finished).length })}
+                        </span>
+                    </span>
+                    <Toggle
+                        label={t('delivery.showFinished', { count: jobs.filter(finished).length })}
+                        checked={showFinished}
+                        onChange={setShowFinished}
+                    />
+                </div>
+                {error && (
+                    <p className="clawbot-delivery-error clawbot-delivery-block" role="alert">
+                        {t(`delivery.${error}`)}
+                    </p>
+                )}
+                {!loading && !error && visible.length === 0 && (
+                    <p className="clawbot-delivery-empty clawbot-delivery-block">{t('delivery.empty')}</p>
+                )}
                 {visible.map((job) => (
-                    <article className="clawbot-delivery-job" key={job.id}>
-                        <div className="clawbot-delivery-header">
+                    <article className="clawbot-delivery-job clawbot-delivery-block" key={job.id}>
+                        <div className="clawbot-delivery-job__head">
                             <strong>{t(`delivery.kind.${job.kind}`)}</strong>
-                            <span className="clawbot-delivery-status">{t(`delivery.status.${job.status}`)}</span>
+                            <Badge tone={jobTone(job.status)} dot>
+                                {t(`delivery.status.${job.status}`)}
+                            </Badge>
                         </div>
-                        <div className="clawbot-delivery-meta">
+                        <dl className="clawbot-delivery-meta">
                             <div>
-                                {t('delivery.id')}: {job.id}
+                                <dt>{t('delivery.id')}</dt>
+                                <dd>{job.id}</dd>
                             </div>
                             <div>
-                                {t('delivery.user')}: {job.user_id}
+                                <dt>{t('delivery.user')}</dt>
+                                <dd>{job.user_id}</dd>
                             </div>
                             {job.session_id && (
                                 <div>
-                                    {t('delivery.session')}: {job.session_id}
+                                    <dt>{t('delivery.session')}</dt>
+                                    <dd>{job.session_id}</dd>
                                 </div>
                             )}
                             {job.phase && (
                                 <div>
-                                    {t('delivery.phaseLabel')}: {t(`delivery.phase.${job.phase}`)}
+                                    <dt>{t('delivery.phaseLabel')}</dt>
+                                    <dd>{t(`delivery.phase.${job.phase}`)}</dd>
                                 </div>
                             )}
                             <div>
-                                {t('delivery.created')}: {formatTime(job.created_at)}
+                                <dt>{t('delivery.created')}</dt>
+                                <dd>{formatTime(job.created_at)}</dd>
                             </div>
                             <div>
-                                {t('delivery.updated')}: {formatTime(job.updated_at)}
+                                <dt>{t('delivery.updated')}</dt>
+                                <dd>{formatTime(job.updated_at)}</dd>
                             </div>
                             {job.next_attempt_at && (
                                 <div>
-                                    {t('delivery.nextAttempt')}: {formatTime(job.next_attempt_at)}
+                                    <dt>{t('delivery.nextAttempt')}</dt>
+                                    <dd>{formatTime(job.next_attempt_at)}</dd>
                                 </div>
                             )}
-                        </div>
-                        <p>
+                        </dl>
+                        <p className="clawbot-delivery-progress">
                             {t('delivery.progress', {
                                 sent: (job.chunks || []).filter((chunk) => chunk.status === 'sent').length,
                                 total: (job.chunks || []).length,
@@ -176,9 +208,9 @@ export default function ClawBotDeliveryQueue() {
                         </p>
                         {job.last_error && <p className="clawbot-delivery-error">{job.last_error}</p>}
                         {job.status === 'uncertain' && (
-                            <p className="clawbot-delivery-hint">{t('delivery.uncertainHint')}</p>
+                            <p className="clawbot-delivery-warning">{t('delivery.uncertainHint')}</p>
                         )}
-                        <details>
+                        <details className="clawbot-delivery-chunks">
                             <summary>{t('delivery.chunks')}</summary>
                             {(job.chunks || []).map((chunk, index) => (
                                 <div className="clawbot-delivery-chunk" key={index}>
@@ -212,6 +244,7 @@ export default function ClawBotDeliveryQueue() {
                                     <button
                                         type="button"
                                         key={action}
+                                        className={`ui-btn ui-btn--sm${action === 'cancel' ? ' ui-btn--danger' : ''}`}
                                         disabled={busy || loading || !!error}
                                         onClick={() => void act(job, action)}
                                     >

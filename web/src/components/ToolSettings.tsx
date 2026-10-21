@@ -10,6 +10,8 @@ import {
     type ToolControlSection,
 } from '../constants/toolControls'
 import { useT } from '../contexts/I18nContext'
+import { useToast } from '../contexts/ToastContext'
+import { Group, Row, Toggle } from './ui'
 import { drawerVariants } from '../utils/motion'
 import './ProviderSettings.css'
 import './Settings.css'
@@ -22,11 +24,10 @@ const TOOL_SECTION_ORDER: ToolControlSection[] = ['interaction', 'realtime']
 
 const ToolSettingsPanel: React.FC<ToolSettingsProps> = ({ onBack }) => {
     const { t } = useT()
+    const { showToast } = useToast()
 
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
-    const [message, setMessage] = useState('')
-    const [messageType, setMessageType] = useState<'success' | 'error'>('success')
     const [toolToggles, setToolToggles] = useState<Record<string, boolean>>(() => createDefaultToolToggles())
 
     const sections = useMemo(
@@ -39,14 +40,7 @@ const ToolSettingsPanel: React.FC<ToolSettingsProps> = ({ onBack }) => {
         []
     )
 
-    const showMessageToast = (msg: string, type: 'success' | 'error' = 'success') => {
-        setMessage(msg)
-        setMessageType(type)
-        window.setTimeout(() => {
-            setMessage('')
-            setMessageType('success')
-        }, 2000)
-    }
+    const showMessageToast = (msg: string, type: 'success' | 'error' = 'success') => showToast(msg, type)
 
     const loadData = async () => {
         setLoading(true)
@@ -106,72 +100,66 @@ const ToolSettingsPanel: React.FC<ToolSettingsProps> = ({ onBack }) => {
                     </svg>
                 </button>
                 <div className="provider-settings-title">{t('settings.tools')}</div>
-                <div style={{ width: 44 }}></div>
+                {!loading && (
+                    <button
+                        type="button"
+                        className="ui-btn ui-btn--primary ui-btn--sm"
+                        onClick={() => void handleSave()}
+                        disabled={saving}
+                    >
+                        {saving ? t('common.saving') : t('common.save')}
+                    </button>
+                )}
             </div>
 
             {loading ? (
-                <div className="provider-settings-loading">{t('common.loading')}</div>
+                <div className="provider-settings-loading" role="status">
+                    <span className="ui-spinner" aria-hidden="true" />
+                    {t('common.loading')}
+                </div>
             ) : (
                 <div className="provider-settings-content">
-                    <div className="settings-section">
-                        <h3>{t('settings.tools')}</h3>
-                        <p className="prompt-modal-hint">{t('settings.toolControlHint')}</p>
-                        <div className="tool-control-summary">
+                    <p className="tool-settings-summary">
+                        <span>
                             {t('settings.toolControlSummary', {
                                 enabled: enabledCount,
                                 total: TOOL_CONTROL_DEFINITIONS.length,
                             })}
-                        </div>
-                    </div>
+                        </span>
+                        {t('settingsManagement.tools.description')}
+                    </p>
 
                     {sections.map((section) => (
-                        <div className="settings-section" key={section.key}>
-                            <h3>{t(section.titleKey)}</h3>
-                            <div className="tool-control-list">
-                                {section.items.map((tool) => {
-                                    const enabled = toolToggles[tool.key] ?? true
-                                    return (
-                                        <div className="tool-control-card" key={tool.key}>
-                                            <div className="tool-control-meta">
-                                                <div className="tool-control-title-row">
-                                                    <div className="tool-control-title">{t(tool.titleKey)}</div>
-                                                    <span
-                                                        className={`tool-control-status ${enabled ? 'enabled' : 'disabled'}`}
-                                                    >
-                                                        {enabled ? t('common.enabled') : t('common.disabled')}
-                                                    </span>
-                                                </div>
-                                                <p className="tool-control-description">{t(tool.descriptionKey)}</p>
-                                                {tool.hintKey && <p className="tool-control-hint">{t(tool.hintKey)}</p>}
-                                            </div>
-                                            <div className="modal-toggle-wrapper tool-control-toggle">
-                                                <label className="toggle-switch">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={enabled}
-                                                        onChange={(event) =>
-                                                            handleToggle(tool.key, event.target.checked)
-                                                        }
-                                                        disabled={saving}
-                                                    />
-                                                    <span className="toggle-slider"></span>
-                                                </label>
-                                                <span className="toggle-label">
-                                                    {enabled ? t('common.enable') : t('common.disable')}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    )
-                                })}
-                            </div>
-                        </div>
+                        <Group title={t(section.titleKey)} key={section.key}>
+                            {section.items.map((tool) => {
+                                const enabled = toolToggles[tool.key] ?? true
+                                return (
+                                    <Row
+                                        key={tool.key}
+                                        label={t(tool.titleKey)}
+                                        detail={
+                                            tool.hintKey ? (
+                                                <>
+                                                    {t(tool.descriptionKey)}
+                                                    <span className="tool-settings-hint">{t(tool.hintKey)}</span>
+                                                </>
+                                            ) : (
+                                                t(tool.descriptionKey)
+                                            )
+                                        }
+                                        trailing={
+                                            <Toggle
+                                                label={t(tool.titleKey)}
+                                                checked={enabled}
+                                                disabled={saving}
+                                                onChange={(checked) => handleToggle(tool.key, checked)}
+                                            />
+                                        }
+                                    />
+                                )
+                            })}
+                        </Group>
                     ))}
-
-                    <button className="settings-save-btn" onClick={handleSave} disabled={saving}>
-                        {saving ? t('common.saving') : t('common.save')}
-                    </button>
-
-                    {message && <div className={`settings-message ${messageType}`}>{message}</div>}
                 </div>
             )}
         </motion.div>

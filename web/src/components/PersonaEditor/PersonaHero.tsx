@@ -1,5 +1,7 @@
-import { useId, useRef } from 'react'
+import { useId, useLayoutEffect, useRef } from 'react'
 import { useT } from '../../contexts/I18nContext'
+import { getPersonaCopy } from '../../i18n/personas'
+import { Icon } from '../ui'
 
 interface PersonaHeroProps {
     name: string
@@ -11,6 +13,7 @@ interface PersonaHeroProps {
     onAvatarDelete: () => void
 }
 
+/** Profile-card style identity block: avatar, name and a one-line description. */
 const PersonaHero: React.FC<PersonaHeroProps> = ({
     name,
     description,
@@ -20,14 +23,12 @@ const PersonaHero: React.FC<PersonaHeroProps> = ({
     onAvatarChange,
     onAvatarDelete,
 }) => {
-    const { t } = useT()
+    const { locale } = useT()
+    const copy = getPersonaCopy(locale).editor
     const fileInputRef = useRef<HTMLInputElement>(null)
+    const descriptionRef = useRef<HTMLTextAreaElement>(null)
     const nameId = useId()
     const descriptionId = useId()
-
-    const handleAvatarClick = () => {
-        fileInputRef.current?.click()
-    }
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0]
@@ -38,38 +39,35 @@ const PersonaHero: React.FC<PersonaHeroProps> = ({
         e.target.value = ''
     }
 
-    // 自适应 textarea 高度
-    const handleDescriptionInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-        onDescriptionChange(e.target.value)
-        const el = e.target
+    // 自适应 textarea 高度（包括加载后的初始值）
+    useLayoutEffect(() => {
+        const el = descriptionRef.current
+        if (!el) return
         el.style.height = 'auto'
-        el.style.height = el.scrollHeight + 'px'
-    }
+        el.style.height = `${el.scrollHeight}px`
+    }, [description])
 
-    const initial = name ? name.charAt(0).toUpperCase() : '?'
+    const initial = name.trim().charAt(0).toUpperCase()
 
     return (
-        <div className="persona-hero">
-            {/* 头像 */}
-            <div className="persona-avatar-field">
+        <section className="persona-identity">
+            <div className="persona-avatar">
                 <button
                     type="button"
-                    className="avatar-container"
-                    onClick={handleAvatarClick}
-                    aria-label={t('profile.uploadAvatar')}
+                    className="persona-avatar__button"
+                    onClick={() => fileInputRef.current?.click()}
+                    aria-label={copy.changeAvatarLabel}
                 >
                     {avatarUrl ? (
-                        <img className="avatar-image" src={avatarUrl} alt={name || t('profile.uploadAvatar')} />
+                        <img className="persona-avatar__image" src={avatarUrl} alt="" />
                     ) : (
-                        <span className="avatar-fallback" aria-hidden="true">
-                            {initial}
+                        <span className="persona-avatar__initial" aria-hidden="true">
+                            {initial || <Icon name="camera" size={24} />}
                         </span>
                     )}
-                    <span className="avatar-overlay" aria-hidden="true">
-                        <svg viewBox="0 0 24 24">
-                            <path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z" />
-                            <path d="M9 2 7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z" />
-                        </svg>
+                    <span className="persona-avatar__overlay" aria-hidden="true">
+                        <Icon name="camera" size={16} />
+                        {copy.changeAvatar}
                     </span>
                 </button>
                 <input
@@ -77,26 +75,20 @@ const PersonaHero: React.FC<PersonaHeroProps> = ({
                     ref={fileInputRef}
                     onChange={handleFileChange}
                     accept="image/*"
-                    style={{ display: 'none' }}
+                    tabIndex={-1}
+                    aria-hidden="true"
+                    hidden
                 />
-
-                {/* 删除头像 */}
                 {avatarUrl && (
-                    <button
-                        type="button"
-                        className="avatar-delete-link"
-                        onClick={(e) => {
-                            e.stopPropagation()
-                            onAvatarDelete()
-                        }}
-                    >
-                        {t('persona.deleteAvatar')}
+                    <button type="button" className="persona-avatar__remove" onClick={onAvatarDelete}>
+                        {copy.removeAvatar}
                     </button>
                 )}
             </div>
-            <div className="persona-identity-fields">
-                {/* 名称 */}
-                <label htmlFor={nameId}>{t('persona.namePlaceholder')}</label>
+            <div className="persona-identity__fields">
+                <label htmlFor={nameId} className="ui-visually-hidden">
+                    {copy.nameLabel}
+                </label>
                 <input
                     id={nameId}
                     required
@@ -104,23 +96,25 @@ const PersonaHero: React.FC<PersonaHeroProps> = ({
                     type="text"
                     value={name}
                     onChange={(e) => onNameChange(e.target.value)}
-                    placeholder={t('persona.namePlaceholder')}
+                    placeholder={copy.namePlaceholder}
                     maxLength={50}
+                    autoComplete="off"
                 />
-
-                {/* 描述 */}
-                <label htmlFor={descriptionId}>{t('persona.descriptionPlaceholder')}</label>
+                <label htmlFor={descriptionId} className="ui-visually-hidden">
+                    {copy.descriptionLabel}
+                </label>
                 <textarea
                     id={descriptionId}
+                    ref={descriptionRef}
                     className="description-input"
                     value={description}
-                    onChange={handleDescriptionInput}
-                    placeholder={t('persona.descriptionPlaceholder')}
+                    onChange={(e) => onDescriptionChange(e.target.value)}
+                    placeholder={copy.descriptionPlaceholder}
                     rows={1}
                     maxLength={200}
                 />
             </div>
-        </div>
+        </section>
     )
 }
 

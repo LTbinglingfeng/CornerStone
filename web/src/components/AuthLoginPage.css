@@ -1,104 +1,115 @@
+/* Sign-in & first-run setup share this layout (AuthSetupPage imports it too). */
+
 .auth-page {
-  width: 100%;
-  height: 100%;
-  background-color: var(--bg-primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    min-height: 100dvh;
+    overflow-y: auto;
+    padding: max(var(--space-6), env(safe-area-inset-top)) var(--space-4)
+        max(var(--space-6), env(safe-area-inset-bottom));
+    background-color: var(--bg-app);
 }
 
 .auth-card {
-  width: min(360px, 100%);
-  background-color: var(--bg-secondary);
-  border-radius: 16px;
-  padding: 24px;
-  border: 1px solid var(--border-color);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.auth-logo-wrapper {
-  display: flex;
-  justify-content: center;
-  padding-top: 4px;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    width: min(392px, 100%);
+    margin: auto;
+    padding: var(--space-10) var(--space-8) var(--space-8);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-xl);
+    background-color: var(--bg-elevated);
+    box-shadow: var(--shadow-md);
+    animation: auth-card-in 240ms var(--ease-out) both;
 }
 
 .auth-logo {
-  width: 68px;
-  height: 68px;
-  border-radius: 18px;
-  object-fit: cover;
-  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.25);
+    width: 56px;
+    height: 56px;
+    align-self: center;
+    margin-bottom: var(--space-5);
+    border-radius: var(--radius-lg);
+    object-fit: cover;
+    box-shadow:
+        0 0 0 1px var(--line),
+        var(--shadow-sm);
 }
 
 .auth-title {
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--text-primary);
-  text-align: center;
+    margin: 0;
+    color: var(--text);
+    font-size: var(--text-xl);
+    font-weight: 650;
+    line-height: 1.25;
+    letter-spacing: -0.018em;
+    text-align: center;
 }
 
 .auth-subtitle {
-  font-size: 14px;
-  color: var(--text-secondary);
-  text-align: center;
+    margin: 6px 0 0;
+    color: var(--text-2);
+    font-size: var(--text-base);
+    line-height: 1.55;
+    text-align: center;
+    text-wrap: balance;
 }
 
 .auth-form {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    margin-top: var(--space-8);
 }
 
-.auth-field {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.auth-label {
-  font-size: 13px;
-  color: var(--text-secondary);
+.auth-form .ui-field + .ui-field {
+    margin-top: 0;
 }
 
 .auth-input {
-  height: 44px;
-  border-radius: 10px;
-  border: 1px solid var(--border-color);
-  background-color: var(--bg-input);
-  color: var(--text-primary);
-  padding: 0 12px;
-  outline: none;
-  transition: border-color 0.2s ease, background-color 0.2s ease;
+    height: 44px;
+    font-size: var(--text-md);
 }
 
-.auth-input:focus {
-  border-color: var(--accent-color);
-  background-color: var(--bg-input-focus);
+.auth-input:disabled {
+    opacity: 0.65;
 }
 
 .auth-error {
-  color: var(--danger-color);
-  font-size: 13px;
-  text-align: center;
+    margin: 0;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-sm);
+    background: var(--danger-soft);
+    color: var(--danger);
+    font-size: 13px;
+    line-height: 1.5;
+    text-align: center;
 }
 
 .auth-button {
-  height: 44px;
-  border-radius: 10px;
-  border: none;
-  background-color: var(--accent-color);
-  color: #ffffff;
-  font-size: 15px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: opacity 0.2s ease;
+    margin-top: var(--space-2);
 }
 
-.auth-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+@keyframes auth-card-in {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+}
+
+@media (max-width: 480px) {
+    .auth-card {
+        padding: var(--space-8) var(--space-5) var(--space-6);
+        border-radius: var(--radius-xl);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .auth-card {
+        animation: none;
+    }
 }

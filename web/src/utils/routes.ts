@@ -1,6 +1,9 @@
 export type AppTab = 'overview' | 'channels' | 'contacts' | 'chat' | 'settings' | 'me'
 
-export const tabOrder: AppTab[] = ['overview', 'channels', 'contacts', 'chat', 'settings', 'me']
+export const tabOrder: AppTab[] = ['overview', 'chat', 'contacts', 'channels', 'settings', 'me']
+
+/** Primary navigation. The profile lives behind the account entry, not in the main nav. */
+export const navTabs: AppTab[] = ['overview', 'chat', 'contacts', 'channels', 'settings']
 
 export const tabRoutes: Record<AppTab, string> = {
     overview: '/overview',

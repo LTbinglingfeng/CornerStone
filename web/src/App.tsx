@@ -6,6 +6,7 @@ import ManagementOverview from './components/ManagementOverview'
 import ChannelsPage from './components/ChannelsPage'
 import Settings from './components/Settings'
 import SearchBar from './components/SearchBar'
+import { EmptyState, Icon } from './components/ui'
 import ChatList from './components/ChatList'
 import ChatDetail from './components/ChatDetail'
 import Contacts from './components/Contacts'
@@ -516,38 +517,76 @@ function App() {
         )
     }
 
+    const immersive = !!selectedSessionId || editingPromptId !== null
+
     return (
-        <div className="app-wrapper console-layout">
+        <div className={`app-wrapper console-layout${immersive ? ' console-layout--immersive' : ''}`}>
             <a className="console-skip" href="#console-main">
                 {t('console.skip')}
             </a>
-            <ConsoleNav />
+            <ConsoleNav username={authUsername} />
             <main id="console-main" className="console-workspace" tabIndex={-1}>
                 <div
                     className="console-base-view"
-                    inert={!!selectedSessionId || editingPromptId !== null}
-                    aria-hidden={!!selectedSessionId || editingPromptId !== null}
+                    inert={editingPromptId !== null}
+                    aria-hidden={editingPromptId !== null}
                 >
                     {activeTab === 'overview' && <ManagementOverview />}
                     {activeTab === 'channels' && <ChannelsPage />}
                     {activeTab === 'chat' && (
-                        <section className="console-conversations">
-                            <header className="console-page-heading">
-                                <div>
+                        <div className={`conversations${selectedSessionId ? ' conversations--open' : ''}`}>
+                            <section className="conversations-list" aria-label={t('console.chat')}>
+                                <header className="conversations-list-header">
                                     <h1>{t('console.chat')}</h1>
-                                    <p>{t('console.chatHint')}</p>
-                                </div>
-                                <button className="console-button" onClick={handleCreateSession}>
-                                    {t('console.newChat')}
-                                </button>
-                            </header>
-                            <SearchBar value={searchQuery} onChange={setSearchQuery} />
-                            <ChatList
-                                onSelectSession={handleSelectSession}
-                                searchQuery={searchQuery}
-                                refreshToken={refreshKey}
-                            />
-                        </section>
+                                    <button
+                                        type="button"
+                                        className="ui-icon-btn"
+                                        onClick={handleCreateSession}
+                                        aria-label={t('console.newChat')}
+                                        title={t('console.newChat')}
+                                    >
+                                        <Icon name="plus" />
+                                    </button>
+                                </header>
+                                <SearchBar
+                                    value={searchQuery}
+                                    onChange={setSearchQuery}
+                                    placeholder={t('console.searchConversations')}
+                                />
+                                <ChatList
+                                    onSelectSession={handleSelectSession}
+                                    searchQuery={searchQuery}
+                                    refreshToken={refreshKey}
+                                    activeSessionId={selectedSessionId}
+                                />
+                            </section>
+                            <section className="conversations-detail">
+                                <AnimatePresence>
+                                    {selectedSessionId && (
+                                        <ChatDetail
+                                            key="chat-detail"
+                                            sessionId={selectedSessionId}
+                                            promptId={selectedPromptId}
+                                            onBack={handleBack}
+                                            onSwitchSession={handleSwitchSession}
+                                        />
+                                    )}
+                                </AnimatePresence>
+                                {!selectedSessionId && (
+                                    <EmptyState
+                                        icon="chat"
+                                        title={t('console.selectConversation')}
+                                        description={t('console.selectConversationHint')}
+                                        action={
+                                            <button type="button" className="ui-btn" onClick={handleCreateSession}>
+                                                <Icon name="plus" />
+                                                {t('console.newChat')}
+                                            </button>
+                                        }
+                                    />
+                                )}
+                            </section>
+                        </div>
                     )}
                     {activeTab === 'contacts' && (
                         <Contacts
@@ -566,17 +605,6 @@ function App() {
                     )}
                     {activeTab === 'me' && <ProfilePage />}
                 </div>
-                <AnimatePresence>
-                    {selectedSessionId && (
-                        <ChatDetail
-                            key="chat-detail"
-                            sessionId={selectedSessionId}
-                            promptId={selectedPromptId}
-                            onBack={handleBack}
-                            onSwitchSession={handleSwitchSession}
-                        />
-                    )}
-                </AnimatePresence>
                 <AnimatePresence>
                     {editingPromptId !== null && (
                         <PersonaEditor

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { ChatAttachment } from '../../../types/chat'
 import { getAuthToken } from '../../../services/api'
 import { useT } from '../../../contexts/I18nContext'
+import { Icon } from '../../ui'
 
 export function MessageAttachments({ attachments }: { attachments?: ChatAttachment[] }) {
     const { t } = useT()
@@ -29,22 +30,37 @@ export function MessageAttachments({ attachments }: { attachments?: ChatAttachme
             setBusy(false)
         }
     }
+    if (!attachments?.length && !error) return null
     return (
-        <div>
+        <div className="message-attachments">
             {attachments?.map((attachment) => (
-                <div key={attachment.path}>
+                <div key={attachment.path} className="message-attachment">
                     <button
                         type="button"
+                        className="message-attachment-btn"
                         disabled={busy}
                         onPointerDown={(e) => e.stopPropagation()}
                         onClick={() => void download(attachment)}
+                        aria-label={`${t('chat.downloadAttachment')}: ${attachment.name}`}
                     >
-                        {t('chat.downloadAttachment')}: {attachment.name} ({Math.ceil(attachment.size / 1024)} KB)
+                        <span className="message-attachment-icon" aria-hidden="true">
+                            <Icon name="fileText" size={18} />
+                        </span>
+                        <span className="message-attachment-info">
+                            <span className="message-attachment-name">{attachment.name}</span>
+                            <span className="message-attachment-size">
+                                {Math.ceil(attachment.size / 1024)} KB · {t('chat.downloadAttachment')}
+                            </span>
+                        </span>
                     </button>
-                    <small>{t('chat.attachmentModelFallback')}</small>
+                    <small className="message-attachment-note">{t('chat.attachmentModelFallback')}</small>
                 </div>
             ))}
-            {error && <span role="alert">{t('chat.attachmentDownloadFailed')}</span>}
+            {error && (
+                <span className="message-attachment-error" role="alert">
+                    {t('chat.attachmentDownloadFailed')}
+                </span>
+            )}
         </div>
     )
 }

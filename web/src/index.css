@@ -1,3 +1,10 @@
+/*
+ * CornerStone design tokens.
+ * Warm paper neutrals, one ink colour for emphasis, semantic colours only for status.
+ * Legacy variable names (--bg-primary, --accent-color …) are mapped onto the new scale
+ * so every surface shares one palette.
+ */
+
 * {
   margin: 0;
   padding: 0;
@@ -33,26 +40,111 @@
 
 :root {
   color-scheme: dark;
-  /* 羊毛纸暗色主题 (default) — 极简暖灰深色模式 */
-  --bg-primary: #151412;
-  --bg-secondary: #1d1b18;
-  --bg-tertiary: #262320;
+
+  /* Type */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', 'Helvetica Neue', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 14px;
+  --text-md: 15px;
+  --text-lg: 17px;
+  --text-xl: 20px;
+  --text-2xl: 26px;
+
+  /* Shape */
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-full: 999px;
+
+  /* Space (4px grid) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+
+  /* Layout */
+  --sidebar-width: 232px;
+  --content-width: 760px;
+  --content-wide: 1080px;
+  --control-height: 36px;
+  --row-min-height: 52px;
+  --tabbar-height: 56px;
   --app-header-height: 56px;
   --app-header-padding-x: 16px;
-  --bg-input: #1d1b18;
-  --bg-input-focus: #262320;
-  --text-primary: #f6f4f1;
-  --text-secondary: #9c958d;
-  --text-placeholder: #6f6962;
-  --border-color: #3a3530;
-  --accent-color: #8b8680;
-  --accent-hover: #9a948e;
-  --accent-active: #a6a099;
-  --danger-color: #e78678;
-  --success-color: #10b981;
-  --warning-color: #e0aa14;
-  --message-user-bg: #8b8680;
-  --message-assistant-bg: #262320;
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --duration-press: 120ms;
+  --duration-fast: 150ms;
+  --duration-base: 200ms;
+
+  /* ---------- Dark palette (default) ---------- */
+  --bg-app: #121110;
+  --bg-surface: #171614;
+  --bg-elevated: #1e1d1a;
+  --bg-sunken: #242220;
+  --bg-hover: rgba(255, 248, 235, 0.05);
+  --bg-active: rgba(255, 248, 235, 0.08);
+  --fill: rgba(255, 248, 235, 0.06);
+  --fill-strong: rgba(255, 248, 235, 0.1);
+  --line: rgba(255, 248, 235, 0.08);
+  --line-strong: rgba(255, 248, 235, 0.15);
+
+  --text: #f3f0ea;
+  --text-2: #aca69e;
+  --text-3: #948e86;
+
+  --ink: #f3f0ea;
+  --on-ink: #171614;
+  --focus-ring: rgba(243, 240, 234, 0.55);
+
+  --success: #4cb98a;
+  --success-soft: rgba(76, 185, 138, 0.14);
+  --warning: #e0a43a;
+  --warning-soft: rgba(224, 164, 58, 0.14);
+  --danger: #ec7b6d;
+  --danger-soft: rgba(236, 123, 109, 0.12);
+  --info: #7fa7e8;
+  --info-soft: rgba(127, 167, 232, 0.14);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.32), 0 1px 3px rgba(0, 0, 0, 0.24);
+  --shadow-lg: 0 18px 48px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --scrim: rgba(6, 5, 4, 0.56);
+
+  /* ---------- Legacy aliases ---------- */
+  --bg-primary: var(--bg-surface);
+  --bg-secondary: var(--bg-elevated);
+  --bg-tertiary: var(--bg-sunken);
+  --bg-input: var(--bg-sunken);
+  --bg-input-focus: var(--bg-sunken);
+  --text-primary: var(--text);
+  --text-secondary: var(--text-2);
+  --text-placeholder: var(--text-3);
+  --border-color: var(--line);
+  --accent-color: var(--ink);
+  --on-accent: var(--on-ink);
+  --accent-hover: var(--ink);
+  --accent-active: var(--ink);
+  --danger-color: var(--danger);
+  --success-color: var(--success);
+  --warning-color: var(--warning);
+  --message-user-bg: #ece6dc;
+  --message-user-text: #1b1a17;
+  --message-assistant-bg: var(--bg-elevated);
+  --message-assistant-text: var(--text);
+
   --red-packet-card-bg: #fa9d3b;
   --red-packet-card-text: #ffffff;
   --red-packet-card-status-text: rgba(255, 255, 255, 0.85);
@@ -67,65 +159,89 @@
   --red-packet-open-btn-text: #3b2e1f;
   --red-packet-result-accent: #c65746;
   --red-packet-result-footer: var(--text-secondary);
-  --pat-banner-bg: rgba(246, 244, 241, 0.08);
-  --pat-banner-text: rgba(246, 244, 241, 0.6);
+  --pat-banner-bg: rgba(246, 244, 241, 0.06);
+  --pat-banner-text: rgba(246, 244, 241, 0.55);
   --pat-banner-border: rgba(246, 244, 241, 0.06);
+
   --scrollbar-size: 8px;
   --scrollbar-track: transparent;
-  --scrollbar-thumb: rgba(246, 244, 241, 0.18);
-  --scrollbar-thumb-hover: rgba(246, 244, 241, 0.3);
+  --scrollbar-thumb: rgba(255, 248, 235, 0.14);
+  --scrollbar-thumb-hover: rgba(255, 248, 235, 0.26);
 }
 
-[data-theme="light"] {
+[data-theme='light'] {
   color-scheme: light;
-  /* 羊毛纸亮色主题 — 极简暖灰，模拟纸张质感 */
-  --bg-primary: #faf9f5;
-  --bg-secondary: #f0eee8;
-  --bg-tertiary: #e9e6df;
-  --bg-input: #f0eee8;
-  --bg-input-focus: #e9e6df;
-  --text-primary: #2d2a26;
-  --text-secondary: #625c55;
-  --text-placeholder: #76716a;
-  --border-color: #e3e1db;
-  --accent-color: #8b8680;
-  --accent-hover: #7f7a74;
-  --accent-active: #726d67;
-  --danger-color: #a83f30;
-  --success-color: #10b981;
-  --warning-color: #e0aa14;
-  --message-user-bg: #8b8680;
-  --message-assistant-bg: #e9e6df;
-  --red-packet-card-bg: #fa9d3b;
-  --red-packet-card-text: #ffffff;
-  --red-packet-card-status-text: rgba(255, 255, 255, 0.85);
-  --red-packet-card-footer-bg: rgba(255, 255, 255, 0.15);
-  --red-packet-card-footer-text: rgba(255, 255, 255, 0.7);
+
+  --bg-app: #f3f2ee;
+  --bg-surface: #faf9f6;
+  --bg-elevated: #ffffff;
+  --bg-sunken: #f1efea;
+  --bg-hover: rgba(40, 33, 24, 0.04);
+  --bg-active: rgba(40, 33, 24, 0.07);
+  --fill: rgba(40, 33, 24, 0.05);
+  --fill-strong: rgba(40, 33, 24, 0.09);
+  --line: rgba(40, 33, 24, 0.09);
+  --line-strong: rgba(40, 33, 24, 0.16);
+
+  --text: #1d1b18;
+  --text-2: #5f5951;
+  --text-3: #736d66;
+
+  --ink: #1d1b18;
+  --on-ink: #faf9f6;
+  --focus-ring: rgba(29, 27, 24, 0.45);
+
+  --success: #1f8a5b;
+  --success-soft: rgba(31, 138, 91, 0.1);
+  --warning: #a86d00;
+  --warning-soft: rgba(196, 135, 20, 0.12);
+  --danger: #b5412f;
+  --danger-soft: rgba(181, 65, 47, 0.08);
+  --info: #2f62b8;
+  --info-soft: rgba(47, 98, 184, 0.09);
+
+  --shadow-sm: 0 1px 2px rgba(40, 33, 24, 0.05);
+  --shadow-md: 0 4px 16px rgba(40, 33, 24, 0.07), 0 1px 3px rgba(40, 33, 24, 0.05);
+  --shadow-lg: 0 18px 48px rgba(40, 33, 24, 0.14), 0 2px 8px rgba(40, 33, 24, 0.06);
+  --scrim: rgba(29, 27, 24, 0.28);
+
+  --message-user-bg: #1d1b18;
+  --message-user-text: #faf9f6;
+  --message-assistant-bg: #ffffff;
+  --message-assistant-text: var(--text);
+
   --red-packet-card-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
   --red-packet-card-border: rgba(0, 0, 0, 0.08);
-  --red-packet-modal-bg: #c65746;
-  --red-packet-header-text: #fce5bf;
-  --red-packet-header-subtext: rgba(252, 229, 191, 0.9);
-  --red-packet-open-btn-bg: #f0cb96;
-  --red-packet-open-btn-text: #3b2e1f;
-  --red-packet-result-accent: #c65746;
-  --red-packet-result-footer: var(--text-secondary);
-  --pat-banner-bg: rgba(45, 42, 38, 0.06);
+  --pat-banner-bg: rgba(45, 42, 38, 0.05);
   --pat-banner-text: rgba(45, 42, 38, 0.5);
   --pat-banner-border: rgba(45, 42, 38, 0.05);
-  --scrollbar-track: transparent;
-  --scrollbar-thumb: rgba(45, 42, 38, 0.2);
-  --scrollbar-thumb-hover: rgba(45, 42, 38, 0.35);
+
+  --scrollbar-thumb: rgba(40, 33, 24, 0.16);
+  --scrollbar-thumb-hover: rgba(40, 33, 24, 0.3);
 }
 
-html, body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
-    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
-  background-color: var(--bg-primary);
+html,
+body {
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: 1.5;
+  color: var(--text);
+  background-color: var(--bg-app);
   height: 100%;
   width: 100%;
   overflow: hidden;
-  transition: background-color 0.3s ease;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
 }
 
 #root {
@@ -136,36 +252,39 @@ html, body {
   align-items: center;
 }
 
+::selection {
+  background: var(--fill-strong);
+}
+
 .toggle-switch:has(input:focus-visible) .toggle-slider {
-  outline: 2px solid var(--text-primary);
-  outline-offset: 3px;
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
 .feature-beta-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 2px 8px;
-  border-radius: 999px;
-  border: 1px solid rgba(96, 165, 250, 0.38);
-  background: rgba(59, 130, 246, 0.18);
-  color: #7dd3fc;
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  background: var(--info-soft);
+  color: var(--info);
   font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 1.5;
   white-space: nowrap;
-}
-
-[data-theme='light'] .feature-beta-badge {
-  border-color: rgba(59, 130, 246, 0.28);
-  background: rgba(59, 130, 246, 0.12);
-  color: #1d4ed8;
 }
 
 @media (pointer: coarse) {
   #root {
     justify-content: flex-start;
     align-items: stretch;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --scrim: rgba(6, 5, 4, 0.7);
   }
 }

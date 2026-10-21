@@ -13,8 +13,13 @@ export const PendingImages: React.FC<PendingImagesProps> = ({ pendingImages, get
             {pendingImages.map((imagePath, index) => (
                 <div key={`${imagePath}-${index}`} className="pending-image-item">
                     <img src={getImageUrl(imagePath)} alt={t('chat.pendingImages')} />
-                    <button type="button" className="pending-image-remove" onClick={() => onRemove(index)}>
-                        ×
+                    <button
+                        type="button"
+                        className="pending-image-remove"
+                        onClick={() => onRemove(index)}
+                        aria-label={t('common.delete')}
+                    >
+                        <Icon name="x" size={12} strokeWidth={2.25} />
                     </button>
                 </div>
             ))}
@@ -22,3 +27,4 @@ export const PendingImages: React.FC<PendingImagesProps> = ({ pendingImages, get
     )
 }
 import { useT } from '../../../contexts/I18nContext'
+import { Icon } from '../../ui'

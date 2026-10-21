@@ -5,12 +5,21 @@ import type { Reminder } from '../types/reminder'
 import { useT } from '../contexts/I18nContext'
 import { useToast } from '../contexts/ToastContext'
 import { drawerVariants } from '../utils/motion'
+import { Badge, EmptyState, Group, Icon, Row, type Tone } from './ui'
+import { SettingsField } from './SettingsField'
 import './ProviderSettings.css'
-import './Settings.css'
 import './ReminderSettings.css'
 
 interface ReminderSettingsProps {
     onBack: () => void
+}
+
+const STATUS_TONES: Record<string, Tone> = {
+    pending: 'info',
+    firing: 'warning',
+    sent: 'success',
+    failed: 'danger',
+    cancelled: 'neutral',
 }
 
 const ReminderSettingsPanel: React.FC<ReminderSettingsProps> = ({ onBack }) => {
@@ -172,6 +181,26 @@ const ReminderSettingsPanel: React.FC<ReminderSettingsProps> = ({ onBack }) => {
         }
     }
 
+    const metaRows: Array<{ label: string; value: React.ReactNode }> = selectedReminder
+        ? [
+              { label: t('settings.reminderChannel'), value: getChannelLabel(selectedReminder.channel) },
+              { label: t('settings.persona'), value: selectedReminder.prompt_name || selectedReminder.prompt_id },
+              {
+                  label: t('settings.reminderSession'),
+                  value: selectedReminder.session_title || selectedReminder.session_id,
+              },
+              ...(selectedReminder.channel === 'clawbot' || selectedReminder.channel === 'napcat'
+                  ? [{ label: t('settings.reminderTarget'), value: getTargetLabel(selectedReminder) }]
+                  : []),
+              { label: t('settings.reminderAttempts'), value: selectedReminder.attempts },
+              { label: t('settings.reminderCreatedAt'), value: formatDateTime(selectedReminder.created_at) },
+              { label: t('settings.reminderUpdatedAt'), value: formatDateTime(selectedReminder.updated_at) },
+              ...(selectedReminder.fired_at
+                  ? [{ label: t('settings.reminderFiredAt'), value: formatDateTime(selectedReminder.fired_at) }]
+                  : []),
+          ]
+        : []
+
     return (
         <motion.div
             className="provider-settings"
@@ -189,141 +218,121 @@ const ReminderSettingsPanel: React.FC<ReminderSettingsProps> = ({ onBack }) => {
                 <div className="provider-settings-title">
                     {isDetailView ? t('settings.reminderDetails') : t('settings.reminders')}
                 </div>
-                <div style={{ width: 44 }}></div>
+                {isDetailView && isPending && (
+                    <button
+                        type="button"
+                        className="ui-btn ui-btn--primary ui-btn--sm"
+                        onClick={() => void handleSave()}
+                        disabled={saving}
+                    >
+                        {saving ? t('common.saving') : t('common.save')}
+                    </button>
+                )}
             </div>
 
             {loading ? (
-                <div className="provider-settings-loading">{t('common.loading')}</div>
+                <div className="provider-settings-loading" role="status">
+                    <span className="ui-spinner" aria-hidden="true" />
+                    {t('common.loading')}
+                </div>
             ) : isDetailView && selectedReminder ? (
                 <div className="provider-settings-content">
-                    <div className="settings-section">
-                        <h3>{selectedReminder.title}</h3>
-                        <div className={`reminder-status-badge ${selectedReminder.status}`}>
+                    <header className="reminder-detail-header">
+                        <h2>{selectedReminder.title}</h2>
+                        <Badge tone={STATUS_TONES[selectedReminder.status] || 'neutral'} dot>
                             {getStatusLabel(selectedReminder.status)}
-                        </div>
-                    </div>
+                        </Badge>
+                    </header>
 
-                    <div className="settings-section">
-                        <div className="settings-group">
-                            <label className="settings-label">{t('settings.reminderTitle')}</label>
-                            {isPending ? (
-                                <input
-                                    className="settings-input"
-                                    value={editingTitle}
-                                    onChange={(event) => setEditingTitle(event.target.value)}
-                                    disabled={saving}
+                    <Group title={t('settingsManagement.reminders.content')}>
+                        {isPending ? (
+                            <>
+                                <SettingsField label={t('settings.reminderTitle')} stacked>
+                                    <input
+                                        className="settings-input"
+                                        aria-label={t('settings.reminderTitle')}
+                                        value={editingTitle}
+                                        onChange={(event) => setEditingTitle(event.target.value)}
+                                        disabled={saving}
+                                    />
+                                </SettingsField>
+                                <SettingsField
+                                    label={t('settings.reminderDueAt')}
+                                    hint={t('settings.reminderDueAtHint')}
+                                    stacked
+                                >
+                                    <input
+                                        className="settings-input"
+                                        aria-label={t('settings.reminderDueAt')}
+                                        value={editingDueAt}
+                                        onChange={(event) => setEditingDueAt(event.target.value)}
+                                        placeholder="2026-04-05T18:30:00+08:00"
+                                        disabled={saving}
+                                    />
+                                </SettingsField>
+                                <SettingsField label={t('settings.reminderPrompt')} stacked>
+                                    <textarea
+                                        className="settings-textarea"
+                                        aria-label={t('settings.reminderPrompt')}
+                                        value={editingPrompt}
+                                        onChange={(event) => setEditingPrompt(event.target.value)}
+                                        rows={8}
+                                        disabled={saving}
+                                    />
+                                </SettingsField>
+                            </>
+                        ) : (
+                            <>
+                                <Row label={t('settings.reminderTitle')} value={selectedReminder.title} />
+                                <Row
+                                    label={t('settings.reminderDueAt')}
+                                    value={formatDateTime(selectedReminder.due_at)}
                                 />
-                            ) : (
-                                <div className="reminder-readonly">{selectedReminder.title}</div>
-                            )}
-                        </div>
+                                <SettingsField label={t('settings.reminderPrompt')} stacked>
+                                    <div className="reminder-readonly">{selectedReminder.reminder_prompt}</div>
+                                </SettingsField>
+                            </>
+                        )}
+                    </Group>
 
-                        <div className="settings-group">
-                            <label className="settings-label">{t('settings.reminderDueAt')}</label>
-                            {isPending ? (
-                                <input
-                                    className="settings-input"
-                                    value={editingDueAt}
-                                    onChange={(event) => setEditingDueAt(event.target.value)}
-                                    placeholder="2026-04-05T18:30:00+08:00"
-                                    disabled={saving}
-                                />
-                            ) : (
-                                <div className="reminder-readonly">{formatDateTime(selectedReminder.due_at)}</div>
-                            )}
-                            {isPending && <p className="prompt-modal-hint">{t('settings.reminderDueAtHint')}</p>}
-                        </div>
-
-                        <div className="settings-group">
-                            <label className="settings-label">{t('settings.reminderPrompt')}</label>
-                            {isPending ? (
-                                <textarea
-                                    className="settings-textarea"
-                                    value={editingPrompt}
-                                    onChange={(event) => setEditingPrompt(event.target.value)}
-                                    rows={8}
-                                    disabled={saving}
-                                />
-                            ) : (
-                                <div className="reminder-readonly reminder-prompt-readonly">
-                                    {selectedReminder.reminder_prompt}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    <div className="settings-section">
-                        <div className="reminder-meta-list">
-                            <div className="reminder-meta-row">
-                                <span>{t('settings.reminderChannel')}</span>
-                                <strong>{getChannelLabel(selectedReminder.channel)}</strong>
-                            </div>
-                            <div className="reminder-meta-row">
-                                <span>{t('settings.persona')}</span>
-                                <strong>{selectedReminder.prompt_name || selectedReminder.prompt_id}</strong>
-                            </div>
-                            <div className="reminder-meta-row">
-                                <span>{t('settings.reminderSession')}</span>
-                                <strong>{selectedReminder.session_title || selectedReminder.session_id}</strong>
-                            </div>
-                            {(selectedReminder.channel === 'clawbot' || selectedReminder.channel === 'napcat') && (
-                                <div className="reminder-meta-row">
-                                    <span>{t('settings.reminderTarget')}</span>
-                                    <strong>{getTargetLabel(selectedReminder)}</strong>
-                                </div>
-                            )}
-                            <div className="reminder-meta-row">
-                                <span>{t('settings.reminderAttempts')}</span>
-                                <strong>{selectedReminder.attempts}</strong>
-                            </div>
-                            <div className="reminder-meta-row">
-                                <span>{t('settings.reminderCreatedAt')}</span>
-                                <strong>{formatDateTime(selectedReminder.created_at)}</strong>
-                            </div>
-                            <div className="reminder-meta-row">
-                                <span>{t('settings.reminderUpdatedAt')}</span>
-                                <strong>{formatDateTime(selectedReminder.updated_at)}</strong>
-                            </div>
-                            {selectedReminder.fired_at && (
-                                <div className="reminder-meta-row">
-                                    <span>{t('settings.reminderFiredAt')}</span>
-                                    <strong>{formatDateTime(selectedReminder.fired_at)}</strong>
-                                </div>
-                            )}
-                        </div>
+                    <Group
+                        title={t('settingsManagement.reminders.details')}
+                        footer={
+                            selectedReminder.channel === 'clawbot' && selectedReminder.status === 'firing'
+                                ? t('settings.reminderDeliveryInFlightHint')
+                                : undefined
+                        }
+                    >
+                        {metaRows.map((row) => (
+                            <Row key={row.label} label={row.label} value={row.value} />
+                        ))}
                         {selectedReminder.last_error && (
-                            <div className="settings-group" style={{ marginTop: 16 }}>
-                                <label className="settings-label">{t('settings.reminderLastError')}</label>
+                            <SettingsField label={t('settings.reminderLastError')} stacked>
                                 <div className="reminder-readonly reminder-error-readonly">
                                     {selectedReminder.last_error}
                                 </div>
-                            </div>
+                            </SettingsField>
                         )}
-                    </div>
+                    </Group>
 
-                    {selectedReminder.channel === 'clawbot' && selectedReminder.status === 'firing' && (
-                        <p className="prompt-modal-hint">{t('settings.reminderDeliveryInFlightHint')}</p>
-                    )}
                     <div className="reminder-action-row">
                         {isPending ? (
-                            <>
-                                <button className="settings-save-btn" onClick={handleSave} disabled={saving}>
-                                    {saving ? t('common.saving') : t('common.save')}
-                                </button>
-                                <button
-                                    className="reminder-secondary-btn"
-                                    onClick={handleCancelReminder}
-                                    disabled={saving}
-                                >
-                                    {t('settings.cancelReminder')}
-                                </button>
-                            </>
-                        ) : (
                             <button
-                                className="reminder-secondary-btn danger"
-                                onClick={handleDeleteReminder}
+                                type="button"
+                                className="ui-btn ui-btn--danger"
+                                onClick={() => void handleCancelReminder()}
                                 disabled={saving}
                             >
+                                {t('settings.cancelReminder')}
+                            </button>
+                        ) : (
+                            <button
+                                type="button"
+                                className="ui-btn ui-btn--danger"
+                                onClick={() => void handleDeleteReminder()}
+                                disabled={saving}
+                            >
+                                <Icon name="trash" />
                                 {t('common.delete')}
                             </button>
                         )}
@@ -331,43 +340,36 @@ const ReminderSettingsPanel: React.FC<ReminderSettingsProps> = ({ onBack }) => {
                 </div>
             ) : (
                 <div className="provider-settings-content">
-                    <div className="settings-section">
-                        <h3>{t('settings.reminders')}</h3>
-                        <p className="prompt-modal-hint">{t('settings.reminderManagerHint')}</p>
-                    </div>
-
                     {reminders.length === 0 ? (
-                        <div className="settings-section reminder-empty">{t('settings.noReminders')}</div>
+                        <EmptyState
+                            icon="bell"
+                            title={t('settings.noReminders')}
+                            description={t('settingsManagement.reminders.emptyHint')}
+                        />
                     ) : (
-                        <div className="reminder-list">
+                        <Group title={t('settings.reminders')} description={t('settings.reminderManagerHint')}>
                             {reminders.map((reminder) => (
-                                <button
+                                <Row
                                     key={reminder.id}
-                                    className="reminder-card"
-                                    onClick={() => void handleOpenReminder(reminder.id)}
-                                >
-                                    <div className="reminder-card-header">
-                                        <div className="reminder-card-title-block">
-                                            <div className="reminder-card-title">{reminder.title}</div>
-                                            <div className="reminder-card-subtitle">
-                                                {reminder.prompt_name || reminder.prompt_id}
-                                            </div>
-                                        </div>
-                                        <div className={`reminder-status-badge ${reminder.status}`}>
+                                    className="reminder-row"
+                                    label={reminder.title}
+                                    detail={[
+                                        formatDateTime(reminder.due_at),
+                                        getChannelLabel(reminder.channel),
+                                        reminder.prompt_name || reminder.prompt_id,
+                                        reminder.session_title || reminder.session_id,
+                                    ]
+                                        .filter(Boolean)
+                                        .join(' · ')}
+                                    trailing={
+                                        <Badge tone={STATUS_TONES[reminder.status] || 'neutral'} dot>
                                             {getStatusLabel(reminder.status)}
-                                        </div>
-                                    </div>
-                                    <div className="reminder-card-meta">
-                                        <div>{formatDateTime(reminder.due_at)}</div>
-                                        <div>{getChannelLabel(reminder.channel)}</div>
-                                        <div>{reminder.session_title || reminder.session_id}</div>
-                                        {reminder.channel === 'clawbot' && reminder.clawbot_user_id && (
-                                            <div>{reminder.clawbot_user_id}</div>
-                                        )}
-                                    </div>
-                                </button>
+                                        </Badge>
+                                    }
+                                    onClick={() => void handleOpenReminder(reminder.id)}
+                                />
                             ))}
-                        </div>
+                        </Group>
                     )}
                 </div>
             )}

@@ -1,16 +1,18 @@
-import { useState } from 'react'
-import { useManagementResource, type ManagementResource } from '../hooks/useManagementResource'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useManagementResource, type ManagementResource } from '../hooks/useManagementResource'
 import { useT } from '../contexts/I18nContext'
 import { overview } from '../i18n/overview'
-import { getPrompts, getProviders, getSessions } from '../services/api'
+import { appendQueryParam, getPromptAvatarUrl, getPrompts, getProviders, getSessions } from '../services/api'
 import { clawBotService } from '../services/clawbotService'
 import { napCatService } from '../services/napcatService'
 import { reminderService } from '../services/reminderService'
 import { buildChatRoute } from '../utils/routes'
+import { formatRelativeTime } from '../utils/time'
+import { Avatar, Badge, EmptyState, Group, Icon, Page, PageHeader, Row } from './ui'
+import { channelStatusTone } from './channelStatus'
 import './ManagementOverview.css'
 
-const loadPersonaCount = async () => (await getPrompts()).length
 const loadReminderCount = async () =>
     (await reminderService.listReminders()).filter((r) => r.status === 'pending').length
 const loadModel = async () => {
@@ -21,11 +23,11 @@ const loadModel = async () => {
 }
 const loadWechat = async () => {
     const settings = await clawBotService.getSettings()
-    return { status: settings.status, polling: settings.polling }
+    return { status: settings.status, polling: settings.polling, persona: settings.prompt_name || '' }
 }
 const loadQQ = async () => {
     const settings = await napCatService.getSettings()
-    return { status: settings.status }
+    return { status: settings.status, persona: settings.prompt_name || '' }
 }
 const timestamp = (value: string) => {
     const time = Date.parse(value)
@@ -37,7 +39,7 @@ export default function ManagementOverview() {
     const copy = overview[locale]
     const [revision, setRevision] = useState(0)
     const sessions = useManagementResource(getSessions, revision)
-    const personas = useManagementResource(loadPersonaCount, revision)
+    const personas = useManagementResource(getPrompts, revision)
     const reminders = useManagementResource(loadReminderCount, revision)
     const model = useManagementResource(loadModel, revision)
     const wechat = useManagementResource(loadWechat, revision)
@@ -52,194 +54,204 @@ export default function ManagementOverview() {
         Object.prototype.hasOwnProperty.call(copy.statuses, status)
             ? copy.statuses[status as keyof typeof copy.statuses]
             : copy.statuses.unknown
+
+    const personaById = useMemo(
+        () => new Map(personas.phase === 'ready' ? personas.data.map((p) => [p.id, p]) : []),
+        [personas]
+    )
     const recent =
         sessions.phase === 'ready'
             ? [...sessions.data].sort((a, b) => timestamp(b.updated_at) - timestamp(a.updated_at)).slice(0, 5)
             : []
-    const dateFormatter = new Intl.DateTimeFormat(locale === 'zh' ? 'zh-CN' : 'en', {
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-    })
+
+    const metric = (phase: ManagementResource<unknown>['phase'], value: number | undefined) =>
+        phase === 'ready' ? (
+            <span className="overview-metric__value">{value}</span>
+        ) : (
+            <span className="overview-metric__value is-placeholder">
+                {phase === 'loading' ? '—' : copy.unavailable}
+            </span>
+        )
+
+    const channels = [
+        { key: 'wechat', title: copy.wechat, icon: 'message', resource: wechat },
+        { key: 'qq', title: copy.qq, icon: 'chat', resource: qq },
+    ] as const
 
     return (
-        <div className="management-overview">
-            <div className="overview-content">
-                <header className="overview-heading">
-                    <div>
-                        <h1>{copy.title}</h1>
-                        <p>{copy.subtitle}</p>
-                    </div>
-                    <button type="button" className="overview-button" onClick={refresh} disabled={loading}>
-                        {loading ? copy.loading : failed ? copy.retry : copy.refresh}
-                    </button>
-                </header>
-                <div role="status" className="overview-feedback">
-                    {failed && <p>{copy.partialFailure}</p>}
-                </div>
-
-                <section aria-labelledby="overview-channels">
-                    <div className="overview-section-heading">
-                        <h2 id="overview-channels">{copy.channels}</h2>
-                        <Link to="/channels">
-                            {copy.allChannels}
-                            <span aria-hidden="true"> ↗</span>
-                        </Link>
-                    </div>
-                    <div className="overview-channels">
-                        {(
-                            [
-                                {
-                                    key: 'wechat',
-                                    title: copy.wechat,
-                                    hint: copy.wechatHint,
-                                    action: copy.manageWechat,
-                                    resource: wechat,
-                                },
-                                { key: 'qq', title: copy.qq, hint: copy.qqHint, action: copy.manageQQ, resource: qq },
-                            ] as const
-                        ).map(({ key, title, hint, action, resource }) => (
-                            <article
-                                key={key}
-                                className={`overview-channel overview-channel-${key}`}
-                                aria-busy={resource.phase === 'loading'}
-                            >
-                                <div className="overview-channel-top">
-                                    <h3>{title}</h3>
-                                    <span
-                                        className={`overview-status ${resource.phase === 'ready' && ['running', 'connected'].includes(resource.data.status) ? 'is-running' : ''}`}
-                                    >
-                                        <span aria-hidden="true" className="overview-status-dot" />
-                                        {resource.phase === 'ready'
-                                            ? statusLabel(resource.data.status)
-                                            : placeholder(resource.phase)}
-                                    </span>
-                                </div>
-                                <p>{hint}</p>
-                                {key === 'wechat' && wechat.phase === 'ready' && (
-                                    <p className="overview-polling">
-                                        {wechat.data.polling ? copy.polling : copy.notPolling}
-                                    </p>
-                                )}
-                                <Link
-                                    className="overview-button overview-channel-action"
-                                    to={`/channels?channel=${key}`}
-                                >
-                                    {action}
-                                    <span aria-hidden="true">→</span>
-                                </Link>
-                            </article>
-                        ))}
-                    </div>
-                </section>
-
-                <div className="overview-stats">
-                    {[
-                        {
-                            label: copy.personas,
-                            value: personas.phase === 'ready' ? personas.data : placeholder(personas.phase),
-                            to: '/contacts',
-                        },
-                        {
-                            label: copy.sessions,
-                            value: sessions.phase === 'ready' ? sessions.data.length : placeholder(sessions.phase),
-                            to: '/chat',
-                        },
-                        {
-                            label: copy.reminders,
-                            value: reminders.phase === 'ready' ? reminders.data : placeholder(reminders.phase),
-                            to: '/settings?section=automation',
-                        },
-                    ].map(({ label, value, to }) => (
-                        <Link className="overview-stat" key={to} to={to}>
-                            <span>{label}</span>
-                            <strong className={typeof value === 'number' ? '' : 'overview-stat-placeholder'}>
-                                {value}
-                            </strong>
-                        </Link>
-                    ))}
-                    <Link className="overview-stat overview-model" to="/settings?section=models&panel=providers">
-                        <span>{copy.model}</span>
-                        <strong>
-                            {model.phase === 'ready'
-                                ? model.data?.model || copy.unconfigured
-                                : placeholder(model.phase)}
-                        </strong>
-                        {model.phase === 'ready' && model.data && <small>{model.data.name}</small>}
-                    </Link>
-                </div>
-
-                <div className="overview-bottom">
-                    <section
-                        className="overview-recent"
-                        aria-labelledby="overview-recent"
-                        aria-busy={sessions.phase === 'loading'}
+        <Page wide className="management-overview">
+            <PageHeader
+                title={copy.title}
+                description={copy.subtitle}
+                actions={
+                    <button
+                        type="button"
+                        className="ui-btn overview-refresh"
+                        onClick={refresh}
+                        disabled={loading}
+                        aria-busy={loading}
                     >
-                        <div className="overview-section-heading">
-                            <h2 id="overview-recent">{copy.recent}</h2>
-                            <Link to="/chat">
+                        <Icon name="refresh" className={loading ? 'is-spinning' : undefined} />
+                        {copy.refresh}
+                    </button>
+                }
+            />
+
+            <div role="status" className="overview-feedback">
+                {failed && (
+                    <div className="overview-banner">
+                        <Icon name="alert" />
+                        <p>{copy.partialFailure}</p>
+                        <button type="button" className="ui-btn ui-btn--sm" onClick={refresh} disabled={loading}>
+                            {copy.retry}
+                        </button>
+                    </div>
+                )}
+            </div>
+
+            <div className="overview-metrics" aria-busy={loading}>
+                <Link className="overview-metric" to="/contacts">
+                    <span className="overview-metric__label">{copy.personas}</span>
+                    {metric(personas.phase, personas.phase === 'ready' ? personas.data.length : undefined)}
+                </Link>
+                <Link className="overview-metric" to="/chat">
+                    <span className="overview-metric__label">{copy.sessions}</span>
+                    {metric(sessions.phase, sessions.phase === 'ready' ? sessions.data.length : undefined)}
+                </Link>
+                <Link className="overview-metric" to="/settings?section=automation">
+                    <span className="overview-metric__label">{copy.reminders}</span>
+                    {metric(reminders.phase, reminders.phase === 'ready' ? reminders.data : undefined)}
+                </Link>
+                <Link className="overview-metric overview-metric--model" to="/settings?section=models&panel=providers">
+                    <span className="overview-metric__label">
+                        {copy.model}
+                        {model.phase === 'ready' && model.data?.name && (
+                            <span className="overview-metric__provider">{model.data.name}</span>
+                        )}
+                    </span>
+                    {model.phase === 'ready' ? (
+                        <span className={`overview-metric__value${model.data?.model ? '' : ' is-placeholder'}`}>
+                            {model.data?.model || copy.unconfigured}
+                        </span>
+                    ) : (
+                        <span className="overview-metric__value is-placeholder">
+                            {model.phase === 'loading' ? '—' : copy.unavailable}
+                        </span>
+                    )}
+                </Link>
+            </div>
+
+            <div className="overview-columns">
+                <div className="overview-main">
+                    <Group title={copy.channels}>
+                        {channels.map(({ key, title, icon, resource }) => (
+                            <Row
+                                key={key}
+                                icon={icon}
+                                label={title}
+                                to={`/channels?channel=${key}`}
+                                detail={
+                                    resource.phase === 'ready'
+                                        ? resource.data.persona
+                                            ? `${copy.personaPrefix} · ${resource.data.persona}`
+                                            : copy.noPersona
+                                        : undefined
+                                }
+                                trailing={
+                                    resource.phase === 'ready' ? (
+                                        <Badge tone={channelStatusTone(resource.data.status)} dot>
+                                            {statusLabel(resource.data.status)}
+                                        </Badge>
+                                    ) : (
+                                        <Badge>{placeholder(resource.phase)}</Badge>
+                                    )
+                                }
+                            />
+                        ))}
+                    </Group>
+
+                    <Group
+                        title={copy.recent}
+                        action={
+                            <Link className="overview-link" to="/chat">
                                 {copy.allSessions}
-                                <span aria-hidden="true"> ↗</span>
+                                <Icon name="chevronRight" size={14} />
                             </Link>
-                        </div>
-                        {sessions.phase !== 'ready' ? (
-                            <div className="overview-empty">
-                                <p>{placeholder(sessions.phase)}</p>
-                            </div>
-                        ) : recent.length === 0 ? (
-                            <div className="overview-empty">
-                                <h3>{copy.empty}</h3>
-                                <p>{copy.emptyHint}</p>
-                                <Link className="overview-button" to="/chat">
-                                    {copy.openChat}
-                                </Link>
-                            </div>
-                        ) : (
-                            <ul className="overview-session-list">
-                                {recent.map((session) => (
-                                    <li key={session.id}>
-                                        <Link to={buildChatRoute(session.id, session.prompt_id)}>
-                                            <div className="overview-session-text">
-                                                <strong>{session.title || copy.untitled}</strong>
-                                                {session.prompt_name && <span>{session.prompt_name}</span>}
-                                            </div>
+                        }
+                    >
+                        <div aria-busy={sessions.phase === 'loading'}>
+                            {sessions.phase !== 'ready' ? (
+                                <p className="overview-placeholder">{placeholder(sessions.phase)}</p>
+                            ) : recent.length === 0 ? (
+                                <EmptyState
+                                    icon="chat"
+                                    title={copy.empty}
+                                    description={copy.emptyHint}
+                                    action={
+                                        <Link className="ui-btn" to="/chat">
+                                            {copy.openChat}
+                                        </Link>
+                                    }
+                                />
+                            ) : (
+                                recent.map((session) => {
+                                    const persona = session.prompt_id ? personaById.get(session.prompt_id) : undefined
+                                    const personaName = persona?.name || session.prompt_name || ''
+                                    const avatar = persona?.avatar
+                                        ? appendQueryParam(
+                                              getPromptAvatarUrl(persona.id),
+                                              't',
+                                              new Date(persona.updated_at).getTime()
+                                          )
+                                        : null
+                                    return (
+                                        <Link
+                                            key={session.id}
+                                            className="ui-row overview-session"
+                                            to={buildChatRoute(session.id, session.prompt_id)}
+                                        >
+                                            <Avatar src={avatar} name={personaName || session.title || '?'} />
+                                            <span className="ui-row__main">
+                                                <span className="ui-row__label overview-session__title">
+                                                    {session.title || copy.untitled}
+                                                </span>
+                                                {personaName && <span className="ui-row__detail">{personaName}</span>}
+                                            </span>
                                             {timestamp(session.updated_at) !== 0 && (
-                                                <time dateTime={session.updated_at} title={copy.updated}>
-                                                    {dateFormatter.format(new Date(session.updated_at))}
+                                                <time
+                                                    className="overview-session__time"
+                                                    dateTime={session.updated_at}
+                                                    title={`${copy.updated} ${new Date(session.updated_at).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}`}
+                                                >
+                                                    {formatRelativeTime(session.updated_at, locale)}
                                                 </time>
                                             )}
-                                            <span aria-hidden="true">↗</span>
                                         </Link>
-                                    </li>
-                                ))}
-                            </ul>
-                        )}
-                    </section>
-                    <section className="overview-configuration" aria-labelledby="overview-configuration">
-                        <div className="overview-section-heading">
-                            <h2 id="overview-configuration">{copy.configuration}</h2>
+                                    )
+                                })
+                            )}
                         </div>
-                        {[
-                            {
-                                title: copy.providers,
-                                hint: copy.providersHint,
-                                to: '/settings?section=models&panel=providers',
-                            },
-                            { title: copy.automation, hint: copy.automationHint, to: '/settings?section=automation' },
-                            { title: copy.memory, hint: copy.memoryHint, to: '/settings?section=memory' },
-                        ].map(({ title, hint, to }) => (
-                            <Link className="overview-config-link" key={to} to={to}>
-                                <div>
-                                    <strong>{title}</strong>
-                                    <p>{hint}</p>
-                                </div>
-                                <span aria-hidden="true">↗</span>
-                            </Link>
-                        ))}
-                    </section>
+                    </Group>
                 </div>
+
+                <aside className="overview-side">
+                    <Group title={copy.configuration}>
+                        <Row
+                            icon="sparkles"
+                            label={copy.providers}
+                            detail={copy.providersHint}
+                            to="/settings?section=models&panel=providers"
+                        />
+                        <Row
+                            icon="clock"
+                            label={copy.automation}
+                            detail={copy.automationHint}
+                            to="/settings?section=automation"
+                        />
+                        <Row icon="memory" label={copy.memory} detail={copy.memoryHint} to="/settings?section=memory" />
+                    </Group>
+                </aside>
             </div>
-        </div>
+        </Page>
     )
 }
