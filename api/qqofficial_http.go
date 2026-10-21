@@ -38,7 +38,7 @@ func (s *QQOfficialService) settingsLocked() map[string]interface{} {
 			promptName = p.Name
 		}
 	}
-	return map[string]interface{}{"prompt_name": promptName, "enabled": c.Enabled, "app_id": c.AppID, "has_secret": c.AppSecret != "", "prompt_id": c.PromptID, "source_filter_mode": c.SourceFilterMode, "allowed_user_openids": c.AllowedUserOpenIDs, "status": status, "last_error": s.status.LastError, "bot_id": s.status.BotID, "bot_name": s.status.BotName}
+	return map[string]interface{}{"revision": fmt.Sprint(s.generation), "prompt_name": promptName, "enabled": c.Enabled, "app_id": c.AppID, "has_secret": c.AppSecret != "", "prompt_id": c.PromptID, "source_filter_mode": c.SourceFilterMode, "allowed_user_openids": c.AllowedUserOpenIDs, "status": status, "last_error": s.status.LastError, "bot_id": s.status.BotID, "bot_name": s.status.BotName}
 }
 func (h *Handler) handleQQOfficialSettings(w http.ResponseWriter, r *http.Request) {
 	s := h.qqOfficialService
@@ -52,7 +52,8 @@ func (h *Handler) handleQQOfficialSettings(w http.ResponseWriter, r *http.Reques
 	}
 	var req struct {
 		config.QQOfficialConfig
-		ClearSecret bool `json:"clear_secret"`
+		ClearSecret bool    `json:"clear_secret"`
+		Revision    *string `json:"revision"`
 	}
 	if r.Method == http.MethodPut && !h.decodeJSON(w, r, &req) {
 		return
@@ -60,7 +61,13 @@ func (h *Handler) handleQQOfficialSettings(w http.ResponseWriter, r *http.Reques
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if r.Method == http.MethodPut {
+		// Optional for legacy clients; current forms always submit their snapshot revision.
+		if req.Revision != nil && *req.Revision != fmt.Sprint(s.generation) {
+			h.jsonResponse(w, http.StatusConflict, Response{Error: "QQ Official configuration changed; reload before saving"})
+			return
+		}
 		c := req.QQOfficialConfig
+		previous := h.configManager.GetQQOfficialConfig()
 		if c.PromptID != "" {
 			if h.promptManager == nil {
 				h.jsonResponse(w, 400, Response{Error: "Prompt not found"})
@@ -72,7 +79,11 @@ func (h *Handler) handleQQOfficialSettings(w http.ResponseWriter, r *http.Reques
 			}
 		}
 		if strings.TrimSpace(c.AppSecret) == "" {
-			c.AppSecret = h.configManager.GetQQOfficialConfig().AppSecret
+			// A secret belongs to one AppID, never carry it to another account.
+			c.AppSecret = ""
+			if strings.TrimSpace(c.AppID) == previous.AppID {
+				c.AppSecret = previous.AppSecret
+			}
 		}
 		if req.ClearSecret {
 			c.AppSecret = ""

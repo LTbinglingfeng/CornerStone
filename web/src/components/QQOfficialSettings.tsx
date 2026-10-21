@@ -28,6 +28,8 @@ export default function QQOfficialSettingsPanel({ onBack }: { onBack: () => void
     const [prompts, setPrompts] = useState<Prompt[]>([])
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
+    const [cancelling, setCancelling] = useState(false)
+    const needsSync = useRef(false)
     const [qrState, setQRState] = useState<'starting' | 'pending' | 'created' | 'expired' | 'cancelled' | 'error' | ''>(
         ''
     )
@@ -42,8 +44,10 @@ export default function QQOfficialSettingsPanel({ onBack }: { onBack: () => void
     const report = (error: unknown) =>
         showToast(error instanceof Error ? error.message : t('qqOfficial.requestFailed'), 'error')
     const sync = (next: QQOfficialSettings) => {
+        needsSync.current = false
         setSettings(next)
         setForm({
+            revision: next.revision,
             enabled: next.enabled,
             app_id: next.app_id,
             prompt_id: next.prompt_id,
@@ -54,14 +58,26 @@ export default function QQOfficialSettingsPanel({ onBack }: { onBack: () => void
         })
         setAllowlist((next.allowed_user_openids || []).join('\n'))
     }
-    const stop = () => {
+    const stop = async () => {
         generation.current++
         qrController.current?.abort()
         clearTimeout(timer.current)
         clearTimeout(deadlineTimer.current)
         const id = session.current
         session.current = ''
-        return id ? service.cancel(id) : Promise.resolve()
+        if (!id) return
+        setCancelling(true)
+        try {
+            const result = await service.cancel(id)
+            if (result.status === 'created' && !life.current?.signal.aborted) {
+                needsSync.current = true
+                sync(await service.getSettings(life.current?.signal))
+                setQRState('created')
+            }
+            return result
+        } finally {
+            if (!life.current?.signal.aborted) setCancelling(false)
+        }
     }
     const load = async (signal: AbortSignal) => {
         setLoading(true)
@@ -88,7 +104,7 @@ export default function QQOfficialSettingsPanel({ onBack }: { onBack: () => void
     }, [])
 
     const start = async () => {
-        if (busy || saving) return
+        if (busy || saving || cancelling || needsSync.current) return
         setQRState('starting')
         setQRImage('')
         const cancellation = stop()
@@ -154,6 +170,7 @@ export default function QQOfficialSettingsPanel({ onBack }: { onBack: () => void
                     session.current = ''
                     setQRImage('')
                     if (result.status === 'created') {
+                        needsSync.current = true
                         deadlineTimer.current = setTimeout(() => {
                             if (!active()) return
                             void stop().catch(report)
@@ -188,10 +205,11 @@ export default function QQOfficialSettingsPanel({ onBack }: { onBack: () => void
         }
     }
     const save = async () => {
-        if (saving) return
+        if (saving || busy || cancelling || needsSync.current) return
         setSaving(true)
         try {
-            await stop()
+            const cancelled = await stop()
+            if (cancelled?.status === 'created') return
             if (life.current?.signal.aborted) return
             setQRState('')
             setQRImage('')
@@ -226,6 +244,10 @@ export default function QQOfficialSettingsPanel({ onBack }: { onBack: () => void
         try {
             const next = await service.getSettings(life.current?.signal)
             if (life.current?.signal.aborted || current !== generation.current) return
+            if (needsSync.current) {
+                sync(next)
+                return
+            }
             setSettings((previous) =>
                 previous
                     ? {
@@ -241,7 +263,7 @@ export default function QQOfficialSettingsPanel({ onBack }: { onBack: () => void
             if (!life.current?.signal.aborted) report(error)
         }
     }
-    const disabled = saving || busy
+    const disabled = saving || busy || cancelling
     return (
         <div className="provider-settings channel-detail">
             <div className="provider-settings-header">
@@ -254,7 +276,7 @@ export default function QQOfficialSettingsPanel({ onBack }: { onBack: () => void
                         <button
                             className="save-button ui-btn ui-btn--primary ui-btn--sm"
                             onClick={() => void save()}
-                            disabled={saving}
+                            disabled={disabled}
                         >
                             {saving ? t('common.saving') : t('napCat.saveSettings')}
                         </button>

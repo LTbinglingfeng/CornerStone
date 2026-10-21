@@ -1,4 +1,5 @@
 export interface QQOfficialSettings {
+    revision: string
     enabled: boolean
     app_id: string
     has_secret: boolean
@@ -14,7 +15,7 @@ export interface QQOfficialSettings {
 export type QQOfficialUpdate = Pick<
     QQOfficialSettings,
     'enabled' | 'app_id' | 'prompt_id' | 'source_filter_mode' | 'allowed_user_openids'
-> & { app_secret?: string; clear_secret?: boolean }
+> & { revision?: string; app_secret?: string; clear_secret?: boolean }
 export interface QQOfficialLogin {
     id: string
     qr_url: string

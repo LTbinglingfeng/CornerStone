@@ -25,10 +25,11 @@ export const qqOfficialService = {
             signal,
         }),
     async cancel(id: string) {
-        const result = await apiFetchJson<ApiResponse<unknown>>('/api/channel/qq-official/login/cancel', {
+        const result = await apiFetchJson<ApiResponse<QQOfficialLoginStatus>>('/api/channel/qq-official/login/cancel', {
             ...json('POST', { id }),
             keepalive: true,
         })
-        if (!result.success) throw new Error(result.error || translate('qqOfficial.requestFailed'))
+        if (!result.success || !result.data) throw new Error(result.error || translate('qqOfficial.requestFailed'))
+        return result.data
     },
 }
