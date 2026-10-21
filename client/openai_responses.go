@@ -263,11 +263,8 @@ func (c *OpenAIResponsesClient) Chat(ctx context.Context, req ChatRequest) (*Cha
 		if !strings.Contains(contentType, "text/event-stream") {
 			logging.Warnf("openai_responses Chat got SSE body with Content-Type=%q: model=%s", resp.Header.Get("Content-Type"), req.Model)
 		}
-		parsed, errParse := parseOpenAIResponsesSSEToChatResponse(bytes.NewReader(bodyBytes), req.Model)
-		if errParse == nil {
-			return parsed, nil
-		}
-		logging.Warnf("openai_responses SSE parse failed, falling back to JSON: model=%s err=%v", req.Model, errParse)
+		// An SSE protocol/API failure must not be masked by a JSON decode error.
+		return parseOpenAIResponsesSSEToChatResponse(bytes.NewReader(bodyBytes), req.Model)
 	}
 
 	var rawResp openAIResponsesResponse
@@ -275,14 +272,8 @@ func (c *OpenAIResponsesClient) Chat(ctx context.Context, req ChatRequest) (*Cha
 		logging.Errorf("openai_responses response decode failed: model=%s err=%v body=%s", req.Model, errUnmarshal, logging.Truncate(string(bodyBytes), 200))
 		return nil, fmt.Errorf("decode response: %w", errUnmarshal)
 	}
-	if rawResp.Error != nil {
-		logging.Errorf(
-			"openai_responses API error: model=%s code=%s message=%s",
-			req.Model,
-			rawResp.Error.Code,
-			logging.Truncate(rawResp.Error.Message, 500),
-		)
-		return nil, fmt.Errorf("API error (%s): %s", rawResp.Error.Code, rawResp.Error.Message)
+	if err := validateResponsesStatus(bodyBytes, ""); err != nil {
+		return nil, err
 	}
 
 	return convertResponsesToChatResponse(rawResp, req.Model), nil
@@ -357,8 +348,9 @@ func (c *OpenAIResponsesClient) ChatStream(ctx context.Context, req ChatRequest,
 	collector := responsesOutputCollector{}
 	var streamedReasoning strings.Builder
 	toolCalls := make(map[int]*openAIResponsesToolCallState)
+	completed := false
 
-	for scanner.Scan() {
+	for !completed && scanner.Scan() {
 		line := scanner.Text()
 		if line == "" {
 			continue
@@ -383,6 +375,11 @@ func (c *OpenAIResponsesClient) ChatStream(ctx context.Context, req ChatRequest,
 
 		collector.observe([]byte(data))
 		switch baseEvent.Type {
+		case "response.completed", "response.failed", "response.incomplete":
+			if err := validateResponsesTerminalEvent([]byte(data), baseEvent.Type); err != nil {
+				return err
+			}
+			completed = true
 		case "response.output_text.delta":
 			var ev openAIResponsesStreamTextDeltaEvent
 			if errUnmarshal := json.Unmarshal([]byte(data), &ev); errUnmarshal != nil {
@@ -532,6 +529,9 @@ func (c *OpenAIResponsesClient) ChatStream(ctx context.Context, req ChatRequest,
 	if err := scanner.Err(); err != nil {
 		return err
 	}
+	if !completed {
+		return fmt.Errorf("Responses stream ended before response.completed: %w", io.ErrUnexpectedEOF)
+	}
 	output := collector.output()
 	finalMessage := convertResponsesToChatResponse(openAIResponsesResponse{Output: output}, req.Model).Choices[0].Message
 	if strings.HasPrefix(finalMessage.Content, deliveredText.String()) {
@@ -569,10 +569,11 @@ func (c *OpenAIResponsesClient) ChatStream(ctx context.Context, req ChatRequest,
 	if strings.HasPrefix(summary, streamedReasoning.String()) {
 		delta.ReasoningContent = strings.TrimPrefix(summary, streamedReasoning.String())
 	}
-	if delta.ProviderState != nil || delta.ReasoningContent != "" {
-		return callback(StreamChunk{Model: req.Model, Choices: []Choice{{Index: 0, Delta: delta}}})
+	finishReason := "stop"
+	if len(finalMessage.ToolCalls) > 0 || len(deliveredCalls) > 0 {
+		finishReason = "tool_calls"
 	}
-	return nil
+	return callback(StreamChunk{Model: req.Model, Choices: []Choice{{Index: 0, Delta: delta, FinishReason: finishReason}}})
 }
 
 func bodyLooksLikeSSE(body []byte) bool {
@@ -607,8 +608,9 @@ func parseOpenAIResponsesSSEToChatResponse(r io.Reader, fallbackModel string) (*
 	var textDelta strings.Builder
 	textDone := ""
 	textFromItemDone := ""
+	completed := false
 
-	for scanner.Scan() {
+	for !completed && scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
 			continue
@@ -636,7 +638,15 @@ func parseOpenAIResponsesSSEToChatResponse(r io.Reader, fallbackModel string) (*
 
 		collector.observe([]byte(data))
 		switch baseEvent.Type {
+		case "response.failed", "response.incomplete":
+			return nil, validateResponsesTerminalEvent([]byte(data), baseEvent.Type)
 		case "response.created", "response.completed":
+			if baseEvent.Type == "response.completed" {
+				if err := validateResponsesTerminalEvent([]byte(data), baseEvent.Type); err != nil {
+					return nil, err
+				}
+				completed = true
+			}
 			var ev openAIResponsesStreamResponseEvent
 			if errUnmarshal := json.Unmarshal([]byte(data), &ev); errUnmarshal != nil {
 				continue
@@ -779,6 +789,9 @@ func parseOpenAIResponsesSSEToChatResponse(r io.Reader, fallbackModel string) (*
 
 	if errScan := scanner.Err(); errScan != nil {
 		return nil, errScan
+	}
+	if !completed {
+		return nil, fmt.Errorf("Responses stream ended before response.completed: %w", io.ErrUnexpectedEOF)
 	}
 
 	finalText := ""

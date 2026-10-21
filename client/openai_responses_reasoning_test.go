@@ -34,6 +34,7 @@ func reasoningFixtureSSE(t *testing.T, completedOnly bool) string {
 		for i := len(items) - 1; i >= 0; i-- {
 			fmt.Fprintf(&b, "data: {\"type\":\"response.output_item.done\",\"output_index\":%d,\"item\":%s}\n", i, items[i])
 		}
+		fmt.Fprintln(&b, `data: {"type":"response.completed","response":{"status":"completed"}}`)
 	} else {
 		fmt.Fprintf(&b, "data: {\"type\":\"response.completed\",\"response\":{\"model\":\"resolved-model\",\"output\":%s}}\n", strings.Join(strings.Fields(reasoningOutputFixture), " "))
 	}

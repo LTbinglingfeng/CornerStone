@@ -127,6 +127,8 @@ func TestOpenAIResponsesClientChat_ParsesSSEBodyEvenWhenContentTypeIsJSON(t *tes
 		"event: response.output_text.done",
 		`data: {"type":"response.output_text.done","text":"hello"}`,
 		"",
+		`data: {"type":"response.completed","response":{"status":"completed"}}`,
+		"",
 		"data: [DONE]",
 		"",
 	}, "\n")
