@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
 	"sort"
 	"strings"
 )
@@ -16,6 +17,8 @@ import (
 const maxChatBodyBytes = 50 << 20 // 50MB
 
 type openAIResponsesRequest struct {
+	Store           bool                      `json:"store"`
+	Include         []string                  `json:"include,omitempty"`
 	Model           string                    `json:"model"`
 	Input           interface{}               `json:"input"`
 	Stream          bool                      `json:"stream,omitempty"`
@@ -95,12 +98,26 @@ type openAIResponsesUsage struct {
 }
 
 type openAIResponsesOutputItem struct {
+	Raw       json.RawMessage             `json:"-"`
+	Summary   []openAIResponsesOutputPart `json:"summary,omitempty"`
 	Type      string                      `json:"type"`
 	Role      string                      `json:"role,omitempty"`
 	Content   []openAIResponsesOutputPart `json:"content,omitempty"`
 	CallID    string                      `json:"call_id,omitempty"`
 	Name      string                      `json:"name,omitempty"`
 	Arguments string                      `json:"arguments,omitempty"`
+}
+
+// Retain opaque reasoning fields, including encrypted_content, without decoding them.
+func (item *openAIResponsesOutputItem) UnmarshalJSON(data []byte) error {
+	type plain openAIResponsesOutputItem
+	var decoded plain
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*item = openAIResponsesOutputItem(decoded)
+	item.Raw = append(json.RawMessage(nil), data...)
+	return nil
 }
 
 type openAIResponsesOutputPart struct {
@@ -320,6 +337,25 @@ func (c *OpenAIResponsesClient) ChatStream(ctx context.Context, req ChatRequest,
 	buf := make([]byte, 0, 64*1024)
 	scanner.Buffer(buf, maxStreamLineBytes)
 
+	// Track delivered deltas so terminal snapshots can fill missing text/tools
+	// without duplicating content on normal streams.
+	var deliveredText strings.Builder
+	deliveredCalls := make(map[int]string)
+	downstream := callback
+	callback = func(chunk StreamChunk) error {
+		if err := downstream(chunk); err != nil {
+			return err
+		}
+		for _, choice := range chunk.Choices {
+			deliveredText.WriteString(choice.Delta.Content)
+			for _, call := range choice.Delta.ToolCalls {
+				deliveredCalls[call.Index] += call.Function.Arguments
+			}
+		}
+		return nil
+	}
+	collector := responsesOutputCollector{}
+	var streamedReasoning strings.Builder
 	toolCalls := make(map[int]*openAIResponsesToolCallState)
 
 	for scanner.Scan() {
@@ -345,6 +381,7 @@ func (c *OpenAIResponsesClient) ChatStream(ctx context.Context, req ChatRequest,
 			continue
 		}
 
+		collector.observe([]byte(data))
 		switch baseEvent.Type {
 		case "response.output_text.delta":
 			var ev openAIResponsesStreamTextDeltaEvent
@@ -373,6 +410,7 @@ func (c *OpenAIResponsesClient) ChatStream(ctx context.Context, req ChatRequest,
 				logging.Warnf("openai_responses stream reasoning delta unmarshal failed: model=%s data=%s err=%v", req.Model, logging.Truncate(data, 200), errUnmarshal)
 				continue
 			}
+			streamedReasoning.WriteString(ev.Delta)
 			chunk := StreamChunk{
 				Model: req.Model,
 				Choices: []Choice{
@@ -491,7 +529,50 @@ func (c *OpenAIResponsesClient) ChatStream(ctx context.Context, req ChatRequest,
 		}
 	}
 
-	return scanner.Err()
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	output := collector.output()
+	finalMessage := convertResponsesToChatResponse(openAIResponsesResponse{Output: output}, req.Model).Choices[0].Message
+	if strings.HasPrefix(finalMessage.Content, deliveredText.String()) {
+		if missing := strings.TrimPrefix(finalMessage.Content, deliveredText.String()); missing != "" {
+			if err := callback(StreamChunk{Model: req.Model, Choices: []Choice{{Index: 0, Delta: Delta{Content: missing}}}}); err != nil {
+				return err
+			}
+		}
+	}
+	indexes := make([]int, 0, len(collector.items))
+	for index := range collector.items {
+		indexes = append(indexes, index)
+	}
+	sort.Ints(indexes)
+	for _, index := range indexes {
+		item := collector.items[index]
+		if item.Type != "function_call" {
+			continue
+		}
+		delivered, exists := deliveredCalls[index]
+		if !strings.HasPrefix(item.Arguments, delivered) {
+			continue
+		}
+		missing := strings.TrimPrefix(item.Arguments, delivered)
+		if exists && missing == "" {
+			continue
+		}
+		call := DeltaToolCall{Index: index, ID: item.CallID, Type: "function", Function: ToolCallFunction{Name: item.Name, Arguments: missing}}
+		if err := callback(StreamChunk{Model: req.Model, Choices: []Choice{{Index: 0, Delta: Delta{ToolCalls: []DeltaToolCall{call}}}}}); err != nil {
+			return err
+		}
+	}
+	summary := finalMessage.ReasoningContent
+	delta := Delta{ProviderState: responsesProviderState(output, req.Model)}
+	if strings.HasPrefix(summary, streamedReasoning.String()) {
+		delta.ReasoningContent = strings.TrimPrefix(summary, streamedReasoning.String())
+	}
+	if delta.ProviderState != nil || delta.ReasoningContent != "" {
+		return callback(StreamChunk{Model: req.Model, Choices: []Choice{{Index: 0, Delta: delta}}})
+	}
+	return nil
 }
 
 func bodyLooksLikeSSE(body []byte) bool {
@@ -515,6 +596,8 @@ func parseOpenAIResponsesSSEToChatResponse(r io.Reader, fallbackModel string) (*
 		ArgsDelta   strings.Builder
 		ArgsDone    string
 	}
+	collector := responsesOutputCollector{}
+	var reasoningDelta strings.Builder
 	toolCalls := make(map[int]*toolCallAgg)
 
 	responseID := ""
@@ -551,6 +634,7 @@ func parseOpenAIResponsesSSEToChatResponse(r io.Reader, fallbackModel string) (*
 			continue
 		}
 
+		collector.observe([]byte(data))
 		switch baseEvent.Type {
 		case "response.created", "response.completed":
 			var ev openAIResponsesStreamResponseEvent
@@ -567,6 +651,11 @@ func parseOpenAIResponsesSSEToChatResponse(r io.Reader, fallbackModel string) (*
 				model = strings.TrimSpace(ev.Response.Model)
 			}
 
+		case "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
+			var ev openAIResponsesStreamTextDeltaEvent
+			if json.Unmarshal([]byte(data), &ev) == nil {
+				reasoningDelta.WriteString(ev.Delta)
+			}
 		case "response.output_text.delta":
 			var ev openAIResponsesStreamTextDeltaEvent
 			if errUnmarshal := json.Unmarshal([]byte(data), &ev); errUnmarshal != nil {
@@ -738,6 +827,18 @@ func parseOpenAIResponsesSSEToChatResponse(r io.Reader, fallbackModel string) (*
 		})
 	}
 
+	output := collector.output()
+	preserved := convertResponsesToChatResponse(openAIResponsesResponse{Output: output}, fallbackModel).Choices[0].Message
+	if preserved.Content != "" {
+		finalText = preserved.Content
+	}
+	if len(preserved.ToolCalls) > 0 {
+		mergedToolCalls = preserved.ToolCalls
+	}
+	if preserved.ReasoningContent == "" {
+		preserved.ReasoningContent = reasoningDelta.String()
+	}
+
 	if strings.TrimSpace(model) == "" {
 		model = fallbackModel
 	}
@@ -754,9 +855,11 @@ func parseOpenAIResponsesSSEToChatResponse(r io.Reader, fallbackModel string) (*
 			{
 				Index: 0,
 				Message: Message{
-					Role:      "assistant",
-					Content:   finalText,
-					ToolCalls: mergedToolCalls,
+					Role:             "assistant",
+					ProviderState:    preserved.ProviderState,
+					ReasoningContent: preserved.ReasoningContent,
+					Content:          finalText,
+					ToolCalls:        mergedToolCalls,
 				},
 				FinishReason: finishReason,
 			},
@@ -887,6 +990,10 @@ func buildOpenAIResponsesRequest(req ChatRequest) (openAIResponsesRequest, error
 
 	inputItems := make([]interface{}, 0, len(req.Messages))
 	for i, msg := range req.Messages {
+		if replay, ok := replayResponsesItems(msg, req.Model); ok {
+			inputItems = append(inputItems, replay...)
+			continue
+		}
 		switch msg.Role {
 		case "tool":
 			callID := strings.TrimSpace(msg.ToolCallID)
@@ -928,6 +1035,8 @@ func buildOpenAIResponsesRequest(req ChatRequest) (openAIResponsesRequest, error
 	convertedTools := convertToOpenAIResponsesTools(req.Tools)
 
 	openAIReq := openAIResponsesRequest{
+		Store:           false,
+		Include:         []string{"reasoning.encrypted_content"},
 		Model:           req.Model,
 		Input:           inputItems,
 		Stream:          req.Stream,
@@ -1078,7 +1187,7 @@ func convertResponsesToChatResponse(resp openAIResponsesResponse, fallbackModel 
 				}
 			}
 		case "reasoning":
-			for _, part := range item.Content {
+			for _, part := range item.Summary {
 				if part.Type == "reasoning_text" || part.Type == "summary_text" {
 					reasoning.WriteString(part.Text)
 				}
@@ -1105,6 +1214,7 @@ func convertResponsesToChatResponse(resp openAIResponsesResponse, fallbackModel 
 		ToolCalls:        toolCalls,
 	}
 
+	message.ProviderState = responsesProviderState(resp.Output, fallbackModel)
 	finishReason := "stop"
 	if len(toolCalls) > 0 {
 		finishReason = "tool_calls"
@@ -1128,4 +1238,144 @@ func convertResponsesToChatResponse(resp openAIResponsesResponse, fallbackModel 
 			TotalTokens:      resp.Usage.TotalTokens,
 		},
 	}
+}
+
+const responsesStateProvider = "openai_responses"
+
+// Only opaque output is persisted here. Visible messages and tools remain the
+// source of truth: any edit invalidates replay of the entire associated output.
+type responsesStatePayload struct {
+	Output []json.RawMessage `json:"output"`
+}
+
+func responsesProviderState(output []openAIResponsesOutputItem, model string) *ProviderState {
+	payload := responsesStatePayload{}
+	hasReasoning := false
+	for _, item := range output {
+		if item.Type == "reasoning" {
+			hasReasoning = true
+		}
+		raw := item.Raw
+		if len(raw) == 0 {
+			raw, _ = json.Marshal(item)
+		}
+		payload.Output = append(payload.Output, raw)
+	}
+	if !hasReasoning {
+		return nil
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return nil
+	}
+	return &ProviderState{Provider: responsesStateProvider, Model: model, Payload: raw}
+}
+
+func replayResponsesItems(msg Message, model string) ([]interface{}, bool) {
+	state := msg.ProviderState
+	if msg.Role != "assistant" || state == nil || state.Provider != responsesStateProvider || state.Model != model || len(msg.ImagePaths) != 0 {
+		return nil, false
+	}
+	var payload responsesStatePayload
+	if json.Unmarshal(state.Payload, &payload) != nil || len(payload.Output) == 0 {
+		return nil, false
+	}
+	var output []openAIResponsesOutputItem
+	for _, raw := range payload.Output {
+		var item openAIResponsesOutputItem
+		if json.Unmarshal(raw, &item) != nil {
+			return nil, false
+		}
+		output = append(output, item)
+	}
+	original := convertResponsesToChatResponse(openAIResponsesResponse{Output: output}, model).Choices[0].Message
+	// External channels suppress un-delivered tool commentary in visible
+	// history; explicit user edits invalidate ProviderState in storage.
+	toolCommentarySuppressed := msg.Content == "" && len(msg.ToolCalls) > 0
+	if (!toolCommentarySuppressed && strings.TrimSpace(original.Content) != strings.TrimSpace(msg.Content)) || original.ReasoningContent != msg.ReasoningContent || len(original.ToolCalls) != len(msg.ToolCalls) || (len(msg.ToolCalls) > 0 && !reflect.DeepEqual(original.ToolCalls, msg.ToolCalls)) {
+		return nil, false
+	}
+	items := make([]interface{}, 0, len(output))
+	for _, item := range output {
+		switch item.Type {
+		case "reasoning":
+			// Keep unknown reasoning fields losslessly. Status is an output lifecycle
+			// field, not needed to continue stateless reasoning.
+			var fields map[string]json.RawMessage
+			if json.Unmarshal(item.Raw, &fields) != nil {
+				return nil, false
+			}
+			delete(fields, "status")
+			raw, err := json.Marshal(fields)
+			if err != nil {
+				return nil, false
+			}
+			items = append(items, json.RawMessage(raw))
+		case "message":
+			if item.Role != "assistant" {
+				return nil, false
+			}
+			var text strings.Builder
+			for _, part := range item.Content {
+				if part.Type == "output_text" {
+					text.WriteString(part.Text)
+				}
+			}
+			// Rebuild the easy input message rather than forwarding annotations,
+			// logprobs, output status, or other output-only fields.
+			items = append(items, openAIResponsesMessageItem{Type: "message", Role: "assistant", Content: text.String()})
+		case "function_call":
+			items = append(items, openAIResponsesFunctionCallItem{Type: "function_call", CallID: item.CallID, Name: item.Name, Arguments: item.Arguments})
+		default:
+			return nil, false
+		}
+	}
+	return items, true
+}
+
+// Item completion events and the terminal output snapshot both carry opaque
+// reasoning data absent from text deltas. Index ordering must survive SSE.
+type responsesOutputCollector struct {
+	items map[int]openAIResponsesOutputItem
+}
+
+func (c *responsesOutputCollector) observe(data []byte) {
+	var ev struct {
+		Type        string                    `json:"type"`
+		OutputIndex int                       `json:"output_index"`
+		Item        openAIResponsesOutputItem `json:"item"`
+		Response    struct {
+			Output []openAIResponsesOutputItem `json:"output"`
+		} `json:"response"`
+	}
+	if json.Unmarshal(data, &ev) != nil {
+		return
+	}
+	if c.items == nil {
+		c.items = make(map[int]openAIResponsesOutputItem)
+	}
+	switch ev.Type {
+	case "response.output_item.done":
+		c.items[ev.OutputIndex] = ev.Item
+	case "response.completed":
+		if ev.Response.Output != nil {
+			c.items = make(map[int]openAIResponsesOutputItem)
+			for i, item := range ev.Response.Output {
+				c.items[i] = item
+			}
+		}
+	}
+}
+
+func (c *responsesOutputCollector) output() []openAIResponsesOutputItem {
+	indexes := make([]int, 0, len(c.items))
+	for i := range c.items {
+		indexes = append(indexes, i)
+	}
+	sort.Ints(indexes)
+	output := make([]openAIResponsesOutputItem, 0, len(indexes))
+	for _, i := range indexes {
+		output = append(output, c.items[i])
+	}
+	return output
 }
