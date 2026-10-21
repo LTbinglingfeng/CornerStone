@@ -146,7 +146,13 @@ func (s *QQOfficialService) setError(gen uint64, msg string) {
 	}
 }
 func (s *QQOfficialService) currentLocked(j qqOfficialJob) bool {
-	return !s.closed && j.ctx.Err() == nil && s.generation == j.generation && reflect.DeepEqual(j.cfg, s.handler.configManager.GetQQOfficialConfig())
+	return j.ctx.Err() == nil && s.confirmationCurrentLocked(j)
+}
+
+// A send deadline stops further delivery, but does not revoke already confirmed
+// history. Configuration changes and service shutdown still revoke both.
+func (s *QQOfficialService) confirmationCurrentLocked(j qqOfficialJob) bool {
+	return !s.closed && s.generation == j.generation && reflect.DeepEqual(j.cfg, s.handler.configManager.GetQQOfficialConfig())
 }
 func (s *QQOfficialService) worker() {
 	for {
@@ -369,7 +375,7 @@ func (s *QQOfficialService) deliver(j qqOfficialJob, sid, op string, expected []
 	commit := func() error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		if !s.currentLocked(j) {
+		if !s.confirmationCurrentLocked(j) {
 			return nil
 		}
 		if len(confirmed) == 0 {
