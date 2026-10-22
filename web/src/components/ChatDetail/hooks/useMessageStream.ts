@@ -17,6 +17,7 @@ interface UseMessageStreamOptions {
 
 interface UseMessageStreamReturn {
     sending: boolean
+    activeToolCallMessage: ChatMessage | null
     streamingTimestamp: string | null
     revealingTimestamp: string | null
     assistantVisibleSegments: number
@@ -30,6 +31,8 @@ export function useMessageStream(options: UseMessageStreamOptions): UseMessageSt
     const { sessionId, promptId, messages, setMessages, onError } = options
 
     const [sending, setSending] = useState(false)
+    // The exact message object from the current request, not a globally reusable call ID.
+    const [activeToolCallMessage, setActiveToolCallMessage] = useState<ChatMessage | null>(null)
     const [assistantResponseDone, setAssistantResponseDone] = useState(false)
     const [revealingTimestamp, setRevealingTimestamp] = useState<string | null>(null)
     const [assistantVisibleSegments, setAssistantVisibleSegments] = useState(0)
@@ -125,13 +128,13 @@ export function useMessageStream(options: UseMessageStreamOptions): UseMessageSt
             setAssistantVisibleSegments(0)
             setStreamingTimestampState(null)
             setSending(true)
+            setActiveToolCallMessage(null)
 
+            activeRequestRef.current?.abort()
+            const abortController = new AbortController()
+            activeRequestRef.current = abortController
             let aborted = false
             try {
-                activeRequestRef.current?.abort()
-                const abortController = new AbortController()
-                activeRequestRef.current = abortController
-
                 const response = await sendMessageApi(
                     targetSessionId,
                     isRegenerate ? [] : buildSendPayloadMessages(pendingMessages),
@@ -201,6 +204,9 @@ export function useMessageStream(options: UseMessageStreamOptions): UseMessageSt
 
                             if (parsed.type === 'message' && parsed.message) {
                                 const message = parsed.message
+                                if (message.role === 'assistant' && activeRequestRef.current === abortController) {
+                                    setActiveToolCallMessage(message.tool_calls?.length ? message : null)
+                                }
                                 setMessages((prev) => [...prev, message])
                                 if (
                                     message.role === 'assistant' &&
@@ -336,7 +342,10 @@ export function useMessageStream(options: UseMessageStreamOptions): UseMessageSt
                 setStreamingTimestampState(null)
                 setAssistantResponseDone(true)
             } finally {
-                activeRequestRef.current = null
+                if (activeRequestRef.current === abortController) {
+                    activeRequestRef.current = null
+                    setActiveToolCallMessage(null)
+                }
                 if (aborted) {
                     resetReveal(0)
                     setStreamingTimestampState(null)
@@ -403,6 +412,7 @@ export function useMessageStream(options: UseMessageStreamOptions): UseMessageSt
 
     const abortRequest = useCallback(() => {
         activeRequestRef.current?.abort()
+        setActiveToolCallMessage(null)
     }, [])
 
     const regenerateLastMessage = useCallback(async () => {
@@ -451,6 +461,7 @@ export function useMessageStream(options: UseMessageStreamOptions): UseMessageSt
 
         activeRequestRef.current?.abort()
         activeRequestRef.current = null
+        setActiveToolCallMessage(null)
         resetReveal(0)
         setStreamingTimestampState(null)
         setAssistantResponseDone(false)
@@ -488,6 +499,7 @@ export function useMessageStream(options: UseMessageStreamOptions): UseMessageSt
 
     return {
         sending,
+        activeToolCallMessage,
         streamingTimestamp,
         revealingTimestamp,
         assistantVisibleSegments,

@@ -29,9 +29,9 @@ function clip(text: string): { text: string; clipped: boolean } {
     return { text: text.slice(0, MAX_DETAIL_CHARS), clipped: true }
 }
 
-function parseResult(result: string | undefined, sending: boolean): ParsedResult {
+function parseResult(result: string | undefined, isRunning: boolean): ParsedResult {
     if (result === undefined) {
-        return { status: sending ? 'running' : 'missing', error: '', body: '' }
+        return { status: isRunning ? 'running' : 'missing', error: '', body: '' }
     }
     try {
         const payload = JSON.parse(result) as { ok?: unknown; data?: unknown; error?: unknown }
@@ -50,15 +50,15 @@ function parseResult(result: string | undefined, sending: boolean): ParsedResult
 interface ToolCallCardProps {
     toolCall: ToolCall
     result?: string
-    sending: boolean
+    isRunning: boolean
 }
 
-export const ToolCallCard: React.FC<ToolCallCardProps> = ({ toolCall, result, sending }) => {
+export const ToolCallCard: React.FC<ToolCallCardProps> = ({ toolCall, result, isRunning }) => {
     const { t } = useT()
     const name = toolCall.function.name || 'unknown'
     const definition = TOOL_CONTROL_DEFINITIONS.find((tool) => tool.key === name)
     const label = definition ? t(definition.titleKey) : name
-    const parsed = parseResult(result, sending)
+    const parsed = parseResult(result, isRunning)
     const args = clip(prettyJSON(toolCall.function.arguments || ''))
     const body = clip(parsed.body)
 

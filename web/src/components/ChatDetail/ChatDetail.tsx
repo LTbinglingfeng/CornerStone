@@ -64,6 +64,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     const effectivePromptId = promptId || prompt?.id || session?.prompt_id
     const {
         sending,
+        activeToolCallMessage,
         streamingTimestamp,
         revealingTimestamp,
         assistantVisibleSegments,
@@ -81,6 +82,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     const displayItems = useDisplayItems({
         messages,
         sending,
+        activeToolCallMessage,
         streamingTimestamp,
         revealingTimestamp,
         visibleSegments: assistantVisibleSegments,
@@ -678,7 +680,6 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
             <MessageList
                 sessionId={sessionId}
                 loading={loading}
-                sending={sending}
                 hasMoreBefore={messagesOffset > 0}
                 loadingOlder={loadingOlder}
                 onLoadOlder={handleLoadOlder}

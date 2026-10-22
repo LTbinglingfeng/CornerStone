@@ -11,6 +11,7 @@ import {
 interface UseDisplayItemsOptions {
     messages: ChatMessage[]
     sending: boolean
+    activeToolCallMessage: ChatMessage | null
     streamingTimestamp: string | null
     revealingTimestamp: string | null
     visibleSegments: number
@@ -20,28 +21,31 @@ interface UseDisplayItemsOptions {
 const TOOLS_WITH_DEDICATED_UI = new Set(['send_red_packet', 'send_pat', 'red_packet_received'])
 
 export function useDisplayItems(options: UseDisplayItemsOptions): DisplayItem[] {
-    const { messages, sending, streamingTimestamp, revealingTimestamp, visibleSegments } = options
+    const { messages, sending, activeToolCallMessage, streamingTimestamp, revealingTimestamp, visibleSegments } =
+        options
 
     return useMemo(() => {
         const items: DisplayItem[] = []
-        const successfulNoReplyToolCallIds = new Set<string>()
-        const attachmentIntentToolCallIds = new Set<string>()
-        const toolResults = new Map<string, string>()
-
+        // Call IDs are only local to a tool step (Gemini can reuse its fallback IDs).
+        // Match the nearest preceding call in this turn, allowing interleaved receipt banners.
+        const resultsByMessage = new Map<ChatMessage, Map<string, string>>()
+        const pendingCalls = new Map<string, ChatMessage>()
         messages.forEach((message) => {
-            if (message.role !== 'tool' || !message.tool_call_id) return
-            toolResults.set(message.tool_call_id, message.content || '')
-
-            try {
-                const payload = JSON.parse(message.content || '{}') as { ok?: boolean; tool?: string }
-                if (payload.tool === 'send_attachment' && payload.ok === true) {
-                    attachmentIntentToolCallIds.add(message.tool_call_id)
+            if (message.role !== 'tool') {
+                if (message.role !== 'assistant' || !message.tool_calls?.length) pendingCalls.clear()
+                if (message.tool_calls?.length) {
+                    resultsByMessage.set(message, new Map())
+                    message.tool_calls.forEach((call) => {
+                        if (call.id) pendingCalls.set(call.id, message)
+                    })
                 }
-                if (payload.tool === 'no_reply' && payload.ok === true) {
-                    successfulNoReplyToolCallIds.add(message.tool_call_id)
-                }
-            } catch {
                 return
+            }
+            const id = message.tool_call_id
+            const callMessage = id ? pendingCalls.get(id) : undefined
+            if (callMessage && id) {
+                resultsByMessage.get(callMessage)!.set(id, message.content || '')
+                pendingCalls.delete(id)
             }
         })
 
@@ -50,6 +54,22 @@ export function useDisplayItems(options: UseDisplayItemsOptions): DisplayItem[] 
 
             const hasImages = !!(message.image_paths && message.image_paths.length > 0)
             const toolCalls = message.tool_calls || []
+            const toolResults = resultsByMessage.get(message)
+            const successfulNoReplyToolCallIds = new Set<string>()
+            const attachmentIntentToolCallIds = new Set<string>()
+            toolResults?.forEach((result, id) => {
+                try {
+                    const payload = JSON.parse(result || '{}') as { ok?: boolean; tool?: string } | null
+                    if (payload?.tool === 'send_attachment' && payload.ok === true) {
+                        attachmentIntentToolCallIds.add(id)
+                    }
+                    if (payload?.tool === 'no_reply' && payload.ok === true) {
+                        successfulNoReplyToolCallIds.add(id)
+                    }
+                } catch {
+                    // Malformed results still belong to this call and are shown verbatim.
+                }
+            })
             const supportedCalls = toolCalls.filter(
                 (tc) =>
                     tc.function.name === 'send_red_packet' ||
@@ -190,13 +210,15 @@ export function useDisplayItems(options: UseDisplayItemsOptions): DisplayItem[] 
                 if (name === 'no_reply' && successfulNoReplyToolCallIds.has(toolCall.id)) return
                 if (!isAssistant || TOOLS_WITH_DEDICATED_UI.has(name)) return
 
+                const result = toolCall.id ? toolResults?.get(toolCall.id) : undefined
                 items.push({
                     key: `${message.timestamp}-tool-${toolCall.id || toolIndex}`,
                     role: message.role,
                     type: 'tool-call',
                     message,
                     toolCall,
-                    result: toolCall.id ? toolResults.get(toolCall.id) : undefined,
+                    result,
+                    isRunning: sending && message === activeToolCallMessage && result === undefined,
                     messageIndex: index,
                 })
             })
@@ -216,5 +238,5 @@ export function useDisplayItems(options: UseDisplayItemsOptions): DisplayItem[] 
             }
         })
         return items
-    }, [messages, sending, streamingTimestamp, revealingTimestamp, visibleSegments])
+    }, [messages, sending, activeToolCallMessage, streamingTimestamp, revealingTimestamp, visibleSegments])
 }

@@ -15,7 +15,6 @@ import { ToolCallCard } from './ToolCallCard'
 interface MessageListProps {
     sessionId: string
     loading: boolean
-    sending: boolean
     hasMoreBefore: boolean
     loadingOlder: boolean
     onLoadOlder: () => Promise<void>
@@ -44,7 +43,6 @@ interface MessageListProps {
 export const MessageList: React.FC<MessageListProps> = ({
     sessionId,
     loading,
-    sending,
     hasMoreBefore,
     loadingOlder,
     onLoadOlder,
@@ -222,7 +220,11 @@ export const MessageList: React.FC<MessageListProps> = ({
 
                         const content =
                             item.type === 'tool-call' ? (
-                                <ToolCallCard toolCall={item.toolCall} result={item.result} sending={sending} />
+                                <ToolCallCard
+                                    toolCall={item.toolCall}
+                                    result={item.result}
+                                    isRunning={item.isRunning}
+                                />
                             ) : isRedPacket ? (
                                 (() => {
                                     const { primaryKey, legacyKey } = derivePacketKeys(item.toolCall, item.key)

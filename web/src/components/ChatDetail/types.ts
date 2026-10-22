@@ -36,6 +36,7 @@ export type DisplayItem =
           toolCall: ToolCall
           /** Raw content of the matching role=tool message; undefined while the call has no result yet. */
           result?: string
+          isRunning: boolean
           messageIndex: number
       }
 
