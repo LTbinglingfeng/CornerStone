@@ -15,6 +15,7 @@ func RegisterAll(registry *search.Registry) error {
 		id      string
 		factory search.ProviderFactory
 	}{
+		{id: ProviderIDDeepSeek, factory: func(httpClient *http.Client) search.Provider { return NewDeepSeek(httpClient) }},
 		{id: ProviderIDExa, factory: func(httpClient *http.Client) search.Provider { return NewExa(httpClient) }},
 		{id: ProviderIDTavily, factory: func(httpClient *http.Client) search.Provider { return NewTavily(httpClient) }},
 		{id: ProviderIDQuerit, factory: func(httpClient *http.Client) search.Provider { return NewQuerit(httpClient) }},

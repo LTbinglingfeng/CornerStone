@@ -32,12 +32,17 @@
 - Browser notifications for new replies
 - Optional HTTPS via CLI flags or `config.json`
 
+## Gemini Provider Notes
+
+- Gemini chat and independent memory providers expose an Automatic Continuation switch, off by default. Enabling it may send multiple billable requests; existing request timeouts still apply. Chat remains on `GenerateContent`.
+- The image client uses the Interactions API (`/interactions`), requiring a compatible provider and image model. It requests one image per call; legacy image-count settings are retained but do not trigger additional requests. The SDK currently supports only explicit JPEG output; legacy PNG settings require an explicit change in the UI before saving. Image calls disable cloud interaction storage and automatic retries. Image provider configuration and the client do not add a chat image-generation tool or delivery entry point.
+
 ## Quick Start
 
 ### Prerequisites
 
-- Go `1.26.1` (from `go.mod`)
-- A recent Node.js and npm environment
+- Go `1.26.10` (from `go.mod`)
+- Node.js 24 LTS and npm
 
 ### 1. Build the frontend
 

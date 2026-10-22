@@ -1,8 +1,27 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import fs from 'node:fs'
 import vm from 'node:vm'
-import ts from 'typescript'
+import { fileURLToPath } from 'node:url'
+import { build } from 'vite'
+
+// TypeScript 7 no longer exposes transpileModule; use the production TSX transformer.
+const componentPath = fileURLToPath(new URL('../src/components/QQOfficialSettings.tsx', import.meta.url))
+const compiled = await build({
+    configFile: false,
+    logLevel: 'silent',
+    oxc: { jsx: { runtime: 'automatic' } },
+    build: {
+        write: false,
+        minify: false,
+        ssr: componentPath,
+        rolldownOptions: {
+            external: id => id !== componentPath,
+            output: { format: 'cjs', exports: 'named' },
+        },
+    },
+})
+assert(!Array.isArray(compiled))
+const code = compiled.output.find(entry => entry.type === 'chunk' && entry.isEntry).code
 
 // Execute the actual component with a small hook/JSX harness; no DOM or real QQ traffic.
 function harness() {
@@ -23,7 +42,7 @@ function harness() {
     }
     const jsx = (type, props) => ({ type, props })
     const modules = {
-        react, 'react/jsx-runtime': { jsx, jsxs: jsx }, qrcode: { default: { async toDataURL() { return 'fake-image' } } },
+        react, 'react/jsx-runtime': { jsx, jsxs: jsx }, qrcode: { async toDataURL() { return 'fake-image' } },
         '../services/api': { async getPrompts() { return [] } },
         '../services/qqOfficialService': { qqOfficialService: service },
         '../contexts/I18nContext': { useT: () => ({ t: key => key, locale: 'en' }) },
@@ -32,12 +51,10 @@ function harness() {
         './ui': Object.fromEntries(['Badge', 'Group', 'Row', 'Toggle', 'Icon'].map(k => [k, k])),
         './provider': { CustomSelect: 'CustomSelect' }, './channelStatus': { channelStatusTone() {} }, './ClawBotSettings.css': {},
     }
-    const source = fs.readFileSync(new URL('../src/components/QQOfficialSettings.tsx', import.meta.url), 'utf8')
-    const code = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText
-    const exports = {}
-    vm.runInNewContext(code, { exports, require: id => { assert(id in modules, id); return modules[id] }, AbortController,
+    const module = { exports: {} }
+    vm.runInNewContext(code, { module, exports: module.exports, require: id => { assert(id in modules, id); return modules[id] }, AbortController,
         setTimeout: (fn, delay) => { timers.set(++timerID, { fn, delay }); return timerID }, clearTimeout: id => timers.delete(id), console })
-    function render() { cursor = 0; return exports.default({ onBack() {} }) }
+    function render() { cursor = 0; return module.exports.default({ onBack() {} }) }
     function nodes(node, result = []) {
         if (!node || typeof node !== 'object') return result
         if (Array.isArray(node)) { node.forEach(n => nodes(n, result)); return result }

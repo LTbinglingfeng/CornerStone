@@ -46,30 +46,31 @@ type ConfigUpdateRequest struct {
 
 // ProviderRequest 供应商请求
 type ProviderRequest struct {
-	ID                        string   `json:"id"`
-	Name                      string   `json:"name"`
-	Type                      string   `json:"type"` // 供应商类型 (openai/openai_response/gemini/gemini_image/anthropic)
-	BaseURL                   string   `json:"base_url"`
-	APIKey                    string   `json:"api_key"`
-	Model                     string   `json:"model"`
-	Temperature               *float64 `json:"temperature,omitempty"`
-	TopP                      *float64 `json:"top_p,omitempty"`
-	TemperatureEnabled        *bool    `json:"temperature_enabled,omitempty"`
-	TopPEnabled               *bool    `json:"top_p_enabled,omitempty"`
-	ThinkingBudget            *int     `json:"thinking_budget,omitempty"`
-	PromptCaching             *bool    `json:"prompt_caching,omitempty"`
-	PromptCacheTTL            *string  `json:"prompt_cache_ttl,omitempty"`
-	ReasoningEffort           *string  `json:"reasoning_effort,omitempty"`
-	GeminiThinkingMode        *string  `json:"gemini_thinking_mode,omitempty"`
-	GeminiThinkingLevel       *string  `json:"gemini_thinking_level,omitempty"`
-	GeminiThinkingBudget      *int     `json:"gemini_thinking_budget,omitempty"`
-	GeminiImageAspectRatio    *string  `json:"gemini_image_aspect_ratio,omitempty"`
-	GeminiImageSize           *string  `json:"gemini_image_size,omitempty"`
-	GeminiImageNumberOfImages *int     `json:"gemini_image_number_of_images,omitempty"`
-	GeminiImageOutputMIMEType *string  `json:"gemini_image_output_mime_type,omitempty"`
-	ContextMessages           *int     `json:"context_messages,omitempty"`
-	Stream                    bool     `json:"stream"`        // 是否启用流式输出
-	ImageCapable              bool     `json:"image_capable"` // 是否支持识图
+	ID                          string   `json:"id"`
+	Name                        string   `json:"name"`
+	Type                        string   `json:"type"` // 供应商类型 (openai/openai_response/gemini/gemini_image/anthropic)
+	BaseURL                     string   `json:"base_url"`
+	APIKey                      string   `json:"api_key"`
+	Model                       string   `json:"model"`
+	Temperature                 *float64 `json:"temperature,omitempty"`
+	TopP                        *float64 `json:"top_p,omitempty"`
+	TemperatureEnabled          *bool    `json:"temperature_enabled,omitempty"`
+	TopPEnabled                 *bool    `json:"top_p_enabled,omitempty"`
+	ThinkingBudget              *int     `json:"thinking_budget,omitempty"`
+	PromptCaching               *bool    `json:"prompt_caching,omitempty"`
+	PromptCacheTTL              *string  `json:"prompt_cache_ttl,omitempty"`
+	ReasoningEffort             *string  `json:"reasoning_effort,omitempty"`
+	GeminiAutomaticContinuation *bool    `json:"gemini_automatic_continuation,omitempty"`
+	GeminiThinkingMode          *string  `json:"gemini_thinking_mode,omitempty"`
+	GeminiThinkingLevel         *string  `json:"gemini_thinking_level,omitempty"`
+	GeminiThinkingBudget        *int     `json:"gemini_thinking_budget,omitempty"`
+	GeminiImageAspectRatio      *string  `json:"gemini_image_aspect_ratio,omitempty"`
+	GeminiImageSize             *string  `json:"gemini_image_size,omitempty"`
+	GeminiImageNumberOfImages   *int     `json:"gemini_image_number_of_images,omitempty"`
+	GeminiImageOutputMIMEType   *string  `json:"gemini_image_output_mime_type,omitempty"`
+	ContextMessages             *int     `json:"context_messages,omitempty"`
+	Stream                      bool     `json:"stream"`        // 是否启用流式输出
+	ImageCapable                bool     `json:"image_capable"` // 是否支持识图
 }
 
 // SetActiveProviderRequest 设置激活供应商请求
@@ -317,6 +318,7 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		geminiAutomaticContinuation := resolveGeminiAutomaticContinuation(providerType, req.GeminiAutomaticContinuation, nil)
 		var geminiThinkingMode *string
 		var geminiThinkingLevel *string
 		var geminiThinkingBudget *int
@@ -373,30 +375,31 @@ func (h *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 		}
 
 		provider := config.Provider{
-			ID:                        req.ID,
-			Name:                      req.Name,
-			Type:                      providerType,
-			BaseURL:                   baseURL,
-			APIKey:                    req.APIKey,
-			Model:                     req.Model,
-			Temperature:               temperature,
-			TopP:                      topP,
-			TemperatureEnabled:        temperatureEnabled,
-			TopPEnabled:               topPEnabled,
-			ThinkingBudget:            thinkingBudget,
-			PromptCaching:             promptCaching,
-			PromptCacheTTL:            promptCacheTTL,
-			ReasoningEffort:           reasoningEffort,
-			GeminiThinkingMode:        geminiThinkingMode,
-			GeminiThinkingLevel:       geminiThinkingLevel,
-			GeminiThinkingBudget:      geminiThinkingBudget,
-			GeminiImageAspectRatio:    geminiImageAspectRatio,
-			GeminiImageSize:           geminiImageSize,
-			GeminiImageNumberOfImages: geminiImageNumberOfImages,
-			GeminiImageOutputMIMEType: geminiImageOutputMIMEType,
-			ContextMessages:           contextMessages,
-			Stream:                    req.Stream,
-			ImageCapable:              req.ImageCapable,
+			ID:                          req.ID,
+			Name:                        req.Name,
+			Type:                        providerType,
+			BaseURL:                     baseURL,
+			APIKey:                      req.APIKey,
+			Model:                       req.Model,
+			Temperature:                 temperature,
+			TopP:                        topP,
+			TemperatureEnabled:          temperatureEnabled,
+			TopPEnabled:                 topPEnabled,
+			ThinkingBudget:              thinkingBudget,
+			PromptCaching:               promptCaching,
+			PromptCacheTTL:              promptCacheTTL,
+			ReasoningEffort:             reasoningEffort,
+			GeminiAutomaticContinuation: geminiAutomaticContinuation,
+			GeminiThinkingMode:          geminiThinkingMode,
+			GeminiThinkingLevel:         geminiThinkingLevel,
+			GeminiThinkingBudget:        geminiThinkingBudget,
+			GeminiImageAspectRatio:      geminiImageAspectRatio,
+			GeminiImageSize:             geminiImageSize,
+			GeminiImageNumberOfImages:   geminiImageNumberOfImages,
+			GeminiImageOutputMIMEType:   geminiImageOutputMIMEType,
+			ContextMessages:             contextMessages,
+			Stream:                      req.Stream,
+			ImageCapable:                req.ImageCapable,
 		}
 
 		if err := h.configManager.AddProvider(provider); err != nil {
@@ -583,6 +586,7 @@ func (h *Handler) handleProviderByID(w http.ResponseWriter, r *http.Request) {
 			contextMessages = *req.ContextMessages
 		}
 
+		geminiAutomaticContinuation := resolveGeminiAutomaticContinuation(providerType, req.GeminiAutomaticContinuation, existingProvider)
 		var geminiThinkingMode *string
 		var geminiThinkingLevel *string
 		var geminiThinkingBudget *int
@@ -634,30 +638,31 @@ func (h *Handler) handleProviderByID(w http.ResponseWriter, r *http.Request) {
 		}
 
 		provider := config.Provider{
-			ID:                        id,
-			Name:                      req.Name,
-			Type:                      providerType,
-			BaseURL:                   baseURL,
-			APIKey:                    apiKey,
-			Model:                     model,
-			Temperature:               temperature,
-			TopP:                      topP,
-			TemperatureEnabled:        temperatureEnabled,
-			TopPEnabled:               topPEnabled,
-			ThinkingBudget:            thinkingBudget,
-			PromptCaching:             promptCaching,
-			PromptCacheTTL:            promptCacheTTL,
-			ReasoningEffort:           reasoningEffort,
-			GeminiThinkingMode:        geminiThinkingMode,
-			GeminiThinkingLevel:       geminiThinkingLevel,
-			GeminiThinkingBudget:      geminiThinkingBudget,
-			GeminiImageAspectRatio:    geminiImageAspectRatio,
-			GeminiImageSize:           geminiImageSize,
-			GeminiImageNumberOfImages: geminiImageNumberOfImages,
-			GeminiImageOutputMIMEType: geminiImageOutputMIMEType,
-			ContextMessages:           contextMessages,
-			Stream:                    req.Stream,
-			ImageCapable:              req.ImageCapable,
+			ID:                          id,
+			Name:                        req.Name,
+			Type:                        providerType,
+			BaseURL:                     baseURL,
+			APIKey:                      apiKey,
+			Model:                       model,
+			Temperature:                 temperature,
+			TopP:                        topP,
+			TemperatureEnabled:          temperatureEnabled,
+			TopPEnabled:                 topPEnabled,
+			ThinkingBudget:              thinkingBudget,
+			PromptCaching:               promptCaching,
+			PromptCacheTTL:              promptCacheTTL,
+			ReasoningEffort:             reasoningEffort,
+			GeminiAutomaticContinuation: geminiAutomaticContinuation,
+			GeminiThinkingMode:          geminiThinkingMode,
+			GeminiThinkingLevel:         geminiThinkingLevel,
+			GeminiThinkingBudget:        geminiThinkingBudget,
+			GeminiImageAspectRatio:      geminiImageAspectRatio,
+			GeminiImageSize:             geminiImageSize,
+			GeminiImageNumberOfImages:   geminiImageNumberOfImages,
+			GeminiImageOutputMIMEType:   geminiImageOutputMIMEType,
+			ContextMessages:             contextMessages,
+			Stream:                      req.Stream,
+			ImageCapable:                req.ImageCapable,
 		}
 
 		if err := h.configManager.UpdateProvider(provider); err != nil {
@@ -873,6 +878,7 @@ func (h *Handler) handleMemoryProvider(w http.ResponseWriter, r *http.Request) {
 			contextMessages = *req.Provider.ContextMessages
 		}
 
+		geminiAutomaticContinuation := resolveGeminiAutomaticContinuation(providerType, req.Provider.GeminiAutomaticContinuation, existingProvider)
 		var geminiThinkingMode *string
 		var geminiThinkingLevel *string
 		var geminiThinkingBudget *int
@@ -907,26 +913,27 @@ func (h *Handler) handleMemoryProvider(w http.ResponseWriter, r *http.Request) {
 		}
 
 		provider := config.Provider{
-			ID:                   id,
-			Name:                 name,
-			Type:                 providerType,
-			BaseURL:              baseURL,
-			APIKey:               apiKey,
-			Model:                model,
-			Temperature:          temperature,
-			TopP:                 topP,
-			TemperatureEnabled:   temperatureEnabled,
-			TopPEnabled:          topPEnabled,
-			ThinkingBudget:       thinkingBudget,
-			PromptCaching:        promptCaching,
-			PromptCacheTTL:       promptCacheTTL,
-			ReasoningEffort:      reasoningEffort,
-			GeminiThinkingMode:   geminiThinkingMode,
-			GeminiThinkingLevel:  geminiThinkingLevel,
-			GeminiThinkingBudget: geminiThinkingBudget,
-			ContextMessages:      contextMessages,
-			Stream:               req.Provider.Stream,
-			ImageCapable:         req.Provider.ImageCapable,
+			ID:                          id,
+			Name:                        name,
+			Type:                        providerType,
+			BaseURL:                     baseURL,
+			APIKey:                      apiKey,
+			Model:                       model,
+			Temperature:                 temperature,
+			TopP:                        topP,
+			TemperatureEnabled:          temperatureEnabled,
+			TopPEnabled:                 topPEnabled,
+			ThinkingBudget:              thinkingBudget,
+			PromptCaching:               promptCaching,
+			PromptCacheTTL:              promptCacheTTL,
+			ReasoningEffort:             reasoningEffort,
+			GeminiAutomaticContinuation: geminiAutomaticContinuation,
+			GeminiThinkingMode:          geminiThinkingMode,
+			GeminiThinkingLevel:         geminiThinkingLevel,
+			GeminiThinkingBudget:        geminiThinkingBudget,
+			ContextMessages:             contextMessages,
+			Stream:                      req.Provider.Stream,
+			ImageCapable:                req.Provider.ImageCapable,
 		}
 
 		cfg.MemoryProvider = &provider
@@ -973,6 +980,8 @@ func normalizeGeminiImageSize(size string) string {
 		return "1K"
 	case "2K":
 		return "2K"
+	case "4K":
+		return "4K"
 	default:
 		return ""
 	}
@@ -1010,4 +1019,15 @@ func normalizeAnthropicPromptCacheTTL(ttl string) string {
 	default:
 		return "5m"
 	}
+}
+
+// Preserve saved Gemini settings for older clients, but never carry them across provider types.
+func resolveGeminiAutomaticContinuation(providerType config.ProviderType, requested *bool, existing *config.Provider) bool {
+	if providerType != config.ProviderTypeGemini {
+		return false
+	}
+	if requested != nil {
+		return *requested
+	}
+	return existing != nil && existing.Type == config.ProviderTypeGemini && existing.GeminiAutomaticContinuation
 }

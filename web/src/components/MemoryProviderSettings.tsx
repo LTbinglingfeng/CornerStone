@@ -59,6 +59,7 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
         gemini_thinking_mode: 'none',
         gemini_thinking_level: 'low',
         gemini_thinking_budget: 128,
+        gemini_automatic_continuation: false,
         context_messages: 64,
         stream: true,
         image_capable: false,
@@ -114,6 +115,7 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                   gemini_thinking_mode: memoryProvider.gemini_thinking_mode || 'none',
                   gemini_thinking_level: memoryProvider.gemini_thinking_level || 'low',
                   gemini_thinking_budget: memoryProvider.gemini_thinking_budget || 128,
+                  gemini_automatic_continuation: memoryProvider.gemini_automatic_continuation ?? false,
                   temperature: memoryProvider.temperature ?? 0.8,
                   temperature_enabled: memoryProvider.temperature_enabled ?? false,
                   top_p: memoryProvider.top_p || 1,
@@ -150,6 +152,9 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
                 ...editingProvider,
                 type: nextType,
                 prompt_cache_ttl: editingProvider.prompt_cache_ttl || '5m',
+            }
+            if (nextType !== 'gemini') {
+                nextProvider.gemini_automatic_continuation = false
             }
             setEditingProvider(nextProvider)
             return
@@ -433,6 +438,23 @@ const MemoryProviderSettings: React.FC<MemoryProviderSettingsProps> = ({ onBack 
 
                                     {editingProvider.type === 'gemini' && (
                                         <>
+                                            <div className="provider-form-switch">
+                                                <span className="provider-form-switch__text">
+                                                    <span className="modal-label">
+                                                        {t('provider.geminiAutomaticContinuation')}
+                                                    </span>
+                                                    <span className="provider-form-switch__hint">
+                                                        {t('provider.geminiAutomaticContinuationHint')}
+                                                    </span>
+                                                </span>
+                                                <Toggle
+                                                    label={t('provider.geminiAutomaticContinuation')}
+                                                    checked={Boolean(editingProvider.gemini_automatic_continuation)}
+                                                    onChange={(checked) =>
+                                                        handleProviderChange('gemini_automatic_continuation', checked)
+                                                    }
+                                                />
+                                            </div>
                                             <div className="modal-group">
                                                 <label className="modal-label">
                                                     {t('memoryProvider.geminiThinkingMode')}

@@ -53,6 +53,7 @@ export const getGeminiImageSizes = (): SelectOption[] => [
     { value: '', label: translate('provider.defaultEffort') },
     { value: '1K', label: '1K' },
     { value: '2K', label: '2K' },
+    { value: '4K', label: '4K' },
 ]
 
 export const GEMINI_IMAGE_OUTPUT_MIME_TYPES: SelectOption[] = [

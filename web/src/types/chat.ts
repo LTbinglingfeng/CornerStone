@@ -145,6 +145,7 @@ export interface Provider {
     gemini_thinking_mode?: string
     gemini_thinking_level?: string
     gemini_thinking_budget?: number
+    gemini_automatic_continuation?: boolean
     gemini_image_aspect_ratio?: string
     gemini_image_size?: string
     gemini_image_number_of_images?: number

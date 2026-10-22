@@ -270,6 +270,11 @@
     overflow: hidden;
 }
 
+/* Let an open CustomSelect menu escape the card instead of being clipped. */
+.ui-list:has(.modal-select-ui.open) {
+    overflow: visible;
+}
+
 .ui-row {
     position: relative;
     display: flex;

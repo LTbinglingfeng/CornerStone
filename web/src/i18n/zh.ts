@@ -555,9 +555,16 @@ const zh = {
         noPrompts: '暂无提示词模板',
         geminiThinkingMode: 'Gemini 思考模式',
         thinkingLevelBudget: '思考级别 / 预算',
+        geminiAutomaticContinuation: '自动续传',
+        geminiAutomaticContinuationHint:
+            '默认关闭。开启后，SDK 可根据服务端检查点继续生成并恢复中断的输出；可能发起多次计费请求，仍受本次请求超时限制。',
+        imageInteractionsHint:
+            '使用 Interactions API，需供应商支持 /interactions。每次请求一张图，不自动增加请求；旧配置中的多张数量保留但不生效。当前 SDK 仅支持显式指定 JPEG。此处仅配置供应商，不会新增生图入口。',
+        imageOutputFormatUnsupported: '当前 Interactions SDK 仅支持显式指定 JPEG，请将输出格式改为 image/jpeg。',
+        imageLegacyPng: 'image/png（旧配置，需改为 JPEG）',
         imageAspectRatio: '生图比例',
         imageResolution: '生图分辨率 (最大边)',
-        imageQuantity: '生图数量 (1-8)',
+        imageQuantity: '每次请求张数',
         outputFormat: '输出格式',
         openaiCompatible: 'OpenAI 兼容',
         openaiResponses: 'OpenAI Responses',

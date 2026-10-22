@@ -13,7 +13,6 @@ import {
     GEMINI_IMAGE_OUTPUT_MIME_TYPES,
     getGeminiThinkingBudgetRange,
     clampGeminiThinkingBudget,
-    clampGeminiImageNumberOfImages,
     CustomSelect,
     ModelSelect,
     SamplingParamsFields,
@@ -67,6 +66,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
         gemini_thinking_mode: 'none',
         gemini_thinking_level: 'low',
         gemini_thinking_budget: 128,
+        gemini_automatic_continuation: false,
         gemini_image_aspect_ratio: '1:1',
         gemini_image_size: '',
         gemini_image_number_of_images: 1,
@@ -121,6 +121,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
             gemini_thinking_mode: provider.gemini_thinking_mode || 'none',
             gemini_thinking_level: provider.gemini_thinking_level || 'low',
             gemini_thinking_budget: provider.gemini_thinking_budget || 128,
+            gemini_automatic_continuation: provider.gemini_automatic_continuation ?? false,
             gemini_image_aspect_ratio: provider.gemini_image_aspect_ratio || '1:1',
             gemini_image_size: provider.gemini_image_size || '',
             gemini_image_number_of_images: provider.gemini_image_number_of_images ?? 1,
@@ -155,6 +156,11 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
 
         if (!editingProvider.model.trim()) {
             showToast(t('memoryProvider.modelRequired'), 'error')
+            return
+        }
+
+        if (editingProvider.type === 'gemini_image' && editingProvider.gemini_image_output_mime_type !== 'image/jpeg') {
+            showToast(t('provider.imageOutputFormatUnsupported'), 'error')
             return
         }
 
@@ -233,12 +239,13 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                 type: nextType,
                 prompt_cache_ttl: editingProvider.prompt_cache_ttl || '5m',
             }
+            if (nextType !== 'gemini') {
+                nextProvider.gemini_automatic_continuation = false
+            }
             if (nextType === 'gemini_image') {
                 nextProvider.gemini_image_aspect_ratio = nextProvider.gemini_image_aspect_ratio || '1:1'
                 nextProvider.gemini_image_size = nextProvider.gemini_image_size || ''
-                nextProvider.gemini_image_number_of_images = clampGeminiImageNumberOfImages(
-                    nextProvider.gemini_image_number_of_images ?? 1
-                )
+                nextProvider.gemini_image_number_of_images = nextProvider.gemini_image_number_of_images ?? 1
                 nextProvider.gemini_image_output_mime_type = nextProvider.gemini_image_output_mime_type || 'image/jpeg'
             } else {
                 nextProvider.gemini_image_aspect_ratio = undefined
@@ -276,19 +283,14 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
             return
         }
 
-        if (field === 'gemini_image_number_of_images') {
-            const nextNumber = clampGeminiImageNumberOfImages(Number(value) || 0)
-            setEditingProvider({
-                ...editingProvider,
-                gemini_image_number_of_images: nextNumber,
-            })
-            return
-        }
-
         setEditingProvider({ ...editingProvider, [field]: value })
     }
 
-    const renderSwitch = (field: 'stream' | 'image_capable' | 'prompt_caching', label: string, hint?: string) => (
+    const renderSwitch = (
+        field: 'stream' | 'image_capable' | 'prompt_caching' | 'gemini_automatic_continuation',
+        label: string,
+        hint?: string
+    ) => (
         <div className="provider-form-switch">
             <span className="provider-form-switch__text">
                 <span className="modal-label">{label}</span>
@@ -531,7 +533,7 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                                 isNewProvider={isAddingNew}
                                                 placeholder={
                                                     editingProvider.type === 'gemini_image'
-                                                        ? 'nano banana / nanobanana Pro'
+                                                        ? 'gemini-nano-banana-2.1'
                                                         : 'gpt-4'
                                                 }
                                                 onChange={(value) => handleProviderChange('model', value)}
@@ -545,6 +547,11 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                     <h4 className="provider-form-section__title">
                                         {t('settingsManagement.provider.parameters')}
                                     </h4>
+                                    {editingProvider.type === 'gemini_image' && (
+                                        <p className="provider-form-switch__hint">
+                                            {t('provider.imageInteractionsHint')}
+                                        </p>
+                                    )}
                                     {editingProvider.type === 'gemini_image' && (
                                         <div className="provider-form-grid">
                                             <div className="modal-group">
@@ -588,18 +595,11 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
 
                                             <div className="modal-group">
                                                 <label className="modal-label">{t('provider.imageQuantity')}</label>
-                                                <NumericInput
+                                                <input
                                                     aria-label={t('provider.imageQuantity')}
                                                     className="modal-input"
-                                                    min={1}
-                                                    max={8}
-                                                    step={1}
-                                                    value={editingProvider.gemini_image_number_of_images ?? 1}
-                                                    parseAs="int"
-                                                    onValueChange={(value) =>
-                                                        handleProviderChange('gemini_image_number_of_images', value)
-                                                    }
-                                                    placeholder="1"
+                                                    value="1"
+                                                    disabled
                                                 />
                                             </div>
 
@@ -619,8 +619,14 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                                     }
                                                 >
                                                     {GEMINI_IMAGE_OUTPUT_MIME_TYPES.map((mime) => (
-                                                        <option key={mime.value} value={mime.value}>
-                                                            {mime.label}
+                                                        <option
+                                                            key={mime.value}
+                                                            value={mime.value}
+                                                            disabled={mime.value !== 'image/jpeg'}
+                                                        >
+                                                            {mime.value === 'image/jpeg'
+                                                                ? mime.label
+                                                                : t('provider.imageLegacyPng')}
                                                         </option>
                                                     ))}
                                                 </select>
@@ -782,6 +788,12 @@ const ProviderSettings: React.FC<ProviderSettingsProps> = ({ onBack }) => {
                                         <div className="provider-form-switches">
                                             {renderSwitch('stream', t('provider.streamingOutput'))}
                                             {renderSwitch('image_capable', t('provider.visionSupport'))}
+                                            {editingProvider.type === 'gemini' &&
+                                                renderSwitch(
+                                                    'gemini_automatic_continuation',
+                                                    t('provider.geminiAutomaticContinuation'),
+                                                    t('provider.geminiAutomaticContinuationHint')
+                                                )}
                                         </div>
                                     </section>
                                 )}

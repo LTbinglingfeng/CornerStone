@@ -732,6 +732,7 @@ func (e *MemoryExtractor) ExtractAndSave(promptID, sessionID string) error {
 		if provider.GeminiThinkingBudget != nil {
 			geminiBudget = *provider.GeminiThinkingBudget
 		}
+		chatReq.GeminiAutomaticContinuation = provider.GeminiAutomaticContinuation
 		chatReq.GeminiThinkingMode = geminiMode
 		chatReq.GeminiThinkingLevel = geminiLevel
 		chatReq.GeminiThinkingBudget = geminiBudget

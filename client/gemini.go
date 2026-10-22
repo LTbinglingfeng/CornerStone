@@ -508,6 +508,8 @@ func buildGenAIGenerateContentConfig(req ChatRequest, systemInstruction *genai.C
 	cfg := &genai.GenerateContentConfig{
 		SystemInstruction: systemInstruction,
 		Tools:             tools,
+		// Opt in per request; SDK continuation adds billable requests.
+		AutomaticContinuation: genai.Ptr(req.GeminiAutomaticContinuation),
 	}
 
 	if req.Temperature != nil {

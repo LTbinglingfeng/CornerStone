@@ -81,6 +81,7 @@ func buildChatRequestForProvider(
 		if provider.GeminiThinkingBudget != nil {
 			geminiBudget = *provider.GeminiThinkingBudget
 		}
+		req.GeminiAutomaticContinuation = provider.GeminiAutomaticContinuation
 		req.GeminiThinkingMode = geminiMode
 		req.GeminiThinkingLevel = geminiLevel
 		req.GeminiThinkingBudget = geminiBudget

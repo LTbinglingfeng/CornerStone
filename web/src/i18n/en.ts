@@ -578,9 +578,17 @@ const en = {
         noPrompts: 'No prompt templates',
         geminiThinkingMode: 'Gemini Thinking Mode',
         thinkingLevelBudget: 'Thinking Level / Budget',
+        geminiAutomaticContinuation: 'Automatic Continuation',
+        geminiAutomaticContinuationHint:
+            'Off by default. When enabled, the SDK can continue generation and recover interrupted output from server checkpoints. This may send multiple billable requests; the request timeout still applies.',
+        imageInteractionsHint:
+            'Uses the Interactions API; the provider must support /interactions. One image per request, with no extra requests added automatically. Legacy image-count settings are retained but not used. The current SDK only supports explicit JPEG output. This only configures the provider; it does not add an image-generation entry point.',
+        imageOutputFormatUnsupported:
+            'The current Interactions SDK only supports explicit JPEG output. Please select image/jpeg.',
+        imageLegacyPng: 'image/png (legacy; select JPEG)',
         imageAspectRatio: 'Image Aspect Ratio',
         imageResolution: 'Image Resolution (max edge)',
-        imageQuantity: 'Image Quantity (1-8)',
+        imageQuantity: 'Images per Request',
         outputFormat: 'Output Format',
         openaiCompatible: 'OpenAI Compatible',
         openaiResponses: 'OpenAI Responses',

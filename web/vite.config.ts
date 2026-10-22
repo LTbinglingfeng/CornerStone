@@ -169,9 +169,9 @@ export default defineConfig({
   plugins: [cornerstoneInlineLogos(), cornerstoneServiceWorker(), react(), cornerstoneSingleFileBuild()],
   build: {
     copyPublicDir: false,
-    rollupOptions: {
+    rolldownOptions: {
       output: {
-        inlineDynamicImports: true,
+        codeSplitting: false,
       },
     },
   },

@@ -6,9 +6,10 @@
 
 CornerStone 是自托管 AI 聊天应用，使用 Go 后端与 React + TypeScript 前端，不依赖外部数据库。
 
-- 后端：Go `1.26.1`（见 `go.mod`），模块名 `cornerstone`，使用标准库 `net/http` 路由。
-- 前端：React 19、TypeScript 5、Vite 7、React Router 7、`motion/react`；使用 npm 与 `web/package-lock.json`。
-- 聊天提供商：OpenAI Chat Completions、OpenAI Responses、Gemini、Anthropic；另有 Gemini 生图和 MiniMax TTS。
+- 后端：Go `1.26.10`（见 `go.mod`），模块名 `cornerstone`，使用标准库 `net/http` 路由。
+- 前端：React 19、TypeScript 7、Vite 8、React Router 7、Motion 14（`motion/react`）；使用 npm 与 `web/package-lock.json`。
+- 聊天提供商：OpenAI Chat Completions、OpenAI Responses、Gemini、Anthropic；另有 Gemini 生图客户端和 MiniMax TTS。
+- Gemini 聊天/记忆的 `gemini_automatic_continuation` 默认关闭，开启后 SDK 可发起多次计费请求；聊天仍用 GenerateContent。生图客户端用 Interactions API，`store=false`、单次单张、不自动重试；旧 Imagen 方法明确拒绝请求，当前没有业务生图入口。
 - 功能包括人设、流式聊天、多模态消息、记忆提取与写入、工具调用、联网搜索、天气、时间、定时提醒和空闲主动问候。
 - 通道包括 Web、ClawBot / 微信 iLink、NapCat / QQ（仅私聊，OneBot 反向 WebSocket）和 QQ 官方机器人（仅 C2C 私聊，官方 WebSocket，支持扫码绑定）；修改共享回复逻辑时需考虑各通道。
 - ClawBot 有持久化 inbox / outbox、引用缓存和人工投递恢复；NapCat 支持私聊媒体接收、引用 / 合并转发展开及确认后写入投递历史，但不要假定它具有同样的持久化队列。
@@ -47,7 +48,7 @@ CornerStone 是自托管 AI 聊天应用，使用 Go 后端与 React + TypeScrip
 
 ## 开发与验证命令
 
-从仓库根目录执行，除非命令显式切换目录。Go 版本以 `go.mod` 为准；发布工作流使用 Node.js 20，本地 Node 版本还需满足锁文件中 Vite 等依赖的 engines 要求。
+从仓库根目录执行，除非命令显式切换目录。Go 版本以 `go.mod` 为准；发布工作流使用 Node.js 24 LTS，本地 Node 版本还需满足锁文件中 Vite 等依赖的 engines 要求。
 
 ```bash
 # 安装前端依赖（有锁文件，优先 npm ci）

@@ -30,7 +30,7 @@ const (
 	ProviderTypeOpenAI         ProviderType = "openai"          // OpenAI兼容API（Chat Completions）
 	ProviderTypeOpenAIResponse ProviderType = "openai_response" // OpenAI Responses API
 	ProviderTypeGemini         ProviderType = "gemini"          // Google Gemini API
-	ProviderTypeGeminiImage    ProviderType = "gemini_image"    // Google Gemini 生图（Imagen）
+	ProviderTypeGeminiImage    ProviderType = "gemini_image"    // Google Gemini 生图（Interactions）
 	ProviderTypeAnthropic      ProviderType = "anthropic"       // Anthropic Claude API
 )
 
@@ -413,30 +413,31 @@ func ValidateIdleGreetingConfig(cfg IdleGreetingConfig) error {
 
 // Provider 供应商配置
 type Provider struct {
-	ID                        string       `json:"id"`                                      // 供应商唯一标识
-	Name                      string       `json:"name"`                                    // 显示名称
-	Type                      ProviderType `json:"type"`                                    // 供应商类型 (openai/openai_response/gemini/gemini_image/anthropic)
-	BaseURL                   string       `json:"base_url"`                                // API基础URL
-	APIKey                    string       `json:"api_key"`                                 // API密钥
-	Model                     string       `json:"model"`                                   // 默认模型
-	Temperature               float64      `json:"temperature"`                             // 温度
-	TemperatureEnabled        bool         `json:"temperature_enabled"`                     // 是否向上游发送温度（默认关闭，部分新模型不支持）
-	TopP                      float64      `json:"top_p"`                                   // Top P
-	TopPEnabled               bool         `json:"top_p_enabled"`                           // 是否向上游发送 Top P（默认关闭，部分新模型不支持）
-	ThinkingBudget            int          `json:"thinking_budget"`                         // 思考预算（Anthropic）
-	PromptCaching             bool         `json:"prompt_caching"`                          // 是否启用 Anthropic Prompt Caching
-	PromptCacheTTL            string       `json:"prompt_cache_ttl,omitempty"`              // Anthropic Prompt Caching TTL (5m/1h)
-	ReasoningEffort           string       `json:"reasoning_effort"`                        // 思考强度（OpenAI兼容）
-	GeminiThinkingMode        *string      `json:"gemini_thinking_mode,omitempty"`          // Gemini思考模式 (none/thinking_level/thinking_budget)
-	GeminiThinkingLevel       *string      `json:"gemini_thinking_level,omitempty"`         // Gemini思考级别 (model-dependent, e.g. low/high/minimal/medium)
-	GeminiThinkingBudget      *int         `json:"gemini_thinking_budget,omitempty"`        // Gemini思考预算 (model-dependent, e.g. 0-24576 or 128-32768)
-	GeminiImageAspectRatio    *string      `json:"gemini_image_aspect_ratio,omitempty"`     // Gemini生图比例 (1:1/3:4/4:3/9:16/16:9)
-	GeminiImageSize           *string      `json:"gemini_image_size,omitempty"`             // Gemini生图分辨率 (最大边: 1K/2K，留空使用默认)
-	GeminiImageNumberOfImages *int         `json:"gemini_image_number_of_images,omitempty"` // Gemini生图张数 (1-8)
-	GeminiImageOutputMIMEType *string      `json:"gemini_image_output_mime_type,omitempty"` // Gemini生图输出格式 (image/jpeg/image/png)
-	ContextMessages           int          `json:"context_messages"`                        // 上下文轮数
-	Stream                    bool         `json:"stream"`                                  // 是否启用流式输出
-	ImageCapable              bool         `json:"image_capable"`                           // 是否支持识图
+	ID                          string       `json:"id"`                                      // 供应商唯一标识
+	Name                        string       `json:"name"`                                    // 显示名称
+	Type                        ProviderType `json:"type"`                                    // 供应商类型 (openai/openai_response/gemini/gemini_image/anthropic)
+	BaseURL                     string       `json:"base_url"`                                // API基础URL
+	APIKey                      string       `json:"api_key"`                                 // API密钥
+	Model                       string       `json:"model"`                                   // 默认模型
+	Temperature                 float64      `json:"temperature"`                             // 温度
+	TemperatureEnabled          bool         `json:"temperature_enabled"`                     // 是否向上游发送温度（默认关闭，部分新模型不支持）
+	TopP                        float64      `json:"top_p"`                                   // Top P
+	TopPEnabled                 bool         `json:"top_p_enabled"`                           // 是否向上游发送 Top P（默认关闭，部分新模型不支持）
+	ThinkingBudget              int          `json:"thinking_budget"`                         // 思考预算（Anthropic）
+	PromptCaching               bool         `json:"prompt_caching"`                          // 是否启用 Anthropic Prompt Caching
+	PromptCacheTTL              string       `json:"prompt_cache_ttl,omitempty"`              // Anthropic Prompt Caching TTL (5m/1h)
+	ReasoningEffort             string       `json:"reasoning_effort"`                        // 思考强度（OpenAI兼容）
+	GeminiAutomaticContinuation bool         `json:"gemini_automatic_continuation"`           // Gemini 自动续传（默认关闭）
+	GeminiThinkingMode          *string      `json:"gemini_thinking_mode,omitempty"`          // Gemini思考模式 (none/thinking_level/thinking_budget)
+	GeminiThinkingLevel         *string      `json:"gemini_thinking_level,omitempty"`         // Gemini思考级别 (model-dependent, e.g. low/high/minimal/medium)
+	GeminiThinkingBudget        *int         `json:"gemini_thinking_budget,omitempty"`        // Gemini思考预算 (model-dependent, e.g. 0-24576 or 128-32768)
+	GeminiImageAspectRatio      *string      `json:"gemini_image_aspect_ratio,omitempty"`     // Gemini生图比例 (1:1/3:4/4:3/9:16/16:9)
+	GeminiImageSize             *string      `json:"gemini_image_size,omitempty"`             // Gemini生图分辨率 (1K/2K/4K，留空使用模型默认)
+	GeminiImageNumberOfImages   *int         `json:"gemini_image_number_of_images,omitempty"` // 旧张数配置兼容；Interactions 不据此发起额外请求
+	GeminiImageOutputMIMEType   *string      `json:"gemini_image_output_mime_type,omitempty"` // 输出格式；旧 PNG 配置保留，新 SDK 仅支持显式 JPEG
+	ContextMessages             int          `json:"context_messages"`                        // 上下文轮数
+	Stream                      bool         `json:"stream"`                                  // 是否启用流式输出
+	ImageCapable                bool         `json:"image_capable"`                           // 是否支持识图
 }
 
 // SamplingParams 返回需要发送给上游的温度与 Top P；未启用时返回 nil，表示请求中省略该参数。
@@ -681,8 +682,21 @@ func (m *Manager) Load() error {
 	return nil
 }
 
+func normalizeGeminiAutomaticContinuation(provider *Provider) bool {
+	if provider != nil && provider.Type != ProviderTypeGemini && provider.GeminiAutomaticContinuation {
+		provider.GeminiAutomaticContinuation = false
+		return true
+	}
+	return false
+}
+
 func (m *Manager) applyConfigDefaults() bool {
-	changed := false
+	changed := normalizeGeminiAutomaticContinuation(m.config.MemoryProvider)
+	for i := range m.config.Providers {
+		if normalizeGeminiAutomaticContinuation(&m.config.Providers[i]) {
+			changed = true
+		}
+	}
 	replyWaitMode := normalizeReplyWaitWindowMode(m.config.ReplyWaitWindowMode)
 	if replyWaitMode != m.config.ReplyWaitWindowMode {
 		m.config.ReplyWaitWindowMode = replyWaitMode
@@ -1092,6 +1106,8 @@ func normalizeGeminiImageSize(size string) string {
 		return "1K"
 	case "2K":
 		return "2K"
+	case "4K":
+		return "4K"
 	default:
 		return ""
 	}
@@ -1444,6 +1460,7 @@ func (m *Manager) GetProvider(id string) *Provider {
 func (m *Manager) AddProvider(provider Provider) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	normalizeGeminiAutomaticContinuation(&provider)
 
 	// 检查ID是否重复
 	for _, p := range m.config.Providers {
@@ -1464,6 +1481,7 @@ func (m *Manager) AddProvider(provider Provider) error {
 func (m *Manager) UpdateProvider(provider Provider) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	normalizeGeminiAutomaticContinuation(&provider)
 
 	for i := range m.config.Providers {
 		if m.config.Providers[i].ID == provider.ID {
