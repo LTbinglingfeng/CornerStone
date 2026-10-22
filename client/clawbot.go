@@ -191,9 +191,9 @@ const (
 	clawBotMediaMaxBytes     = 100 << 20
 )
 
-// These protocol versions align with upstream reference 2.4.9, not CornerStone's build version.
-const clawBotChannelVersion = "2.4.9"
-const clawBotClientVersion = (2 << 16) | (4 << 8) | 9
+// These protocol versions align with upstream reference 2.4.10, not CornerStone's build version.
+const clawBotChannelVersion = "2.4.10"
+const clawBotClientVersion = (2 << 16) | (4 << 8) | 10
 
 var ErrClawBotPollTimeout = errors.New("clawbot poll timeout")
 

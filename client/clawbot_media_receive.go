@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-// Wire fields verified against openclaw-weixin 2.4.9 src/api/types.ts.
+// Wire fields verified against openclaw-weixin 2.4.10 src/api/types.ts.
 type ClawBotVoiceItem struct {
 	Media         *ClawBotCDNMedia `json:"media,omitempty"`
 	Text          string           `json:"text,omitempty"`

@@ -39,7 +39,7 @@ func TestClawBotNetworkErrorsAreClassifiedWithoutURLs(t *testing.T) {
 
 func TestClawBotProtocolHeadersAndBodies(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("iLink-App-Id") != "bot" || r.Header.Get("iLink-App-ClientVersion") != "132105" {
+		if r.Header.Get("iLink-App-Id") != "bot" || r.Header.Get("iLink-App-ClientVersion") != "132106" {
 			t.Errorf("common headers: %v", r.Header)
 		}
 		if r.Method == http.MethodGet {
@@ -76,7 +76,7 @@ func TestClawBotProtocolHeadersAndBodies(t *testing.T) {
 			t.Error("missing bearer")
 		}
 		var info ClawBotBaseInfo
-		if err := json.Unmarshal(body["base_info"], &info); err != nil || info.ChannelVersion != "2.4.9" || info.BotAgent != "CornerStone/v9.1.0" {
+		if err := json.Unmarshal(body["base_info"], &info); err != nil || info.ChannelVersion != "2.4.10" || info.BotAgent != "CornerStone/v9.1.0" {
 			t.Errorf("base_info: %+v, %v", info, err)
 		}
 		fmt.Fprint(w, `{"ret":0,"longpolling_timeout_ms":42000}`)
