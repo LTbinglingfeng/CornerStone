@@ -420,7 +420,7 @@ func (cm *ChatManager) CreateSession(sessionID, title, promptID, promptName stri
 	if err := cm.saveSession(record); err != nil {
 		return nil, err
 	}
-	logging.Infof("session created: id=%s prompt=%s title=%s", record.SessionID, promptID, logging.Truncate(title, 30))
+	logging.Infof("session.created: id=%q prompt=%q", record.SessionID, promptID)
 	return cloneChatRecord(record), nil
 }
 
@@ -827,7 +827,7 @@ func (cm *ChatManager) DeleteSession(sessionID string) error {
 
 	delete(cm.sessions, sessionID)
 	delete(cm.sessionFiles, sessionID)
-	logging.Infof("session deleted: id=%s", sessionID)
+	logging.Infof("session.deleted: id=%q", sessionID)
 	return nil
 }
 

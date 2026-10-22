@@ -743,18 +743,17 @@ func (e *MemoryExtractor) ExtractAndSave(promptID, sessionID string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	logging.Infof(
-		"memory extraction request: prompt=%s session=%s provider=%s model=%s rounds=%d",
-		promptID,
-		sessionID,
-		provider.ID,
-		provider.Model,
-		contextRounds,
-	)
-
-	resp, errChat := aiClient.Chat(ctx, chatReq)
+	ctx = logging.EnsureRequest(ctx, "internal", "memory_extraction")
+	ctx = logging.WithFields(ctx, "session", sessionID, "prompt", promptID, "provider", provider.ID, "model", provider.Model)
+	started := time.Now()
+	outcome := "failed"
+	logging.Event(ctx, "memory.extraction.started", "rounds", contextRounds, "existing_memories", len(existingMemories))
+	defer func() {
+		logging.Event(ctx, "memory.extraction.completed", "status", outcome, "duration_ms", time.Since(started).Milliseconds())
+	}()
+	resp, errChat := client.Observe(aiClient).Chat(ctx, chatReq)
 	if errChat != nil {
-		logging.Errorf("memory extraction AI request failed: prompt=%s session=%s err=%v", promptID, sessionID, errChat)
+		logging.Event(ctx, "memory.extraction.failed", "error_kind", logging.ErrorKind(errChat))
 		return fmt.Errorf("记忆提取失败: %w", errChat)
 	}
 	if resp == nil || len(resp.Choices) == 0 {
@@ -765,6 +764,7 @@ func (e *MemoryExtractor) ExtractAndSave(promptID, sessionID string) error {
 	choice := resp.Choices[0]
 	parseResult := parseMemoryBatchUpsertToolCalls(promptID, choice.Message.ToolCalls)
 	if parseResult.ValidCalls == 0 {
+		outcome = "skipped_no_valid_tool_call"
 		logging.Infof(
 			"memory extraction skipped: prompt=%s session=%s reason=no_valid_tool_call content_ignored=%t",
 			promptID,
@@ -775,6 +775,7 @@ func (e *MemoryExtractor) ExtractAndSave(promptID, sessionID string) error {
 	}
 
 	if len(parseResult.Items) == 0 {
+		outcome = "completed_no_items"
 		logging.Infof(
 			"memory extraction finished without items: prompt=%s session=%s tool_calls=%d content_ignored=%t",
 			promptID,
@@ -789,6 +790,12 @@ func (e *MemoryExtractor) ExtractAndSave(promptID, sessionID string) error {
 	now := e.now()
 	stats := e.applyExtractedMemories(promptID, items, now)
 	stats.TruncatedItemCount = truncatedCount
+	outcome = "completed"
+	if stats.AddFailedCount > 0 || stats.UpdateFailedCount > 0 {
+		outcome = "partial_failed"
+	}
+	logging.Event(ctx, "memory.extraction.applied", "added", stats.AddedCount, "updated", stats.UpdatedCount,
+		"invalid", stats.InvalidCount, "add_failed", stats.AddFailedCount, "update_failed", stats.UpdateFailedCount)
 
 	logging.Infof(
 		"记忆提取完成 prompt=%s session=%s tool_calls=%d items=%d added=%d updated=%d invalid=%d add_failed=%d update_failed=%d truncated=%d content_ignored=%t",

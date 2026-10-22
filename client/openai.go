@@ -115,15 +115,20 @@ type DeltaToolCall struct {
 
 // Usage token使用情况
 type Usage struct {
-	PromptTokens             int `json:"prompt_tokens"`
-	CompletionTokens         int `json:"completion_tokens"`
-	TotalTokens              int `json:"total_tokens"`
-	CacheCreationInputTokens int `json:"cache_creation_input_tokens,omitempty"`
-	CacheReadInputTokens     int `json:"cache_read_input_tokens,omitempty"`
+	// Anthropic reports cache input separately; normalize only in logs, not API responses.
+	InputTokensExcludeCache  bool `json:"-"`
+	Present                  bool `json:"-"`
+	ReasoningTokens          int  `json:"reasoning_tokens,omitempty"`
+	PromptTokens             int  `json:"prompt_tokens"`
+	CompletionTokens         int  `json:"completion_tokens"`
+	TotalTokens              int  `json:"total_tokens"`
+	CacheCreationInputTokens int  `json:"cache_creation_input_tokens,omitempty"`
+	CacheReadInputTokens     int  `json:"cache_read_input_tokens,omitempty"`
 }
 
 // StreamChunk 流式响应块
 type StreamChunk struct {
+	Usage   *Usage   `json:"usage,omitempty"`
 	ID      string   `json:"id"`
 	Object  string   `json:"object"`
 	Created int64    `json:"created"`
@@ -176,29 +181,29 @@ func (c *OpenAIClient) Chat(ctx context.Context, req ChatRequest) (*ChatResponse
 
 	resp, err := c.HTTPClient.Do(httpReq)
 	if err != nil {
-		logging.Errorf("openai request failed: model=%s err=%v", req.Model, err)
+		logging.Errorf("openai request failed: model=%q error_kind=%q", req.Model, logging.ErrorKind(err))
 		return nil, fmt.Errorf("do request: %w", err)
 	}
 	defer func() {
 		if errClose := resp.Body.Close(); errClose != nil {
-			logging.Warnf("close openai body error: %v", errClose)
+			logging.Warnf("close openai body error: error_kind=%q", logging.ErrorKind(errClose))
 		}
 	}()
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
 		logging.Errorf(
-			"openai API error: model=%s status=%d body=%s",
+			"openai API error: model=%q status=%d body_bytes=%d",
 			req.Model,
 			resp.StatusCode,
-			logging.Truncate(string(bodyBytes), 500),
+			len(bodyBytes),
 		)
 		return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(bodyBytes))
 	}
 
 	var chatResp ChatResponse
 	if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
-		logging.Errorf("openai response decode failed: model=%s err=%v", req.Model, err)
+		logging.Errorf("openai response decode failed: model=%q error_kind=%q", req.Model, logging.ErrorKind(err))
 		return nil, fmt.Errorf("decode response: %w", err)
 	}
 
@@ -231,22 +236,22 @@ func (c *OpenAIClient) ChatStream(ctx context.Context, req ChatRequest, callback
 
 	resp, err := c.HTTPClient.Do(httpReq)
 	if err != nil {
-		logging.Errorf("openai stream request failed: model=%s err=%v", req.Model, err)
+		logging.Errorf("openai stream request failed: model=%q error_kind=%q", req.Model, logging.ErrorKind(err))
 		return fmt.Errorf("do request: %w", err)
 	}
 	defer func() {
 		if errClose := resp.Body.Close(); errClose != nil {
-			logging.Warnf("close openai stream body error: %v", errClose)
+			logging.Warnf("close openai stream body error: error_kind=%q", logging.ErrorKind(errClose))
 		}
 	}()
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
 		logging.Errorf(
-			"openai stream API error: model=%s status=%d body=%s",
+			"openai stream API error: model=%q status=%d body_bytes=%d",
 			req.Model,
 			resp.StatusCode,
-			logging.Truncate(string(bodyBytes), 500),
+			len(bodyBytes),
 		)
 		return fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(bodyBytes))
 	}
@@ -273,7 +278,7 @@ func (c *OpenAIClient) ChatStream(ctx context.Context, req ChatRequest, callback
 
 		var chunk StreamChunk
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			logging.Warnf("openai stream chunk unmarshal failed: model=%s data=%s err=%v", req.Model, logging.Truncate(data, 200), err)
+			logging.Warnf("openai stream chunk unmarshal failed: model=%q data_bytes=%d error_kind=%q", req.Model, len(data), logging.ErrorKind(err))
 			continue
 		}
 

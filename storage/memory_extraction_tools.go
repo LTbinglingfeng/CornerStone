@@ -187,11 +187,11 @@ func parseMemoryBatchUpsertToolCalls(promptID string, toolCalls []client.ToolCal
 		}
 		if errUnmarshal := json.Unmarshal([]byte(rawArgs), &args); errUnmarshal != nil {
 			logging.Warnf(
-				"memory extraction tool args parse failed: prompt=%s tool=%s id=%s err=%v",
+				"memory extraction tool args parse failed: prompt=%q tool=%q id=%q error_kind=%q",
 				promptID,
 				memoryBatchUpsertToolName,
 				strings.TrimSpace(toolCall.ID),
-				errUnmarshal,
+				logging.ErrorKind(errUnmarshal),
 			)
 			continue
 		}
@@ -213,7 +213,7 @@ func truncateMemoryBatchItems(promptID string, items []ExtractedMemory) ([]Extra
 
 	truncatedCount := len(items) - memoryBatchUpsertMaxItems
 	logging.Warnf(
-		"memory extraction tool items exceed limit, truncating: prompt=%s tool=%s total=%d kept=%d dropped=%d",
+		"memory extraction tool items exceed limit, truncating: prompt=%q tool=%q total=%d kept=%d dropped=%d",
 		promptID,
 		memoryBatchUpsertToolName,
 		len(items),
@@ -233,11 +233,11 @@ func (e *MemoryExtractor) applyExtractedMemories(promptID string, items []Extrac
 		if !ok {
 			stats.InvalidCount++
 			logging.Warnf(
-				"memory extraction field invalid: prompt=%s subject=%s category=%s content=%s",
+				"memory extraction field invalid: prompt=%q subject_bytes=%d category_bytes=%d content_bytes=%d",
 				promptID,
-				item.Subject,
-				item.Category,
-				logging.Truncate(item.Content, 50),
+				len(item.Subject),
+				len(item.Category),
+				len(item.Content),
 			)
 			continue
 		}
@@ -263,13 +263,13 @@ func (e *MemoryExtractor) applyExtractedMemories(promptID string, items []Extrac
 				})
 				if errUpdate != nil {
 					stats.UpdateFailedCount++
-					logging.Errorf("memory update failed: prompt=%s id=%s err=%v", promptID, matchingID, errUpdate)
+					logging.Errorf("memory update failed: prompt=%q id=%q error_kind=%q", promptID, matchingID, logging.ErrorKind(errUpdate))
 				} else {
 					stats.UpdatedCount++
 				}
 				continue
 			}
-			logging.Infof("memory matching id not found, adding: prompt=%s id=%s", promptID, matchingID)
+			logging.Infof("memory matching id not found, adding: prompt=%q id=%q", promptID, matchingID)
 		}
 
 		errAdd := e.mm.Add(promptID, Memory{
@@ -284,7 +284,7 @@ func (e *MemoryExtractor) applyExtractedMemories(promptID string, items []Extrac
 		})
 		if errAdd != nil {
 			stats.AddFailedCount++
-			logging.Errorf("memory add failed: prompt=%s err=%v", promptID, errAdd)
+			logging.Errorf("memory add failed: prompt=%q error_kind=%q", promptID, logging.ErrorKind(errAdd))
 		} else {
 			stats.AddedCount++
 		}

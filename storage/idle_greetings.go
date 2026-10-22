@@ -98,6 +98,8 @@ func (m *IdleGreetingManager) load() {
 	if changed {
 		if errSave := m.saveLocked(); errSave != nil {
 			logging.Errorf("idle greetings normalize save failed: path=%s err=%v", m.filePath, errSave)
+		} else {
+			logging.Infof("idle_greeting.state_refreshed: total_count=%d", len(m.tasks))
 		}
 	}
 }
@@ -201,7 +203,10 @@ func (m *IdleGreetingManager) UpsertPending(task IdleGreetingTask) (*IdleGreetin
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	event := "idle_greeting.created"
+	replacedCount := 0
 	if old := m.tasks[normalized.ID]; old != nil {
+		event = "idle_greeting.updated"
 		normalized.Revision = old.Revision + 1
 	}
 	normalized.DeliveryID = ""
@@ -213,12 +218,14 @@ func (m *IdleGreetingManager) UpsertPending(task IdleGreetingTask) (*IdleGreetin
 			continue
 		}
 		delete(m.tasks, existingID)
+		replacedCount++
 	}
 
 	m.tasks[normalized.ID] = cloneIdleGreetingTask(&normalized)
 	if errSave := m.saveLocked(); errSave != nil {
 		return nil, errSave
 	}
+	logging.Infof("%s: id=%q replaced_count=%d status=%q due_at=%s updated_at=%s", event, normalized.ID, replacedCount, normalized.Status, normalized.DueAt.Format(time.RFC3339Nano), normalized.UpdatedAt.Format(time.RFC3339Nano))
 	return cloneIdleGreetingTask(&normalized), nil
 }
 
@@ -234,7 +241,11 @@ func (m *IdleGreetingManager) Delete(id string) error {
 		return os.ErrNotExist
 	}
 	delete(m.tasks, id)
-	return m.saveLocked()
+	if err := m.saveLocked(); err != nil {
+		return err
+	}
+	logging.Infof("idle_greeting.deleted: id=%q count=1", id)
+	return nil
 }
 
 func (m *IdleGreetingManager) DeletePendingByKey(key string) error {
@@ -246,18 +257,22 @@ func (m *IdleGreetingManager) DeletePendingByKey(key string) error {
 		return nil
 	}
 
-	changed := false
+	deletedCount := 0
 	for id, task := range m.tasks {
 		if task == nil || task.Status != IdleGreetingStatusPending || task.Key != key {
 			continue
 		}
 		delete(m.tasks, id)
-		changed = true
+		deletedCount++
 	}
-	if !changed {
+	if deletedCount == 0 {
 		return nil
 	}
-	return m.saveLocked()
+	if err := m.saveLocked(); err != nil {
+		return err
+	}
+	logging.Infof("idle_greeting.deleted: count=%d", deletedCount)
+	return nil
 }
 
 func (m *IdleGreetingManager) Clear() error {
@@ -267,8 +282,13 @@ func (m *IdleGreetingManager) Clear() error {
 	if len(m.tasks) == 0 {
 		return nil
 	}
+	deletedCount := len(m.tasks)
 	m.tasks = make(map[string]*IdleGreetingTask)
-	return m.saveLocked()
+	if err := m.saveLocked(); err != nil {
+		return err
+	}
+	logging.Infof("idle_greeting.deleted: count=%d", deletedCount)
+	return nil
 }
 
 func (m *IdleGreetingManager) HasNewerTaskForKey(key string, lastUserAt time.Time, excludeID string) bool {
@@ -339,6 +359,7 @@ func (m *IdleGreetingManager) TryMarkFiring(id string, updatedAt time.Time) (*Id
 	if errSave := m.saveLocked(); errSave != nil {
 		return nil, false, errSave
 	}
+	logging.Infof("idle_greeting.firing: id=%q status=%q attempts=%d due_at=%s updated_at=%s", task.ID, task.Status, task.Attempts, task.DueAt.Format(time.RFC3339Nano), task.UpdatedAt.Format(time.RFC3339Nano))
 	return cloneIdleGreetingTask(task), true, nil
 }
 
@@ -369,6 +390,7 @@ func (m *IdleGreetingManager) MarkPending(id string, updatedAt time.Time, lastEr
 	if errSave := m.saveLocked(); errSave != nil {
 		return nil, errSave
 	}
+	logging.Infof("idle_greeting.retry_scheduled: id=%q status=%q attempts=%d due_at=%s updated_at=%s", task.ID, task.Status, task.Attempts, task.DueAt.Format(time.RFC3339Nano), task.UpdatedAt.Format(time.RFC3339Nano))
 	return cloneIdleGreetingTask(task), nil
 }
 
@@ -496,6 +518,7 @@ func (m *IdleGreetingManager) BindDelivery(snapshot IdleGreetingTask, deliveryID
 	if err := m.saveLocked(); err != nil {
 		return false, err
 	}
+	logging.Infof("idle_greeting.delivery_bound: id=%q status=%q attempts=%d due_at=%s updated_at=%s", current.ID, current.Status, current.Attempts, current.DueAt.Format(time.RFC3339Nano), current.UpdatedAt.Format(time.RFC3339Nano))
 	return true, nil
 }
 
@@ -506,5 +529,9 @@ func (m *IdleGreetingManager) CompleteDelivery(snapshot IdleGreetingTask, delive
 		return nil
 	}
 	delete(m.tasks, snapshot.ID)
-	return m.saveLocked()
+	if err := m.saveLocked(); err != nil {
+		return err
+	}
+	logging.Infof("idle_greeting.delivery_completed: id=%q", snapshot.ID)
+	return nil
 }

@@ -2,7 +2,6 @@ package api
 
 import (
 	"bufio"
-	"bytes"
 	"cornerstone/config"
 	"cornerstone/exacttime"
 	"cornerstone/logging"
@@ -11,7 +10,6 @@ import (
 	"errors"
 	"net"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 )
@@ -176,13 +174,13 @@ func (h *Handler) registerProtectedRoute(mux *http.ServeMux, path string, handle
 	mux.HandleFunc(path, h.corsMiddleware(h.authMiddleware(handler)))
 }
 
-const maxAPIErrorLogBytes = 2048
-
 type apiLogResponseWriter struct {
 	http.ResponseWriter
-	status      int
-	wroteHeader bool
-	body        bytes.Buffer
+	status       int
+	wroteHeader  bool
+	bytesWritten int
+	writeError   error
+	hijacked     bool
 }
 
 func newAPILogResponseWriter(w http.ResponseWriter) *apiLogResponseWriter {
@@ -206,18 +204,18 @@ func (w *apiLogResponseWriter) Write(p []byte) (int, error) {
 	if !w.wroteHeader {
 		w.WriteHeader(http.StatusOK)
 	}
-	if w.status >= 400 && w.body.Len() < maxAPIErrorLogBytes {
-		remaining := maxAPIErrorLogBytes - w.body.Len()
-		if len(p) > remaining {
-			_, _ = w.body.Write(p[:remaining])
-		} else {
-			_, _ = w.body.Write(p)
-		}
+	n, err := w.ResponseWriter.Write(p)
+	w.bytesWritten += n
+	if err != nil {
+		w.writeError = err
 	}
-	return w.ResponseWriter.Write(p)
+	return n, err
 }
 
 func (w *apiLogResponseWriter) Flush() {
+	if !w.wroteHeader {
+		w.WriteHeader(http.StatusOK)
+	}
 	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
 		flusher.Flush()
 	}
@@ -228,7 +226,11 @@ func (w *apiLogResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if !ok {
 		return nil, nil, errors.New("hijacker not supported")
 	}
-	return hijacker.Hijack()
+	conn, rw, err := hijacker.Hijack()
+	if err == nil {
+		w.hijacked = true
+	}
+	return conn, rw, err
 }
 
 // corsMiddleware 处理跨域请求
@@ -238,40 +240,38 @@ func (h *Handler) corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-
+		// Deliberately exclude query strings, headers and response bodies: they can
+		// contain credentials (including the NapCat websocket access token).
+		ctx := logging.EnsureRequest(r.Context(), "web", "http_request")
+		ctx = logging.WithFields(ctx, "method", r.Method, "path", r.URL.Path)
+		r = r.WithContext(ctx)
+		started := time.Now()
 		wrapped := newAPILogResponseWriter(w)
-		next(wrapped, r)
-
-		if wrapped.status < 400 || wrapped.status == http.StatusUnauthorized {
-			return
-		}
-
-		var logf func(format string, args ...interface{})
-		if wrapped.status >= 500 {
-			logf = logging.Errorf
-		} else {
-			logf = logging.Warnf
-		}
-
-		errMsg := ""
-		if wrapped.body.Len() > 0 {
-			var resp Response
-			if err := json.Unmarshal(wrapped.body.Bytes(), &resp); err == nil && strings.TrimSpace(resp.Error) != "" {
-				errMsg = resp.Error
-			} else {
-				errMsg = strings.TrimSpace(string(wrapped.body.Bytes()))
+		returned := false
+		logging.Event(ctx, "http.request.started")
+		defer func() {
+			status := "completed"
+			if !returned {
+				status = "aborted"
+			} else if wrapped.hijacked {
+				status = "hijacked"
+			} else if wrapped.writeError != nil {
+				status = "write_failed"
+			} else if r.Context().Err() != nil {
+				status = "canceled"
+			} else if wrapped.status >= 400 {
+				status = "rejected"
 			}
+			logging.Event(ctx, "http.request.completed", "status", status,
+				"http_status", wrapped.status, "duration_ms", time.Since(started).Milliseconds(),
+				"response_bytes", wrapped.bytesWritten, "write_error", logging.ErrorKind(wrapped.writeError))
+		}()
+		if r.Method == "OPTIONS" {
+			wrapped.WriteHeader(http.StatusOK)
+		} else {
+			next(wrapped, r)
 		}
-
-		if errMsg == "" {
-			logf("API error: method=%s path=%s status=%d", r.Method, r.URL.Path, wrapped.status)
-			return
-		}
-		logf("API error: method=%s path=%s status=%d error=%s", r.Method, r.URL.Path, wrapped.status, logging.Truncate(errMsg, 500))
+		returned = true
 	}
 }
 

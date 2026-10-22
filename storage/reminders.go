@@ -144,6 +144,8 @@ func (m *ReminderManager) load() {
 	if changed {
 		if errSave := m.saveLocked(); errSave != nil {
 			logging.Errorf("reminders normalize save failed: path=%s err=%v", m.filePath, errSave)
+		} else {
+			logging.Infof("reminder.state_refreshed: total_count=%d", len(m.reminders))
 		}
 	}
 }
@@ -258,6 +260,7 @@ func (m *ReminderManager) Create(reminder Reminder) (*Reminder, error) {
 	if err := m.saveLocked(); err != nil {
 		return nil, err
 	}
+	logging.Infof("reminder.created: id=%q status=%q attempts=%d due_at=%s updated_at=%s", normalized.ID, normalized.Status, normalized.Attempts, normalized.DueAt.Format(time.RFC3339Nano), normalized.UpdatedAt.Format(time.RFC3339Nano))
 	return cloneReminder(&normalized), nil
 }
 
@@ -296,6 +299,7 @@ func (m *ReminderManager) UpdatePending(id string, patch ReminderPatch, updatedA
 	if err := m.saveLocked(); err != nil {
 		return nil, err
 	}
+	logging.Infof("reminder.updated: id=%q status=%q attempts=%d due_at=%s updated_at=%s", normalized.ID, normalized.Status, normalized.Attempts, normalized.DueAt.Format(time.RFC3339Nano), normalized.UpdatedAt.Format(time.RFC3339Nano))
 	return cloneReminder(&normalized), nil
 }
 
@@ -320,6 +324,7 @@ func (m *ReminderManager) CancelPending(id string, updatedAt time.Time) (*Remind
 	if err := m.saveLocked(); err != nil {
 		return nil, err
 	}
+	logging.Infof("reminder.cancelled: id=%q status=%q attempts=%d due_at=%s updated_at=%s", reminder.ID, reminder.Status, reminder.Attempts, reminder.DueAt.Format(time.RFC3339Nano), reminder.UpdatedAt.Format(time.RFC3339Nano))
 	return cloneReminder(reminder), nil
 }
 
@@ -331,7 +336,11 @@ func (m *ReminderManager) Delete(id string) error {
 		return os.ErrNotExist
 	}
 	delete(m.reminders, id)
-	return m.saveLocked()
+	if err := m.saveLocked(); err != nil {
+		return err
+	}
+	logging.Infof("reminder.deleted: id=%q", id)
+	return nil
 }
 
 func (m *ReminderManager) ListDuePending(now time.Time) []Reminder {
@@ -383,6 +392,7 @@ func (m *ReminderManager) TryMarkFiring(id string, updatedAt time.Time) (*Remind
 	if err := m.saveLocked(); err != nil {
 		return nil, false, err
 	}
+	logging.Infof("reminder.firing: id=%q status=%q attempts=%d due_at=%s updated_at=%s", reminder.ID, reminder.Status, reminder.Attempts, reminder.DueAt.Format(time.RFC3339Nano), reminder.UpdatedAt.Format(time.RFC3339Nano))
 	return cloneReminder(reminder), true, nil
 }
 
@@ -407,6 +417,7 @@ func (m *ReminderManager) MarkSent(id string, firedAt time.Time) (*Reminder, err
 	if err := m.saveLocked(); err != nil {
 		return nil, err
 	}
+	logging.Infof("reminder.sent: id=%q status=%q attempts=%d due_at=%s updated_at=%s", reminder.ID, reminder.Status, reminder.Attempts, reminder.DueAt.Format(time.RFC3339Nano), reminder.UpdatedAt.Format(time.RFC3339Nano))
 	return cloneReminder(reminder), nil
 }
 
@@ -434,6 +445,7 @@ func (m *ReminderManager) MarkFailed(id string, updatedAt time.Time, lastError s
 	if err := m.saveLocked(); err != nil {
 		return nil, err
 	}
+	logging.Infof("reminder.failed: id=%q status=%q attempts=%d due_at=%s updated_at=%s", reminder.ID, reminder.Status, reminder.Attempts, reminder.DueAt.Format(time.RFC3339Nano), reminder.UpdatedAt.Format(time.RFC3339Nano))
 	return cloneReminder(reminder), nil
 }
 
@@ -461,6 +473,7 @@ func (m *ReminderManager) MarkPending(id string, updatedAt time.Time, lastError 
 	if err := m.saveLocked(); err != nil {
 		return nil, err
 	}
+	logging.Infof("reminder.retry_scheduled: id=%q status=%q attempts=%d due_at=%s updated_at=%s", reminder.ID, reminder.Status, reminder.Attempts, reminder.DueAt.Format(time.RFC3339Nano), reminder.UpdatedAt.Format(time.RFC3339Nano))
 	return cloneReminder(reminder), nil
 }
 
@@ -629,6 +642,7 @@ func (m *ReminderManager) BindDelivery(snapshot Reminder, deliveryID string, now
 	if err := m.saveLocked(); err != nil {
 		return false, err
 	}
+	logging.Infof("reminder.delivery_bound: id=%q status=%q attempts=%d due_at=%s updated_at=%s", current.ID, current.Status, current.Attempts, current.DueAt.Format(time.RFC3339Nano), current.UpdatedAt.Format(time.RFC3339Nano))
 	return true, nil
 }
 
@@ -656,5 +670,9 @@ func (m *ReminderManager) CompleteDelivery(snapshot Reminder, deliveryID string,
 		current.Status = ReminderStatusSent
 		current.FiredAt = &now
 	}
-	return m.saveLocked()
+	if err := m.saveLocked(); err != nil {
+		return err
+	}
+	logging.Infof("reminder.delivery_completed: id=%q status=%q attempts=%d due_at=%s updated_at=%s", current.ID, current.Status, current.Attempts, current.DueAt.Format(time.RFC3339Nano), current.UpdatedAt.Format(time.RFC3339Nano))
+	return nil
 }

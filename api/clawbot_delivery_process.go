@@ -4,6 +4,7 @@ import (
 	"context"
 	"cornerstone/client"
 	"cornerstone/config"
+	"cornerstone/logging"
 	"cornerstone/storage"
 	"errors"
 	"fmt"
@@ -12,6 +13,41 @@ import (
 )
 
 func (s *ClawBotService) stepDelivery(ctx context.Context, cfg config.ClawBotConfig, job storage.ClawBotDeliveryJob) {
+	trigger := "user_message"
+	switch job.Kind {
+	case "reminder":
+		trigger = "reminder"
+	case "greeting":
+		trigger = "idle_greeting"
+	case "command", "direct":
+		trigger = "command"
+	}
+	if job.Kind == "command" && len(job.Inputs) > 0 {
+		command, _ := parseClawBotCommand(client.ExtractTextFromClawBotMessage(job.Inputs[0]))
+		if command.Name == clawBotCommandRegenerate {
+			trigger = "regenerate"
+		}
+	}
+	if job.Reminder != nil {
+		ctx = logging.WithFields(ctx, "task_id", job.Reminder.ID)
+	}
+	if job.Greeting != nil {
+		ctx = logging.WithFields(ctx, "task_id", job.Greeting.ID)
+	}
+	// A durable job keeps its correlation across generation, sending, history
+	// commit and process restarts; each completed event below is one queue phase.
+	if job.ID != "" {
+		ctx = logging.WithFields(ctx, "request", "clawbot-"+job.ID, "source", "clawbot", "trigger", trigger)
+	}
+	ctx, finish := startChannelRequest(ctx, "clawbot", trigger, "scope", "delivery_phase", "job_id", job.ID, "phase", job.Status, "batch_size", len(job.Inputs))
+	defer finish()
+	defer func() {
+		if current, ok := s.snapshotDelivery(job.ID); ok {
+			// Queue state is not an upstream acknowledgement (including done).
+			channelOutcome(ctx, "queue_"+current.Status, nil)
+		}
+	}()
+
 	if ctx.Err() != nil || !s.isCurrentAccount(cfg) {
 		return
 	}
@@ -21,7 +57,7 @@ func (s *ClawBotService) stepDelivery(ctx context.Context, cfg config.ClawBotCon
 		s.deliverChunk(ctx, cfg, job)
 		return
 	case "committing":
-		s.commitDelivery(cfg, job)
+		s.commitDeliveryContext(ctx, cfg, job)
 		return
 	case "queued":
 	default:
@@ -204,8 +240,10 @@ func (s *ClawBotService) prepareDeliveryInput(ctx context.Context, cfg config.Cl
 		return nil, err
 	}
 	if err := s.handler.chatManager.CommitDeliveryBatch(job.SessionID, "wx-in:"+job.ID, job.InputMessages, false, nil); err != nil {
+		channelHistory(ctx, "inbound", err)
 		return nil, err
 	}
+	channelHistory(ctx, "inbound", nil)
 	session, ok := s.handler.chatManager.GetSession(job.SessionID)
 	if !ok {
 		return nil, fmt.Errorf("session no longer exists")
@@ -250,6 +288,7 @@ func (s *ClawBotService) generateDelivery(ctx context.Context, cfg config.ClawBo
 		}
 	}
 	if err != nil {
+		channelFailure(ctx, err)
 		s.parkDelivery(cfg, job.ID, "preparation", "Preparing input or writing inbound history failed; retry after resolving the error.", false)
 		return
 	}
@@ -304,6 +343,7 @@ func (s *ClawBotService) generateDelivery(ctx context.Context, cfg config.ClawBo
 	}
 	stopTyping()
 	if err != nil {
+		channelFailure(ctx, err)
 		s.parkDelivery(cfg, job.ID, "generation", "Reply generation was interrupted or failed. Tools may already have run; review before retrying.", true)
 		return
 	}

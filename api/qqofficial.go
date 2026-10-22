@@ -122,7 +122,7 @@ func (s *QQOfficialService) applyLocked() {
 		case s.queue <- qqOfficialJob{ctx, gen, cfg, conn, m}:
 			return nil
 		default:
-			logging.Warnf("qqofficial incoming queue full: event=%s", m.ID)
+			logging.Event(nil, "channel.queue.full", "source", "qqofficial", "status", "failed")
 			s.setError(gen, "incoming queue full")
 			return fmt.Errorf("incoming queue full")
 		}
@@ -147,13 +147,37 @@ func (s *QQOfficialService) redact(v string) string {
 func logQQOfficialStatus(previous, next client.QQOfficialStatus) {
 	switch {
 	case next.Status == "connected" && previous.Status != "connected":
-		logging.Infof("qqofficial connected: bot_id=%s bot_name=%s", next.BotID, next.BotName)
+		logging.Event(nil, "channel.connected", "source", "qqofficial")
 	case next.Status == "error" && next.LastError != "":
-		logging.Warnf("qqofficial connection error: err=%s", next.LastError)
+		logging.Event(nil, "channel.connection_error", "source", "qqofficial", "status", "unconfirmed", "reason", qqOfficialLogReason(next.LastError))
 	case next.Status == "disconnected" && previous.Status == "connected":
-		logging.Infof("qqofficial disconnected")
+		logging.Event(nil, "channel.disconnected", "source", "qqofficial")
 	}
 }
+
+// Only known protocol diagnostics are safe to publish; unknown text may come
+// from upstream responses and must not be echoed into the log.
+func qqOfficialLogReason(message string) string {
+	switch message {
+	case "QQ gateway requested reconnect":
+		return "gateway_requested_reconnect"
+	case "QQ heartbeat acknowledgement timeout":
+		return "heartbeat_timeout"
+	case "QQ gateway handshake timeout":
+		return "handshake_timeout"
+	case "QQ gateway read failed":
+		return "gateway_read_failed"
+	case "QQ gateway write failed":
+		return "gateway_write_failed"
+	case "QQ gateway connection failed":
+		return "gateway_connect_failed"
+	case "QQ invalid gateway session":
+		return "invalid_session"
+	default:
+		return "gateway_error"
+	}
+}
+
 func (s *QQOfficialService) setError(gen uint64, msg string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -181,7 +205,7 @@ func (s *QQOfficialService) worker() {
 				s.mu.Lock()
 				msg = s.redact(msg)
 				s.mu.Unlock()
-				logging.Errorf("qqofficial process message failed: event=%s err=%s", j.msg.ID, msg)
+				logging.Event(nil, "channel.processing_failed", "source", "qqofficial", "error_kind", logging.ErrorKind(err))
 				s.setError(j.generation, msg)
 			}
 		}
@@ -193,7 +217,15 @@ func qqOfficialSessionID(c config.QQOfficialConfig, user string) string {
 func qqOfficialEventID(id string) string {
 	return fmt.Sprintf("qqofficial-in-%x", sha256.Sum256([]byte(id)))
 }
-func (s *QQOfficialService) process(j qqOfficialJob) error {
+func (s *QQOfficialService) process(j qqOfficialJob) (resultErr error) {
+	var finish func()
+	j.ctx, finish = startChannelRequest(j.ctx, "qqofficial", "user_message")
+	defer finish()
+	defer func() {
+		if resultErr != nil {
+			channelFailure(j.ctx, resultErr)
+		}
+	}()
 	s.mu.Lock()
 	valid := s.currentLocked(j)
 	s.mu.Unlock()
@@ -221,6 +253,7 @@ func (s *QQOfficialService) process(j qqOfficialJob) error {
 		return err
 	}
 	if seen {
+		channelOutcome(j.ctx, "duplicate", nil)
 		return nil
 	}
 	session, exists := h.chatManager.GetSession(sid)
@@ -292,6 +325,7 @@ func (s *QQOfficialService) process(j qqOfficialJob) error {
 	}
 	if err == nil {
 		err = h.chatManager.CommitDeliveryBatch(sid, op, []storage.ChatMessage{input}, false, nil)
+		channelHistory(j.ctx, "inbound", err)
 	}
 	if err == nil {
 		err = receipts.Record(op)
@@ -324,6 +358,7 @@ func (s *QQOfficialService) process(j qqOfficialJob) error {
 		return s.notifyGenerationFailure(j, sid, err)
 	}
 	if reply == nil {
+		channelOutcome(j.ctx, "no_reply", nil)
 		return nil
 	}
 	return s.deliver(j, sid, op, session.Messages, reply)
@@ -351,7 +386,7 @@ func (s *QQOfficialService) notifyGenerationFailure(j qqOfficialJob, sid string,
 	if _, err := j.conn.SendText(ctx, j.msg.UserOpenID, j.msg.ID, 1, reply); err != nil {
 		return fmt.Errorf("%w；失败提示发送失败: %v", failure, err)
 	}
-	logging.Infof("qqofficial sent generation failure notice: session=%s event=%s", sid, j.msg.ID)
+	logging.Event(j.ctx, "channel.delivery.completed", "status", "confirmed", "purpose", "failure_notice")
 	return failure
 }
 
@@ -419,6 +454,7 @@ func (s *QQOfficialService) deliver(j qqOfficialJob, sid, op string, expected []
 	}
 	authorized := sessionToolAttachments(authorizedMessages)
 	seq := 0
+	confirmedSegments := 0
 	token := configuredAssistantMessageSplitToken(s.handler.configManager)
 	// Commit the confirmed prefix even after a later send fails. Never resend on a save failure.
 	commit := func() error {
@@ -432,8 +468,10 @@ func (s *QQOfficialService) deliver(j qqOfficialJob, sid, op string, expected []
 		}
 		replacement := append(append([]storage.ChatMessage(nil), expected...), confirmed...)
 		if err := s.handler.chatManager.CommitDeliverySuffix(sid, op+"-out", expected, replacement); err != nil {
+			channelHistory(j.ctx, "outbound", err)
 			return err
 		}
+		channelHistory(j.ctx, "outbound", nil)
 		if deliveryErr == nil && r.MemSession != nil {
 			r.MemSession.OnRoundComplete()
 		}
@@ -448,7 +486,22 @@ func (s *QQOfficialService) deliver(j qqOfficialJob, sid, op string, expected []
 		record, exists := s.handler.chatManager.GetSession(sid)
 		return exists && reflect.DeepEqual(record.Messages, expected)
 	}
-	send := func(text, path string) error {
+	send := func(text, path string) (sendErr error) {
+		started := time.Now()
+		attempted := false
+		defer func() {
+			status := "confirmed"
+			if sendErr == nil {
+				confirmedSegments++
+			}
+			if sendErr != nil {
+				status = "failed"
+				if attempted {
+					status = "unconfirmed"
+				}
+			}
+			logging.Event(j.ctx, "channel.delivery.completed", "status", status, "segment", seq, "duration_ms", time.Since(started).Milliseconds(), "error_kind", logging.ErrorKind(sendErr))
+		}()
 		// A deleted/edited history also revokes the old attachment catalogue.
 		// Check each segment, not only the final history commit.
 		if !currentConversation() {
@@ -463,9 +516,11 @@ func (s *QQOfficialService) deliver(j qqOfficialJob, sid, op string, expected []
 			if !currentConversation() {
 				return context.Canceled
 			}
+			attempted = true
 			_, err = j.conn.SendImage(j.ctx, j.msg.UserOpenID, j.msg.ID, seq, b, name)
 			return err
 		}
+		attempted = true
 		_, err := j.conn.SendText(j.ctx, j.msg.UserOpenID, j.msg.ID, seq, text)
 		return err
 	}
@@ -573,6 +628,19 @@ func (s *QQOfficialService) deliver(j qqOfficialJob, sid, op string, expected []
 	}
 	if err := commit(); err != nil {
 		return err
+	}
+	if deliveryErr != nil {
+		status := "unconfirmed"
+		if confirmedSegments > 0 {
+			status = "partial"
+		}
+		channelOutcome(j.ctx, status, deliveryErr)
+	} else if r.NoReply {
+		channelOutcome(j.ctx, "no_reply", nil)
+	} else if confirmedSegments > 0 {
+		channelOutcome(j.ctx, "confirmed", nil)
+	} else {
+		channelOutcome(j.ctx, "processed", nil)
 	}
 	return deliveryErr
 }

@@ -486,9 +486,10 @@ type Config struct {
 
 // Manager 配置管理器
 type Manager struct {
-	config     Config
-	configPath string
-	mu         sync.RWMutex
+	providerLogSnapshot *providerLogState
+	config              Config
+	configPath          string
+	mu                  sync.RWMutex
 }
 
 // DefaultProvider 返回默认供应商
@@ -564,14 +565,24 @@ func NewManager(configPath string) *Manager {
 		config:     DefaultConfig(),
 		configPath: configPath,
 	}
+	m.captureProviderLogState()
 	m.Load()
 	return m
 }
 
 // Load 从文件加载配置
-func (m *Manager) Load() error {
+func (m *Manager) Load() (loadErr error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	previousLogSnapshot := m.providerLogSnapshot
+	m.providerLogSnapshot = nil
+	defer func() {
+		if loadErr == nil {
+			m.captureProviderLogState()
+		} else {
+			m.providerLogSnapshot = previousLogSnapshot
+		}
+	}()
 
 	data, err := os.ReadFile(m.configPath)
 	if err != nil {
@@ -1157,6 +1168,7 @@ func (m *Manager) saveUnsafe() error {
 		return err
 	}
 	_ = os.Chmod(m.configPath, 0600)
+	m.logProviderChanges()
 	return nil
 }
 
@@ -1476,7 +1488,6 @@ func (m *Manager) AddProvider(provider Provider) error {
 	if errSave := m.saveUnsafe(); errSave != nil {
 		return errSave
 	}
-	logging.Infof("provider added: id=%s name=%s type=%s", provider.ID, provider.Name, provider.Type)
 	return nil
 }
 
@@ -1498,7 +1509,6 @@ func (m *Manager) UpdateProvider(provider Provider) error {
 			if errSave := m.saveUnsafe(); errSave != nil {
 				return errSave
 			}
-			logging.Infof("provider updated: id=%s name=%s", provider.ID, provider.Name)
 			return nil
 		}
 	}
@@ -1538,7 +1548,6 @@ func (m *Manager) DeleteProvider(id string) error {
 			if errSave := m.saveUnsafe(); errSave != nil {
 				return errSave
 			}
-			logging.Infof("provider deleted: id=%s", id)
 			return nil
 		}
 	}
@@ -1559,7 +1568,6 @@ func (m *Manager) SetActiveProvider(id string) error {
 			if errSave := m.saveUnsafe(); errSave != nil {
 				return errSave
 			}
-			logging.Infof("active provider changed: id=%s", id)
 			return nil
 		}
 	}
@@ -1586,7 +1594,6 @@ func (m *Manager) SetImageProvider(id string) error {
 			if errSave := m.saveUnsafe(); errSave != nil {
 				return errSave
 			}
-			logging.Infof("image provider changed: id=%s", id)
 			return nil
 		}
 	}

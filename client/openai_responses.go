@@ -92,6 +92,13 @@ type openAIResponsesError struct {
 }
 
 type openAIResponsesUsage struct {
+	Present            bool `json:"-"`
+	InputTokensDetails struct {
+		CachedTokens int `json:"cached_tokens"`
+	} `json:"input_tokens_details"`
+	OutputTokensDetails struct {
+		ReasoningTokens int `json:"reasoning_tokens"`
+	} `json:"output_tokens_details"`
 	InputTokens  int `json:"input_tokens"`
 	OutputTokens int `json:"output_tokens"`
 	TotalTokens  int `json:"total_tokens"`
@@ -169,10 +176,11 @@ type openAIResponsesStreamTextDoneEvent struct {
 type openAIResponsesStreamResponseEvent struct {
 	Type     string `json:"type"`
 	Response struct {
-		ID        string `json:"id"`
-		CreatedAt int64  `json:"created_at"`
-		Model     string `json:"model"`
-		Status    string `json:"status"`
+		Usage     openAIResponsesUsage `json:"usage"`
+		ID        string               `json:"id"`
+		CreatedAt int64                `json:"created_at"`
+		Model     string               `json:"model"`
+		Status    string               `json:"status"`
 	} `json:"response"`
 }
 
@@ -227,33 +235,33 @@ func (c *OpenAIResponsesClient) Chat(ctx context.Context, req ChatRequest) (*Cha
 
 	resp, errDo := c.HTTPClient.Do(httpReq)
 	if errDo != nil {
-		logging.Errorf("openai_responses request failed: model=%s err=%v", req.Model, errDo)
+		logging.Errorf("openai_responses request failed: model=%q error_kind=%q", req.Model, logging.ErrorKind(errDo))
 		return nil, fmt.Errorf("do request: %w", errDo)
 	}
 	defer func() {
 		if errClose := resp.Body.Close(); errClose != nil {
-			logging.Warnf("close openai responses body error: %v", errClose)
+			logging.Warnf("close openai responses body error: error_kind=%q", logging.ErrorKind(errClose))
 		}
 	}()
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
 		logging.Errorf(
-			"openai_responses API error: model=%s status=%d body=%s",
+			"openai_responses API error: model=%q status=%d body_bytes=%d",
 			req.Model,
 			resp.StatusCode,
-			logging.Truncate(string(bodyBytes), 500),
+			len(bodyBytes),
 		)
 		return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(bodyBytes))
 	}
 
 	bodyBytes, errReadBody := io.ReadAll(io.LimitReader(resp.Body, maxChatBodyBytes+1))
 	if errReadBody != nil {
-		logging.Errorf("openai_responses response read failed: model=%s err=%v", req.Model, errReadBody)
+		logging.Errorf("openai_responses response read failed: model=%q error_kind=%q", req.Model, logging.ErrorKind(errReadBody))
 		return nil, fmt.Errorf("read response: %w", errReadBody)
 	}
 	if len(bodyBytes) > maxChatBodyBytes {
-		logging.Errorf("openai_responses response too large: model=%s bytes=%d", req.Model, len(bodyBytes))
+		logging.Errorf("openai_responses response too large: model=%q bytes=%d", req.Model, len(bodyBytes))
 		return nil, fmt.Errorf("response too large")
 	}
 
@@ -261,7 +269,7 @@ func (c *OpenAIResponsesClient) Chat(ctx context.Context, req ChatRequest) (*Cha
 	looksLikeSSE := strings.Contains(contentType, "text/event-stream") || bodyLooksLikeSSE(bodyBytes)
 	if looksLikeSSE {
 		if !strings.Contains(contentType, "text/event-stream") {
-			logging.Warnf("openai_responses Chat got SSE body with Content-Type=%q: model=%s", resp.Header.Get("Content-Type"), req.Model)
+			logging.Warnf("openai_responses Chat got SSE body with content_type_bytes=%d: model=%q", len(resp.Header.Get("Content-Type")), req.Model)
 		}
 		// An SSE protocol/API failure must not be masked by a JSON decode error.
 		return parseOpenAIResponsesSSEToChatResponse(bytes.NewReader(bodyBytes), req.Model)
@@ -269,11 +277,11 @@ func (c *OpenAIResponsesClient) Chat(ctx context.Context, req ChatRequest) (*Cha
 
 	var rawResp openAIResponsesResponse
 	if errUnmarshal := json.Unmarshal(bodyBytes, &rawResp); errUnmarshal != nil {
-		logging.Errorf("openai_responses response decode failed: model=%s err=%v body=%s", req.Model, errUnmarshal, logging.Truncate(string(bodyBytes), 200))
+		logging.Errorf("openai_responses response decode failed: model=%q error_kind=%q body_bytes=%d", req.Model, logging.ErrorKind(errUnmarshal), len(bodyBytes))
 		return nil, fmt.Errorf("decode response: %w", errUnmarshal)
 	}
 	if err := validateResponsesStatus(bodyBytes, ""); err != nil {
-		return nil, err
+		return nil, withModelUsage(err, rawResp.Model, responsesUsage(rawResp.Usage))
 	}
 
 	return convertResponsesToChatResponse(rawResp, req.Model), nil
@@ -304,22 +312,22 @@ func (c *OpenAIResponsesClient) ChatStream(ctx context.Context, req ChatRequest,
 
 	resp, errDo := c.HTTPClient.Do(httpReq)
 	if errDo != nil {
-		logging.Errorf("openai_responses stream request failed: model=%s err=%v", req.Model, errDo)
+		logging.Errorf("openai_responses stream request failed: model=%q error_kind=%q", req.Model, logging.ErrorKind(errDo))
 		return fmt.Errorf("do request: %w", errDo)
 	}
 	defer func() {
 		if errClose := resp.Body.Close(); errClose != nil {
-			logging.Warnf("close openai responses stream body error: %v", errClose)
+			logging.Warnf("close openai responses stream body error: error_kind=%q", logging.ErrorKind(errClose))
 		}
 	}()
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
 		logging.Errorf(
-			"openai_responses stream API error: model=%s status=%d body=%s",
+			"openai_responses stream API error: model=%q status=%d body_bytes=%d",
 			req.Model,
 			resp.StatusCode,
-			logging.Truncate(string(bodyBytes), 500),
+			len(bodyBytes),
 		)
 		return fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(bodyBytes))
 	}
@@ -369,13 +377,21 @@ func (c *OpenAIResponsesClient) ChatStream(ctx context.Context, req ChatRequest,
 
 		var baseEvent openAIResponsesStreamEvent
 		if errUnmarshal := json.Unmarshal([]byte(data), &baseEvent); errUnmarshal != nil {
-			logging.Warnf("openai_responses stream event unmarshal failed: model=%s data=%s err=%v", req.Model, logging.Truncate(data, 200), errUnmarshal)
+			logging.Warnf("openai_responses stream event unmarshal failed: model=%q data_bytes=%d error_kind=%q", req.Model, len(data), logging.ErrorKind(errUnmarshal))
 			continue
 		}
 
 		collector.observe([]byte(data))
 		switch baseEvent.Type {
 		case "response.completed", "response.failed", "response.incomplete":
+			var ev openAIResponsesStreamResponseEvent
+			if json.Unmarshal([]byte(data), &ev) == nil {
+				if u := usagePointer(responsesUsage(ev.Response.Usage)); u != nil {
+					if err := callback(StreamChunk{Model: ev.Response.Model, Usage: u}); err != nil {
+						return err
+					}
+				}
+			}
 			if err := validateResponsesTerminalEvent([]byte(data), baseEvent.Type); err != nil {
 				return err
 			}
@@ -383,7 +399,7 @@ func (c *OpenAIResponsesClient) ChatStream(ctx context.Context, req ChatRequest,
 		case "response.output_text.delta":
 			var ev openAIResponsesStreamTextDeltaEvent
 			if errUnmarshal := json.Unmarshal([]byte(data), &ev); errUnmarshal != nil {
-				logging.Warnf("openai_responses stream text delta unmarshal failed: model=%s data=%s err=%v", req.Model, logging.Truncate(data, 200), errUnmarshal)
+				logging.Warnf("openai_responses stream text delta unmarshal failed: model=%q data_bytes=%d error_kind=%q", req.Model, len(data), logging.ErrorKind(errUnmarshal))
 				continue
 			}
 			chunk := StreamChunk{
@@ -404,7 +420,7 @@ func (c *OpenAIResponsesClient) ChatStream(ctx context.Context, req ChatRequest,
 		case "response.reasoning_text.delta", "response.reasoning_summary_text.delta":
 			var ev openAIResponsesStreamTextDeltaEvent
 			if errUnmarshal := json.Unmarshal([]byte(data), &ev); errUnmarshal != nil {
-				logging.Warnf("openai_responses stream reasoning delta unmarshal failed: model=%s data=%s err=%v", req.Model, logging.Truncate(data, 200), errUnmarshal)
+				logging.Warnf("openai_responses stream reasoning delta unmarshal failed: model=%q data_bytes=%d error_kind=%q", req.Model, len(data), logging.ErrorKind(errUnmarshal))
 				continue
 			}
 			streamedReasoning.WriteString(ev.Delta)
@@ -426,7 +442,7 @@ func (c *OpenAIResponsesClient) ChatStream(ctx context.Context, req ChatRequest,
 		case "response.output_item.added":
 			var ev openAIResponsesStreamOutputItemEvent
 			if errUnmarshal := json.Unmarshal([]byte(data), &ev); errUnmarshal != nil {
-				logging.Warnf("openai_responses stream output item added unmarshal failed: model=%s data=%s err=%v", req.Model, logging.Truncate(data, 200), errUnmarshal)
+				logging.Warnf("openai_responses stream output item added unmarshal failed: model=%q data_bytes=%d error_kind=%q", req.Model, len(data), logging.ErrorKind(errUnmarshal))
 				continue
 			}
 			if errHandle := handleResponsesOutputItemAdded(ev, toolCalls, req.Model, callback); errHandle != nil {
@@ -436,7 +452,7 @@ func (c *OpenAIResponsesClient) ChatStream(ctx context.Context, req ChatRequest,
 		case "response.function_call_arguments.delta":
 			var ev openAIResponsesStreamFunctionArgsDeltaEvent
 			if errUnmarshal := json.Unmarshal([]byte(data), &ev); errUnmarshal != nil {
-				logging.Warnf("openai_responses stream function args delta unmarshal failed: model=%s data=%s err=%v", req.Model, logging.Truncate(data, 200), errUnmarshal)
+				logging.Warnf("openai_responses stream function args delta unmarshal failed: model=%q data_bytes=%d error_kind=%q", req.Model, len(data), logging.ErrorKind(errUnmarshal))
 				continue
 			}
 			state, ok := toolCalls[ev.OutputIndex]
@@ -485,7 +501,7 @@ func (c *OpenAIResponsesClient) ChatStream(ctx context.Context, req ChatRequest,
 		case "response.function_call_arguments.done":
 			var ev openAIResponsesStreamFunctionArgsDoneEvent
 			if errUnmarshal := json.Unmarshal([]byte(data), &ev); errUnmarshal != nil {
-				logging.Warnf("openai_responses stream function args done unmarshal failed: model=%s data=%s err=%v", req.Model, logging.Truncate(data, 200), errUnmarshal)
+				logging.Warnf("openai_responses stream function args done unmarshal failed: model=%q data_bytes=%d error_kind=%q", req.Model, len(data), logging.ErrorKind(errUnmarshal))
 				continue
 			}
 
@@ -510,7 +526,7 @@ func (c *OpenAIResponsesClient) ChatStream(ctx context.Context, req ChatRequest,
 		case "error":
 			var ev openAIResponsesStreamErrorEvent
 			if errUnmarshal := json.Unmarshal([]byte(data), &ev); errUnmarshal != nil {
-				logging.Errorf("openai_responses stream error event unmarshal failed: model=%s data=%s err=%v", req.Model, logging.Truncate(data, 200), errUnmarshal)
+				logging.Errorf("openai_responses stream error event unmarshal failed: model=%q data_bytes=%d error_kind=%q", req.Model, len(data), logging.ErrorKind(errUnmarshal))
 				return fmt.Errorf("stream error")
 			}
 			code := ""
@@ -518,10 +534,10 @@ func (c *OpenAIResponsesClient) ChatStream(ctx context.Context, req ChatRequest,
 				code = *ev.Code
 			}
 			if code == "" {
-				logging.Errorf("openai_responses stream error: model=%s message=%s", req.Model, logging.Truncate(ev.Message, 500))
+				logging.Errorf("openai_responses stream error: model=%q message_bytes=%d", req.Model, len(ev.Message))
 				return fmt.Errorf("stream error: %s", ev.Message)
 			}
-			logging.Errorf("openai_responses stream error: model=%s code=%s message=%s", req.Model, code, logging.Truncate(ev.Message, 500))
+			logging.Errorf("openai_responses stream error: model=%q message_bytes=%d", req.Model, len(ev.Message))
 			return fmt.Errorf("stream error (%s): %s", code, ev.Message)
 		}
 	}
@@ -602,6 +618,7 @@ func parseOpenAIResponsesSSEToChatResponse(r io.Reader, fallbackModel string) (*
 	toolCalls := make(map[int]*toolCallAgg)
 
 	responseID := ""
+	var terminalUsage Usage
 	createdAt := int64(0)
 	model := ""
 
@@ -632,24 +649,26 @@ func parseOpenAIResponsesSSEToChatResponse(r io.Reader, fallbackModel string) (*
 
 		var baseEvent openAIResponsesStreamEvent
 		if errUnmarshal := json.Unmarshal([]byte(data), &baseEvent); errUnmarshal != nil {
-			logging.Warnf("openai_responses sse event unmarshal failed: model=%s data=%s err=%v", fallbackModel, logging.Truncate(data, 200), errUnmarshal)
+			logging.Warnf("openai_responses sse event unmarshal failed: model=%q data_bytes=%d error_kind=%q", fallbackModel, len(data), logging.ErrorKind(errUnmarshal))
 			continue
 		}
 
 		collector.observe([]byte(data))
 		switch baseEvent.Type {
-		case "response.failed", "response.incomplete":
-			return nil, validateResponsesTerminalEvent([]byte(data), baseEvent.Type)
-		case "response.created", "response.completed":
-			if baseEvent.Type == "response.completed" {
+		case "response.created", "response.completed", "response.failed", "response.incomplete":
+			var ev openAIResponsesStreamResponseEvent
+			errUnmarshal := json.Unmarshal([]byte(data), &ev)
+			if baseEvent.Type != "response.created" {
 				if err := validateResponsesTerminalEvent([]byte(data), baseEvent.Type); err != nil {
-					return nil, err
+					return nil, withModelUsage(err, ev.Response.Model, responsesUsage(ev.Response.Usage))
 				}
 				completed = true
 			}
-			var ev openAIResponsesStreamResponseEvent
-			if errUnmarshal := json.Unmarshal([]byte(data), &ev); errUnmarshal != nil {
+			if errUnmarshal != nil {
 				continue
+			}
+			if ev.Response.Usage.Present {
+				terminalUsage = responsesUsage(ev.Response.Usage)
 			}
 			if responseID == "" && strings.TrimSpace(ev.Response.ID) != "" {
 				responseID = strings.TrimSpace(ev.Response.ID)
@@ -877,7 +896,7 @@ func parseOpenAIResponsesSSEToChatResponse(r io.Reader, fallbackModel string) (*
 				FinishReason: finishReason,
 			},
 		},
-		Usage: Usage{},
+		Usage: terminalUsage,
 	}, nil
 }
 
@@ -1245,11 +1264,7 @@ func convertResponsesToChatResponse(resp openAIResponsesResponse, fallbackModel 
 				FinishReason: finishReason,
 			},
 		},
-		Usage: Usage{
-			PromptTokens:     resp.Usage.InputTokens,
-			CompletionTokens: resp.Usage.OutputTokens,
-			TotalTokens:      resp.Usage.TotalTokens,
-		},
+		Usage: responsesUsage(resp.Usage),
 	}
 }
 

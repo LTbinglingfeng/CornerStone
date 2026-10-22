@@ -2,10 +2,12 @@ package api
 
 import (
 	"context"
+	"cornerstone/logging"
 	"cornerstone/storage"
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // napCatMessageChain is channel-local, ordered and deliberately not serialized
@@ -60,13 +62,21 @@ func (s *NapCatService) deliverNapCatChain(ctx context.Context, userID int64, ch
 	}
 	var confirmed napCatMessageChain
 	for i, segment := range chain {
+		started := time.Now()
 		action, params, err := s.encodeNapCatSegment(userID, segment)
 		if err == nil {
 			err = s.sendConfirmedAction(ctx, action, params)
 		}
 		if err != nil {
+			status := "unconfirmed"
+			if len(confirmed) > 0 {
+				status = "partial"
+			}
+			channelOutcome(ctx, status, err)
+			logging.Event(ctx, "channel.delivery.segment.completed", "status", "unconfirmed", "segment", i, "duration_ms", time.Since(started).Milliseconds(), "error_kind", logging.ErrorKind(err))
 			return confirmed, fmt.Errorf("NapCat segment %d delivery unconfirmed; do not automatically retry: %w", i, err)
 		}
+		logging.Event(ctx, "channel.delivery.segment.completed", "status", "confirmed", "segment", i, "duration_ms", time.Since(started).Milliseconds())
 		confirmed = append(confirmed, segment)
 	}
 	return confirmed, nil

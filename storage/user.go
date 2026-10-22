@@ -109,7 +109,7 @@ func (um *UserManager) Update(username, description string) (*UserInfo, error) {
 	}
 
 	info := *um.userInfo
-	logging.Infof("user info updated: username=%s", um.userInfo.Username)
+	logging.Infof("user.updated: description_bytes=%d", len(um.userInfo.Description))
 	return &info, nil
 }
 

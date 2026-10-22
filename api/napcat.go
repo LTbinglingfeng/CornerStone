@@ -341,7 +341,7 @@ func (s *NapCatService) connect(conn *websocket.Conn, accessToken string, authen
 	go func() {
 		if err := s.refreshLoginInfo(ctx); err != nil && ctx.Err() == nil {
 			s.setLastError(err)
-			logging.Warnf("napcat get_login_info failed: err=%v", err)
+			logging.Event(nil, "channel.diagnostic", "operation", "napcat get_login_info failed", "error_kind", logging.ErrorKind(err))
 		}
 	}()
 }
@@ -368,7 +368,7 @@ func (s *NapCatService) disconnectConnection(expected *websocket.Conn, reason st
 	s.mu.Unlock()
 
 	if reason != "" {
-		logging.Infof("napcat disconnect: %s", reason)
+		logging.Event(nil, "channel.diagnostic", "operation", "napcat disconnect")
 	}
 	if cancel != nil {
 		cancel()
@@ -421,7 +421,7 @@ func (s *NapCatService) readLoop(ctx context.Context, conn *websocket.Conn) {
 				return
 			}
 			s.setLastError(errRead)
-			logging.Warnf("napcat ws read failed: err=%v", errRead)
+			logging.Event(ctx, "channel.diagnostic", "operation", "napcat ws read failed", "error_kind", logging.ErrorKind(errRead))
 			return
 		}
 
@@ -436,14 +436,14 @@ func (s *NapCatService) handleIncomingFrame(ctx context.Context, data []byte) {
 
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(data, &envelope); err != nil {
-		logging.Warnf("napcat ws ignore invalid json: err=%v", err)
+		logging.Event(ctx, "channel.diagnostic", "operation", "napcat ws ignore invalid json", "error_kind", logging.ErrorKind(err))
 		return
 	}
 
 	if rawPostType, ok := envelope["post_type"]; ok && len(rawPostType) > 0 {
 		var event napCatMessageEvent
 		if err := json.Unmarshal(data, &event); err != nil {
-			logging.Warnf("napcat ws decode event failed: err=%v", err)
+			logging.Event(ctx, "channel.diagnostic", "operation", "napcat ws decode event failed", "error_kind", logging.ErrorKind(err))
 			return
 		}
 		if event.SelfID != 0 {
@@ -468,7 +468,7 @@ func (s *NapCatService) handleIncomingFrame(ctx context.Context, data []byte) {
 
 	var resp napCatActionResponse
 	if err := json.Unmarshal(data, &resp); err != nil {
-		logging.Warnf("napcat ws decode action response failed: err=%v", err)
+		logging.Event(ctx, "channel.diagnostic", "operation", "napcat ws decode action response failed", "error_kind", logging.ErrorKind(err))
 		return
 	}
 
@@ -779,7 +779,7 @@ func (d napCatMessageSegmentData) hasEmojiMetadata() bool {
 func (s *NapCatService) parseIncomingPrivateMessage(source napCatChatSource, event napCatMessageEvent) (*napCatPendingMessage, bool) {
 	parsed, errParse := parseNapCatReceiveMessage(event.Message, event.RawMessage, true)
 	if errParse != nil {
-		logging.Warnf("napcat parse message failed: source=%+v message_id=%d err=%v", source, event.MessageID, errParse)
+		logging.Event(nil, "channel.diagnostic", "operation", "napcat parse message failed", "error_kind", logging.ErrorKind(errParse))
 		return &napCatPendingMessage{Text: "[消息内容超出接收限额或解析失败]", MessageID: event.MessageID}, true
 	}
 	if parsed == nil {
@@ -1290,8 +1290,11 @@ func (s *NapCatService) processPendingBatchAsync(ctx context.Context, source nap
 }
 
 func (s *NapCatService) processIncomingBatch(ctx context.Context, cfg config.NapCatConfig, source napCatChatSource, messages []napCatPendingMessage) {
+	ctx, finish := startChannelRequest(ctx, "napcat", "user_message", "batch_size", len(messages))
+	defer finish()
 	ctx, cancel, bindErr := s.bindSourceContext(ctx, source)
 	if bindErr != nil {
+		channelFailure(ctx, bindErr)
 		return
 	}
 	defer cancel()
@@ -1301,7 +1304,8 @@ func (s *NapCatService) processIncomingBatch(ctx context.Context, cfg config.Nap
 
 	session, err := s.getOrCreateActiveSession(source, cfg.PromptID)
 	if err != nil {
-		logging.Errorf("napcat prepare session failed: source=%+v err=%v", source, err)
+		channelFailure(ctx, err)
+		logging.Event(ctx, "channel.diagnostic", "operation", "napcat prepare session failed", "error_kind", logging.ErrorKind(err))
 		s.setLastError(err)
 		_ = s.sendPrivateText(ctx, source.UserID, "暂时无法开始聊天，请稍后再试。")
 		return
@@ -1322,13 +1326,7 @@ func (s *NapCatService) processIncomingBatch(ctx context.Context, cfg config.Nap
 		quote, errQuote := s.resolveQuotedMessage(receiveCtx, source, pendingMessage.ReplyMessageID, budget)
 		if errQuote != nil {
 			s.setLastError(errQuote)
-			logging.Warnf(
-				"napcat resolve quote failed: source=%+v message_id=%d reply_message_id=%d err=%v",
-				source,
-				pendingMessage.MessageID,
-				pendingMessage.ReplyMessageID,
-				errQuote,
-			)
+			logging.Event(ctx, "channel.diagnostic", "operation", "napcat resolve quote failed", "error_kind", logging.ErrorKind(errQuote))
 		}
 
 		if trimmed == "" && len(imagePaths)+len(attachments) == 0 {
@@ -1352,11 +1350,13 @@ func (s *NapCatService) processIncomingBatch(ctx context.Context, cfg config.Nap
 	}
 
 	if err := s.handler.chatManager.AddMessages(session.SessionID, storageMessages); err != nil {
-		logging.Errorf("napcat save user messages failed: source=%+v session=%s err=%v", source, session.SessionID, err)
+		channelHistory(ctx, "inbound", err)
+		logging.Event(ctx, "channel.diagnostic", "operation", "napcat save user messages failed", "error_kind", logging.ErrorKind(err))
 		s.setLastError(err)
 		_ = s.sendPrivateText(ctx, source.UserID, "暂时无法处理你的消息，请稍后再试。")
 		return
 	}
+	channelHistory(ctx, "inbound", nil)
 	if s.handler.idleGreetingService != nil {
 		promptID := strings.TrimSpace(session.PromptID)
 		if promptID == "" {
@@ -1392,7 +1392,7 @@ func (s *NapCatService) processIncomingBatch(ctx context.Context, cfg config.Nap
 			Target:     target,
 			LastUserAt: storageMessages[len(storageMessages)-1].Timestamp,
 		}); errIdleGreeting != nil {
-			logging.Warnf("rebuild idle greeting failed: channel=napcat session=%s user=%d err=%v", session.SessionID, source.UserID, errIdleGreeting)
+			logging.Event(ctx, "channel.diagnostic", "operation", "rebuild idle greeting failed", "error_kind", logging.ErrorKind(errIdleGreeting))
 		}
 	}
 
@@ -1401,14 +1401,15 @@ func (s *NapCatService) processIncomingBatch(ctx context.Context, cfg config.Nap
 	}
 	generatedReply, err := s.generateReply(ctx, source, session.SessionID, cfg.PromptID)
 	if err != nil {
-		logging.Errorf("napcat generate reply failed: source=%+v session=%s err=%v", source, session.SessionID, err)
+		channelFailure(ctx, err)
+		logging.Event(ctx, "channel.diagnostic", "operation", "napcat generate reply failed", "error_kind", logging.ErrorKind(err))
 		visibleErr := fmt.Errorf("生成回复失败: %w", err)
 		s.setLastError(visibleErr)
 		// 允许对用户展示错误详情，但失败提示不写入会话历史（避免错误详情持久化并进入下一轮模型上下文）。
 		reply := buildChannelFailureReply("暂时无法处理你的消息，请稍后再试", err)
 		if errSend := s.sendPrivateText(ctx, source.UserID, reply); errSend != nil {
 			s.setLastError(fmt.Errorf("发送回复失败: %w", errSend))
-			logging.Errorf("napcat send reply failure message failed: source=%+v session=%s err=%v", source, session.SessionID, errSend)
+			logging.Event(ctx, "channel.diagnostic", "operation", "napcat send reply failure message failed", "error_kind", logging.ErrorKind(errSend))
 		}
 		return
 	}
@@ -1561,14 +1562,16 @@ func (s *NapCatService) sendAndPersistReply(ctx context.Context, source napCatCh
 	}
 	ctx, cancel, err := s.bindSourceContext(ctx, source)
 	if err != nil {
+		channelFailure(ctx, err)
 		s.setLastError(err)
 		return
 	}
 	defer cancel()
 
 	if err := s.sendGeneratedPrivateReply(ctx, source, sessionID, generatedReply); err != nil {
+		channelFailure(ctx, err)
 		s.setLastError(fmt.Errorf("投递回复失败: %w", err))
-		logging.Errorf("napcat reply delivery failed: source=%+v session=%s err=%v", source, sessionID, err)
+		logging.Event(ctx, "channel.diagnostic", "operation", "napcat reply delivery failed", "error_kind", logging.ErrorKind(err))
 	}
 }
 

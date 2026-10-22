@@ -4,6 +4,7 @@ import (
 	"context"
 	"cornerstone/client"
 	"cornerstone/config"
+	"cornerstone/logging"
 	"cornerstone/storage"
 	"encoding/json"
 	"fmt"
@@ -37,6 +38,7 @@ type sessionReplyOptions struct {
 	EphemeralMessages []client.Message
 	PersistMode       sessionReplyPersistMode
 	ToolCallbacks     *toolLoopCallbacks
+	Trigger           string // Optional fallback when no request context exists.
 }
 
 func buildChatRequestForProvider(
@@ -93,7 +95,21 @@ func buildChatRequestForProvider(
 	return req
 }
 
-func (h *Handler) generateSessionReply(ctx context.Context, options sessionReplyOptions) (*generatedSessionReply, error) {
+func (h *Handler) generateSessionReply(ctx context.Context, options sessionReplyOptions) (reply *generatedSessionReply, err error) {
+	trigger := options.Trigger
+	if trigger == "" {
+		trigger = "user_message"
+	}
+	ctx = logging.EnsureRequest(ctx, chatLogSource(options.Channel), trigger)
+	ctx = logging.WithFields(ctx, "prompt", options.PromptID)
+	if options.Session != nil {
+		ctx = logging.WithFields(ctx, "session", options.Session.SessionID)
+	}
+	defer func() {
+		if err != nil {
+			logging.Event(ctx, "reply.failed", "error_kind", logging.ErrorKind(err))
+		}
+	}()
 	if h == nil {
 		return nil, fmt.Errorf("handler is nil")
 	}
@@ -102,6 +118,7 @@ func (h *Handler) generateSessionReply(ctx context.Context, options sessionReply
 	if provider == nil {
 		return nil, fmt.Errorf("no active provider configured")
 	}
+	ctx = logging.WithFields(ctx, "provider", provider.ID, "model", provider.Model)
 	if provider.Type == config.ProviderTypeGeminiImage {
 		return nil, fmt.Errorf("active provider is not chat-capable")
 	}

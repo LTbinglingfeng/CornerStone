@@ -115,7 +115,7 @@ func (s *IdleGreetingService) workerLoop(ctx context.Context) {
 				continue
 			}
 			if err := s.fireTask(ctx, taskID); err != nil {
-				logging.Errorf("fire idle greeting failed: id=%s err=%v", taskID, err)
+				logging.Event(ctx, "channel.diagnostic", "operation", "fire idle greeting failed", "error_kind", logging.ErrorKind(err))
 			}
 		}
 	}
@@ -134,13 +134,13 @@ func (s *IdleGreetingService) dropDueTasksOnStart() {
 	dropped := 0
 	for _, task := range due {
 		if err := s.manager.Delete(task.ID); err != nil && !errorsIsNotExist(err) {
-			logging.Warnf("drop idle greeting due task on start failed: id=%s err=%v", task.ID, err)
+			logging.Event(nil, "channel.diagnostic", "operation", "drop idle greeting due task on start failed", "error_kind", logging.ErrorKind(err))
 			continue
 		}
 		dropped++
 	}
 	if dropped > 0 {
-		logging.Infof("dropped %d overdue idle greeting tasks on start", dropped)
+		logging.Event(nil, "channel.diagnostic", "operation", "dropped  overdue idle greeting tasks on start")
 	}
 }
 
@@ -282,12 +282,12 @@ func (s *IdleGreetingService) fireTaskAsync(ctx context.Context, taskID string) 
 	// Fallback (mainly for tests that don't call Start).
 	go func() {
 		if err := s.fireTask(ctx, taskID); err != nil {
-			logging.Errorf("fire idle greeting failed: id=%s err=%v", taskID, err)
+			logging.Event(ctx, "channel.diagnostic", "operation", "fire idle greeting failed", "error_kind", logging.ErrorKind(err))
 		}
 	}()
 }
 
-func (s *IdleGreetingService) fireTask(ctx context.Context, taskID string) error {
+func (s *IdleGreetingService) fireTask(ctx context.Context, taskID string) (resultErr error) {
 	if s == nil || s.manager == nil {
 		return fmt.Errorf("idle greeting service not configured")
 	}
@@ -304,6 +304,9 @@ func (s *IdleGreetingService) fireTask(ctx context.Context, taskID string) error
 		return nil
 	}
 
+	ctx, finish := startChannelRequest(ctx, string(task.Channel), "idle_greeting", "task_id", task.ID)
+	defer finish()
+	defer func() { channelFailure(ctx, resultErr) }()
 	baseCtx := ctx
 	if baseCtx == nil {
 		baseCtx = context.Background()
@@ -314,38 +317,25 @@ func (s *IdleGreetingService) fireTask(ctx context.Context, taskID string) error
 	errProcess := s.processTask(processCtx, task)
 	if errProcess != nil {
 		if errors.Is(errProcess, errClawBotDeliveryPending) {
+			channelOutcome(ctx, "queued", nil)
 			return nil
 		}
+		channelFailure(ctx, errProcess)
 		failedAt := s.now()
 		if task.Attempts <= idleGreetingMaxRetries {
 			nextDueAt := failedAt.Add(idleGreetingRetryBackoff(task.Attempts))
 			if _, errMark := s.manager.MarkPending(task.ID, failedAt, errProcess.Error(), nextDueAt); errMark != nil {
-				logging.Errorf("mark idle greeting pending for retry failed: id=%s err=%v", task.ID, errMark)
+				logging.Event(ctx, "channel.diagnostic", "operation", "mark idle greeting pending for retry failed", "error_kind", logging.ErrorKind(errMark))
 				return errMark
 			}
-			logging.Warnf(
-				"idle greeting fire deferred for retry: id=%s attempt=%d/%d channel=%s session=%s err=%v",
-				task.ID,
-				task.Attempts,
-				idleGreetingMaxRetries+1,
-				task.Channel,
-				task.SessionID,
-				errProcess,
-			)
+			logging.Event(ctx, "channel.diagnostic", "operation", "idle greeting fire deferred for retry", "error_kind", logging.ErrorKind(errProcess))
 			return nil
 		}
 
 		if errDelete := s.manager.Delete(task.ID); errDelete != nil && !errorsIsNotExist(errDelete) {
 			return errDelete
 		}
-		logging.Errorf(
-			"idle greeting fire exhausted retries and was dropped: id=%s attempts=%d channel=%s session=%s err=%v",
-			task.ID,
-			task.Attempts,
-			task.Channel,
-			task.SessionID,
-			errProcess,
-		)
+		logging.Event(ctx, "channel.diagnostic", "operation", "idle greeting fire exhausted retries and was dropped", "error_kind", logging.ErrorKind(errProcess))
 		return errProcess
 	}
 
@@ -373,24 +363,12 @@ func (s *IdleGreetingService) processTask(ctx context.Context, task *storage.Idl
 
 	firedAt := s.now()
 	if s.maxFireLag > 0 && !task.DueAt.IsZero() && firedAt.After(task.DueAt.Add(s.maxFireLag)) {
-		logging.Infof(
-			"idle greeting skipped late task: id=%s lag=%s channel=%s session=%s",
-			task.ID,
-			firedAt.Sub(task.DueAt).Truncate(time.Second),
-			task.Channel,
-			task.SessionID,
-		)
+		logging.Event(ctx, "channel.diagnostic", "operation", "idle greeting skipped late task")
 		return nil
 	}
 	location := loadIdleGreetingLocation(currentConfig.TimeZone)
 	if !isIdleGreetingFireTimeAllowed(firedAt, currentConfig.IdleGreeting, location) {
-		logging.Infof(
-			"idle greeting skipped task outside time windows: id=%s channel=%s session=%s now=%s",
-			task.ID,
-			task.Channel,
-			task.SessionID,
-			firedAt.In(location).Format(time.RFC3339),
-		)
+		logging.Event(ctx, "channel.diagnostic", "operation", "idle greeting skipped task outside time windows")
 		return nil
 	}
 
@@ -417,19 +395,27 @@ func (s *IdleGreetingService) processTask(ctx context.Context, task *storage.Idl
 		job := newDeliveryJob("greeting", strings.TrimSpace(task.Target.UserID), s.now())
 		job.Greeting = task
 		job.SessionID = task.SessionID
-		return s.handler.clawBotService.enqueueProactiveDelivery(cfg, job, deliveryOriginKey("greeting", task.ID, task.Revision))
+		err := s.handler.clawBotService.enqueueProactiveDelivery(cfg, job, deliveryOriginKey("greeting", task.ID, task.Revision))
+		logging.Event(ctx, "channel.delivery.queued", "job_id", job.ID, "status", channelQueueResult(err), "error_kind", logging.ErrorKind(err))
+		return err
 	}
 	reply, err := s.generateReply(ctx, task, session, currentConfig)
 	if err != nil {
 		return err
 	}
 	if reply == nil || reply.NoReply || strings.TrimSpace(reply.Text) == "" {
+		channelOutcome(ctx, "no_reply", nil)
 		return nil
 	}
 
 	switch task.Channel {
 	case storage.ReminderChannelWeb:
-		return s.persistWebReply(task, reply)
+		err := s.persistWebReply(task, reply)
+		channelHistory(ctx, "outbound", err)
+		if err == nil {
+			channelOutcome(ctx, "history_committed", nil)
+		}
+		return err
 	case storage.ReminderChannelClawBot:
 		return s.sendClawBotReply(ctx, task, reply)
 	case storage.ReminderChannelNapCat:
@@ -545,8 +531,10 @@ func (s *IdleGreetingService) sendClawBotReply(
 	}
 	ensureAssistantMessageSplitToken(messages, configuredAssistantMessageSplitToken(s.handler.configManager))
 	if err := s.handler.chatManager.AddMessages(task.SessionID, messages); err != nil {
+		channelHistory(ctx, "outbound", err)
 		return err
 	}
+	channelHistory(ctx, "outbound", nil)
 	if reply.MemSession != nil {
 		reply.MemSession.OnRoundComplete()
 	}
@@ -571,6 +559,8 @@ func (s *IdleGreetingService) sendNapCatReply(
 		return err
 	}
 
+	channelOutcome(ctx, "confirmed", nil)
+	logging.Event(ctx, "channel.delivery.completed", "status", "confirmed")
 	messages := reply.StorageMessages
 	if len(messages) == 0 {
 		messages = []storage.ChatMessage{
@@ -583,8 +573,10 @@ func (s *IdleGreetingService) sendNapCatReply(
 	}
 	ensureAssistantMessageSplitToken(messages, configuredAssistantMessageSplitToken(s.handler.configManager))
 	if err := s.handler.chatManager.AddMessages(task.SessionID, messages); err != nil {
+		channelHistory(ctx, "outbound", err)
 		return err
 	}
+	channelHistory(ctx, "outbound", nil)
 	if reply.MemSession != nil {
 		reply.MemSession.OnRoundComplete()
 	}

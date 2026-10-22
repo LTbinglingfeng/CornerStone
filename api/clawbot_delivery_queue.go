@@ -224,7 +224,7 @@ func (s *ClawBotService) deliveryFault(err error) {
 // It reports whether this call resolved the job (false if it was already terminal
 // or the state could not be saved).
 func (s *ClawBotService) parkDelivery(cfg config.ClawBotConfig, id, phase, message string, uncertain bool) bool {
-	logging.Warnf("clawbot delivery auto-resolved: job=%s phase=%s uncertain=%t reason=%s", id, phase, uncertain, message)
+	logging.Event(nil, "channel.delivery.resolution.requested", "source", "clawbot", "job_id", id, "phase", phase, "uncertain", uncertain)
 	err := s.updateChannelStateChecked(cfg, func(state *storage.ClawBotState) error {
 		d := deliveryState(state)
 		j := deliveryJob(d, id)

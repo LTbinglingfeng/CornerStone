@@ -260,7 +260,7 @@ func (mm *MemoryManager) loadLocked(promptID string) ([]Memory, error) {
 		var memory Memory
 		errUnmarshal := json.Unmarshal(line, &memory)
 		if errUnmarshal != nil {
-			logging.Warnf("memory entry parse failed: prompt=%s line=%s err=%v", promptID, logging.Truncate(string(line), 100), errUnmarshal)
+			logging.Warnf("memory entry parse failed: prompt=%q line_bytes=%d", promptID, len(line))
 			continue
 		}
 		memories = append(memories, memory)
@@ -303,6 +303,9 @@ func (mm *MemoryManager) saveLocked(promptID string) error {
 	if errFlush != nil {
 		logging.Errorf("memory flush failed: prompt=%s err=%v", promptID, errFlush)
 		return errFlush
+	}
+	if err := file.Close(); err != nil {
+		return err
 	}
 	_ = os.Chmod(memoryPath, 0600)
 	return nil
@@ -376,7 +379,11 @@ func (mm *MemoryManager) Add(promptID string, memory Memory) error {
 	}
 
 	mm.cache[promptID] = append(mm.cache[promptID], memory)
-	return mm.saveLocked(promptID)
+	if err := mm.saveLocked(promptID); err != nil {
+		return err
+	}
+	logging.Infof("memory.added: persona_id=%q id=%q content_bytes=%d", promptID, memory.ID, len(memory.Content))
+	return nil
 }
 
 func (mm *MemoryManager) Delete(promptID, memoryID string) error {
@@ -403,7 +410,11 @@ func (mm *MemoryManager) Delete(promptID, memoryID string) error {
 			continue
 		}
 		mm.cache[promptID] = append(memories[:i], memories[i+1:]...)
-		return mm.saveLocked(promptID)
+		if err := mm.saveLocked(promptID); err != nil {
+			return err
+		}
+		logging.Infof("memory.deleted: persona_id=%q id=%q count=1", promptID, memoryID)
+		return nil
 	}
 
 	return os.ErrNotExist
@@ -435,6 +446,7 @@ func (mm *MemoryManager) Update(promptID string, memory Memory) error {
 			continue
 		}
 
+		before := memories[i]
 		// 保留原始 CreatedAt
 		if memory.CreatedAt.IsZero() {
 			memory.CreatedAt = memories[i].CreatedAt
@@ -451,7 +463,13 @@ func (mm *MemoryManager) Update(promptID string, memory Memory) error {
 
 		memories[i] = memory
 		mm.cache[promptID] = memories
-		return mm.saveLocked(promptID)
+		if err := mm.saveLocked(promptID); err != nil {
+			return err
+		}
+		if fields := changedFields(before, memories[i]); len(fields) > 0 {
+			logging.Infof("memory.updated: persona_id=%q id=%q changed_fields=%v content_bytes=%d", promptID, memories[i].ID, fields, len(memories[i].Content))
+		}
+		return nil
 	}
 
 	return os.ErrNotExist
@@ -481,6 +499,7 @@ func (mm *MemoryManager) Patch(promptID string, patch MemoryPatch) error {
 			continue
 		}
 
+		before := memories[i]
 		if patch.Subject != nil {
 			memories[i].Subject = *patch.Subject
 		}
@@ -514,7 +533,13 @@ func (mm *MemoryManager) Patch(promptID string, patch MemoryPatch) error {
 		}
 
 		mm.cache[promptID] = memories
-		return mm.saveLocked(promptID)
+		if err := mm.saveLocked(promptID); err != nil {
+			return err
+		}
+		if fields := changedFields(before, memories[i]); len(fields) > 0 {
+			logging.Infof("memory.updated: persona_id=%q id=%q changed_fields=%v content_bytes=%d", promptID, memories[i].ID, fields, len(memories[i].Content))
+		}
+		return nil
 	}
 
 	return os.ErrNotExist
@@ -637,6 +662,7 @@ func (mm *MemoryManager) DeleteBatch(promptID string, memoryIDs []string) (int, 
 	if errSave != nil {
 		return 0, errSave
 	}
+	logging.Infof("memory.deleted: persona_id=%q count=%d", promptID, deletedCount)
 	return deletedCount, nil
 }
 
@@ -676,5 +702,6 @@ func (mm *MemoryManager) DeleteArchived(promptID string) (int, error) {
 	if errSave != nil {
 		return 0, errSave
 	}
+	logging.Infof("memory.deleted: persona_id=%q count=%d", promptID, deletedCount)
 	return deletedCount, nil
 }

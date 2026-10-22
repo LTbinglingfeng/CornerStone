@@ -214,7 +214,7 @@ func (c *GeminiClient) Chat(ctx context.Context, req ChatRequest) (*ChatResponse
 	resp, err := genaiClient.Models.GenerateContent(ctx, req.Model, contents, generationConfig)
 	if err != nil {
 		translated := translateGenAIError(err)
-		logging.Errorf("gemini request failed: model=%s err=%v", req.Model, translated)
+		logging.Errorf("gemini request failed: model=%q error_kind=%q", req.Model, logging.ErrorKind(translated))
 		return nil, translated
 	}
 
@@ -243,7 +243,7 @@ func (c *GeminiClient) ChatStream(ctx context.Context, req ChatRequest, callback
 	for resp, err := range genaiClient.Models.GenerateContentStream(ctx, req.Model, contents, generationConfig) {
 		if err != nil {
 			translated := translateGenAIError(err)
-			logging.Errorf("gemini stream request failed: model=%s err=%v", req.Model, translated)
+			logging.Errorf("gemini stream request failed: model=%q error_kind=%q", req.Model, logging.ErrorKind(translated))
 			return translated
 		}
 		chunk := c.convertToStreamChunk(resp, req.Model, &nextToolCallIndex)
@@ -345,14 +345,7 @@ func (c *GeminiClient) convertToOpenAIResponse(resp *genai.GenerateContentRespon
 		})
 	}
 
-	var usage Usage
-	if resp.UsageMetadata != nil {
-		usage = Usage{
-			PromptTokens:     int(resp.UsageMetadata.PromptTokenCount),
-			CompletionTokens: int(resp.UsageMetadata.CandidatesTokenCount),
-			TotalTokens:      int(resp.UsageMetadata.TotalTokenCount),
-		}
-	}
+	usage := geminiUsage(resp.UsageMetadata)
 
 	return &ChatResponse{
 		Model:   model,
@@ -450,6 +443,7 @@ func (c *GeminiClient) convertToStreamChunk(resp *genai.GenerateContentResponse,
 	}
 
 	return StreamChunk{
+		Usage:   usagePointer(geminiUsage(resp.UsageMetadata)),
 		Model:   model,
 		Choices: choices,
 	}

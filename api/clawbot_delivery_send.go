@@ -4,6 +4,7 @@ import (
 	"context"
 	"cornerstone/client"
 	"cornerstone/config"
+	"cornerstone/logging"
 	"cornerstone/storage"
 	"errors"
 	"fmt"
@@ -49,7 +50,18 @@ func (s *ClawBotService) deliverChunk(ctx context.Context, cfg config.ClawBotCon
 	}
 	chunk := job.Chunks[job.NextChunk]
 	item := clawBotDeliveryWireItem(chunk)
+	sendStarted := time.Now()
 	response, err := s.client.SendItemMessageWithID(client.WithClawBotRunID(ctx, job.ID), cfg.BaseURL, cfg.BotToken, s.wechatUIN, job.UserID, s.getContextToken(job.UserID), item, chunk.ClientID)
+	status := "confirmed"
+	if err != nil {
+		status = "uncertain"
+		var classified *client.ClawBotDeliveryError
+		if errors.As(err, &classified) && classified.Outcome != client.ClawBotDeliveryUncertain {
+			status = "failed"
+		}
+	}
+	channelOutcome(ctx, status, err)
+	logging.Event(ctx, "channel.delivery.completed", "status", status, "segment", job.NextChunk, "duration_ms", time.Since(sendStarted).Milliseconds(), "error_kind", logging.ErrorKind(err))
 	if err != nil {
 		var deliveryErr *client.ClawBotDeliveryError
 		if errors.As(err, &deliveryErr) && deliveryErr.Outcome != client.ClawBotDeliveryUncertain {
@@ -139,6 +151,10 @@ func confirmedDeliveryMessages(job storage.ClawBotDeliveryJob) []storage.ChatMes
 }
 
 func (s *ClawBotService) commitDelivery(cfg config.ClawBotConfig, job storage.ClawBotDeliveryJob) {
+	s.commitDeliveryContext(logging.EnsureRequest(context.Background(), "clawbot", "user_message"), cfg, job)
+}
+
+func (s *ClawBotService) commitDeliveryContext(ctx context.Context, cfg config.ClawBotConfig, job storage.ClawBotDeliveryJob) {
 	messages := confirmedDeliveryMessages(job)
 	historyAbandoned := false
 	// Cancellation stops unsent chunks, not reconciliation of acknowledged ones.
@@ -150,6 +166,7 @@ func (s *ClawBotService) commitDelivery(cfg config.ClawBotConfig, job storage.Cl
 		} else {
 			err = s.handler.chatManager.CommitDeliveryBatch(job.SessionID, operationID, messages, job.Replace, job.ExpectedTail)
 		}
+		channelHistory(ctx, "outbound", err)
 		if err != nil {
 			if !job.CancelRequested {
 				s.parkDelivery(cfg, job.ID, "history", "Confirmed message history could not be committed (storage error, deleted session or concurrent edit). Resolve the conflict before retrying; confirmed segments will not be sent again.", false)

@@ -114,6 +114,20 @@ src/
 
 提示词、聊天记录、用户资料等都会以本地 JSON 文件的形式保存在这棵目录树下。
 
+## 日志
+
+应用日志同时输出到控制台和数据目录下的 `cornerstone.log`：
+
+- `http.request.*`：API 请求开始/结束、方法、路径、HTTP 状态与耗时，不记录 query、请求头或响应正文。
+- `chat.request.*` / `channel.request.*`：来源、触发方式、请求关联 ID 与处理结果；`generation.*`、`model.*`、`tool.*` 记录模型和工具各阶段。
+- `model.completed`：模型、耗时、输入/输出/总 tokens；工具循环汇总所有模型轮次。`usage=unavailable` 表示未取得完整用量，`partial` 表示只有部分调用报告用量，不代表零消耗。Anthropic 日志输入总量包含缓存读写，原 API 响应的 usage 语义不变。
+- `history.*` / `channel.history.*` 与 `channel.delivery.*` 分别记录落盘和投递。`server_written` 仅表示写出 HTTP 响应，不是浏览器确认；`queued`、`uncertain`、`partial` 不表示全部送达。
+- `persona.*`、`memory.*`、`provider.*`、`config.updated`、`reminder.*`、`idle_greeting.*` 记录成功保存后的业务变化，只包含 ID、字段名、计数和时间，不包含设定/记忆正文或密钥值。
+
+按 `request` 关联一次处理；ClawBot 持久化任务使用稳定的请求 ID 和 `job_id`，`scope=delivery_phase` 的耗时只覆盖当前队列阶段。当前 Web SSE 使用非流式上游模型调用，`first_text_ms` 是首次向前端写出可见文本的耗时，不是上游 token 首包时间。
+
+日志仍采用追加文本文件，本版本未新增轮转或日志管理页面。分享日志前仍应检查并脱敏会话 ID、模型名称等元数据。
+
 ## API 与访问入口
 
 - 前端页面：`/`

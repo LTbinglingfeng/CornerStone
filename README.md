@@ -121,6 +121,20 @@ src/
 
 Prompt definitions, chat history, and user profile data are also kept locally in JSON files under this tree.
 
+## Logging
+
+Application logs go to stdout and `cornerstone.log` in the data directory.
+
+- `http.request.*` records API method/path/status and duration, excluding queries, headers and response bodies.
+- `chat.request.*` / `channel.request.*` records source, trigger, correlation ID and outcome. `generation.*`, `model.*` and `tool.*` describe individual processing stages.
+- `model.completed` includes model, latency and token usage. Tool loops aggregate all model calls; `usage=unavailable` means complete counts were not reported, while `partial` means only some calls reported usage. Neither means zero consumption. Anthropic log input totals include cache reads/writes without changing existing API response semantics.
+- History commits and delivery are separate events. `server_written` is not browser acknowledgement; `queued`, `uncertain` and `partial` do not mean fully delivered.
+- Persona, memory, provider, configuration, reminder and idle-greeting changes are logged after successful persistence, using IDs, changed field names, counts and timestamps rather than content or secret values.
+
+Correlate events by `request`. Durable ClawBot jobs retain their request ID and `job_id`; `scope=delivery_phase` durations cover one queue phase, not the entire job. Web SSE currently uses non-streaming upstream calls: its `first_text_ms` measures the first visible text written to the frontend, not upstream time to first token.
+
+This release retains append-only text logs; rotation and a log-management UI are not included. Review and redact identifying metadata before sharing logs.
+
 ## API and Access
 
 - Frontend UI: `/`

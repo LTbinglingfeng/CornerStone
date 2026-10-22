@@ -115,6 +115,9 @@ type AnthropicResponse struct {
 }
 
 type AnthropicUsage struct {
+	decoded                  bool
+	inputReported            bool
+	outputReported           bool
 	InputTokens              int `json:"input_tokens"`
 	OutputTokens             int `json:"output_tokens"`
 	CacheCreationInputTokens int `json:"cache_creation_input_tokens,omitempty"`
@@ -122,6 +125,7 @@ type AnthropicUsage struct {
 }
 
 type anthropicStreamEvent struct {
+	Usage        json.RawMessage         `json:"usage,omitempty"`
 	Type         string                  `json:"type"`
 	Index        int                     `json:"index,omitempty"`
 	Message      *anthropicStreamMessage `json:"message,omitempty"`
@@ -130,9 +134,10 @@ type anthropicStreamEvent struct {
 }
 
 type anthropicStreamMessage struct {
-	ID    string `json:"id"`
-	Role  string `json:"role"`
-	Model string `json:"model"`
+	Usage *AnthropicUsage `json:"usage,omitempty"`
+	ID    string          `json:"id"`
+	Role  string          `json:"role"`
+	Model string          `json:"model"`
 }
 
 type anthropicStreamDelta struct {
@@ -187,29 +192,29 @@ func (c *AnthropicClient) Chat(ctx context.Context, req ChatRequest) (*ChatRespo
 
 	resp, errDo := c.HTTPClient.Do(httpReq)
 	if errDo != nil {
-		logging.Errorf("anthropic request failed: model=%s err=%v", req.Model, errDo)
+		logging.Errorf("anthropic request failed: model=%q error_kind=%q", req.Model, logging.ErrorKind(errDo))
 		return nil, fmt.Errorf("do request: %w", errDo)
 	}
 	defer func() {
 		if errClose := resp.Body.Close(); errClose != nil {
-			logging.Warnf("close anthropic response body error: %v", errClose)
+			logging.Warnf("close anthropic response body error: error_kind=%q", logging.ErrorKind(errClose))
 		}
 	}()
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
 		logging.Errorf(
-			"anthropic API error: model=%s status=%d body=%s",
+			"anthropic API error: model=%q status=%d body_bytes=%d",
 			req.Model,
 			resp.StatusCode,
-			logging.Truncate(string(bodyBytes), 500),
+			len(bodyBytes),
 		)
 		return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(bodyBytes))
 	}
 
 	var anthropicResp AnthropicResponse
 	if errDecode := json.NewDecoder(resp.Body).Decode(&anthropicResp); errDecode != nil {
-		logging.Errorf("anthropic response decode failed: model=%s err=%v", req.Model, errDecode)
+		logging.Errorf("anthropic response decode failed: model=%q error_kind=%q", req.Model, logging.ErrorKind(errDecode))
 		return nil, fmt.Errorf("decode response: %w", errDecode)
 	}
 
@@ -242,22 +247,22 @@ func (c *AnthropicClient) ChatStream(ctx context.Context, req ChatRequest, callb
 
 	resp, errDo := c.HTTPClient.Do(httpReq)
 	if errDo != nil {
-		logging.Errorf("anthropic stream request failed: model=%s err=%v", req.Model, errDo)
+		logging.Errorf("anthropic stream request failed: model=%q error_kind=%q", req.Model, logging.ErrorKind(errDo))
 		return fmt.Errorf("do request: %w", errDo)
 	}
 	defer func() {
 		if errClose := resp.Body.Close(); errClose != nil {
-			logging.Warnf("close anthropic response body error: %v", errClose)
+			logging.Warnf("close anthropic response body error: error_kind=%q", logging.ErrorKind(errClose))
 		}
 	}()
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
 		logging.Errorf(
-			"anthropic stream API error: model=%s status=%d body=%s",
+			"anthropic stream API error: model=%q status=%d body_bytes=%d",
 			req.Model,
 			resp.StatusCode,
-			logging.Truncate(string(bodyBytes), 500),
+			len(bodyBytes),
 		)
 		return fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(bodyBytes))
 	}
@@ -269,6 +274,8 @@ func (c *AnthropicClient) ChatStream(ctx context.Context, req ChatRequest, callb
 	toolUses := make(map[int]anthropicToolUseState)
 	streamModel := req.Model
 	replayBlocks := make(map[int]*anthropicReplayBlock)
+	var streamUsage AnthropicUsage
+	var usagePresent bool
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -286,10 +293,27 @@ func (c *AnthropicClient) ChatStream(ctx context.Context, req ChatRequest, callb
 
 		var event anthropicStreamEvent
 		if errUnmarshal := json.Unmarshal([]byte(data), &event); errUnmarshal != nil {
-			logging.Warnf("anthropic stream event unmarshal failed: model=%s data=%s err=%v", req.Model, logging.Truncate(data, 200), errUnmarshal)
+			logging.Warnf("anthropic stream event unmarshal failed: model=%q data_bytes=%d error_kind=%q", req.Model, len(data), logging.ErrorKind(errUnmarshal))
 			continue
 		}
 
+		// Anthropic message_delta contains cumulative output counts and may omit input.
+		// Unmarshal over the previous snapshot to preserve omitted fields.
+		if event.Message != nil && event.Message.Usage != nil {
+			streamUsage = *event.Message.Usage
+			usagePresent = true
+		}
+		if len(event.Usage) > 0 && string(event.Usage) != "null" {
+			if json.Unmarshal(event.Usage, &streamUsage) == nil {
+				usagePresent = true
+			}
+		}
+		if usagePresent && (event.Type == "message_start" || event.Type == "message_delta") {
+			u := anthropicUsage(&streamUsage)
+			if err := callback(StreamChunk{Model: streamModel, Usage: &u}); err != nil {
+				return err
+			}
+		}
 		switch event.Type {
 		case "message_start":
 			if event.Message != nil && event.Message.Model != "" {
@@ -790,16 +814,7 @@ func convertAnthropicResponse(resp AnthropicResponse, fallbackModel string) *Cha
 		message.ProviderState = &ProviderState{Provider: "anthropic", Model: fallbackModel, Payload: payload}
 	}
 
-	var usage Usage
-	if resp.Usage != nil {
-		usage = Usage{
-			PromptTokens:             resp.Usage.InputTokens,
-			CompletionTokens:         resp.Usage.OutputTokens,
-			TotalTokens:              resp.Usage.InputTokens + resp.Usage.OutputTokens,
-			CacheCreationInputTokens: resp.Usage.CacheCreationInputTokens,
-			CacheReadInputTokens:     resp.Usage.CacheReadInputTokens,
-		}
-	}
+	usage := anthropicUsage(resp.Usage)
 
 	return &ChatResponse{
 		ID:     resp.ID,

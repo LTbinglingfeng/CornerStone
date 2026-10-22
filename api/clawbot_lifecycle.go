@@ -28,7 +28,7 @@ func (s *ClawBotService) runWorker(ctx context.Context, cfg config.ClawBotConfig
 			return
 		}
 		if ctx.Err() == nil {
-			logging.Warnf("clawbot notify start failed: %v", err)
+			logging.Event(ctx, "channel.connection.notify_failed", "source", "clawbot", "phase", "start", "error_kind", logging.ErrorKind(err))
 		}
 	}
 	defer func() {
@@ -42,7 +42,7 @@ func (s *ClawBotService) runWorker(ctx context.Context, cfg config.ClawBotConfig
 		stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := s.client.NotifyStop(stopCtx, cfg.BaseURL, cfg.BotToken, s.wechatUIN); err != nil {
-			logging.Warnf("clawbot notify stop failed: %v", err)
+			logging.Event(stopCtx, "channel.connection.notify_failed", "source", "clawbot", "phase", "stop", "error_kind", logging.ErrorKind(err))
 		}
 	}()
 	if s.stateManager != nil {

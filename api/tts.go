@@ -98,14 +98,14 @@ func (h *Handler) maybeGenerateTTSAudio(ctx context.Context, assistantContent st
 	for i, segment := range segments {
 		audioBytes, errTTS := ttsClient.TextToMP3(ctx, provider.Model, segment, provider.VoiceSetting.VoiceID, provider.VoiceSetting.Speed, provider.LanguageBoost)
 		if errTTS != nil {
-			logging.Warnf("tts generation failed: err=%v segment=%s", errTTS, logging.Truncate(segment, 80))
+			logging.Warnf("tts generation failed: error_kind=%q segment_bytes=%d", logging.ErrorKind(errTTS), len(segment))
 			continue
 		}
 
 		filename := generateID() + ".mp3"
 		filePath := filepath.Join(h.ttsAudioDir, filename)
 		if errWrite := os.WriteFile(filePath, audioBytes, 0644); errWrite != nil {
-			logging.Warnf("tts audio save failed: err=%v", errWrite)
+			logging.Warnf("tts audio save failed: error_kind=%q", logging.ErrorKind(errWrite))
 			continue
 		}
 

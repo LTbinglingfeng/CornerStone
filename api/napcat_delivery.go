@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"cornerstone/client"
+	"cornerstone/logging"
 	"cornerstone/storage"
 	"encoding/base64"
 	"encoding/json"
@@ -175,11 +176,24 @@ func (s *NapCatService) sendGeneratedPrivateReply(ctx context.Context, source na
 	if reply.Chain != nil {
 		chain = reply.Chain
 	}
+	deliveryStarted := time.Now()
 	var confirmed napCatMessageChain
 	var deliveryErr error
 	if !silent {
 		confirmed, deliveryErr = s.deliverNapCatChain(ctx, source.UserID, chain)
 	}
+	status := "confirmed"
+	if silent || len(chain) == 0 {
+		status = "no_reply"
+	}
+	if deliveryErr != nil {
+		status = "unconfirmed"
+		if len(confirmed) > 0 {
+			status = "partial"
+		}
+	}
+	channelOutcome(ctx, status, deliveryErr)
+	logging.Event(ctx, "channel.delivery.completed", "status", status, "confirmed_segments", len(confirmed), "duration_ms", time.Since(deliveryStarted).Milliseconds(), "error_kind", logging.ErrorKind(deliveryErr))
 	sent := map[string]bool{}
 	var confirmedText []string
 	for _, segment := range confirmed {
@@ -289,7 +303,10 @@ func (s *NapCatService) sendGeneratedPrivateReply(ctx context.Context, source na
 	ensureAssistantMessageSplitToken(messages, token)
 	if len(messages) > 0 {
 		if err := s.handler.chatManager.AddMessages(sessionID, messages); err != nil {
+			channelHistory(ctx, "outbound", err)
 			deliveryErr = errors.Join(deliveryErr, fmt.Errorf("save delivered reply (do not resend): %w", err))
+		} else {
+			channelHistory(ctx, "outbound", nil)
 		}
 	}
 	if deliveryErr != nil {

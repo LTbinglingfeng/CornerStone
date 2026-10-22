@@ -152,7 +152,7 @@ type clawBotCommand struct {
 func NewClawBotService(handler *Handler, stateManager *storage.ClawBotStateManager, appVersion ...string) *ClawBotService {
 	wechatUIN, err := client.GenerateClawBotWechatUIN()
 	if err != nil {
-		logging.Errorf("clawbot generate wechat uin failed: %v", err)
+		logging.Event(nil, "channel.diagnostic", "operation", "clawbot generate wechat uin failed", "error_kind", logging.ErrorKind(err))
 	}
 
 	s := &ClawBotService{
@@ -521,6 +521,15 @@ func (s *ClawBotService) handleIncomingMessage(ctx context.Context, cfg config.C
 		if escapedText, ok := unescapeClawBotLiteralCommandText(text); ok {
 			text = escapedText
 		} else if command, ok := parseClawBotCommand(text); ok {
+			if ctx.Value(channelRequestOutcomeKey{}) == nil {
+				trigger := "command"
+				if command.Name == clawBotCommandRegenerate {
+					trigger = "regenerate"
+				}
+				var finish func()
+				ctx, finish = startChannelRequest(ctx, "clawbot", trigger)
+				defer finish()
+			}
 			if !isKnownClawBotCommand(command.Name) {
 				s.sendCommandReply(ctx, cfg, userID, formatUnknownClawBotCommandReply(cfg, command.Name), "unknown command")
 				return
@@ -613,18 +622,18 @@ func (s *ClawBotService) downloadIncomingImagePaths(ctx context.Context, userID 
 	}
 
 	imagePaths := make([]string, 0, len(imageItems))
-	for index, imageItem := range imageItems {
+	for _, imageItem := range imageItems {
 		data, err := s.client.DownloadImageItem(ctx, imageItem)
 		if err != nil {
 			s.setLastError(err)
-			logging.Errorf("clawbot download image failed: user=%s index=%d err=%v", userID, index, err)
+			logging.Event(ctx, "channel.diagnostic", "operation", "clawbot download image failed", "error_kind", logging.ErrorKind(err))
 			continue
 		}
 
 		relPath, err := s.handler.saveCachePhotoBytes(data)
 		if err != nil {
 			s.setLastError(err)
-			logging.Errorf("clawbot save image failed: user=%s index=%d err=%v", userID, index, err)
+			logging.Event(ctx, "channel.diagnostic", "operation", "clawbot save image failed", "error_kind", logging.ErrorKind(err))
 			continue
 		}
 		imagePaths = append(imagePaths, relPath)
@@ -639,7 +648,7 @@ func (s *ClawBotService) handleNewCommand(ctx context.Context, cfg config.ClawBo
 	}
 
 	if _, err := s.createAndActivateSession(userID, cfg.PromptID); err != nil {
-		logging.Errorf("clawbot create new session failed: user=%s err=%v", userID, err)
+		logging.Event(ctx, "channel.diagnostic", "operation", "clawbot create new session failed", "error_kind", logging.ErrorKind(err))
 		s.setLastError(err)
 		_ = s.sendTextReply(ctx, cfg, userID, "暂时无法开始新聊天，请稍后再试。")
 		return
@@ -647,7 +656,7 @@ func (s *ClawBotService) handleNewCommand(ctx context.Context, cfg config.ClawBo
 
 	if err := s.sendTextReply(ctx, cfg, userID, "已开始新聊天"); err != nil {
 		s.setLastError(err)
-		logging.Errorf("clawbot send new session confirmation failed: user=%s err=%v", userID, err)
+		logging.Event(ctx, "channel.diagnostic", "operation", "clawbot send new session confirmation failed", "error_kind", logging.ErrorKind(err))
 	}
 }
 
@@ -731,7 +740,7 @@ func (s *ClawBotService) handleRenameCommand(ctx context.Context, cfg config.Cla
 	}
 
 	if err := s.handler.chatManager.UpdateSessionTitle(session.SessionID, title); err != nil {
-		logging.Errorf("clawbot rename session failed: user=%s session=%s err=%v", userID, session.SessionID, err)
+		logging.Event(ctx, "channel.diagnostic", "operation", "clawbot rename session failed", "error_kind", logging.ErrorKind(err))
 		s.setLastError(err)
 		s.sendCommandReply(ctx, cfg, userID, "暂时无法重命名会话，请稍后再试。", "rename failure")
 		return
@@ -791,7 +800,7 @@ func (s *ClawBotService) handleDeleteCommand(ctx context.Context, cfg config.Cla
 
 	activeID, hasActive := s.getActiveSessionID(userID)
 	if err := s.handler.chatManager.DeleteSession(target.ID); err != nil {
-		logging.Errorf("clawbot delete session failed: user=%s session=%s err=%v", userID, target.ID, err)
+		logging.Event(ctx, "channel.diagnostic", "operation", "clawbot delete session failed", "error_kind", logging.ErrorKind(err))
 		s.setLastError(err)
 		s.sendCommandReply(ctx, cfg, userID, "暂时无法删除会话，请稍后再试。", "delete failure")
 		return
@@ -852,7 +861,7 @@ func (s *ClawBotService) handlePromptCommand(ctx context.Context, cfg config.Cla
 
 	cfg.PromptID = targetPromptID
 	if err := s.handler.configManager.UpdateClawBotConfig(cfg); err != nil {
-		logging.Errorf("clawbot update prompt failed: user=%s prompt=%s err=%v", userID, targetPromptID, err)
+		logging.Event(ctx, "channel.diagnostic", "operation", "clawbot update prompt failed", "error_kind", logging.ErrorKind(err))
 		s.setLastError(err)
 		s.sendCommandReply(ctx, cfg, userID, "暂时无法切换人设，请稍后再试。", "prompt update failure")
 		return
@@ -911,6 +920,8 @@ func (s *ClawBotService) handleRegenerateCommand(ctx context.Context, cfg config
 }
 
 func (s *ClawBotService) processRegenerateCommand(ctx context.Context, cfg config.ClawBotConfig, userID string) {
+	ctx, finish := startChannelRequest(ctx, "clawbot", "regenerate")
+	defer finish()
 	session, ok := s.getCurrentSessionForUser(userID, cfg.PromptID)
 	if !ok {
 		reply := "当前没有可重新生成的会话，" + formatClawBotStartChatHint(cfg)
@@ -920,7 +931,7 @@ func (s *ClawBotService) processRegenerateCommand(ctx context.Context, cfg confi
 
 	snapshot, err := s.handler.chatManager.SnapshotTrailingResponseBatch(session.SessionID)
 	if err != nil {
-		logging.Errorf("clawbot regenerate snapshot trailing response batch failed: user=%s session=%s err=%v", userID, session.SessionID, err)
+		logging.Event(ctx, "channel.diagnostic", "operation", "clawbot regenerate snapshot trailing response batch failed", "error_kind", logging.ErrorKind(err))
 		s.setLastError(err)
 		s.sendCommandReply(ctx, cfg, userID, "暂时无法重新生成，请稍后再试。", "regenerate snapshot failure")
 		return
@@ -930,11 +941,11 @@ func (s *ClawBotService) processRegenerateCommand(ctx context.Context, cfg confi
 		return
 	}
 
-	logging.Infof("clawbot regenerate prepared trailing response replacement with %d messages: user=%s session=%s", len(snapshot.TailMessages), userID, session.SessionID)
+	logging.Event(ctx, "channel.regeneration.prepared", "message_count", len(snapshot.TailMessages))
 
 	generatedReply, err := s.generateReplyForSession(ctx, snapshot.Session, cfg.PromptID, userID)
 	if err != nil {
-		logging.Errorf("clawbot regenerate reply failed: user=%s session=%s err=%v", userID, session.SessionID, err)
+		logging.Event(ctx, "channel.diagnostic", "operation", "clawbot regenerate reply failed", "error_kind", logging.ErrorKind(err))
 		visibleErr := fmt.Errorf("重新生成失败: %w", err)
 		s.setLastError(visibleErr)
 		s.sendCommandReply(ctx, cfg, userID, buildChannelFailureReply("暂时无法重新生成，请稍后再试", err), "regenerate reply failure")
@@ -949,6 +960,8 @@ func (s *ClawBotService) processRegenerateCommand(ctx context.Context, cfg confi
 }
 
 func (s *ClawBotService) processIncomingBatch(ctx context.Context, cfg config.ClawBotConfig, userID string, messages []clawBotPendingMessage) {
+	ctx, finish := startChannelRequest(ctx, "clawbot", "user_message")
+	defer finish()
 	if ctx.Err() != nil || !s.isCurrentAccount(cfg) {
 		return
 	}
@@ -958,7 +971,8 @@ func (s *ClawBotService) processIncomingBatch(ctx context.Context, cfg config.Cl
 
 	session, err := s.getOrCreateActiveSession(userID, cfg.PromptID)
 	if err != nil {
-		logging.Errorf("clawbot prepare session failed: user=%s err=%v", userID, err)
+		channelFailure(ctx, err)
+		logging.Event(ctx, "channel.diagnostic", "operation", "clawbot prepare session failed", "error_kind", logging.ErrorKind(err))
 		s.setLastError(err)
 		_ = s.sendTextReply(ctx, cfg, userID, "暂时无法开始聊天，请稍后再试。")
 		return
@@ -984,11 +998,13 @@ func (s *ClawBotService) processIncomingBatch(ctx context.Context, cfg config.Cl
 	}
 
 	if err := s.handler.chatManager.AddMessages(session.SessionID, storageMessages); err != nil {
-		logging.Errorf("clawbot save user messages failed: user=%s session=%s err=%v", userID, session.SessionID, err)
+		channelHistory(ctx, "inbound", err)
+		logging.Event(ctx, "channel.diagnostic", "operation", "clawbot save user messages failed", "error_kind", logging.ErrorKind(err))
 		s.setLastError(err)
 		_ = s.sendTextReply(ctx, cfg, userID, "暂时无法处理你的消息，请稍后再试。")
 		return
 	}
+	channelHistory(ctx, "inbound", nil)
 	if s.handler.idleGreetingService != nil {
 		promptID := strings.TrimSpace(session.PromptID)
 		if promptID == "" {
@@ -1011,20 +1027,21 @@ func (s *ClawBotService) processIncomingBatch(ctx context.Context, cfg config.Cl
 			},
 			LastUserAt: storageMessages[len(storageMessages)-1].Timestamp,
 		}); errIdleGreeting != nil {
-			logging.Warnf("rebuild idle greeting failed: channel=clawbot session=%s user=%s err=%v", session.SessionID, userID, errIdleGreeting)
+			logging.Event(ctx, "channel.diagnostic", "operation", "rebuild idle greeting failed", "error_kind", logging.ErrorKind(errIdleGreeting))
 		}
 	}
 
 	generatedReply, err := s.generateReply(ctx, session.SessionID, cfg.PromptID, userID)
 	if err != nil {
-		logging.Errorf("clawbot generate reply failed: user=%s session=%s err=%v", userID, session.SessionID, err)
+		channelFailure(ctx, err)
+		logging.Event(ctx, "channel.diagnostic", "operation", "clawbot generate reply failed", "error_kind", logging.ErrorKind(err))
 		visibleErr := fmt.Errorf("生成回复失败: %w", err)
 		s.setLastError(visibleErr)
 		// 允许对用户展示错误详情，但失败提示不写入会话历史（避免错误详情持久化并进入下一轮模型上下文）。
 		reply := buildChannelFailureReply("暂时无法处理你的消息，请稍后再试", err)
 		if errSend := s.sendTextReply(ctx, cfg, userID, reply); errSend != nil {
 			s.setLastError(fmt.Errorf("发送回复失败: %w", errSend))
-			logging.Errorf("clawbot send reply failure message failed: user=%s session=%s err=%v", userID, session.SessionID, errSend)
+			logging.Event(ctx, "channel.diagnostic", "operation", "clawbot send reply failure message failed", "error_kind", logging.ErrorKind(errSend))
 		}
 		return
 	}
@@ -1390,11 +1407,14 @@ func (s *ClawBotService) getReplyWaitWindow() (string, time.Duration) {
 	return mode, time.Duration(seconds) * time.Second
 }
 
-func (s *ClawBotService) sendTextReply(ctx context.Context, cfg config.ClawBotConfig, userID, text string) error {
+func (s *ClawBotService) sendTextReply(ctx context.Context, cfg config.ClawBotConfig, userID, text string) (resultErr error) {
+	defer func() { channelFailure(ctx, resultErr) }()
 	if s.stateManager != nil {
 		if id, ok := ctx.Value(clawBotDeliveryContextKey{}).(string); ok {
+			channelOutcome(ctx, "queued", nil)
 			return s.stageDeliveryReply(cfg, id, "", &clawBotGeneratedReply{Text: text}, false, nil)
 		}
+		channelOutcome(ctx, "queued", nil)
 		return s.enqueueDirectDelivery(cfg, userID, text)
 	}
 	var configManager *config.Manager
@@ -1426,20 +1446,25 @@ func (s *ClawBotService) sendTextReply(ctx context.Context, cfg config.ClawBotCo
 		if stale {
 			return fmt.Errorf("clawbot token expired; scan QR code to sign in again")
 		}
+		started := time.Now()
 		if err := s.client.SendTextMessage(ctx, cfg.BaseURL, cfg.BotToken, s.wechatUIN, userID, contextToken, chunk); err != nil {
+			logging.Event(ctx, "channel.delivery.completed", "status", "unconfirmed", "error_kind", logging.ErrorKind(err), "duration_ms", time.Since(started).Milliseconds())
+			channelOutcome(ctx, "unconfirmed", err)
 			if client.IsClawBotStaleToken(err) {
 				s.markTokenStale(cfg.BotToken)
 			}
 			return err
 		}
+		logging.Event(ctx, "channel.delivery.completed", "status", "confirmed", "duration_ms", time.Since(started).Milliseconds())
 	}
+	channelOutcome(ctx, "confirmed", nil)
 	return nil
 }
 
 func (s *ClawBotService) sendCommandReply(ctx context.Context, cfg config.ClawBotConfig, userID, text, action string) {
 	if err := s.sendTextReply(ctx, cfg, userID, text); err != nil {
 		s.setLastError(err)
-		logging.Errorf("clawbot send %s failed: user=%s err=%v", action, userID, err)
+		logging.Event(ctx, "channel.send.failed", "action", action, "error_kind", logging.ErrorKind(err))
 	}
 }
 
@@ -1472,7 +1497,7 @@ func (s *ClawBotService) sendAndPersistReply(ctx context.Context, cfg config.Cla
 	if reply != "" {
 		if err := s.sendTextReply(ctx, cfg, userID, reply); err != nil {
 			s.setLastError(fmt.Errorf("发送回复失败: %w", err))
-			logging.Errorf("clawbot send %s failed: user=%s session=%s err=%v", action, userID, sessionID, err)
+			logging.Event(ctx, "channel.send.failed", "action", action, "error_kind", logging.ErrorKind(err))
 			return
 		}
 	}
@@ -1491,10 +1516,12 @@ func (s *ClawBotService) sendAndPersistReply(ctx context.Context, cfg config.Cla
 
 	if len(messages) > 0 {
 		if err := s.handler.chatManager.AddMessages(sessionID, messages); err != nil {
-			logging.Errorf("clawbot save reply batch failed: user=%s session=%s err=%v", userID, sessionID, err)
+			logging.Event(ctx, "channel.diagnostic", "operation", "clawbot save reply batch failed", "error_kind", logging.ErrorKind(err))
+			channelHistory(ctx, "outbound", err)
 			s.setLastError(fmt.Errorf("保存回复失败: %w", err))
 			return
 		}
+		channelHistory(ctx, "outbound", nil)
 	}
 
 	if generatedReply.MemSession != nil {
@@ -1519,7 +1546,7 @@ func (s *ClawBotService) sendAndReplaceTrailingReply(ctx context.Context, cfg co
 	if reply != "" {
 		if err := s.sendTextReply(ctx, cfg, userID, reply); err != nil {
 			s.setLastError(fmt.Errorf("发送回复失败: %w", err))
-			logging.Errorf("clawbot send %s failed: user=%s session=%s err=%v", action, userID, sessionID, err)
+			logging.Event(ctx, "channel.send.failed", "action", action, "error_kind", logging.ErrorKind(err))
 			return
 		}
 	}
@@ -1537,10 +1564,12 @@ func (s *ClawBotService) sendAndReplaceTrailingReply(ctx context.Context, cfg co
 	ensureAssistantMessageSplitToken(replacement, configuredAssistantMessageSplitToken(s.handler.configManager))
 	if len(replacement) > 0 {
 		if err := s.handler.chatManager.ReplaceTrailingResponseBatch(sessionID, expectedTail, replacement); err != nil {
-			logging.Errorf("clawbot replace trailing response batch failed: user=%s session=%s err=%v", userID, sessionID, err)
+			logging.Event(ctx, "channel.diagnostic", "operation", "clawbot replace trailing response batch failed", "error_kind", logging.ErrorKind(err))
+			channelHistory(ctx, "outbound", err)
 			s.setLastError(fmt.Errorf("替换回复失败: %w", err))
 			return
 		}
+		channelHistory(ctx, "outbound", nil)
 	}
 
 	if generatedReply.MemSession != nil {

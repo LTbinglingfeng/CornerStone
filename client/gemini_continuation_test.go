@@ -80,10 +80,11 @@ func TestGeminiAutomaticContinuationHTTP(t *testing.T) {
 				if cfg.AutomaticContinuation == nil || *cfg.AutomaticContinuation != enabled {
 					t.Fatal("SDK config lost explicit setting")
 				}
+				observed := Observe(c)
 				var msg Message
 				var finish string
 				if stream {
-					err := c.ChatStream(ctx, req, func(chunk StreamChunk) error {
+					err := observed.ChatStream(ctx, req, func(chunk StreamChunk) error {
 						for _, choice := range chunk.Choices {
 							msg.Content += choice.Delta.Content
 							msg.ReasoningContent += choice.Delta.ReasoningContent
@@ -104,7 +105,7 @@ func TestGeminiAutomaticContinuationHTTP(t *testing.T) {
 					}
 					msg.Role = "assistant"
 				} else {
-					resp, err := c.Chat(ctx, req)
+					resp, err := observed.Chat(ctx, req)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -121,6 +122,10 @@ func TestGeminiAutomaticContinuationHTTP(t *testing.T) {
 					wantCalls = 3
 					wantText = "AB"
 					wantFinish = "STOP"
+				}
+				stats := observed.Snapshot()
+				if stats.UsageCalls != 1 || stats.Usage.PromptTokens != int(wantCalls) || stats.Usage.TotalTokens != 2*int(wantCalls) {
+					t.Fatalf("SDK continuation usage must be counted once: %+v", stats)
 				}
 				if calls.Load() != wantCalls || msg.Content != wantText || msg.ReasoningContent != "reason" || finish != wantFinish {
 					t.Fatalf("calls=%d message=%+v finish=%s", calls.Load(), msg, finish)

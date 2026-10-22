@@ -80,6 +80,21 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	trigger := "user_message"
+	if req.Regenerate {
+		trigger = "regenerate"
+	}
+	ctx := logging.EnsureRequest(r.Context(), "web", trigger)
+	ctx = logging.WithFields(ctx, "source", "web", "trigger", trigger, "session", req.SessionID, "prompt", req.PromptID)
+	requestLog := newWebChatLog(ctx)
+	if req.SaveHistory {
+		requestLog.history = "pending"
+	}
+	ctx = context.WithValue(ctx, webChatLogKey{}, requestLog)
+	r = r.WithContext(ctx)
+	logging.Event(ctx, "chat.request.started", "save_history", req.SaveHistory)
+	defer requestLog.finish()
+
 	provider := h.configManager.GetActiveProvider()
 	if provider == nil {
 		logging.Errorf("chat no active provider")
@@ -119,6 +134,9 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 	if effectivePromptID == "" && hasExistingSession {
 		effectivePromptID = existingSession.PromptID
 	}
+	ctx = logging.WithFields(ctx, "session", sessionID, "prompt", effectivePromptID, "provider", provider.ID, "model", provider.Model)
+	r = r.WithContext(ctx)
+	requestLog.ctx = ctx
 	var persona string
 	promptName := ""
 	if effectivePromptID != "" {
@@ -295,6 +313,8 @@ title 是提醒标题；reminder_prompt 是到点后只给你自己看的内部�
 		useStream = *req.Stream
 	}
 
+	requestLog.ctx = logging.WithFields(ctx, "stream", useStream)
+	logging.Event(requestLog.ctx, "chat.routed", "upstream_stream", false)
 	chatReq := buildChatRequestForProvider(provider, resolvedMessages, availableTools, useStream, req.MaxTokens, req.Temperature)
 
 	if useStream {
@@ -331,6 +351,7 @@ func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiCli
 		},
 		nil,
 	)
+	webChatLogFrom(r.Context()).generation(loopResult, errLoop)
 	if errLoop != nil {
 		// Persist any assistant/tool messages already produced before returning error.
 		// This closes the "side effects happened but history missing" gap when tool execution succeeded
@@ -353,7 +374,7 @@ func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiCli
 			}
 			ensureAssistantMessageSplitToken(storageMessages, configuredAssistantMessageSplitToken(h.configManager))
 
-			if errSaveHistory := h.chatManager.AddMessages(sessionID, storageMessages); errSaveHistory != nil {
+			if errSaveHistory := h.saveWebReplyHistory(r.Context(), sessionID, storageMessages, true); errSaveHistory != nil {
 				logging.Errorf("save tool-loop partial history error: %v", errSaveHistory)
 				// If the client is already gone, there's nothing to reply with; we still tried to persist.
 				if r.Context().Err() != nil {
@@ -369,7 +390,7 @@ func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiCli
 		}
 
 		if r.Context().Err() != nil {
-			logging.Errorf("chat request cancelled (client disconnected): %v", errLoop)
+			logging.Event(r.Context(), "chat.client_disconnected", "error_kind", logging.ErrorKind(errLoop))
 			return
 		}
 		h.jsonResponse(w, http.StatusInternalServerError, Response{Success: false, Error: errLoop.Error()})
@@ -412,7 +433,7 @@ func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiCli
 
 	// Save assistant/tool messages as a batch (user messages are saved earlier).
 	if saveHistory && len(storageMessages) > 0 {
-		if errSaveHistory := h.chatManager.AddMessages(sessionID, storageMessages); errSaveHistory != nil {
+		if errSaveHistory := h.saveWebReplyHistory(r.Context(), sessionID, storageMessages, false); errSaveHistory != nil {
 			if errors.Is(errSaveHistory, storage.ErrInvalidID) {
 				h.jsonResponse(w, http.StatusBadRequest, Response{Success: false, Error: "Invalid session ID"})
 				return
@@ -422,6 +443,7 @@ func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiCli
 		}
 	}
 
+	completeWebGeneration(r.Context(), loopResult)
 	if r.Context().Err() != nil {
 		return
 	}
@@ -436,6 +458,15 @@ func (h *Handler) handleNormalChat(w http.ResponseWriter, r *http.Request, aiCli
 		"messages":   storageMessages,
 	}
 	h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: result})
+	if state := webChatLogFrom(r.Context()); state != nil {
+		state.delivery = "server_written"
+		if loopResult.FinalResponse != nil && len(loopResult.FinalResponse.Choices) > 0 && strings.TrimSpace(loopResult.FinalResponse.Choices[0].Message.Content) != "" {
+			state.firstText = time.Since(state.started)
+		}
+		if writer, ok := w.(*apiLogResponseWriter); ok && writer.writeError != nil {
+			state.delivery = "write_failed"
+		}
+	}
 }
 
 // handleStreamChat 处理流式聊天 (SSE)
@@ -535,6 +566,9 @@ func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiCli
 		})
 		if msg.Role == "assistant" && len(msg.ToolCalls) == 0 {
 			finalAssistantTimestamp = ts.Format(time.RFC3339Nano)
+			if state := webChatLogFrom(r.Context()); state != nil && state.firstText == 0 && !isClientDisconnected() && strings.TrimSpace(msg.Content) != "" {
+				state.firstText = time.Since(state.started)
+			}
 		}
 	}
 
@@ -568,11 +602,12 @@ func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiCli
 		},
 	)
 
+	webChatLogFrom(r.Context()).generation(loopResult, errLoop)
 	if errLoop != nil {
-		logging.Errorf("Stream error: %v", errLoop)
+		logging.Event(r.Context(), "chat.stream.failed", "error_kind", logging.ErrorKind(errLoop))
 		sendEvent(map[string]string{"error": errLoop.Error()})
 		if saveHistory && len(createdMessages) > 0 {
-			if errSaveHistory := h.chatManager.AddMessages(sessionID, createdMessages); errSaveHistory != nil {
+			if errSaveHistory := h.saveWebReplyHistory(r.Context(), sessionID, createdMessages, true); errSaveHistory != nil {
 				logging.Errorf("save stream partial history error: %v", errSaveHistory)
 				errorMessage := errSaveHistory.Error()
 				if errors.Is(errSaveHistory, storage.ErrInvalidID) {
@@ -606,8 +641,9 @@ func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiCli
 			}
 		}
 
+		completeWebGeneration(r.Context(), loopResult)
 		if saveHistory && len(createdMessages) > 0 {
-			if errSaveHistory := h.chatManager.AddMessages(sessionID, createdMessages); errSaveHistory != nil {
+			if errSaveHistory := h.saveWebReplyHistory(r.Context(), sessionID, createdMessages, false); errSaveHistory != nil {
 				logging.Errorf("save stream history error: %v", errSaveHistory)
 				errorMessage := errSaveHistory.Error()
 				if errors.Is(errSaveHistory, storage.ErrInvalidID) {
@@ -627,6 +663,12 @@ func (h *Handler) handleStreamChat(w http.ResponseWriter, r *http.Request, aiCli
 			clientDisconnected = true
 		} else {
 			flusher.Flush()
+		}
+	}
+	if state := webChatLogFrom(r.Context()); state != nil {
+		state.delivery = "server_written"
+		if clientDisconnected {
+			state.delivery = "client_disconnected"
 		}
 	}
 }

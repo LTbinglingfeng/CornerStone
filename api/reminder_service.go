@@ -250,12 +250,12 @@ func (s *ReminderService) fireReminderAsync(ctx context.Context, reminderID stri
 
 	go func() {
 		if err := s.fireReminder(ctx, reminderID); err != nil {
-			logging.Errorf("fire reminder failed: id=%s err=%v", reminderID, err)
+			logging.Event(ctx, "channel.diagnostic", "operation", "fire reminder failed", "error_kind", logging.ErrorKind(err))
 		}
 	}()
 }
 
-func (s *ReminderService) fireReminder(ctx context.Context, reminderID string) error {
+func (s *ReminderService) fireReminder(ctx context.Context, reminderID string) (resultErr error) {
 	if s == nil || s.manager == nil {
 		return fmt.Errorf("reminder service not configured")
 	}
@@ -272,6 +272,9 @@ func (s *ReminderService) fireReminder(ctx context.Context, reminderID string) e
 		return nil
 	}
 
+	ctx, finish := startChannelRequest(ctx, string(reminder.Channel), "reminder", "task_id", reminder.ID)
+	defer finish()
+	defer func() { channelFailure(ctx, resultErr) }()
 	baseCtx := ctx
 	if baseCtx == nil {
 		baseCtx = context.Background()
@@ -281,22 +284,24 @@ func (s *ReminderService) fireReminder(ctx context.Context, reminderID string) e
 
 	if errProcess := s.processReminder(processCtx, reminder); errProcess != nil {
 		if errors.Is(errProcess, errClawBotDeliveryPending) {
+			channelOutcome(ctx, "queued", nil)
 			return nil
 		}
+		channelFailure(ctx, errProcess)
 		failedAt := s.now()
 		if isRetryableReminderError(errProcess) {
 			if _, errMark := s.manager.MarkPending(reminder.ID, failedAt, errProcess.Error()); errMark != nil {
-				logging.Errorf("mark reminder pending for retry failed: id=%s err=%v", reminder.ID, errMark)
+				logging.Event(ctx, "channel.diagnostic", "operation", "mark reminder pending for retry failed", "error_kind", logging.ErrorKind(errMark))
 				return errMark
 			}
-			logging.Warnf("reminder fire deferred for retry: id=%s channel=%s session=%s err=%v", reminder.ID, reminder.Channel, reminder.SessionID, errProcess)
+			logging.Event(ctx, "channel.diagnostic", "operation", "reminder fire deferred for retry", "error_kind", logging.ErrorKind(errProcess))
 			return nil
 		}
 		if _, errMark := s.manager.MarkFailed(reminder.ID, failedAt, errProcess.Error()); errMark != nil {
-			logging.Errorf("mark reminder failed state failed: id=%s err=%v", reminder.ID, errMark)
+			logging.Event(ctx, "channel.diagnostic", "operation", "mark reminder failed state failed", "error_kind", logging.ErrorKind(errMark))
 			return errMark
 		}
-		logging.Errorf("reminder fire failed: id=%s channel=%s session=%s err=%v", reminder.ID, reminder.Channel, reminder.SessionID, errProcess)
+		logging.Event(ctx, "channel.diagnostic", "operation", "reminder fire failed", "error_kind", logging.ErrorKind(errProcess))
 		return nil
 	}
 
@@ -344,6 +349,7 @@ func (s *ReminderService) processReminder(ctx context.Context, reminder *storage
 		job.Reminder = reminder
 		job.SessionID = reminder.SessionID
 		err := s.handler.clawBotService.enqueueProactiveDelivery(cfg, job, deliveryOriginKey("reminder", reminder.ID, reminder.Revision))
+		logging.Event(ctx, "channel.delivery.queued", "job_id", job.ID, "status", channelQueueResult(err), "error_kind", logging.ErrorKind(err))
 		if err != nil && !errors.Is(err, errClawBotDeliveryPending) {
 			return newRetryableReminderError(err)
 		}
@@ -359,7 +365,12 @@ func (s *ReminderService) processReminder(ctx context.Context, reminder *storage
 
 	switch reminder.Channel {
 	case storage.ReminderChannelWeb:
-		return s.persistWebReminderReply(reminder, reply)
+		err := s.persistWebReminderReply(reminder, reply)
+		channelHistory(ctx, "outbound", err)
+		if err == nil {
+			channelOutcome(ctx, "history_committed", nil)
+		}
+		return err
 	case storage.ReminderChannelClawBot:
 		return s.sendClawBotReminderReply(ctx, reminder, reply)
 	case storage.ReminderChannelNapCat:
@@ -516,9 +527,11 @@ func (s *ReminderService) sendClawBotReminderReply(
 	}
 	ensureAssistantMessageSplitToken(messages, configuredAssistantMessageSplitToken(s.handler.configManager))
 	if err := s.handler.chatManager.AddMessages(reminder.SessionID, messages); err != nil {
+		channelHistory(ctx, "outbound", err)
 		s.handler.clawBotService.setLastError(err)
 		return err
 	}
+	channelHistory(ctx, "outbound", nil)
 	if reply.MemSession != nil {
 		reply.MemSession.OnRoundComplete()
 	}
@@ -540,10 +553,12 @@ func (s *ReminderService) sendNapCatReminderReply(
 	replyText := strings.TrimSpace(reply.Text)
 	if err := s.handler.napCatService.sendReminderPrivateText(ctx, reminder.Target, replyText); err != nil {
 		s.handler.napCatService.setLastError(err)
-		logging.Errorf("napcat reminder send failed: id=%s session=%s err=%v", reminder.ID, reminder.SessionID, err)
+		logging.Event(ctx, "channel.diagnostic", "operation", "napcat reminder send failed", "error_kind", logging.ErrorKind(err))
 		return err
 	}
 
+	channelOutcome(ctx, "confirmed", nil)
+	logging.Event(ctx, "channel.delivery.completed", "status", "confirmed")
 	messages := reply.StorageMessages
 	if len(messages) == 0 {
 		messages = []storage.ChatMessage{
@@ -556,9 +571,11 @@ func (s *ReminderService) sendNapCatReminderReply(
 	}
 	ensureAssistantMessageSplitToken(messages, configuredAssistantMessageSplitToken(s.handler.configManager))
 	if err := s.handler.chatManager.AddMessages(reminder.SessionID, messages); err != nil {
+		channelHistory(ctx, "outbound", err)
 		s.handler.napCatService.setLastError(err)
 		return err
 	}
+	channelHistory(ctx, "outbound", nil)
 	if reply.MemSession != nil {
 		reply.MemSession.OnRoundComplete()
 	}

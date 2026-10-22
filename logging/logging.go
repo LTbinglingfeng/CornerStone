@@ -37,7 +37,7 @@ func Fatalf(format string, args ...interface{}) {
 
 func logf(level, format string, args ...interface{}) {
 	message := fmt.Sprintf("["+level+"] "+format, args...)
-	_ = logger.Output(4, message)
+	_ = logger.Output(3, message)
 }
 
 // Truncate 截断过长字符串，用于日志输出

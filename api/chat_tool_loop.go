@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 )
 
 const maxToolSteps = 10
@@ -30,6 +31,7 @@ type toolLoopResult struct {
 	FinalResponse *client.ChatResponse
 	NewMessages   []client.Message // assistant(tool_calls) -> tool -> assistant(final), in order
 	ToolStepsUsed int
+	CallStats     client.CallStats
 }
 
 func runChatWithToolLoop(
@@ -39,7 +41,41 @@ func runChatWithToolLoop(
 	toolExecutor *chatToolExecutor,
 	toolCtx chatToolContext,
 	callbacks *toolLoopCallbacks,
-) (*toolLoopResult, error) {
+) (result *toolLoopResult, err error) {
+	ctx = logging.EnsureRequest(ctx, chatLogSource(toolCtx.Channel), "user_message")
+	ctx = logging.WithFields(ctx, "session", toolCtx.SessionID, "prompt", toolCtx.PromptID)
+	started := time.Now()
+	observed := client.Observe(aiClient)
+	toolCalls := 0
+	logging.Event(ctx, "generation.started", "model", baseReq.Model, "upstream_stream", false)
+	defer func() {
+		stats := observed.Snapshot()
+		channelGeneration(ctx, stats)
+		if result != nil {
+			result.CallStats = stats
+		}
+		status := "completed"
+		if err != nil {
+			status = logging.ErrorKind(err)
+		} else if result != nil && containsNoReplyToolCall(result.NewMessages) {
+			status = "no_reply"
+		}
+		usage := "unavailable"
+		if stats.UsageCalls > 0 {
+			usage = "reported"
+			if stats.UsageCalls != stats.ModelCalls {
+				usage = "partial"
+			}
+		}
+		fields := []any{"model", baseReq.Model, "status", status, "error_kind", logging.ErrorKind(err),
+			"duration_ms", time.Since(started).Milliseconds(), "model_duration_ms", stats.DurationMS,
+			"model_calls", stats.ModelCalls, "usage_calls", stats.UsageCalls, "tool_calls", toolCalls, "usage", usage}
+		if stats.UsageCalls > 0 {
+			fields = append(fields, "input_tokens", stats.Usage.PromptTokens, "output_tokens", stats.Usage.CompletionTokens,
+				"total_tokens", stats.Usage.TotalTokens)
+		}
+		logging.Event(ctx, "generation.completed", fields...)
+	}()
 	if aiClient == nil {
 		return nil, fmt.Errorf("missing ai client")
 	}
@@ -63,7 +99,7 @@ func runChatWithToolLoop(
 		req.Stream = false
 		req.Messages = conversation
 
-		resp, errChat := aiClient.Chat(ctx, req)
+		resp, errChat := observed.Chat(ctx, req)
 		if errChat != nil {
 			return &toolLoopResult{
 				FinalResponse: nil,
@@ -147,6 +183,9 @@ func runChatWithToolLoop(
 				callID = fmt.Sprintf("call_%d_%d", toolStepsUsed, index)
 			}
 			toolName := canonicalToolName(tc.Function.Name)
+			toolCalls++
+			toolStarted := time.Now()
+			logging.Event(ctx, "tool.started", "tool", toolName, "call", callID, "step", toolStepsUsed)
 
 			if callbacks != nil && callbacks.OnToolCallStart != nil {
 				callbacks.OnToolCallStart(callID, toolName)
@@ -187,13 +226,15 @@ func runChatWithToolLoop(
 			if toolName == "no_reply" && result.OK {
 				shouldTerminateWithNoReply = true
 			}
-			if callbacks != nil && callbacks.OnToolCallResult != nil {
-				if status == "" {
-					status = "failed"
-					if result.OK {
-						status = "completed"
-					}
+			if status == "" {
+				status = "failed"
+				if result.OK {
+					status = "completed"
 				}
+			}
+			logging.Event(ctx, "tool.completed", "tool", toolName, "call", callID, "step", toolStepsUsed,
+				"status", status, "duration_ms", time.Since(toolStarted).Milliseconds())
+			if callbacks != nil && callbacks.OnToolCallResult != nil {
 				callbacks.OnToolCallResult(callID, toolName, status)
 			}
 			resultJSON := marshalChatToolResult(result)

@@ -78,7 +78,7 @@ func (s *ClawBotService) sendClawBotErrorNotice(cfg config.ClawBotConfig, userID
 		ctx := client.WithClawBotRunID(parent, runID)
 		item := client.ClawBotIncomingMessageItem{Type: 1, TextItem: &client.ClawBotItemText{Text: text}}
 		if _, err := s.client.SendItemMessageWithID(ctx, cfg.BaseURL, cfg.BotToken, s.wechatUIN, userID, s.getContextToken(userID), item, generateID()); err != nil {
-			logging.Warnf("clawbot error notice not sent: run=%s err=%v", runID, err)
+			logging.Event(ctx, "channel.delivery.notice_unconfirmed", "source", "clawbot", "job_id", runID, "error_kind", logging.ErrorKind(err))
 		}
 	}()
 }
@@ -195,7 +195,7 @@ func (p *clawBotToolProgress) run() {
 		if err == nil {
 			continue
 		}
-		logging.Warnf("clawbot tool progress not sent: run=%s type=%d err=%v", p.runID, item.Type, err)
+		logging.Event(p.ctx, "channel.delivery.progress_unconfirmed", "job_id", p.runID, "type", item.Type, "error_kind", logging.ErrorKind(err))
 		if client.IsClawBotStaleToken(err) {
 			stopped = true
 			p.s.markTokenStale(p.cfg.BotToken)

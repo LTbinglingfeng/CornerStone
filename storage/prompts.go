@@ -145,7 +145,7 @@ func (pm *PromptManager) Create(id, name, content, description, fileName string)
 	}
 
 	pm.prompts[id] = prompt
-	logging.Infof("prompt created: id=%s name=%s", prompt.ID, prompt.Name)
+	logging.Infof("persona.created: id=%q content_bytes=%d", prompt.ID, len(prompt.Content))
 	return &prompt, nil
 }
 
@@ -187,6 +187,7 @@ func (pm *PromptManager) Update(id, name, content, description, fileName string)
 		return nil, os.ErrNotExist
 	}
 
+	before := prompt
 	prompt.Name = name
 	prompt.Content = content
 	prompt.Description = description
@@ -198,7 +199,9 @@ func (pm *PromptManager) Update(id, name, content, description, fileName string)
 	}
 
 	pm.prompts[id] = prompt
-	logging.Infof("prompt updated: id=%s name=%s", prompt.ID, prompt.Name)
+	if fields := changedFields(before, prompt); len(fields) > 0 {
+		logging.Infof("persona.updated: id=%q changed_fields=%v content_bytes_before=%d content_bytes_after=%d", prompt.ID, fields, len(before.Content), len(prompt.Content))
+	}
 	return &prompt, nil
 }
 
@@ -223,7 +226,7 @@ func (pm *PromptManager) Delete(id string) error {
 	}
 
 	delete(pm.prompts, id)
-	logging.Infof("prompt deleted: id=%s", id)
+	logging.Infof("persona.deleted: id=%q", id)
 	return nil
 }
 
@@ -263,7 +266,12 @@ func (pm *PromptManager) SaveAvatar(id string, filename string, data io.Reader) 
 	}
 	defer file.Close()
 
-	if _, err := io.Copy(file, data); err != nil {
+	size, err := io.Copy(file, data)
+	if err != nil {
+		return "", err
+	}
+
+	if err := file.Close(); err != nil {
 		return "", err
 	}
 
@@ -276,6 +284,7 @@ func (pm *PromptManager) SaveAvatar(id string, filename string, data io.Reader) 
 	}
 
 	pm.prompts[id] = prompt
+	logging.Infof("persona.updated: id=%q changed_fields=[avatar] avatar_bytes=%d", id, size)
 	return filename, nil
 }
 
@@ -328,6 +337,7 @@ func (pm *PromptManager) SetAvatar(id, avatar string) error {
 		return os.ErrNotExist
 	}
 
+	before := prompt
 	prompt.Avatar = avatar
 	prompt.UpdatedAt = time.Now()
 
@@ -336,6 +346,9 @@ func (pm *PromptManager) SetAvatar(id, avatar string) error {
 	}
 
 	pm.prompts[id] = prompt
+	if fields := changedFields(before, prompt); len(fields) > 0 {
+		logging.Infof("persona.updated: id=%q changed_fields=%v", id, fields)
+	}
 	return nil
 }
 
