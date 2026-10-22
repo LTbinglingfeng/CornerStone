@@ -68,16 +68,51 @@ type ClawBotImageItem struct {
 }
 
 type ClawBotIncomingMessageItem struct {
-	IsReference bool              `json:"-"`
-	Raw         json.RawMessage   `json:"-"`
-	RefMsg      *ClawBotReference `json:"ref_msg,omitempty"`
-	MsgID       ClawBotMessageID  `json:"msg_id,omitempty"`
-	Type        int               `json:"type"`
-	TextItem    *ClawBotItemText  `json:"text_item,omitempty"`
-	ImageItem   *ClawBotImageItem `json:"image_item,omitempty"`
-	VoiceItem   *ClawBotVoiceItem `json:"voice_item,omitempty"`
-	VideoItem   *ClawBotVideoItem `json:"video_item,omitempty"`
-	FileItem    *ClawBotFileItem  `json:"file_item,omitempty"`
+	IsReference        bool                       `json:"-"`
+	Raw                json.RawMessage            `json:"-"`
+	RefMsg             *ClawBotReference          `json:"ref_msg,omitempty"`
+	MsgID              ClawBotMessageID           `json:"msg_id,omitempty"`
+	Type               int                        `json:"type"`
+	CreateTimeMS       int64                      `json:"create_time_ms,omitempty"`
+	IsCompleted        *bool                      `json:"is_completed,omitempty"`
+	TextItem           *ClawBotItemText           `json:"text_item,omitempty"`
+	ImageItem          *ClawBotImageItem          `json:"image_item,omitempty"`
+	VoiceItem          *ClawBotVoiceItem          `json:"voice_item,omitempty"`
+	VideoItem          *ClawBotVideoItem          `json:"video_item,omitempty"`
+	FileItem           *ClawBotFileItem           `json:"file_item,omitempty"`
+	ToolCallStartItem  *ClawBotToolCallStartItem  `json:"tool_call_start_item,omitempty"`
+	ToolCallResultItem *ClawBotToolCallResultItem `json:"tool_call_result_item,omitempty"`
+}
+
+// Item types 11/12 are reply-progress indicators (official 2.4.4+).
+const (
+	ClawBotItemTypeToolCallStart  = 11
+	ClawBotItemTypeToolCallResult = 12
+)
+
+type ClawBotToolCallStartItem struct {
+	ToolName   string `json:"tool_name,omitempty"`
+	ToolCallID string `json:"tool_call_id,omitempty"`
+}
+
+type ClawBotToolCallResultItem struct {
+	ToolName   string `json:"tool_name,omitempty"`
+	ToolCallID string `json:"tool_call_id,omitempty"`
+	// completed / failed / blocked / unknown
+	Status string `json:"status,omitempty"`
+}
+
+type clawBotRunIDKey struct{}
+
+// WithClawBotRunID tags every sendmessage made with ctx as part of one reply
+// turn (msg.run_id), matching the official client's per-dispatch run ID.
+func WithClawBotRunID(ctx context.Context, runID string) context.Context {
+	return context.WithValue(ctx, clawBotRunIDKey{}, strings.TrimSpace(runID))
+}
+
+func clawBotRunID(ctx context.Context) string {
+	id, _ := ctx.Value(clawBotRunIDKey{}).(string)
+	return id
 }
 
 // ClawBotMessageID keeps uint64 identifiers lossless for replay detection.
@@ -146,6 +181,7 @@ type ClawBotSendMessageRequest struct {
 		MessageType  int    `json:"message_type"`
 		MessageState int    `json:"message_state"`
 		ContextToken string `json:"context_token,omitempty"`
+		RunID        string `json:"run_id,omitempty"`
 		ItemList     []struct {
 			Type     int              `json:"type"`
 			TextItem *ClawBotItemText `json:"text_item,omitempty"`
@@ -349,6 +385,7 @@ func (c *ClawBotClient) SendTextMessage(ctx context.Context, baseURL, botToken, 
 	body.Msg.MessageType = 2
 	body.Msg.MessageState = 2
 	body.Msg.ContextToken = contextToken
+	body.Msg.RunID = clawBotRunID(ctx)
 	body.Msg.ItemList = []struct {
 		Type     int              `json:"type"`
 		TextItem *ClawBotItemText `json:"text_item,omitempty"`

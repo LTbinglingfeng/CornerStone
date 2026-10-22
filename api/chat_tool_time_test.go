@@ -209,45 +209,30 @@ func TestChatToolExecutor_GetTimeUsesConfiguredTimeZone(t *testing.T) {
 	if summary.Timezone != "America/New_York" {
 		t.Fatalf("timezone = %q, want %q", summary.Timezone, "America/New_York")
 	}
-	expectedOffset := formatTimeZoneOffset(expectedLocal)
-	if summary.TimezoneOffset != expectedOffset {
-		t.Fatalf("timezone_offset = %q, want %q", summary.TimezoneOffset, expectedOffset)
+	if summary.Now != expectedLocal.Format(time.RFC3339) {
+		t.Fatalf("now = %q, want %q", summary.Now, expectedLocal.Format(time.RFC3339))
 	}
-	if summary.NowRFC3339 != expectedLocal.Format(time.RFC3339) {
-		t.Fatalf("now_rfc3339 = %q, want %q", summary.NowRFC3339, expectedLocal.Format(time.RFC3339))
+	if summary.Weekday != chineseWeekdays[expectedLocal.Weekday()] {
+		t.Fatalf("weekday = %q, want %q", summary.Weekday, chineseWeekdays[expectedLocal.Weekday()])
 	}
-	if summary.NowUnix != nowUTC.Unix() {
-		t.Fatalf("now_unix = %d, want %d", summary.NowUnix, nowUTC.Unix())
+	if summary.Note != "" {
+		t.Fatalf("note = %q, want empty", summary.Note)
 	}
-	if summary.Date != expectedLocal.Format("2006-01-02") {
-		t.Fatalf("date = %q, want %q", summary.Date, expectedLocal.Format("2006-01-02"))
+
+	var rawData map[string]json.RawMessage
+	var envelope struct {
+		Data json.RawMessage `json:"data"`
 	}
-	if summary.Time != expectedLocal.Format("15:04:05") {
-		t.Fatalf("time = %q, want %q", summary.Time, expectedLocal.Format("15:04:05"))
+	if err := json.Unmarshal([]byte(raw), &envelope); err != nil {
+		t.Fatalf("Unmarshal envelope failed: %v", err)
 	}
-	if summary.Weekday != expectedLocal.Weekday().String() {
-		t.Fatalf("weekday = %q, want %q", summary.Weekday, expectedLocal.Weekday().String())
+	if err := json.Unmarshal(envelope.Data, &rawData); err != nil {
+		t.Fatalf("Unmarshal data failed: %v", err)
 	}
-	if summary.Source != "app_ntp_time_service" {
-		t.Fatalf("source = %q, want %q", summary.Source, "app_ntp_time_service")
-	}
-	if summary.NTPServer != "ntp.aliyun.com" {
-		t.Fatalf("ntp_server = %q, want %q", summary.NTPServer, "ntp.aliyun.com")
-	}
-	if summary.LastSyncAt == "" {
-		t.Fatal("last_sync_at is empty")
-	}
-	if !summary.LastSyncSuccess {
-		t.Fatal("last_sync_success = false, want true")
-	}
-	if summary.SyncMessage != "ntp sync succeeded" {
-		t.Fatalf("sync_message = %q, want %q", summary.SyncMessage, "ntp sync succeeded")
-	}
-	if summary.RTTMilliseconds != 85 {
-		t.Fatalf("rtt_ms = %d, want %d", summary.RTTMilliseconds, 85)
-	}
-	if summary.OffsetMilliseconds != 1500 {
-		t.Fatalf("offset_ms = %d, want %d", summary.OffsetMilliseconds, 1500)
+	for _, noisy := range []string{"ntp_server", "rtt_ms", "offset_ms", "sync_message", "last_sync_at", "now_unix", "source"} {
+		if _, exists := rawData[noisy]; exists {
+			t.Fatalf("time tool output should not contain %q: %s", noisy, raw)
+		}
 	}
 }
 

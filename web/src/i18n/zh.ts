@@ -709,6 +709,8 @@ const zh = {
         scanLogin: '扫码登录',
         qrCodeHint: '请使用微信扫码并确认。二维码过期或验证码被锁定时，请点击“扫码获取”重新开始。',
         enableChannel: '启用渠道',
+        toolProgress: '工具调用进度',
+        toolProgressHint: '模型调用工具时，在微信中显示调用开始与结果状态（与官方插件默认行为一致）。',
         chatMemoryOnly: '聊天仅保存在内存，不会写入聊天记录文件',
         baseUrl: 'Base URL',
         bindPersona: '绑定人设',

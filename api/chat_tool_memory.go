@@ -45,13 +45,11 @@ type writeMemoryToolItem struct {
 }
 
 type writeMemoryToolData struct {
-	PromptID     string                `json:"prompt_id"`
-	Added        int                   `json:"added"`
-	Updated      int                   `json:"updated"`
-	Skipped      int                   `json:"skipped"`
-	Blocked      int                   `json:"blocked"`
-	Items        []writeMemoryToolItem `json:"items,omitempty"`
-	WrittenItems []writeMemoryToolItem `json:"written_items,omitempty"`
+	Added   int                   `json:"added"`
+	Updated int                   `json:"updated"`
+	Skipped int                   `json:"skipped"`
+	Blocked int                   `json:"blocked"`
+	Items   []writeMemoryToolItem `json:"items,omitempty"`
 }
 
 func (e *chatToolExecutor) handleWriteMemory(ctx context.Context, toolCall client.ToolCall, toolCtx chatToolContext) chatToolResult {
@@ -74,8 +72,7 @@ func (e *chatToolExecutor) handleWriteMemory(ctx context.Context, toolCall clien
 	}
 
 	data := writeMemoryToolData{
-		PromptID: strings.TrimSpace(toolCtx.PromptID),
-		Items:    make([]writeMemoryToolItem, 0, len(args.Items)),
+		Items: make([]writeMemoryToolItem, 0, len(args.Items)),
 	}
 
 	existingByKey := make(map[string]storage.Memory)
@@ -155,7 +152,6 @@ func (e *chatToolExecutor) handleWriteMemory(ctx context.Context, toolCall clien
 			item.Status = "updated"
 			data.Updated++
 			data.Items = append(data.Items, item)
-			data.WrittenItems = append(data.WrittenItems, item)
 			continue
 		}
 
@@ -181,7 +177,6 @@ func (e *chatToolExecutor) handleWriteMemory(ctx context.Context, toolCall clien
 		item.Status = "added"
 		data.Added++
 		data.Items = append(data.Items, item)
-		data.WrittenItems = append(data.WrittenItems, item)
 	}
 
 	if data.Added > 0 || data.Updated > 0 {

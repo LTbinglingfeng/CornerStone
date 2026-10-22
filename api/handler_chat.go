@@ -1140,7 +1140,7 @@ func getChatTools(options ...chatToolOptions) []client.Tool {
 			Type: "function",
 			Function: client.ToolFunction{
 				Name:        "get_time",
-				Description: "获取当前时间、日期、星期和时区信息。时间来自应用内 NTP 同步时间服务，并按设置中的时区返回。",
+				Description: "获取当前时间（RFC3339，含时区偏移）、星期和时区。",
 				Parameters: map[string]interface{}{
 					"type":       "object",
 					"properties": map[string]interface{}{},

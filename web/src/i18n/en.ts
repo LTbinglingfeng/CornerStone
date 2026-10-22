@@ -732,6 +732,9 @@ const en = {
         qrCodeHint:
             'Scan with WeChat and confirm. If the QR code expires or verification is blocked, select Scan to Get to start again.',
         enableChannel: 'Enable Channel',
+        toolProgress: 'Tool Call Progress',
+        toolProgressHint:
+            'Show tool call start and result status in WeChat while the model uses tools (matches the official plugin default).',
         chatMemoryOnly: 'Chats are stored in memory only, not written to chat history files',
         baseUrl: 'Base URL',
         bindPersona: 'Bind Persona',

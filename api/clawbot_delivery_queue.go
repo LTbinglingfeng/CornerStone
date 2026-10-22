@@ -221,7 +221,9 @@ func (s *ClawBotService) deliveryFault(err error) {
 // parkDelivery resolves a failed step without waiting for a human. Like the
 // official openclaw-weixin client, delivery is fire-and-forget, and a job never
 // stalls the per-user ordering of later replies. See autoResolveDelivery.
-func (s *ClawBotService) parkDelivery(cfg config.ClawBotConfig, id, phase, message string, uncertain bool) {
+// It reports whether this call resolved the job (false if it was already terminal
+// or the state could not be saved).
+func (s *ClawBotService) parkDelivery(cfg config.ClawBotConfig, id, phase, message string, uncertain bool) bool {
 	logging.Warnf("clawbot delivery auto-resolved: job=%s phase=%s uncertain=%t reason=%s", id, phase, uncertain, message)
 	err := s.updateChannelStateChecked(cfg, func(state *storage.ClawBotState) error {
 		d := deliveryState(state)
@@ -237,6 +239,7 @@ func (s *ClawBotService) parkDelivery(cfg config.ClawBotConfig, id, phase, messa
 	if err != nil && !errors.Is(err, errClawBotJobUnavailable) {
 		s.deliveryFault(err)
 	}
+	return err == nil
 }
 
 // autoResolveDelivery replaces the former manual review states:

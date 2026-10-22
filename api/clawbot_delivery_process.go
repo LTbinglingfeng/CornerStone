@@ -297,7 +297,10 @@ func (s *ClawBotService) generateDelivery(ctx context.Context, cfg config.ClawBo
 			result = &clawBotGeneratedReply{Text: reply.Text, StorageMessages: reply.StorageMessages, MemSession: reply.MemSession}
 		}
 	default:
-		result, err = s.generateReplyForSession(ctx, session, cfg.PromptID, job.UserID)
+		progress := s.startClawBotToolProgress(ctx, cfg, job.UserID, job.ID)
+		result, err = s.generateReplyForSession(ctx, session, cfg.PromptID, job.UserID, progress.callbacks())
+		// Drain before staging so progress items precede the final reply.
+		progress.finish()
 	}
 	stopTyping()
 	if err != nil {

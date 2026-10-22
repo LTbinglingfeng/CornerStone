@@ -20,6 +20,10 @@ type toolLoopCallbacks struct {
 	OnToolMessage func(step int, msg client.Message)
 	// Called when the final assistant message is produced.
 	OnFinalAssistant func(msg client.Message)
+	// Called immediately before / after each individual tool call. status is
+	// completed, failed or blocked (disabled / not allowed).
+	OnToolCallStart  func(callID, name string)
+	OnToolCallResult func(callID, name, status string)
 }
 
 type toolLoopResult struct {
@@ -144,7 +148,11 @@ func runChatWithToolLoop(
 			}
 			toolName := canonicalToolName(tc.Function.Name)
 
+			if callbacks != nil && callbacks.OnToolCallStart != nil {
+				callbacks.OnToolCallStart(callID, toolName)
+			}
 			result := chatToolResult{}
+			status := ""
 			if _, dup := executedToolCallIDs[callID]; dup {
 				// no_reply has no side effects; treat duplicate ids as a no-op success so it can
 				// still end the round silently.
@@ -165,6 +173,7 @@ func runChatWithToolLoop(
 				}
 			} else if enforceToolAllowlist && !isToolAvailable(allowedToolNames, toolName) {
 				executedToolCallIDs[callID] = struct{}{}
+				status = "blocked"
 				result = chatToolResult{
 					OK:    false,
 					Tool:  toolName,
@@ -177,6 +186,15 @@ func runChatWithToolLoop(
 			}
 			if toolName == "no_reply" && result.OK {
 				shouldTerminateWithNoReply = true
+			}
+			if callbacks != nil && callbacks.OnToolCallResult != nil {
+				if status == "" {
+					status = "failed"
+					if result.OK {
+						status = "completed"
+					}
+				}
+				callbacks.OnToolCallResult(callID, toolName, status)
 			}
 			resultJSON := marshalChatToolResult(result)
 			if toolCtx.Attachments != nil && result.OK {

@@ -66,6 +66,7 @@ func (c *ClawBotClient) SendItemMessageWithID(ctx context.Context, baseURL, botT
 			MessageType  int                          `json:"message_type"`
 			MessageState int                          `json:"message_state"`
 			ContextToken string                       `json:"context_token,omitempty"`
+			RunID        string                       `json:"run_id,omitempty"`
 			ItemList     []ClawBotIncomingMessageItem `json:"item_list"`
 		} `json:"msg"`
 		BaseInfo ClawBotBaseInfo `json:"base_info"`
@@ -75,6 +76,7 @@ func (c *ClawBotClient) SendItemMessageWithID(ctx context.Context, baseURL, botT
 	body.Msg.MessageType = 2
 	body.Msg.MessageState = 2
 	body.Msg.ContextToken = contextToken
+	body.Msg.RunID = clawBotRunID(ctx)
 	body.Msg.ItemList = []ClawBotIncomingMessageItem{item}
 	body.BaseInfo = c.baseInfo()
 	payload, err := json.Marshal(body)

@@ -49,7 +49,7 @@ func (s *ClawBotService) deliverChunk(ctx context.Context, cfg config.ClawBotCon
 	}
 	chunk := job.Chunks[job.NextChunk]
 	item := clawBotDeliveryWireItem(chunk)
-	response, err := s.client.SendItemMessageWithID(ctx, cfg.BaseURL, cfg.BotToken, s.wechatUIN, job.UserID, s.getContextToken(job.UserID), item, chunk.ClientID)
+	response, err := s.client.SendItemMessageWithID(client.WithClawBotRunID(ctx, job.ID), cfg.BaseURL, cfg.BotToken, s.wechatUIN, job.UserID, s.getContextToken(job.UserID), item, chunk.ClientID)
 	if err != nil {
 		var deliveryErr *client.ClawBotDeliveryError
 		if errors.As(err, &deliveryErr) && deliveryErr.Outcome != client.ClawBotDeliveryUncertain {
@@ -67,8 +67,8 @@ func (s *ClawBotService) deliverChunk(ctx context.Context, cfg config.ClawBotCon
 				if client.IsClawBotStaleToken(err) {
 					s.markTokenStale(cfg.BotToken)
 				}
-			} else {
-				s.parkDelivery(cfg, job.ID, "send", err.Error(), false)
+			} else if s.parkDelivery(cfg, job.ID, "send", err.Error(), false) {
+				s.sendClawBotErrorNotice(cfg, job.UserID, job.ID, clawBotSendFailedNotice)
 			}
 		} else {
 			s.parkDelivery(cfg, job.ID, "send", "Send result is unknown ("+err.Error()+"); treated as delivered.", true)

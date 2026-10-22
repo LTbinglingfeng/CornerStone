@@ -36,6 +36,7 @@ type sessionReplyOptions struct {
 	ExtraSystemGuides []string
 	EphemeralMessages []client.Message
 	PersistMode       sessionReplyPersistMode
+	ToolCallbacks     *toolLoopCallbacks
 }
 
 func buildChatRequestForProvider(
@@ -199,7 +200,7 @@ func (h *Handler) generateSessionReply(ctx context.Context, options sessionReply
 			MemSession:       memSession,
 			AllowedToolNames: allowedToolNames,
 		},
-		nil,
+		options.ToolCallbacks,
 	)
 	if err != nil {
 		return nil, err

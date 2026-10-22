@@ -50,6 +50,7 @@ type ClawBotSettingsResponse struct {
 	PromptID           string          `json:"prompt_id,omitempty"`
 	PromptName         string          `json:"prompt_name,omitempty"`
 	CommandPermissions map[string]bool `json:"command_permissions"`
+	ToolProgress       bool            `json:"tool_progress"`
 	Status             string          `json:"status"`
 	Polling            bool            `json:"polling"`
 	LastError          string          `json:"last_error,omitempty"`
@@ -109,6 +110,7 @@ type clawBotGeneratedReply struct {
 
 type ClawBotService struct {
 	typing  clawBotTypingState
+	notices sync.WaitGroup // best-effort error notices; bounded by the worker context
 	handler *Handler
 	client  *client.ClawBotClient
 
@@ -200,6 +202,7 @@ func (s *ClawBotService) Close() {
 	if cleanupDone != nil {
 		<-cleanupDone
 	}
+	s.notices.Wait()
 	s.clearAllPendingReplies()
 	s.stopClawBotTyping()
 }
@@ -393,6 +396,7 @@ func (s *ClawBotService) GetSettings() (*ClawBotSettingsResponse, error) {
 		PromptID:           cfg.PromptID,
 		PromptName:         promptName,
 		CommandPermissions: config.NormalizeClawBotCommandPermissions(cfg.CommandPermissions),
+		ToolProgress:       !cfg.ToolProgressDisabled,
 		Status:             status,
 		Polling:            polling,
 		LastError:          lastError,
@@ -448,6 +452,7 @@ func (s *ClawBotService) pollLoop(ctx context.Context, cfg config.ClawBotConfig)
 		if nextCursor == "" {
 			nextCursor = cursor
 		}
+		resp.Msgs = filterClawBotAuthorizedMessages(cfg, resp.Msgs)
 		if s.stateManager != nil {
 			if err := s.receiveDeliveryBatch(cfg, cursor, nextCursor, resp.Msgs); err != nil {
 				s.deliveryFault(err)
@@ -1034,7 +1039,7 @@ func (s *ClawBotService) generateReply(ctx context.Context, sessionID, configure
 	return s.generateReplyForSession(ctx, session, configuredPromptID, userID)
 }
 
-func (s *ClawBotService) generateReplyForSession(ctx context.Context, session *storage.ChatRecord, configuredPromptID, userID string) (*clawBotGeneratedReply, error) {
+func (s *ClawBotService) generateReplyForSession(ctx context.Context, session *storage.ChatRecord, configuredPromptID, userID string, toolCallbacks ...*toolLoopCallbacks) (*clawBotGeneratedReply, error) {
 	if session == nil {
 		return nil, fmt.Errorf("session is nil")
 	}
@@ -1144,6 +1149,7 @@ write_memory 只能用于极为重要的长期记忆。
 			WriteMemoryEnabled:          writeMemoryEnabled,
 		},
 		ExtraSystemGuides: systemGuides,
+		ToolCallbacks:     firstToolLoopCallbacks(toolCallbacks),
 	})
 	if err != nil {
 		return nil, err

@@ -71,6 +71,9 @@ type ClawBotConfig struct {
 	PromptID           string          `json:"prompt_id,omitempty"`
 	GetUpdatesBuf      string          `json:"get_updates_buf,omitempty"`
 	CommandPermissions map[string]bool `json:"command_permissions,omitempty"`
+	// ToolProgressDisabled turns off TOOL_CALL_START/RESULT progress messages
+	// (enabled by default, like the official replyProgressMessages).
+	ToolProgressDisabled bool `json:"tool_progress_disabled,omitempty"`
 }
 
 type NapCatConfig struct {

@@ -195,7 +195,8 @@ func (s *ClawBotService) uploadDeliveryChunk(ctx context.Context, cfg config.Cla
 		return
 	}
 	media := job.Chunks[index].Media
-	fail := func() {
+	// notice is a best-effort user-facing message (official error-notice); empty skips it.
+	fail := func(notice string) {
 		err := s.changeDelivery(cfg, job.ID, func(j *storage.ClawBotDeliveryJob) error {
 			if j.Status != "uploading" || j.NextChunk != index || j.CancelRequested {
 				return errClawBotJobUnavailable
@@ -212,6 +213,9 @@ func (s *ClawBotService) uploadDeliveryChunk(ctx context.Context, cfg config.Cla
 		})
 		if err != nil && !errors.Is(err, errClawBotJobUnavailable) {
 			s.deliveryFault(err)
+		}
+		if err == nil && notice != "" {
+			s.sendClawBotErrorNotice(cfg, job.UserID, job.ID, notice)
 		}
 	}
 	var data []byte
@@ -245,12 +249,12 @@ func (s *ClawBotService) uploadDeliveryChunk(ctx context.Context, cfg config.Cla
 		}
 	}
 	if err != nil {
-		fail()
+		fail(clawBotMediaPrepareFailedNotice)
 		return
 	}
 	kind, err := outgoingClawBotMediaType(media, data)
 	if err != nil {
-		fail()
+		fail(clawBotMediaPrepareFailedNotice)
 		return
 	}
 	// Keep a separate browser/history copy of the immutable upload bytes. Tool
@@ -266,7 +270,7 @@ func (s *ClawBotService) uploadDeliveryChunk(ctx context.Context, cfg config.Cla
 			media.MIMEType = stored.MIMEType
 		}
 		if err != nil {
-			fail()
+			fail(clawBotMediaPrepareFailedNotice)
 			return
 		}
 		if err = s.changeDelivery(cfg, job.ID, func(j *storage.ClawBotDeliveryJob) error {
@@ -285,9 +289,13 @@ func (s *ClawBotService) uploadDeliveryChunk(ctx context.Context, cfg config.Cla
 	}
 	receipt, err := s.client.UploadMedia(ctx, cfg.BaseURL, cfg.BotToken, s.wechatUIN, job.UserID, kind, data)
 	if err != nil {
-		fail()
 		if client.IsClawBotStaleToken(err) {
+			fail("") // the notice could not be delivered with a stale token
 			s.markTokenStale(cfg.BotToken)
+		} else if ctx.Err() == nil {
+			fail(clawBotUploadFailedNotice)
+		} else {
+			fail("")
 		}
 		return
 	}

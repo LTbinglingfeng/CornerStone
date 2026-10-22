@@ -635,3 +635,67 @@ func TestQQOfficialImageAuthorization(t *testing.T) {
 		t.Fatal("audio accepted")
 	}
 }
+
+func TestQQOfficialGenerationFailureNotifiesSenderWithoutHistory(t *testing.T) {
+	s, f, j := newQQOfficialTest(t)
+	s.generate = func(context.Context, sessionReplyOptions) (*generatedSessionReply, error) {
+		return nil, errors.New("upstream timeout test-secret")
+	}
+	err := s.process(j)
+	if err == nil || !strings.Contains(err.Error(), "生成回复失败") {
+		t.Fatalf("generation failure not reported: %v", err)
+	}
+	if len(f.sent) != 1 || !strings.Contains(f.sent[0], "暂时无法处理你的消息") || !strings.Contains(f.sent[0], "upstream timeout") {
+		t.Fatalf("failure notice not sent: %#v", f.sent)
+	}
+	if strings.Contains(f.sent[0], "test-secret") {
+		t.Fatal("secret leaked to sender")
+	}
+	record, _ := s.handler.chatManager.GetSession(qqOfficialSessionID(j.cfg, j.msg.UserOpenID))
+	if len(record.Messages) != 1 || record.Messages[0].Role != "user" {
+		t.Fatalf("failure notice persisted: %#v", record.Messages)
+	}
+	// The receipt was committed with the input, so a replay neither regenerates nor re-notifies.
+	if err := s.process(j); err != nil || len(f.sent) != 1 {
+		t.Fatalf("replay re-notified: %v %#v", err, f.sent)
+	}
+}
+
+func TestQQOfficialGenerationFailureAfterInvalidationIsSilent(t *testing.T) {
+	s, f, j := newQQOfficialTest(t)
+	s.generate = func(context.Context, sessionReplyOptions) (*generatedSessionReply, error) {
+		s.mu.Lock()
+		s.generation++
+		s.mu.Unlock()
+		return nil, context.Canceled
+	}
+	if err := s.process(j); err != nil {
+		t.Fatalf("stale job reported error: %v", err)
+	}
+	if len(f.sent) != 0 {
+		t.Fatalf("stale job notified sender: %#v", f.sent)
+	}
+}
+
+func TestQQOfficialWorkerRecordsRedactedLastError(t *testing.T) {
+	s, _, j := newQQOfficialTest(t)
+	s.generate = func(context.Context, sessionReplyOptions) (*generatedSessionReply, error) {
+		return nil, errors.New("bad key test-secret")
+	}
+	go s.worker()
+	s.queue <- j
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		s.mu.Lock()
+		last := s.status.LastError
+		s.mu.Unlock()
+		if last != "" {
+			if !strings.Contains(last, "生成回复失败") || strings.Contains(last, "test-secret") {
+				t.Fatalf("unexpected last error %q", last)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("last error not recorded")
+}

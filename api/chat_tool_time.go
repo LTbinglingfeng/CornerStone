@@ -9,22 +9,16 @@ import (
 	"time"
 )
 
+// timeToolSummary is what the model sees. Keep it minimal: NTP diagnostics
+// (server, rtt, offset, sync status) are noise for the model.
 type timeToolSummary struct {
-	Timezone           string `json:"timezone"`
-	TimezoneOffset     string `json:"timezone_offset"`
-	NowRFC3339         string `json:"now_rfc3339"`
-	NowUnix            int64  `json:"now_unix"`
-	Date               string `json:"date"`
-	Time               string `json:"time"`
-	Weekday            string `json:"weekday"`
-	Source             string `json:"source"`
-	NTPServer          string `json:"ntp_server"`
-	LastSyncAt         string `json:"last_sync_at"`
-	LastSyncSuccess    bool   `json:"last_sync_success"`
-	SyncMessage        string `json:"sync_message"`
-	RTTMilliseconds    int64  `json:"rtt_ms"`
-	OffsetMilliseconds int64  `json:"offset_ms"`
+	Now      string `json:"now"`
+	Weekday  string `json:"weekday"`
+	Timezone string `json:"timezone"`
+	Note     string `json:"note,omitempty"`
 }
+
+var chineseWeekdays = [...]string{"星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"}
 
 func (e *chatToolExecutor) handleGetTime(ctx context.Context, toolCall client.ToolCall, toolCtx chatToolContext) chatToolResult {
 	_ = ctx
@@ -45,38 +39,14 @@ func (e *chatToolExecutor) handleGetTime(ctx context.Context, toolCall client.To
 	cfg := e.configManager.Get()
 	location, timeZoneName, timeZoneMessage := resolveConfiguredTimeLocation(cfg.TimeZone)
 	now := e.exactTimeService.Now().In(location)
-	status := e.exactTimeService.Status()
-
-	syncMessage := status.Message
-	if syncMessage == "" {
-		syncMessage = "status unavailable"
-	}
-	if timeZoneMessage != "" {
-		syncMessage = strings.TrimSpace(syncMessage + "; " + timeZoneMessage)
-	}
-
-	lastSyncAt := ""
-	if !status.LastSyncAt.IsZero() {
-		lastSyncAt = status.LastSyncAt.In(location).Format(time.RFC3339)
-	}
 
 	return chatToolResult{
 		OK: true,
 		Data: timeToolSummary{
-			Timezone:           timeZoneName,
-			TimezoneOffset:     formatTimeZoneOffset(now),
-			NowRFC3339:         now.Format(time.RFC3339),
-			NowUnix:            now.Unix(),
-			Date:               now.Format("2006-01-02"),
-			Time:               now.Format("15:04:05"),
-			Weekday:            now.Weekday().String(),
-			Source:             "app_ntp_time_service",
-			NTPServer:          status.Server,
-			LastSyncAt:         lastSyncAt,
-			LastSyncSuccess:    status.LastSuccess,
-			SyncMessage:        syncMessage,
-			RTTMilliseconds:    status.RTT.Milliseconds(),
-			OffsetMilliseconds: status.Offset.Milliseconds(),
+			Now:      now.Format(time.RFC3339),
+			Weekday:  chineseWeekdays[now.Weekday()],
+			Timezone: timeZoneName,
+			Note:     timeZoneMessage,
 		},
 	}
 }
@@ -98,17 +68,4 @@ func resolveConfiguredTimeLocation(timeZone string) (*time.Location, string, str
 	}
 
 	return time.Local, time.Local.String(), fmt.Sprintf("timezone %q is invalid, fallback to local", trimmed)
-}
-
-func formatTimeZoneOffset(now time.Time) string {
-	_, offsetSeconds := now.Zone()
-	sign := "+"
-	if offsetSeconds < 0 {
-		sign = "-"
-		offsetSeconds = -offsetSeconds
-	}
-
-	hours := offsetSeconds / 3600
-	minutes := (offsetSeconds % 3600) / 60
-	return fmt.Sprintf("%s%02d:%02d", sign, hours, minutes)
 }

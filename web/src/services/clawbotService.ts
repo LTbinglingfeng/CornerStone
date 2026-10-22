@@ -15,6 +15,7 @@ export interface ClawBotSettings {
     prompt_id?: string
     prompt_name?: string
     command_permissions: ClawBotCommandPermissions
+    tool_progress: boolean
     status: 'disabled' | 'missing_token' | 'connecting' | 'token_expired' | 'running' | 'error' | 'stopped' | string
     polling: boolean
     last_error?: string
@@ -58,6 +59,7 @@ export const clawBotService = {
             prompt_id?: string
             clear_bot_token?: boolean
             command_permissions?: ClawBotCommandPermissions
+            tool_progress?: boolean
         },
         signal?: AbortSignal
     ): Promise<ClawBotSettings> {

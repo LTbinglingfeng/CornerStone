@@ -4,9 +4,11 @@ import (
 	"context"
 	"cornerstone/client"
 	"cornerstone/config"
+	"cornerstone/logging"
 	"cornerstone/storage"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -120,6 +122,7 @@ func (s *QQOfficialService) applyLocked() {
 		case s.queue <- qqOfficialJob{ctx, gen, cfg, conn, m}:
 			return nil
 		default:
+			logging.Warnf("qqofficial incoming queue full: event=%s", m.ID)
 			s.setError(gen, "incoming queue full")
 			return fmt.Errorf("incoming queue full")
 		}
@@ -128,6 +131,7 @@ func (s *QQOfficialService) applyLocked() {
 		defer s.mu.Unlock()
 		if s.generation == gen && !s.closed {
 			st.LastError = s.redact(st.LastError)
+			logQQOfficialStatus(s.status, st)
 			s.status = st
 		}
 	})
@@ -137,6 +141,18 @@ func (s *QQOfficialService) redact(v string) string {
 		v = strings.ReplaceAll(v, s.cfg.AppSecret, "[redacted]")
 	}
 	return v
+}
+
+// Status callbacks repeat during reconnect backoff; log transitions and new errors only.
+func logQQOfficialStatus(previous, next client.QQOfficialStatus) {
+	switch {
+	case next.Status == "connected" && previous.Status != "connected":
+		logging.Infof("qqofficial connected: bot_id=%s bot_name=%s", next.BotID, next.BotName)
+	case next.Status == "error" && next.LastError != "":
+		logging.Warnf("qqofficial connection error: err=%s", next.LastError)
+	case next.Status == "disconnected" && previous.Status == "connected":
+		logging.Infof("qqofficial disconnected")
+	}
 }
 func (s *QQOfficialService) setError(gen uint64, msg string) {
 	s.mu.Lock()
@@ -161,7 +177,12 @@ func (s *QQOfficialService) worker() {
 			return
 		case j := <-s.queue:
 			if err := s.process(j); err != nil {
-				s.setError(j.generation, err.Error())
+				msg := formatChannelLastError(err)
+				s.mu.Lock()
+				msg = s.redact(msg)
+				s.mu.Unlock()
+				logging.Errorf("qqofficial process message failed: event=%s err=%s", j.msg.ID, msg)
+				s.setError(j.generation, msg)
 			}
 		}
 	}
@@ -283,6 +304,7 @@ func (s *QQOfficialService) process(j qqOfficialJob) error {
 	if !exists {
 		return fmt.Errorf("QQ Official session was removed")
 	}
+	jobCtx := j.ctx
 	ctx, cancel := context.WithTimeout(j.ctx, 2*time.Minute)
 	defer cancel()
 	j.ctx = ctx
@@ -298,12 +320,39 @@ func (s *QQOfficialService) process(j qqOfficialJob) error {
 		ExtraSystemGuides: []string{"你正在通过 QQ 官方机器人私聊渠道回复用户。只支持当前私聊的文字和图片；不能设置提醒、主动问候、访问群或频道，也不能转写语音。未解析的附件仅为占位，不要声称已读取。不要输出路径或 CQ 码代替发送图片。"},
 	})
 	if err != nil {
-		return err
+		j.ctx = jobCtx
+		return s.notifyGenerationFailure(j, sid, err)
 	}
 	if reply == nil {
 		return nil
 	}
 	return s.deliver(j, sid, op, session.Messages, reply)
+}
+
+// Like ClawBot and NapCat, a failed generation is shown to the sender but kept
+// out of history so error details never become model context. The passive
+// reply uses the first sequence because nothing was sent for this message yet.
+func (s *QQOfficialService) notifyGenerationFailure(j qqOfficialJob, sid string, genErr error) error {
+	failure := fmt.Errorf("生成回复失败: %w", genErr)
+	s.mu.Lock()
+	current := s.currentLocked(j)
+	detail := s.redact(formatDirectErrorDetail(genErr, 220))
+	s.mu.Unlock()
+	if !current {
+		// Configuration change or shutdown cancelled the job; nothing to report.
+		return nil
+	}
+	reply := "暂时无法处理你的消息，请稍后再试。"
+	if detail != "" {
+		reply = buildChannelFailureReply("暂时无法处理你的消息，请稍后再试", errors.New(detail))
+	}
+	ctx, cancel := context.WithTimeout(j.ctx, 15*time.Second)
+	defer cancel()
+	if _, err := j.conn.SendText(ctx, j.msg.UserOpenID, j.msg.ID, 1, reply); err != nil {
+		return fmt.Errorf("%w；失败提示发送失败: %v", failure, err)
+	}
+	logging.Infof("qqofficial sent generation failure notice: session=%s event=%s", sid, j.msg.ID)
+	return failure
 }
 
 // Only generated image metadata is eligible for upload; text is never treated as a path.

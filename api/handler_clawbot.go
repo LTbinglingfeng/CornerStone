@@ -15,6 +15,8 @@ type ClawBotSettingsRequest struct {
 	PromptID           string          `json:"prompt_id,omitempty"`
 	ClearBotToken      bool            `json:"clear_bot_token,omitempty"`
 	CommandPermissions map[string]bool `json:"command_permissions,omitempty"`
+	// Nil keeps the current value (older clients do not send it).
+	ToolProgress *bool `json:"tool_progress,omitempty"`
 }
 
 type ClawBotQRCodeStartRequest struct {
@@ -71,6 +73,9 @@ func (h *Handler) handleClawBotSettings(w http.ResponseWriter, r *http.Request) 
 		cfg.PromptID = promptID
 		if req.CommandPermissions != nil {
 			cfg.CommandPermissions = config.NormalizeClawBotCommandPermissions(req.CommandPermissions)
+		}
+		if req.ToolProgress != nil {
+			cfg.ToolProgressDisabled = !*req.ToolProgress
 		}
 
 		switch {

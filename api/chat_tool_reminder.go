@@ -87,16 +87,10 @@ func (e *chatToolExecutor) handleScheduleReminder(ctx context.Context, toolCall 
 	return chatToolResult{
 		OK: true,
 		Data: map[string]interface{}{
-			"id":              created.ID,
-			"channel":         created.Channel,
-			"session_id":      created.SessionID,
-			"prompt_id":       created.PromptID,
-			"prompt_name":     created.PromptName,
-			"target":          created.Target,
-			"title":           created.Title,
-			"reminder_prompt": created.ReminderPrompt,
-			"due_at":          created.DueAt.Format(time.RFC3339),
-			"status":          created.Status,
+			"id":     created.ID,
+			"title":  created.Title,
+			"due_at": created.DueAt.Format(time.RFC3339),
+			"status": created.Status,
 		},
 	}
 }

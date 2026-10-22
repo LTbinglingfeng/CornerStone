@@ -30,6 +30,7 @@ type ClawBotFormState = {
     prompt_id: string
     clear_bot_token: boolean
     command_permissions: ClawBotCommandPermissions
+    tool_progress: boolean
 }
 
 const DEFAULT_COMMAND_PERMISSIONS: ClawBotCommandPermissions = {
@@ -72,6 +73,7 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
         prompt_id: '',
         clear_bot_token: false,
         command_permissions: DEFAULT_COMMAND_PERMISSIONS,
+        tool_progress: true,
     })
     const [qrData, setQRData] = useState<ClawBotQRCodeStartResponse | null>(null)
     const [qrStatus, setQRStatus] = useState('')
@@ -212,6 +214,7 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
                 prompt_id: nextSettings.prompt_id || '',
                 clear_bot_token: false,
                 command_permissions: normalizeCommandPermissions(nextSettings.command_permissions),
+                tool_progress: nextSettings.tool_progress !== false,
             })
         } catch (error) {
             if (signal.aborted) return
@@ -233,6 +236,7 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
             prompt_id: nextSettings.prompt_id || '',
             clear_bot_token: false,
             command_permissions: normalizeCommandPermissions(nextSettings.command_permissions),
+            tool_progress: nextSettings.tool_progress !== false,
         }))
     }
 
@@ -310,6 +314,7 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
                     prompt_id: form.prompt_id || undefined,
                     clear_bot_token: form.clear_bot_token,
                     command_permissions: form.command_permissions,
+                    tool_progress: form.tool_progress,
                 },
                 signal
             )
@@ -346,6 +351,7 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
                     prompt_id: form.prompt_id || undefined,
                     clear_bot_token: false,
                     command_permissions: form.command_permissions,
+                    tool_progress: form.tool_progress,
                 },
                 controller.signal
             )
@@ -611,6 +617,18 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
                                     label={t('clawBot.enableChannel')}
                                     checked={form.enabled}
                                     onChange={(enabled) => setForm((current) => ({ ...current, enabled }))}
+                                    disabled={saving}
+                                />
+                            }
+                        />
+                        <Row
+                            label={t('clawBot.toolProgress')}
+                            detail={t('clawBot.toolProgressHint')}
+                            trailing={
+                                <Toggle
+                                    label={t('clawBot.toolProgress')}
+                                    checked={form.tool_progress}
+                                    onChange={(tool_progress) => setForm((current) => ({ ...current, tool_progress }))}
                                     disabled={saving}
                                 />
                             }
