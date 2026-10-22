@@ -339,10 +339,10 @@ func TestClawBotTypingRealGeneration(t *testing.T) {
 			got := deliveryTestJob(t, s, job.ID)
 			want := "ready"
 			if fail {
-				want = "uncertain"
+				want = "committing" // failed generation is cancelled, not parked
 			}
-			if got.Status != want {
-				t.Fatalf("delivery altered: status=%s want=%s", got.Status, want)
+			if got.Status != want || got.CancelRequested != fail {
+				t.Fatalf("delivery altered: status=%s cancel=%t want=%s", got.Status, got.CancelRequested, want)
 			}
 		})
 	}

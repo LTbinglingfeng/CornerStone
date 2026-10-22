@@ -4,6 +4,7 @@ import (
 	"context"
 	"cornerstone/client"
 	"cornerstone/config"
+	"cornerstone/logging"
 	"cornerstone/storage"
 	"crypto/sha256"
 	"encoding/hex"
@@ -216,21 +217,53 @@ func (s *ClawBotService) deliveryFault(err error) {
 		cancel()
 	}
 }
+
+// parkDelivery resolves a failed step without waiting for a human. Like the
+// official openclaw-weixin client, delivery is fire-and-forget, and a job never
+// stalls the per-user ordering of later replies. See autoResolveDelivery.
 func (s *ClawBotService) parkDelivery(cfg config.ClawBotConfig, id, phase, message string, uncertain bool) {
-	err := s.changeDelivery(cfg, id, func(j *storage.ClawBotDeliveryJob) error {
-		j.Status = "blocked"
-		if uncertain {
-			j.Status = "uncertain"
+	logging.Warnf("clawbot delivery auto-resolved: job=%s phase=%s uncertain=%t reason=%s", id, phase, uncertain, message)
+	err := s.updateChannelStateChecked(cfg, func(state *storage.ClawBotState) error {
+		d := deliveryState(state)
+		j := deliveryJob(d, id)
+		if j == nil || deliveryTerminal(j.Status) {
+			return errClawBotJobUnavailable
 		}
-		j.Phase = phase
-		j.LastError = message
-		if phase == "send" && j.NextChunk < len(j.Chunks) && uncertain {
-			j.Chunks[j.NextChunk].Status = "uncertain"
-		}
+		autoResolveDelivery(d, j, phase, message, uncertain)
+		j.UpdatedAt = time.Now()
+		j.Revision++
 		return nil
 	})
-	if err != nil {
+	if err != nil && !errors.Is(err, errClawBotJobUnavailable) {
 		s.deliveryFault(err)
+	}
+}
+
+// autoResolveDelivery replaces the former manual review states:
+//   - An unknown send outcome counts as delivered. iLink has no idempotent
+//     resend, so retrying risks duplicates; the official client never retries.
+//   - Any other failure cancels the remaining work. Cancellation still commits
+//     segments that were already sent to history and finalizes the origin.
+//   - If finishing an already cancelled job fails, it is finalized as cancelled
+//     directly (audit kept in LastError) instead of looping.
+func autoResolveDelivery(d *storage.ClawBotDeliveryState, j *storage.ClawBotDeliveryJob, phase, message string, uncertain bool) {
+	j.Phase = phase
+	j.LastError = message
+	j.NextAttemptAt = time.Time{}
+	j.Attempts = 0
+	switch {
+	case uncertain && phase == "send" && j.NextChunk < len(j.Chunks):
+		j.Chunks[j.NextChunk].Status = "sent"
+		j.NextChunk++
+		j.Status = "committing"
+		j.Phase = "history"
+	case j.CancelRequested:
+		j.Status = "cancelled"
+		d.Finished[j.ID] = j.Status
+	default:
+		j.CancelRequested = true
+		j.Status = "committing"
+		j.Phase = "history"
 	}
 }
 
@@ -249,21 +282,18 @@ func (s *ClawBotService) recoverDeliveries(cfg config.ClawBotConfig) error {
 				}
 			case "preparing":
 				j.Status = "queued" // only downloads and idempotent input history
-			case "generating", "executing":
-				if j.Status == "generating" {
-					j.Phase = "generation"
-				} else {
-					j.Phase = "command"
-				}
-				j.Status = "uncertain"
-				j.LastError = "Interrupted execution may have produced tool or command side effects; review before retrying."
+			case "generating":
+				// Rerunning could repeat tool side effects; drop it instead.
+				autoResolveDelivery(d, j, "generation", "Reply generation was interrupted by a restart; cancelled.", true)
+			case "executing":
+				autoResolveDelivery(d, j, "command", "Command execution was interrupted by a restart; cancelled.", true)
 			case "sending":
-				j.Status = "uncertain"
-				j.Phase = "send"
-				j.LastError = "Interrupted send may already have reached WeChat; confirm before retrying."
-				if j.NextChunk < len(j.Chunks) {
-					j.Chunks[j.NextChunk].Status = "uncertain"
-				}
+				autoResolveDelivery(d, j, "send", "Send was interrupted by a restart; treated as delivered.", true)
+			case "uncertain":
+				// Jobs parked for manual review by older versions.
+				autoResolveDelivery(d, j, j.Phase, j.LastError, true)
+			case "blocked":
+				autoResolveDelivery(d, j, j.Phase, j.LastError, false)
 			}
 			if previous != j.Status {
 				j.Revision++

@@ -71,7 +71,7 @@ func (s *ClawBotService) deliverChunk(ctx context.Context, cfg config.ClawBotCon
 				s.parkDelivery(cfg, job.ID, "send", err.Error(), false)
 			}
 		} else {
-			s.parkDelivery(cfg, job.ID, "send", "Send result is unknown; the message may already be in WeChat. Confirm receipt or explicitly retry.", true)
+			s.parkDelivery(cfg, job.ID, "send", "Send result is unknown ("+err.Error()+"); treated as delivered.", true)
 		}
 		return
 	}

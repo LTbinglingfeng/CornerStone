@@ -57,11 +57,7 @@ func deliveryTestInsert(t *testing.T, s *ClawBotService, cfg config.ClawBotConfi
 	}
 }
 func deliveryTestAction(s *ClawBotService, cfg config.ClawBotConfig, j storage.ClawBotDeliveryJob, action, operation string) clawBotDeliveryAction {
-	req := clawBotDeliveryAction{ID: j.ID, AccountID: clawBotAccount(cfg), Revision: j.Revision, Action: action, OperationID: operation}
-	if j.NextChunk < len(j.Chunks) {
-		req.ChunkID = j.Chunks[j.NextChunk].ClientID
-	}
-	return req
+	return clawBotDeliveryAction{ID: j.ID, AccountID: clawBotAccount(cfg), Revision: j.Revision, Action: action, OperationID: operation}
 }
 func deliveryTestHistory(t *testing.T, s *ClawBotService, session string, want ...string) {
 	t.Helper()
@@ -144,11 +140,19 @@ func TestClawBotDeliveryReceiveAtomicAndDeduplicate(t *testing.T) {
 
 func TestClawBotDeliveryRecovery(t *testing.T) {
 	s, cfg, dir := deliveryTestService(t, "http://localhost")
-	statuses := []string{"sending", "generating", "executing", "preparing"}
+	// "uncertain" and "blocked" are manual-review states left by older versions.
+	statuses := []string{"sending", "generating", "executing", "preparing", "uncertain", "blocked"}
 	for _, status := range statuses {
 		j := newDeliveryJob("chat", status, time.Now())
 		j.Status = status
 		j.Chunks = []storage.ClawBotDeliveryChunk{{ClientID: status, Status: "sending"}}
+		if status == "uncertain" {
+			j.Phase = "send"
+			j.Chunks[0].Status = "uncertain"
+		}
+		if status == "blocked" {
+			j.Phase = "history"
+		}
 		deliveryTestInsert(t, s, cfg, j)
 	}
 	restarted := newTestClawBotService(t, cfg.BaseURL)
@@ -164,15 +168,22 @@ func TestClawBotDeliveryRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i, j := range disk.Delivery.Jobs {
-		want := "uncertain"
-		if statuses[i] == "preparing" {
-			want = "queued"
+		wantStatus, wantCancel, wantSent := "committing", false, false
+		switch statuses[i] {
+		case "preparing":
+			wantStatus = "queued"
+		case "sending", "uncertain":
+			// Interrupted or unknown sends count as delivered and are never replayed.
+			wantSent = true
+		default:
+			// Interrupted generation/commands may have side effects: cancel, never rerun.
+			wantCancel = true
 		}
-		if j.Status != want || j.Revision != 2 {
+		if j.Status != wantStatus || j.Revision != 2 || j.CancelRequested != wantCancel {
 			t.Fatalf("recover %s: %+v", statuses[i], j)
 		}
-		if i == 0 && j.Chunks[0].Status != "uncertain" {
-			t.Fatal("sending chunk not uncertain")
+		if wantSent && (j.NextChunk != 1 || j.Chunks[0].Status != "sent" || j.Phase != "history") {
+			t.Fatalf("recover %s did not treat send as delivered: %+v", statuses[i], j)
 		}
 	}
 }
@@ -271,7 +282,9 @@ func (d *deliveryTestTransport) snapshot() []client.ClawBotSendMessageRequest {
 	return append([]client.ClawBotSendMessageRequest(nil), d.requests...)
 }
 
-func TestClawBotDeliveryConfirmOnlyReviewedChunk(t *testing.T) {
+// An unknown send outcome is treated as delivered (like the official client):
+// no manual confirmation, no resend, and the remaining segments continue.
+func TestClawBotDeliveryUncertainSendTreatedAsDelivered(t *testing.T) {
 	transport := &deliveryTestTransport{disconnect: map[int]bool{2: true, 3: true}}
 	server := httptest.NewServer(http.HandlerFunc(transport.serve))
 	defer server.Close()
@@ -281,63 +294,28 @@ func TestClawBotDeliveryConfirmOnlyReviewedChunk(t *testing.T) {
 	deliveryTestStep(t, s, cfg, j.ID)
 	deliveryTestHistory(t, s, j.SessionID, "first")
 	j = deliveryTestStep(t, s, cfg, j.ID)
-	if j.Status != "uncertain" || j.NextChunk != 1 {
+	if j.Status != "committing" || j.NextChunk != 2 || j.Chunks[1].Status != "sent" || j.Chunks[1].ManualConfirmation || j.CancelRequested {
 		t.Fatalf("second send: %+v", j)
 	}
 	deliveryTestStep(t, s, cfg, j.ID)
-	if len(transport.snapshot()) != 2 {
-		t.Fatal("sent past uncertain segment")
-	}
-	req := deliveryTestAction(s, cfg, j, "confirm_sent", "confirm-second")
-	stale := req
-	stale.Revision--
-	if err := s.actOnDelivery(cfg, stale); err == nil {
-		t.Fatal("accepted stale revision")
-	}
-	wrong := req
-	wrong.ChunkID = j.Chunks[2].ClientID
-	if err := s.actOnDelivery(cfg, wrong); err == nil {
-		t.Fatal("accepted wrong chunk")
-	}
-	if err := s.actOnDelivery(cfg, req); err != nil {
-		t.Fatal(err)
-	}
-	j = deliveryTestJob(t, s, j.ID)
-	if j.NextChunk != 2 || j.Chunks[2].Status != "pending" || !j.Chunks[1].ManualConfirmation {
-		t.Fatalf("confirmed more than one chunk: %+v", j)
-	}
 	deliveryTestHistory(t, s, j.SessionID, "first\nsecond")
 	j = deliveryTestStep(t, s, cfg, j.ID)
-	if j.Status != "uncertain" || j.NextChunk != 2 {
+	if j.Status != "committing" || j.NextChunk != 3 {
 		t.Fatalf("third send: %+v", j)
 	}
-	// Exact replay is idempotent even with a different current uncertain segment.
-	if err := s.actOnDelivery(cfg, req); err != nil {
-		t.Fatal(err)
-	}
-	replay := deliveryTestJob(t, s, j.ID)
-	if replay.NextChunk != 2 || replay.Status != "uncertain" {
-		t.Fatal("operation replay confirmed another chunk")
-	}
-	reused := deliveryTestAction(s, cfg, replay, "confirm_sent", req.OperationID)
-	if err := s.actOnDelivery(cfg, reused); err == nil {
-		t.Fatal("reused operation ID accepted different intent")
-	}
-	retry := deliveryTestAction(s, cfg, replay, "retry", "retry-third")
-	if err := s.actOnDelivery(cfg, retry); err != nil {
-		t.Fatal(err)
-	}
-	deliveryTestStep(t, s, cfg, j.ID)
 	j = deliveryTestStep(t, s, cfg, j.ID)
 	if j.Status != "done" {
 		t.Fatalf("final status %s", j.Status)
 	}
 	deliveryTestHistory(t, s, j.SessionID, "first→second→third")
+	if actions := deliveryActions(j); len(actions) != 0 {
+		t.Fatalf("finished job offers actions: %v", actions)
+	}
 	requests := transport.snapshot()
-	if len(requests) != 4 {
+	if len(requests) != 3 {
 		t.Fatalf("sends=%d", len(requests))
 	}
-	for i, want := range []int{0, 1, 2, 2} {
+	for i, want := range []int{0, 1, 2} {
 		if requests[i].Msg.ClientID != j.Chunks[want].ClientID {
 			t.Fatalf("request %d changed client_id", i)
 		}
@@ -365,23 +343,20 @@ func TestClawBotDeliveryHistoryReceiptAndWriteFailure(t *testing.T) {
 				if err := os.WriteFile(chatDir, []byte("not a directory"), 0600); err != nil {
 					t.Fatal(err)
 				}
+				// A history failure cancels the remaining segments instead of waiting
+				// for a manual retry; a second failure finalizes it with the audit kept.
 				j = deliveryTestStep(t, s, cfg, j.ID)
-				if j.Status != "blocked" || j.Phase != "history" {
+				if j.Status != "committing" || !j.CancelRequested || j.Phase != "history" {
 					t.Fatalf("history failure: %+v", j)
 				}
-				deliveryTestStep(t, s, cfg, j.ID)
+				j = deliveryTestStep(t, s, cfg, j.ID)
+				if j.Status != "cancelled" || j.HistoryCommitted || j.LastError == "" {
+					t.Fatalf("history failure not finalized: %+v", j)
+				}
 				if len(transport.snapshot()) != 1 {
-					t.Fatal("resent confirmed chunk after history failure")
+					t.Fatal("sent more segments after history failure")
 				}
-				if err := os.Remove(chatDir); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.Rename(chatDir+"-saved", chatDir); err != nil {
-					t.Fatal(err)
-				}
-				if err := s.actOnDelivery(cfg, deliveryTestAction(s, cfg, j, "retry", "retry-history")); err != nil {
-					t.Fatal(err)
-				}
+				return
 			} else {
 				// Simulate crash between durable history receipt and queue advancement.
 				if err := s.handler.chatManager.CommitDeliveryBatch(j.SessionID, fmt.Sprintf("wx-out:%s:%d", j.ID, j.NextChunk), confirmedDeliveryMessages(j), false, nil); err != nil {
@@ -402,6 +377,8 @@ func TestClawBotDeliveryHistoryReceiptAndWriteFailure(t *testing.T) {
 	}
 }
 
+// A job left "blocked" by an older version is cancelled on start, so it never
+// stalls later replies to the same user; per-user FIFO order is preserved.
 func TestClawBotDeliveryQueueFIFOBlockedUserIsolation(t *testing.T) {
 	transport := &deliveryTestTransport{}
 	server := httptest.NewServer(http.HandlerFunc(transport.serve))
@@ -424,19 +401,25 @@ func TestClawBotDeliveryQueueFIFOBlockedUserIsolation(t *testing.T) {
 	go func() { defer close(done); s.runDeliveryLoop(ctx, cfg) }()
 	defer func() { cancel(); <-done }()
 	deadline := time.Now().Add(5 * time.Second)
-	for deliveryTestJob(t, s, other2.ID).Status != "done" {
+	for deliveryTestJob(t, s, other2.ID).Status != "done" || deliveryTestJob(t, s, behind.ID).Status != "done" {
 		if time.Now().After(deadline) {
-			t.Fatal("other user stalled behind blocked user")
+			t.Fatal("delivery stalled behind a legacy blocked job")
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 	cancel()
 	<-done
-	requests := transport.snapshot()
-	if len(requests) != 2 || requests[0].Msg.ClientID != other1.ID || requests[1].Msg.ClientID != other2.ID {
-		t.Fatalf("FIFO/isolation requests: %+v", requests)
+	if got := deliveryTestJob(t, s, blocked.ID); got.Status != "cancelled" {
+		t.Fatalf("legacy blocked job not cancelled: %+v", got)
 	}
-	if deliveryTestJob(t, s, behind.ID).Status != "ready" || deliveryTestJob(t, s, blocked.ID).Status != "blocked" {
-		t.Fatal("same-user FIFO bypassed blocked job")
+	requests := transport.snapshot()
+	var others []string
+	for _, r := range requests {
+		if r.Msg.ToUserID == "other-user" {
+			others = append(others, r.Msg.ClientID)
+		}
+	}
+	if len(requests) != 3 || !reflect.DeepEqual(others, []string{other1.ID, other2.ID}) {
+		t.Fatalf("FIFO requests: %+v", requests)
 	}
 }

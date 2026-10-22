@@ -40,6 +40,8 @@ func TestClawBotDeliveryUploadedReceiptSurvivesRestart(t *testing.T) {
 	}
 }
 
+// An interrupted send counts as delivered on restart: never replayed, and no
+// manual confirmation is needed.
 func TestClawBotDeliveryInterruptedMediaSendNeverAutoReplays(t *testing.T) {
 	s, cfg, f := mediaDeliveryFixture(t)
 	a := fixtureAttachment(t, s)
@@ -58,22 +60,9 @@ func TestClawBotDeliveryInterruptedMediaSendNeverAutoReplays(t *testing.T) {
 	if err := s.recoverDeliveries(cfg); err != nil {
 		t.Fatal(err)
 	}
-	j = deliveryTestStep(t, s, cfg, j.ID)
-	if j.Status != "uncertain" || len(f.items) != 0 || f.uploads != 1 {
-		t.Fatalf("replayed interrupted send: %+v", j)
-	}
-	// Account changes reject stale operator intentions without touching the old receipt.
-	req := deliveryTestAction(s, cfg, j, "retry", "wrong-account-retry")
-	req.AccountID = "other"
-	if err := s.actOnDelivery(cfg, req); err == nil {
-		t.Fatal("cross-account action accepted")
-	}
-	if err := s.actOnDelivery(cfg, deliveryTestAction(s, cfg, j, "retry", "explicit-media-retry")); err != nil {
-		t.Fatal(err)
-	}
 	j = mediaDrive(t, s, cfg, deliveryTestJob(t, s, j.ID))
-	if j.Status != "done" || f.uploads != 1 || len(f.items) != 1 {
-		t.Fatal("explicit retry failed")
+	if j.Status != "done" || !j.HistoryCommitted || j.Chunks[0].Status != "sent" || len(f.items) != 0 || f.uploads != 1 {
+		t.Fatalf("replayed interrupted send: %+v", j)
 	}
 }
 

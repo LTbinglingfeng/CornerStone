@@ -196,70 +196,47 @@ func TestClawBotDeliveryMixedMediaOrderAndHistory(t *testing.T) {
 	}
 }
 
-func TestClawBotDeliveryUploadFailureRetriesOnlyCurrentItem(t *testing.T) {
+// A failed upload sent nothing for that item: the remaining segments are
+// cancelled automatically, while already-sent text is kept in history.
+func TestClawBotDeliveryUploadFailureCancelsRemaining(t *testing.T) {
 	s, cfg, f := mediaDeliveryFixture(t)
 	a := fixtureAttachment(t, s)
 	f.failUpload = true
 	j := stageMediaReply(t, s, cfg, "first", []storage.ChatMessage{{Role: "assistant", Content: "first", Attachments: []storage.ChatAttachment{a}}})
 	j = mediaDrive(t, s, cfg, j)
-	if j.Status != "blocked" || j.Phase != "upload" || j.NextChunk != 1 || len(f.items) != 1 || j.Chunks[1].Media.BlobID == "" {
+	if j.Status != "cancelled" || j.NextChunk != 1 || len(f.items) != 1 || !j.HistoryCommitted || j.Chunks[1].Status != "pending" {
 		t.Fatalf("job=%+v", j)
 	}
-	// The original source can disappear; retries use the persisted immutable blob.
-	if err := s.handler.attachmentStore().Remove(a.Path); err != nil {
-		t.Fatal(err)
-	}
-	f.failUpload = false
-	if err := s.actOnDelivery(cfg, deliveryTestAction(s, cfg, j, "retry", "retry-upload")); err != nil {
-		t.Fatal(err)
-	}
-	j = mediaDrive(t, s, cfg, deliveryTestJob(t, s, j.ID))
-	if j.Status != "done" || len(f.items) != 2 || f.uploads != 1 {
-		t.Fatalf("duplicate text or failed recovery: %+v", j)
-	}
-	data, err := s.handler.attachmentStore().Read(j.Chunks[1].Media.HistoryPath)
-	if err != nil || string(data) != "original file" {
-		t.Fatalf("sent history lost its immutable bytes: %q %v", data, err)
+	history, _ := s.handler.chatManager.GetSession(j.SessionID)
+	last := history.Messages[len(history.Messages)-1]
+	if last.Role != "assistant" || last.Content != "first" || len(last.Attachments) != 0 {
+		t.Fatalf("history contains unsent media: %+v", history.Messages)
 	}
 }
 
-func TestClawBotDeliveryMediaUnknownManualConfirmAndHistoryFailure(t *testing.T) {
+// An unknown media send outcome counts as delivered without resending; a
+// later history failure finalizes the job instead of waiting for a human.
+func TestClawBotDeliveryMediaUnknownTreatedAsDeliveredAndHistoryFailure(t *testing.T) {
 	s, cfg, f := mediaDeliveryFixture(t)
 	a := fixtureAttachment(t, s)
 	j := stageMediaReply(t, s, cfg, "", []storage.ChatMessage{{Role: "assistant", Attachments: []storage.ChatAttachment{a}}})
 	j = deliveryTestStep(t, s, cfg, j.ID)
 	f.uncertain = true
 	j = deliveryTestStep(t, s, cfg, j.ID)
-	if j.Status != "uncertain" || j.Phase != "send" || f.uploads != 1 {
+	if j.Status != "committing" || j.NextChunk != 1 || j.Chunks[0].Status != "sent" || f.uploads != 1 {
 		t.Fatalf("job=%+v", j)
 	}
-	old := j
 	if err := s.handler.chatManager.DeleteSession(j.SessionID); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.actOnDelivery(cfg, deliveryTestAction(s, cfg, j, "confirm_sent", "confirm-media")); err != nil {
-		t.Fatal(err)
+	for i := 0; i < 3 && !deliveryTerminal(j.Status); i++ {
+		j = deliveryTestStep(t, s, cfg, j.ID)
 	}
-	j = deliveryTestJob(t, s, j.ID)
-	if j.Status != "blocked" || j.Phase != "history" || j.NextChunk != 1 {
-		t.Fatalf("job=%+v", j)
-	}
-	if err := s.actOnDelivery(cfg, deliveryTestAction(s, cfg, old, "retry", "stale-retry")); err == nil {
-		t.Fatal("stale CAS accepted")
-	}
-	if err := s.actOnDelivery(cfg, deliveryTestAction(s, cfg, j, "retry", "history-retry")); err != nil {
-		t.Fatal(err)
+	if j.Status != "cancelled" || j.HistoryCommitted || j.Chunks[0].Media.Uploaded == nil {
+		t.Fatalf("audit lost: %+v", j)
 	}
 	if len(f.items) != 1 || f.uploads != 1 {
 		t.Fatal("history failure resent acknowledged media")
-	}
-	j = deliveryTestJob(t, s, j.ID)
-	if err := s.actOnDelivery(cfg, deliveryTestAction(s, cfg, j, "cancel", "cancel-media")); err != nil {
-		t.Fatal(err)
-	}
-	j = deliveryTestJob(t, s, j.ID)
-	if j.Status != "cancelled" || j.HistoryCommitted || !j.Chunks[0].ManualConfirmation || j.Chunks[0].Media.Uploaded == nil {
-		t.Fatalf("audit lost: %+v", j)
 	}
 }
 
@@ -282,6 +259,12 @@ func TestClawBotDeliveryMediaRecoveryAndCancelUpload(t *testing.T) {
 	j = deliveryTestJob(t, s, j.ID)
 	if j.Status != "ready" {
 		t.Fatal(j.Status)
+	}
+	// Account changes reject stale operator intentions.
+	wrongAccount := deliveryTestAction(s, cfg, j, "cancel", "wrong-account-cancel")
+	wrongAccount.AccountID = "other"
+	if err := s.actOnDelivery(cfg, wrongAccount); err == nil {
+		t.Fatal("cross-account action accepted")
 	}
 	f.uploadHook = func() {
 		current := deliveryTestJob(t, s, j.ID)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"cornerstone/client"
 	"cornerstone/config"
+	"cornerstone/logging"
 	"cornerstone/storage"
 	"encoding/json"
 	"errors"
@@ -199,9 +200,14 @@ func (s *ClawBotService) uploadDeliveryChunk(ctx context.Context, cfg config.Cla
 			if j.Status != "uploading" || j.NextChunk != index || j.CancelRequested {
 				return errClawBotJobUnavailable
 			}
-			j.Status = "blocked"
 			j.Chunks[index].Status = "pending"
-			j.LastError = "Attachment preparation or upload failed. No message was sent for this item; retry uploads only, without rerunning the model."
+			// No message was sent for this item; drop the rest instead of waiting
+			// for a manual retry. Sent segments are still committed to history.
+			j.CancelRequested = true
+			j.Status = "committing"
+			j.Phase = "history"
+			j.LastError = "Attachment preparation or upload failed; the remaining segments were cancelled."
+			logging.Warnf("clawbot attachment upload failed, delivery cancelled: job=%s chunk=%d", j.ID, index)
 			return nil
 		})
 		if err != nil && !errors.Is(err, errClawBotJobUnavailable) {

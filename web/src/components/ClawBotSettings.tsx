@@ -18,7 +18,6 @@ import { getChannelsCopy } from '../i18n/channels'
 import { Badge, Group, Row, Toggle } from './ui'
 import { channelStatusTone } from './channelStatus'
 import './ClawBotSettings.css'
-import ClawBotDeliveryQueue from './ClawBotDeliveryQueue'
 
 interface ClawBotSettingsProps {
     onBack: () => void
@@ -674,8 +673,6 @@ const ClawBotSettingsPanel: React.FC<ClawBotSettingsProps> = ({ onBack }) => {
                             />
                         ))}
                     </Group>
-
-                    <ClawBotDeliveryQueue />
                 </div>
             )}
         </motion.div>

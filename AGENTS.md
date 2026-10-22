@@ -12,7 +12,7 @@ CornerStone 是自托管 AI 聊天应用，使用 Go 后端与 React + TypeScrip
 - Gemini 聊天/记忆的 `gemini_automatic_continuation` 默认关闭，开启后 SDK 可发起多次计费请求；聊天仍用 GenerateContent。生图客户端用 Interactions API，`store=false`、单次单张、不自动重试；旧 Imagen 方法明确拒绝请求，当前没有业务生图入口。
 - 功能包括人设、流式聊天、多模态消息、记忆提取与写入、工具调用、联网搜索、天气、时间、定时提醒和空闲主动问候。
 - 通道包括 Web、ClawBot / 微信 iLink、NapCat / QQ（仅私聊，OneBot 反向 WebSocket）和 QQ 官方机器人（仅 C2C 私聊，官方 WebSocket，支持扫码绑定）；修改共享回复逻辑时需考虑各通道。
-- ClawBot 有持久化 inbox / outbox、引用缓存和人工投递恢复；NapCat 支持私聊媒体接收、引用 / 合并转发展开及确认后写入投递历史，但不要假定它具有同样的持久化队列。
+- ClawBot 有持久化 inbox / outbox、引用缓存和自动投递恢复（不需要人工确认）；NapCat 支持私聊媒体接收、引用 / 合并转发展开及确认后写入投递历史，但不要假定它具有同样的持久化队列。
 - 数据使用本地 JSON / JSONL 文件持久化；前端构建文件由 Go 服务从磁盘提供，未嵌入二进制。
 
 ## 代码导航
@@ -39,7 +39,7 @@ CornerStone 是自托管 AI 聊天应用，使用 Go 后端与 React + TypeScrip
 | `web/src/App.tsx`、`web/src/utils/routes.ts` | 页面切换与前端路由 |
 | `web/src/components/ChatDetail/` | 聊天界面，拆分为 components、hooks、红包交互等模块 |
 | `web/src/components/PersonaEditor/` | 人设与记忆编辑界面 |
-| `web/src/components/ChannelsPage.tsx`、`ClawBotSettings.tsx`、`NapCatSettings.tsx`、`ClawBotDeliveryQueue.tsx`（同目录） | 通道配置、状态与 ClawBot 投递恢复 UI |
+| `web/src/components/ChannelsPage.tsx`、`ClawBotSettings.tsx`、`NapCatSettings.tsx`（同目录） | 通道配置与状态 UI |
 | `web/src/services/`、`web/src/types/` | API 调用封装与前端数据类型 |
 | `web/src/contexts/`、`web/src/i18n/` | 主题、语言、Toast、确认框，以及中英文文案 |
 | `web/src/utils/` | 时间、动效、通知、回复拆分与等候窗口等共享逻辑 |
@@ -112,7 +112,7 @@ go build -o cornerstone .
 ### 外部通道、投递与媒体
 
 - 区分“生成成功”“生成投递意图”“上游发送确认”“历史提交成功”。`send_attachment` 成功仅生成意图，不读任意文件、不发网络请求，也不代表已送达；实际发送和去重由通道投递层处理。
-- ClawBot 入站任务、去重回执、context 与游标保持原子提交；保留 outbox 分段状态、来源关联和恢复语义。发送结果不确定时等待人工处理，不自动盲重发；已确认发送但历史提交失败时只对账，不再发送。
+- ClawBot 入站任务、去重回执、context 与游标保持原子提交；保留 outbox 分段状态、来源关联和恢复语义。投递对齐官方 openclaw-weixin，发出后不再跟踪，任务不会停下来等人工：发送结果不确定（超时、5xx、断连、重启中断）视为已送达，不重发；生成、命令、附件上传或历史写入失败时取消剩余分段，已发送分段仍写入历史，不再发送。
 - NapCat action 响应通过 echo 关联等待者；维持连接 / 账号校验、断连取消和旧连接隔离。发送超时不等于未送达，不自动重试；部分发送失败应停止后续段，历史只提交已确认部分。
 - QQ 官方通道只消费 `C2C_MESSAGE_CREATE`，即使订阅位同时覆盖群事件，也必须丢弃群 / 频道事件。会话按 AppID、用户 OpenID、人设隔离；OpenID 不是 QQ 号。当前仅文本和图片，不启用提醒、主动问候或语音转写；`send_attachment` 仅允许当前会话登记的图片。
 - QQ 官方扫码绑定密钥及 AppSecret 不得返回浏览器或写日志；过期、取消、配置变更、新扫码必须使旧结果失效。官方 REST 消息 POST 不盲重试；恢复网关时允许 `RESUMED` 之前的重放事件。投递前及分段间检查历史未被编辑 / 删除，确认后条件提交，并保留工具调用的 provider replay 状态。

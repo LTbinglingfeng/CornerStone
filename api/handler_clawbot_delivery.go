@@ -27,11 +27,9 @@ func (s *ClawBotService) deliveryWorkerStopped() bool {
 func deliveryActions(job storage.ClawBotDeliveryJob) []string {
 	switch job.Status {
 	case "uncertain", "blocked":
-		actions := []string{"retry", "cancel"}
-		if job.Status == "uncertain" && job.Phase == "send" {
-			actions = append(actions, "confirm_sent")
-		}
-		return actions
+		// Only reachable as a projection while the worker is stopped; the worker
+		// resolves these automatically on start.
+		return []string{"retry", "cancel"}
 	case "queued", "ready", "uploading":
 		return []string{"cancel"}
 	case "cancelled":
@@ -89,7 +87,6 @@ type clawBotDeliveryAction struct {
 	AccountID   string `json:"account_id"`
 	Revision    uint64 `json:"revision"`
 	Action      string `json:"action"`
-	ChunkID     string `json:"chunk_id,omitempty"`
 	OperationID string `json:"operation_id"`
 }
 
@@ -171,15 +168,6 @@ func (s *ClawBotService) actOnDelivery(cfg config.ClawBotConfig, req clawBotDeli
 		switch req.Action {
 		case "cancel":
 			j.CancelRequested = true
-			j.Status = "committing"
-			j.Phase = "history"
-		case "confirm_sent":
-			if j.NextChunk >= len(j.Chunks) || req.ChunkID != j.Chunks[j.NextChunk].ClientID {
-				return fmt.Errorf("uncertain segment changed")
-			}
-			j.Chunks[j.NextChunk].Status = "sent"
-			j.Chunks[j.NextChunk].ManualConfirmation = true
-			j.NextChunk++
 			j.Status = "committing"
 			j.Phase = "history"
 		case "retry":
