@@ -257,17 +257,38 @@
     align-items: baseline;
 }
 
+.persona-prompt__meta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    /* Keep the 32px button from pushing the title baseline down. */
+    margin-block: -6px;
+}
+
 .persona-prompt__count {
     color: var(--text-3);
     font-size: var(--text-sm);
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
 }
 
+.persona-prompt__expand.ui-icon-btn {
+    width: 32px;
+    height: 32px;
+}
+
+/*
+ * Fixed height: the field scrolls internally so memory and the rest of the
+ * page stay one short scroll away. Long prompts go to the full-screen editor.
+ */
 .persona-prompt .prompt-textarea {
     display: block;
     width: 100%;
-    min-height: 280px;
+    height: clamp(220px, 38vh, 380px);
     padding: var(--space-4);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
     border: 1px solid var(--line);
     border-radius: var(--radius-lg);
     background: var(--bg-elevated);
@@ -276,8 +297,7 @@
     font-family: inherit;
     font-size: var(--text-base);
     line-height: 1.75;
-    resize: vertical;
-    field-sizing: content;
+    resize: none;
     outline: none;
     transition:
         border-color var(--duration-fast) ease,
@@ -291,6 +311,91 @@
 .persona-prompt .prompt-textarea:focus {
     border-color: var(--line-strong);
     box-shadow: 0 0 0 3px var(--fill);
+}
+
+/* ───────── Full-screen prompt editor ───────── */
+
+dialog.native-modal-overlay.persona-prompt-fullscreen {
+    overflow: hidden;
+    background: var(--bg-surface);
+}
+
+dialog.native-modal-overlay.persona-prompt-fullscreen > .persona-prompt-fullscreen__panel {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    max-height: none;
+}
+
+.persona-prompt-fullscreen__header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-shrink: 0;
+    height: var(--app-header-height);
+    padding: 0 var(--space-2) 0 var(--space-5);
+    padding-top: env(safe-area-inset-top);
+    box-sizing: content-box;
+    border-bottom: 1px solid var(--line);
+}
+
+.persona-prompt-fullscreen__title {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    color: var(--text);
+    font-size: var(--text-md);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+}
+
+.persona-prompt-fullscreen__context {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-3);
+    font-weight: 500;
+    text-overflow: ellipsis;
+}
+
+.persona-prompt-fullscreen__context::before {
+    content: '·';
+    margin-right: var(--space-2);
+}
+
+.persona-prompt-fullscreen__body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+}
+
+/* A readable measure on wide screens; the scroll container spans the full width. */
+.persona-prompt-fullscreen__textarea {
+    flex: 1;
+    width: 100%;
+    min-height: 0;
+    margin: 0;
+    padding: var(--space-8) max(var(--space-6), calc((100% - var(--content-width)) / 2 + var(--space-6)))
+        calc(var(--space-10) + env(safe-area-inset-bottom));
+    border: 0;
+    background: transparent;
+    color: var(--text);
+    font-family: inherit;
+    font-size: var(--text-md);
+    line-height: 1.8;
+    resize: none;
+    outline: none;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.persona-prompt-fullscreen__textarea::placeholder {
+    color: var(--text-3);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -353,7 +458,27 @@
     }
 
     .persona-prompt .prompt-textarea {
-        min-height: 240px;
+        height: clamp(200px, 34vh, 320px);
+    }
+
+    .persona-prompt-fullscreen__header {
+        padding-left: var(--space-4);
+        padding-right: var(--space-1);
+    }
+
+    .persona-prompt-fullscreen__header .ui-icon-btn,
+    .persona-prompt__expand.ui-icon-btn {
+        width: 44px;
+        height: 44px;
+    }
+
+    .persona-prompt__meta {
+        margin-block: -12px;
+    }
+
+    .persona-prompt-fullscreen__textarea {
+        padding: var(--space-5) var(--space-4) calc(var(--space-8) + env(safe-area-inset-bottom));
+        font-size: 16px;
     }
 }
 

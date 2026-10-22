@@ -47,6 +47,8 @@ export const personaCopy = {
             prompt: 'Prompt',
             promptHint: 'Sent as the system prompt. Describe who this persona is, how it speaks, and what to avoid.',
             promptPlaceholder: 'You are…',
+            expandPrompt: 'Open full-screen editor',
+            collapsePrompt: 'Exit full screen',
             characters: (count: number) => `${count.toLocaleString('en')} ${count === 1 ? 'character' : 'characters'}`,
             memory: 'Memory',
             memorySummary: (total: number, pinned: number) =>
@@ -133,6 +135,8 @@ export const personaCopy = {
             prompt: '提示词',
             promptHint: '作为系统提示词发送。写清楚这个人设是谁、怎么说话、要避免什么。',
             promptPlaceholder: '你是……',
+            expandPrompt: '全屏编辑',
+            collapsePrompt: '退出全屏',
             characters: (count: number) => `${count.toLocaleString('zh')} 字`,
             memory: '记忆',
             memorySummary: (total: number, pinned: number) =>

@@ -53,6 +53,21 @@ func TestClawBotDeliveryReceipt(t *testing.T) {
 	}
 }
 
+// iLink commonly acknowledges sendmessage with `{}`; like the official
+// openclaw-weixin client, only a non-zero ret/errcode is a failure.
+func TestClawBotDeliveryAcceptsReceiptWithoutRet(t *testing.T) {
+	for _, body := range []string{`{}`, `{"ret":null}`, `{"errmsg":""}`} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			io.WriteString(w, body)
+		}))
+		receipt, err := NewClawBotClient().SendTextMessageWithID(context.Background(), server.URL, "secret", "uin", "user", "context-secret", "text", "fixed")
+		server.Close()
+		if err != nil || receipt == nil || receipt.MessageID != "" {
+			t.Fatalf("%s: receipt=%+v err=%v", body, receipt, err)
+		}
+	}
+}
+
 func TestClawBotDeliveryResponses(t *testing.T) {
 	for _, tc := range []struct {
 		name          string
@@ -65,8 +80,6 @@ func TestClawBotDeliveryResponses(t *testing.T) {
 		{"errcode", 200, `{"errcode":-14}`, ClawBotDeliveryRejected, false, true},
 		{"rate", 429, "secret", ClawBotDeliveryRejected, true, false},
 		{"gateway", 502, "secret", ClawBotDeliveryUncertain, false, false},
-		{"missing", 200, `{}`, ClawBotDeliveryUncertain, false, false},
-		{"null", 200, `{"ret":null}`, ClawBotDeliveryUncertain, false, false},
 		{"invalid", 200, `secret`, ClawBotDeliveryUncertain, false, false},
 		{"trailing", 200, `{"ret":0}secret`, ClawBotDeliveryUncertain, false, false},
 		{"unauthorized", 401, "secret", ClawBotDeliveryRejected, false, false},

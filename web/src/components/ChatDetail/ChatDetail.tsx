@@ -678,6 +678,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
             <MessageList
                 sessionId={sessionId}
                 loading={loading}
+                sending={sending}
                 hasMoreBefore={messagesOffset > 0}
                 loadingOlder={loadingOlder}
                 onLoadOlder={handleLoadOlder}

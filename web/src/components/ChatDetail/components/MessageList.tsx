@@ -10,10 +10,12 @@ import { getManagementCopy } from '../../../i18n/archive'
 import { EmptyState } from '../../ui'
 import { MessageAvatar } from './MessageAvatar'
 import { MessageBubble } from './MessageBubble'
+import { ToolCallCard } from './ToolCallCard'
 
 interface MessageListProps {
     sessionId: string
     loading: boolean
+    sending: boolean
     hasMoreBefore: boolean
     loadingOlder: boolean
     onLoadOlder: () => Promise<void>
@@ -42,6 +44,7 @@ interface MessageListProps {
 export const MessageList: React.FC<MessageListProps> = ({
     sessionId,
     loading,
+    sending,
     hasMoreBefore,
     loadingOlder,
     onLoadOlder,
@@ -117,7 +120,7 @@ export const MessageList: React.FC<MessageListProps> = ({
 
     const shouldAnimateBubble = (item: DisplayItem) => {
         if (!bubbleKeysSeededRef.current) return false
-        if (item.type !== 'text' && item.type !== 'red-packet') return false
+        if (item.type !== 'text' && item.type !== 'red-packet' && item.type !== 'tool-call') return false
         return !animatedBubbleKeysRef.current.has(item.key)
     }
 
@@ -197,7 +200,9 @@ export const MessageList: React.FC<MessageListProps> = ({
                         // Consecutive bubbles from the same sender read as one turn: one avatar, tighter spacing.
                         const grouped =
                             !!previous &&
-                            (previous.type === 'text' || previous.type === 'red-packet') &&
+                            (previous.type === 'text' ||
+                                previous.type === 'red-packet' ||
+                                previous.type === 'tool-call') &&
                             (previous.role === 'user' ? 'user' : 'assistant') === role
                         const leftAvatar =
                             role === 'assistant' && !grouped ? (
@@ -215,54 +220,58 @@ export const MessageList: React.FC<MessageListProps> = ({
                                 <span className="message-avatar-spacer" aria-hidden="true" />
                             ) : null
 
-                        const content = isRedPacket ? (
-                            (() => {
-                                const { primaryKey, legacyKey } = derivePacketKeys(item.toolCall, item.key)
-                                const opened = openedRedPacketKeys.has(primaryKey) || openedRedPacketKeys.has(legacyKey)
-                                const packetKey = openedRedPacketKeys.has(legacyKey) ? legacyKey : primaryKey
-                                const senderName =
-                                    role === 'user'
-                                        ? userDisplayName || t('chat.defaultUserName')
-                                        : assistantDisplayName || t('chat.defaultAIName')
-                                const senderAvatarSrc = role === 'user' ? userAvatarSrc : assistantAvatarSrc
-                                const initialStep: PacketStep = role === 'user' || opened ? 'opened' : 'idle'
-                                return (
-                                    <RedPacketBubble
-                                        toolCall={item.toolCall}
-                                        rawKey={item.key}
-                                        role={role}
-                                        opened={opened}
-                                        senderName={senderName}
-                                        senderAvatarSrc={senderAvatarSrc}
-                                        onClick={(params) => {
-                                            onOpenRedPacket(
-                                                {
-                                                    params,
-                                                    packetKey,
-                                                    senderRole: role,
-                                                    senderName,
-                                                    senderAvatarSrc: senderAvatarSrc || null,
-                                                },
-                                                initialStep
-                                            )
-                                        }}
-                                    />
-                                )
-                            })()
-                        ) : (
-                            <MessageBubble
-                                item={item}
-                                getImageUrl={getImageUrl}
-                                onContextMenu={onContextMenu}
-                                onPointerDown={onPointerDown}
-                                onPointerMove={onPointerMove}
-                                onPointerUp={onPointerUp}
-                                onPointerCancel={onPointerCancel}
-                                onPointerLeave={onPointerLeave}
-                            />
-                        )
+                        const content =
+                            item.type === 'tool-call' ? (
+                                <ToolCallCard toolCall={item.toolCall} result={item.result} sending={sending} />
+                            ) : isRedPacket ? (
+                                (() => {
+                                    const { primaryKey, legacyKey } = derivePacketKeys(item.toolCall, item.key)
+                                    const opened =
+                                        openedRedPacketKeys.has(primaryKey) || openedRedPacketKeys.has(legacyKey)
+                                    const packetKey = openedRedPacketKeys.has(legacyKey) ? legacyKey : primaryKey
+                                    const senderName =
+                                        role === 'user'
+                                            ? userDisplayName || t('chat.defaultUserName')
+                                            : assistantDisplayName || t('chat.defaultAIName')
+                                    const senderAvatarSrc = role === 'user' ? userAvatarSrc : assistantAvatarSrc
+                                    const initialStep: PacketStep = role === 'user' || opened ? 'opened' : 'idle'
+                                    return (
+                                        <RedPacketBubble
+                                            toolCall={item.toolCall}
+                                            rawKey={item.key}
+                                            role={role}
+                                            opened={opened}
+                                            senderName={senderName}
+                                            senderAvatarSrc={senderAvatarSrc}
+                                            onClick={(params) => {
+                                                onOpenRedPacket(
+                                                    {
+                                                        params,
+                                                        packetKey,
+                                                        senderRole: role,
+                                                        senderName,
+                                                        senderAvatarSrc: senderAvatarSrc || null,
+                                                    },
+                                                    initialStep
+                                                )
+                                            }}
+                                        />
+                                    )
+                                })()
+                            ) : (
+                                <MessageBubble
+                                    item={item}
+                                    getImageUrl={getImageUrl}
+                                    onContextMenu={onContextMenu}
+                                    onPointerDown={onPointerDown}
+                                    onPointerMove={onPointerMove}
+                                    onPointerUp={onPointerUp}
+                                    onPointerCancel={onPointerCancel}
+                                    onPointerLeave={onPointerLeave}
+                                />
+                            )
 
-                        const className = `message-item ${role}${isRedPacket ? ' red-packet-item' : ''}${grouped ? ' is-grouped' : ''}`
+                        const className = `message-item ${role}${isRedPacket ? ' red-packet-item' : ''}${item.type === 'tool-call' ? ' tool-call-item' : ''}${grouped ? ' is-grouped' : ''}`
                         const animateBubble = shouldAnimateBubble(item)
 
                         return (

@@ -397,6 +397,200 @@
     font-weight: 550;
 }
 
+/* Tool calls: collapsed chip in the assistant column, expands to arguments and result */
+.tool-call-card {
+    max-width: min(78%, 600px);
+    min-width: 0;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background-color: var(--fill);
+    color: var(--text-2);
+    font-size: var(--text-sm);
+    transition: transform var(--duration-press) var(--ease-out);
+}
+
+/* Collapsed chip behaves like a button: acknowledge the press immediately. */
+.tool-call-card:not([open]):has(.tool-call-summary:active) {
+    transform: scale(0.97);
+}
+
+.tool-call-card[open] {
+    width: min(78%, 600px);
+}
+
+.tool-call-summary {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: 5px 10px;
+    list-style: none;
+    cursor: pointer;
+    user-select: none;
+    border-radius: inherit;
+    transition: background-color var(--duration-fast) ease;
+}
+
+.tool-call-summary:active {
+    background-color: var(--bg-active);
+}
+
+@media (pointer: coarse) {
+    .tool-call-summary {
+        min-height: var(--control-height);
+    }
+}
+
+.tool-call-summary::-webkit-details-marker {
+    display: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .tool-call-summary:hover {
+        background-color: var(--bg-hover);
+    }
+}
+
+.tool-call-summary:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+}
+
+.tool-call-icon,
+.tool-call-chevron {
+    flex-shrink: 0;
+    color: var(--text-3);
+}
+
+.tool-call-chevron {
+    transition: transform var(--duration-base) var(--ease-out);
+}
+
+.tool-call-card[open] .tool-call-chevron {
+    transform: rotate(180deg);
+}
+
+.tool-call-name {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text);
+    font-weight: 550;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tool-call-status {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    margin-left: auto;
+    color: var(--text-3);
+    white-space: nowrap;
+    transition: color var(--duration-fast) ease;
+}
+
+.tool-call-status .ui-spinner {
+    width: 11px;
+    height: 11px;
+    border-width: 1.5px;
+}
+
+.tool-call-card.is-ok .tool-call-status {
+    color: var(--success);
+}
+
+.tool-call-card.is-error .tool-call-status {
+    color: var(--danger);
+}
+
+.tool-call-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-1) 10px 10px;
+    border-top: 1px solid var(--line);
+}
+
+/* Reveal on open; closing is instant so the list never waits on the card. */
+.tool-call-card[open] .tool-call-body {
+    animation: tool-call-reveal var(--duration-base) var(--ease-out);
+}
+
+@keyframes tool-call-reveal {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+}
+
+.tool-call-raw-name {
+    padding-top: var(--space-1);
+    color: var(--text-3);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+}
+
+.tool-call-section-title {
+    margin-bottom: var(--space-1);
+    color: var(--text-3);
+    font-size: var(--text-xs);
+    font-weight: 550;
+    letter-spacing: 0.02em;
+}
+
+.tool-call-pre {
+    max-height: 280px;
+    margin: 0;
+    padding: var(--space-2);
+    overflow: auto;
+    border-radius: var(--radius-xs);
+    background-color: var(--bg-sunken);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    user-select: text;
+}
+
+.tool-call-pre.is-error {
+    color: var(--danger);
+}
+
+.tool-call-clipped {
+    margin-top: var(--space-1);
+    color: var(--text-3);
+    font-size: var(--text-xs);
+}
+
+@keyframes tool-call-fade {
+    from {
+        opacity: 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tool-call-card,
+    .tool-call-chevron {
+        transition: none;
+    }
+
+    .tool-call-card:not([open]):has(.tool-call-summary:active) {
+        transform: none;
+    }
+
+    .tool-call-card[open] .tool-call-body {
+        animation-name: tool-call-fade;
+    }
+}
+
+@media (prefers-contrast: more) {
+    .tool-call-card,
+    .tool-call-body {
+        border-color: var(--line-strong);
+    }
+}
+
 /* ───────── Composer ───────── */
 
 .pending-image-list {

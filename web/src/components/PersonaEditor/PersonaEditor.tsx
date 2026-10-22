@@ -255,6 +255,7 @@ const PersonaEditor: React.FC<PersonaEditorProps> = ({ promptId, onBack }) => {
 
                             <PersonaPromptSection
                                 content={formData.content}
+                                personaName={formData.name}
                                 onContentChange={(content) => setFormData((prev) => ({ ...prev, content }))}
                             />
 

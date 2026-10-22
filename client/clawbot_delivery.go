@@ -163,8 +163,9 @@ func (c *ClawBotClient) SendItemMessageWithID(ctx context.Context, baseURL, botT
 	if ret != 0 || envelope.ErrCode != 0 {
 		return fail(ClawBotDeliveryRejected, false, &ClawBotAPIError{Ret: ret, ErrCode: envelope.ErrCode, Message: message})
 	}
-	if envelope.Ret == nil {
-		return fail(ClawBotDeliveryUncertain, false, errors.New("clawbot: missing delivery result"))
-	}
+	// iLink acknowledges a successful send with a 2xx JSON body that may omit
+	// ret and message_id entirely (commonly `{}`); the official openclaw-weixin
+	// client only treats a non-zero ret as failure. A complete, parseable 2xx
+	// body without an error code is therefore a receipt.
 	return &ClawBotSendMessageResponse{Ret: ret, ErrCode: envelope.ErrCode, ErrMsg: message, MessageID: envelope.MessageID}, nil
 }

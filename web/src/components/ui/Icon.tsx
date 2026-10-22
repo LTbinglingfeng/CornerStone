@@ -46,6 +46,8 @@ const paths = {
     arrowLeft: ['m12 19-7-7 7-7', 'M19 12H5'],
     arrowRight: ['M5 12h14', 'm12 5 7 7-7 7'],
     arrowUpRight: ['M7 7h10v10', 'M7 17 17 7'],
+    maximize: ['M15 3h6v6', 'm21 3-7 7', 'm3 21 7-7', 'M9 21H3v-6'],
+    minimize: ['m14 10 7-7', 'M20 10h-6V4', 'm3 21 7-7', 'M4 14h6v6'],
     externalLink: ['M15 3h6v6', 'M10 14 21 3', 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'],
     plus: ['M5 12h14', 'M12 5v14'],
     x: ['M18 6 6 18', 'm6 6 12 12'],

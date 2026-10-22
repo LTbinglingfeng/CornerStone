@@ -45,6 +45,12 @@ export const centerModalVariants: Variants = {
     visible: { opacity: 1, scale: 1, y: 0, transition: modalTransition },
 }
 
+// Full-screen editors expand in place: a subtle settle, never a grow-from-nothing.
+export const fullscreenVariants: Variants = {
+    hidden: { opacity: 0, scale: 0.985, transition: modalExitTransition },
+    visible: { opacity: 1, scale: 1, transition: modalTransition },
+}
+
 export const bottomSheetVariants: Variants = {
     hidden: { y: '100%', transition: slideExitTransition },
     visible: { y: 0, transition: slideTransition },

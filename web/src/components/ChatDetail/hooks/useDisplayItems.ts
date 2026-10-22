@@ -16,6 +16,9 @@ interface UseDisplayItemsOptions {
     visibleSegments: number
 }
 
+/** Tools that already render as their own bubble or banner instead of a generic tool-call card. */
+const TOOLS_WITH_DEDICATED_UI = new Set(['send_red_packet', 'send_pat', 'red_packet_received'])
+
 export function useDisplayItems(options: UseDisplayItemsOptions): DisplayItem[] {
     const { messages, sending, streamingTimestamp, revealingTimestamp, visibleSegments } = options
 
@@ -23,9 +26,11 @@ export function useDisplayItems(options: UseDisplayItemsOptions): DisplayItem[] 
         const items: DisplayItem[] = []
         const successfulNoReplyToolCallIds = new Set<string>()
         const attachmentIntentToolCallIds = new Set<string>()
+        const toolResults = new Map<string, string>()
 
         messages.forEach((message) => {
             if (message.role !== 'tool' || !message.tool_call_id) return
+            toolResults.set(message.tool_call_id, message.content || '')
 
             try {
                 const payload = JSON.parse(message.content || '{}') as { ok?: boolean; tool?: string }
@@ -168,8 +173,9 @@ export function useDisplayItems(options: UseDisplayItemsOptions): DisplayItem[] 
                 }
             })
 
-            toolCalls.forEach((toolCall) => {
-                if (toolCall.function.name === 'send_attachment' && attachmentIntentToolCallIds.has(toolCall.id)) {
+            toolCalls.forEach((toolCall, toolIndex) => {
+                const name = toolCall.function.name
+                if (name === 'send_attachment' && attachmentIntentToolCallIds.has(toolCall.id)) {
                     items.push({
                         key: `${message.timestamp}-attachment-intent-${toolCall.id}`,
                         role: message.role,
@@ -178,7 +184,21 @@ export function useDisplayItems(options: UseDisplayItemsOptions): DisplayItem[] 
                         toolCall,
                         messageIndex: index,
                     })
+                    return
                 }
+                // A successful no_reply already shows its own banner below.
+                if (name === 'no_reply' && successfulNoReplyToolCallIds.has(toolCall.id)) return
+                if (!isAssistant || TOOLS_WITH_DEDICATED_UI.has(name)) return
+
+                items.push({
+                    key: `${message.timestamp}-tool-${toolCall.id || toolIndex}`,
+                    role: message.role,
+                    type: 'tool-call',
+                    message,
+                    toolCall,
+                    result: toolCall.id ? toolResults.get(toolCall.id) : undefined,
+                    messageIndex: index,
+                })
             })
 
             const matchedNoReplyCall = toolCalls.find(

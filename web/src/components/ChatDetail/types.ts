@@ -28,6 +28,16 @@ export type DisplayItem =
           messageIndex: number
       }
     | { key: string; role: string; type: 'recall-banner'; message: ChatMessage; messageIndex: number }
+    | {
+          key: string
+          role: string
+          type: 'tool-call'
+          message: ChatMessage
+          toolCall: ToolCall
+          /** Raw content of the matching role=tool message; undefined while the call has no result yet. */
+          result?: string
+          messageIndex: number
+      }
 
 export type QuoteDraft = {
     line: string
