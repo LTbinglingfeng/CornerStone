@@ -45,7 +45,7 @@ export function getErrorMessage(error: unknown, fallback: string): string {
     return fallback
 }
 
-async function apiFetch(url: string, init: RequestInit = {}): Promise<Response> {
+export async function apiFetch(url: string, init: RequestInit = {}): Promise<Response> {
     const headers = new Headers(init.headers || {})
     const token = getAuthToken()
     if (token && !headers.has('Authorization')) {

@@ -5,17 +5,33 @@ import (
 	"io"
 	"log"
 	"os"
+	"sync"
 )
 
 var logger = log.New(os.Stdout, "", log.Ldate|log.Ltime|log.Lmicroseconds|log.Lshortfile)
 
-func Init(logPath string) (*os.File, error) {
-	file, errOpen := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+var (
+	pathMu  sync.RWMutex
+	logPath string
+)
+
+func Init(path string) (*os.File, error) {
+	file, errOpen := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if errOpen != nil {
 		return nil, errOpen
 	}
 	logger.SetOutput(io.MultiWriter(os.Stdout, file))
+	pathMu.Lock()
+	logPath = path
+	pathMu.Unlock()
 	return file, nil
+}
+
+// Path returns the active log file path, or "" when logging only to stdout.
+func Path() string {
+	pathMu.RLock()
+	defer pathMu.RUnlock()
+	return logPath
 }
 
 func Infof(format string, args ...interface{}) {

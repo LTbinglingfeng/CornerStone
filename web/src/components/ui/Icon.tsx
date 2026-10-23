@@ -45,6 +45,7 @@ const paths = {
     chevronDown: ['m6 9 6 6 6-6'],
     arrowLeft: ['m12 19-7-7 7-7', 'M19 12H5'],
     arrowRight: ['M5 12h14', 'm12 5 7 7-7 7'],
+    arrowUp: ['m5 12 7-7 7 7', 'M12 19V5'],
     arrowUpRight: ['M7 7h10v10', 'M7 17 17 7'],
     maximize: ['M15 3h6v6', 'm21 3-7 7', 'm3 21 7-7', 'M9 21H3v-6'],
     minimize: ['m14 10 7-7', 'M20 10h-6V4', 'm3 21 7-7', 'M4 14h6v6'],
@@ -138,6 +139,7 @@ const paths = {
         'M15 13v2',
         'M9 13v2',
     ],
+    terminal: ['m4 17 6-6-6-6', 'M12 19h8'],
     list: ['M3 12h.01', 'M3 18h.01', 'M3 6h.01', 'M8 12h13', 'M8 18h13', 'M8 6h13'],
     key: [
         'm15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4',

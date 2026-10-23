@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link, NavLink } from 'react-router-dom'
+import { Link, NavLink, useLocation } from 'react-router-dom'
 import { logoBlackDataUrl } from 'virtual:cornerstone-logos'
 import { useT } from '../contexts/I18nContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { appendQueryParam, getUserAvatarUrl, getUserInfo } from '../services/api'
 import type { UserInfo } from '../types/chat'
-import { navTabs, tabRoutes, type AppTab } from '../utils/routes'
+import { navTabs, sidebarTabs, tabRoutes, type AppTab } from '../utils/routes'
 import { Avatar, Icon, type IconName } from './ui'
 
 const tabIcons: Record<AppTab, IconName> = {
@@ -13,6 +13,7 @@ const tabIcons: Record<AppTab, IconName> = {
     chat: 'chat',
     contacts: 'persona',
     channels: 'channels',
+    logs: 'terminal',
     settings: 'settings',
     me: 'user',
 }
@@ -45,6 +46,9 @@ export default function ConsoleNav({ username }: { username?: string | null }) {
     const { t } = useT()
     const { theme, toggleTheme } = useTheme()
     const account = useAccount(username ?? null)
+    const { pathname } = useLocation()
+    // Logs are reached from Settings on mobile, so Settings stays highlighted there.
+    const inLogs = pathname === tabRoutes.logs || pathname.startsWith(`${tabRoutes.logs}/`)
     const themeLabel = theme === 'dark' ? t('console.lightMode') : t('console.darkMode')
 
     return (
@@ -55,7 +59,7 @@ export default function ConsoleNav({ username }: { username?: string | null }) {
                     <span>CornerStone</span>
                 </Link>
                 <nav className="console-nav" aria-label={t('console.title')}>
-                    {navTabs.map((tab) => (
+                    {sidebarTabs.map((tab) => (
                         <NavLink key={tab} to={tabRoutes[tab]}>
                             <ConsoleIcon name={tab} />
                             <span>{t(`console.${tab}`)}</span>
@@ -80,7 +84,14 @@ export default function ConsoleNav({ username }: { username?: string | null }) {
             </aside>
             <nav className="console-tabbar" aria-label={t('console.title')}>
                 {navTabs.map((tab) => (
-                    <NavLink key={tab} to={tabRoutes[tab]} aria-label={t(`console.${tab}`)}>
+                    <NavLink
+                        key={tab}
+                        to={tabRoutes[tab]}
+                        aria-label={t(`console.${tab}`)}
+                        className={({ isActive }) =>
+                            isActive || (tab === 'settings' && inLogs) ? 'active' : undefined
+                        }
+                    >
                         <ConsoleIcon name={tab} />
                         <span>{t(`console.short.${tab}`)}</span>
                     </NavLink>

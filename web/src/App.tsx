@@ -11,6 +11,7 @@ import ChatList from './components/ChatList'
 import ChatDetail from './components/ChatDetail'
 import Contacts from './components/Contacts'
 import ProfilePage from './components/ProfilePage'
+import LogsPage from './components/LogsPage'
 import PromptSelector from './components/PromptSelector'
 import AuthSetupPage from './components/AuthSetupPage'
 import AuthLoginPage from './components/AuthLoginPage'
@@ -603,6 +604,7 @@ function App() {
                             onAssistantMessageSplitTokenChange={setAssistantMessageSplitToken}
                         />
                     )}
+                    {activeTab === 'logs' && <LogsPage />}
                     {activeTab === 'me' && <ProfilePage />}
                 </div>
                 <AnimatePresence>

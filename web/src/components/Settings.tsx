@@ -1311,6 +1311,12 @@ const Settings: React.FC<SettingsProps> = ({
                     label={managementCopy.rows.version}
                     value={<span className="settings-mono">{appVersion}</span>}
                 />
+                <Row
+                    icon="terminal"
+                    label={t('logs.settingsEntry')}
+                    detail={t('logs.settingsEntryHint')}
+                    to={tabRoutes.logs}
+                />
             </Group>
         </>
     )

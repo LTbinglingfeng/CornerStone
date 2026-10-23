@@ -125,6 +125,10 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	h.registerProtectedRoute(mux, cornerstoneWebSearchSettingsPath, h.handleCornerstoneWebSearchSettings)
 	h.registerProtectedRoute(mux, legacyCornerstoneWebSearchSettingsPath, h.handleCornerstoneWebSearchSettings)
 
+	// 运行日志查看
+	h.registerProtectedRoute(mux, logsPath, h.handleLogs)
+	h.registerProtectedRoute(mux, logsDownloadPath, h.handleLogsDownload)
+
 	// 配置接口 (使用 /management 前缀)
 	h.registerProtectedRoute(mux, "/management/config", h.handleConfig)
 
@@ -248,7 +252,10 @@ func (h *Handler) corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		started := time.Now()
 		wrapped := newAPILogResponseWriter(w)
 		returned := false
-		logging.Event(ctx, "http.request.started")
+		quiet := r.Method == http.MethodGet && quietRequestLogPaths[r.URL.Path]
+		if !quiet {
+			logging.Event(ctx, "http.request.started")
+		}
 		defer func() {
 			status := "completed"
 			if !returned {
@@ -261,6 +268,9 @@ func (h *Handler) corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 				status = "canceled"
 			} else if wrapped.status >= 400 {
 				status = "rejected"
+			}
+			if quiet && (status == "completed" || status == "canceled") {
+				return
 			}
 			logging.Event(ctx, "http.request.completed", "status", status,
 				"http_status", wrapped.status, "duration_ms", time.Since(started).Milliseconds(),

@@ -1,9 +1,12 @@
-export type AppTab = 'overview' | 'channels' | 'contacts' | 'chat' | 'settings' | 'me'
+export type AppTab = 'overview' | 'channels' | 'contacts' | 'chat' | 'logs' | 'settings' | 'me'
 
-export const tabOrder: AppTab[] = ['overview', 'chat', 'contacts', 'channels', 'settings', 'me']
+export const tabOrder: AppTab[] = ['overview', 'chat', 'contacts', 'channels', 'logs', 'settings', 'me']
 
-/** Primary navigation. The profile lives behind the account entry, not in the main nav. */
+/** Mobile tab bar. The profile lives behind the account entry; logs are reached from Settings. */
 export const navTabs: AppTab[] = ['overview', 'chat', 'contacts', 'channels', 'settings']
+
+/** Desktop sidebar has room for operational pages that the mobile tab bar omits. */
+export const sidebarTabs: AppTab[] = ['overview', 'chat', 'contacts', 'channels', 'logs', 'settings']
 
 export const tabRoutes: Record<AppTab, string> = {
     overview: '/overview',
@@ -11,6 +14,7 @@ export const tabRoutes: Record<AppTab, string> = {
     settings: '/settings',
     chat: '/chat',
     contacts: '/contacts',
+    logs: '/logs',
     me: '/me',
 }
 
