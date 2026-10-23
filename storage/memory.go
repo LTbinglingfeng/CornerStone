@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"sync"
 	"time"
@@ -275,7 +276,9 @@ func (mm *MemoryManager) loadLocked(promptID string) ([]Memory, error) {
 	return memories, nil
 }
 
-func (mm *MemoryManager) saveLocked(promptID string) error {
+// saveLocked writes a candidate snapshot without changing the published cache.
+// Renaming the synced temporary file is the commit point.
+func (mm *MemoryManager) saveLocked(promptID string, memories []Memory) error {
 	promptDir := filepath.Join(mm.baseDir, promptID)
 	errMkdirAll := os.MkdirAll(promptDir, 0755)
 	if errMkdirAll != nil {
@@ -284,15 +287,18 @@ func (mm *MemoryManager) saveLocked(promptID string) error {
 	}
 
 	memoryPath := mm.getMemoryPath(promptID)
-	file, errOpen := os.OpenFile(memoryPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	file, errOpen := os.CreateTemp(promptDir, ".memories-*.tmp") // 0600
 	if errOpen != nil {
-		logging.Errorf("memory file open failed: path=%s err=%v", memoryPath, errOpen)
+		logging.Errorf("memory temporary file create failed: path=%s err=%v", memoryPath, errOpen)
 		return errOpen
 	}
-	defer file.Close()
+	defer func() {
+		file.Close()
+		os.Remove(file.Name())
+	}()
 
 	writer := bufio.NewWriter(file)
-	for _, memory := range mm.cache[promptID] {
+	for _, memory := range memories {
 		errWrite := writeJSONLine(writer, memory)
 		if errWrite != nil {
 			logging.Errorf("memory write failed: prompt=%s err=%v", promptID, errWrite)
@@ -304,10 +310,38 @@ func (mm *MemoryManager) saveLocked(promptID string) error {
 		logging.Errorf("memory flush failed: prompt=%s err=%v", promptID, errFlush)
 		return errFlush
 	}
+	if err := file.Sync(); err != nil {
+		return err
+	}
 	if err := file.Close(); err != nil {
 		return err
 	}
-	_ = os.Chmod(memoryPath, 0600)
+	if err := os.Rename(file.Name(), memoryPath); err != nil {
+		return err
+	}
+	// The replacement has committed. As with ChatManager.saveSession, a directory
+	// sync warning must not leave the cache behind the already replaced file.
+	// Windows does not support syncing directory handles through os.File.Sync.
+	if runtime.GOOS != "windows" {
+		dir, err := os.Open(promptDir)
+		if err == nil {
+			err = dir.Sync()
+			dir.Close()
+		}
+		if err != nil {
+			logging.Warnf("memory directory sync failed after commit: prompt=%s err=%v", promptID, err)
+		}
+	}
+	return nil
+}
+
+// commitLocked publishes only successfully persisted, independently owned slices.
+// Callers must not mutate the current cache while constructing the candidate.
+func (mm *MemoryManager) commitLocked(promptID string, memories []Memory) error {
+	if err := mm.saveLocked(promptID, memories); err != nil {
+		return err
+	}
+	mm.cache[promptID] = memories
 	return nil
 }
 
@@ -340,7 +374,7 @@ func (mm *MemoryManager) Save(promptID string) error {
 	if errEnsureLoaded != nil {
 		return errEnsureLoaded
 	}
-	return mm.saveLocked(promptID)
+	return mm.saveLocked(promptID, mm.cache[promptID])
 }
 
 func (mm *MemoryManager) Add(promptID string, memory Memory) error {
@@ -378,8 +412,8 @@ func (mm *MemoryManager) Add(promptID string, memory Memory) error {
 		memory.Stability = DefaultStabilityForCategory(memory.Category)
 	}
 
-	mm.cache[promptID] = append(mm.cache[promptID], memory)
-	if err := mm.saveLocked(promptID); err != nil {
+	memories := append(append([]Memory(nil), mm.cache[promptID]...), memory)
+	if err := mm.commitLocked(promptID, memories); err != nil {
 		return err
 	}
 	logging.Infof("memory.added: persona_id=%q id=%q content_bytes=%d", promptID, memory.ID, len(memory.Content))
@@ -409,8 +443,10 @@ func (mm *MemoryManager) Delete(promptID, memoryID string) error {
 		if memories[i].ID != memoryID {
 			continue
 		}
-		mm.cache[promptID] = append(memories[:i], memories[i+1:]...)
-		if err := mm.saveLocked(promptID); err != nil {
+		next := make([]Memory, 0, len(memories)-1)
+		next = append(next, memories[:i]...)
+		next = append(next, memories[i+1:]...)
+		if err := mm.commitLocked(promptID, next); err != nil {
 			return err
 		}
 		logging.Infof("memory.deleted: persona_id=%q id=%q count=1", promptID, memoryID)
@@ -440,7 +476,7 @@ func (mm *MemoryManager) Update(promptID string, memory Memory) error {
 		return errEnsureLoaded
 	}
 
-	memories := mm.cache[promptID]
+	memories := append([]Memory(nil), mm.cache[promptID]...)
 	for i := range memories {
 		if memories[i].ID != memory.ID {
 			continue
@@ -462,8 +498,7 @@ func (mm *MemoryManager) Update(promptID string, memory Memory) error {
 		}
 
 		memories[i] = memory
-		mm.cache[promptID] = memories
-		if err := mm.saveLocked(promptID); err != nil {
+		if err := mm.commitLocked(promptID, memories); err != nil {
 			return err
 		}
 		if fields := changedFields(before, memories[i]); len(fields) > 0 {
@@ -493,7 +528,7 @@ func (mm *MemoryManager) Patch(promptID string, patch MemoryPatch) error {
 		return errEnsureLoaded
 	}
 
-	memories := mm.cache[promptID]
+	memories := append([]Memory(nil), mm.cache[promptID]...)
 	for i := range memories {
 		if memories[i].ID != patch.ID {
 			continue
@@ -532,8 +567,7 @@ func (mm *MemoryManager) Patch(promptID string, patch MemoryPatch) error {
 			memories[i].Pinned = *patch.Pinned
 		}
 
-		mm.cache[promptID] = memories
-		if err := mm.saveLocked(promptID); err != nil {
+		if err := mm.commitLocked(promptID, memories); err != nil {
 			return err
 		}
 		if fields := changedFields(before, memories[i]); len(fields) > 0 {
@@ -657,10 +691,8 @@ func (mm *MemoryManager) DeleteBatch(promptID string, memoryIDs []string) (int, 
 		return 0, nil
 	}
 
-	mm.cache[promptID] = filtered
-	errSave := mm.saveLocked(promptID)
-	if errSave != nil {
-		return 0, errSave
+	if err := mm.commitLocked(promptID, filtered); err != nil {
+		return 0, err
 	}
 	logging.Infof("memory.deleted: persona_id=%q count=%d", promptID, deletedCount)
 	return deletedCount, nil
@@ -697,10 +729,8 @@ func (mm *MemoryManager) DeleteArchived(promptID string) (int, error) {
 		return 0, nil
 	}
 
-	mm.cache[promptID] = filtered
-	errSave := mm.saveLocked(promptID)
-	if errSave != nil {
-		return 0, errSave
+	if err := mm.commitLocked(promptID, filtered); err != nil {
+		return 0, err
 	}
 	logging.Infof("memory.deleted: persona_id=%q count=%d", promptID, deletedCount)
 	return deletedCount, nil

@@ -25,6 +25,8 @@ type Handler struct {
 	cachePhotoDir string
 	ttsAudioDir   string
 
+	statisticsManager *storage.StatisticsManager
+
 	memoryManager   *storage.MemoryManager
 	memoryExtractor *storage.MemoryExtractor
 	memorySessions  map[string]*storage.MemorySession
@@ -124,6 +126,9 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	h.registerProtectedRoute(mux, "/api/settings/reminders/", h.handleReminderByID)
 	h.registerProtectedRoute(mux, cornerstoneWebSearchSettingsPath, h.handleCornerstoneWebSearchSettings)
 	h.registerProtectedRoute(mux, legacyCornerstoneWebSearchSettingsPath, h.handleCornerstoneWebSearchSettings)
+
+	// 模型调用统计
+	h.registerProtectedRoute(mux, statisticsPath, h.handleStatistics)
 
 	// 运行日志查看
 	h.registerProtectedRoute(mux, logsPath, h.handleLogs)

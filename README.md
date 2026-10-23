@@ -117,6 +117,7 @@ src/
     user_about/
     cache_photo/
     tts_audio/
+    statistics/      # UTC daily model-call JSONL records
 ```
 
 Prompt definitions, chat history, and user profile data are also kept locally in JSON files under this tree.
@@ -134,6 +135,19 @@ Application logs go to stdout and `cornerstone.log` in the data directory.
 Correlate events by `request`. Durable ClawBot jobs retain their request ID and `job_id`; `scope=delivery_phase` durations cover one queue phase, not the entire job. Web SSE currently uses non-streaming upstream calls: its `first_text_ms` measures the first visible text written to the frontend, not upstream time to first token.
 
 This release retains append-only text logs; rotation and a log-management UI are not included. Review and redact identifying metadata before sharing logs.
+
+## Model Usage Statistics
+
+`GET /management/statistics` requires the existing management authentication and returns `{success, data}`. Optional query parameters: `from`, `to` (RFC3339 timestamps, inclusive start / exclusive end), `provider_id`, and `model` (exact matches). History defaults to all recorded calls before now. The response contains `totals`, `groups` (provider + actual response model, falling back to requested model), and `realtime`.
+
+- One request means one completed model-client invocation, including failures. Web and external-channel chat, reminders, idle greetings, and memory extraction are included. Tool-loop steps count separately. HTTP management calls, search, TTS, and image calls are excluded. Gemini SDK continuation / internal retries remain one logical call, not a count of underlying HTTP attempts.
+- `totals` includes `requests`, `successful_requests`, `failed_requests`, `input_tokens`, `output_tokens`, `total_tokens`, `cache_read_tokens`, `cache_creation_tokens`, `reasoning_tokens`, and cumulative `duration_ms`. Tokens are taken only from reported upstream usage, including billed failed calls. Missing usage is not estimated: see `unknown_usage_requests`, `usage_reported_requests`, and `usage_coverage` (0–1 or null with no requests).
+- `realtime.rpm` / `realtime.tpm` are completed requests / reported total tokens in `[as_of - 60 seconds, as_of)`, without startup extrapolation. Provider/model filters apply, but historical `from` / `to` do not. Long-running calls enter this window at completion, not at start. Realtime usage coverage is reported separately.
+- `cache_hit_rate` is cache-read tokens / reported input tokens (0–1, null when input is zero). Cache writes are not hits. Anthropic input/total counts include cache reads and writes; other providers already include cached input. Cached and reasoning counts are details, not additional tokens to add to `total_tokens`.
+- Records are appended synchronously to `statistics/YYYY-MM-DD.jsonl` under `-data` and survive restarts. Collection begins with this feature; existing logs are not backfilled. Records contain billing metadata only, no messages or credentials. There is no automatic retention/deletion and no dashboard in this release.
+- Persistence failures do not fail model generation. `data_complete=false` and `write_failures` reveal failures observed during the current manager lifetime (`write_failure_scope=manager_lifetime`); they cannot certify calls lost during downtime or before restart. These fields describe storage health, not usage coverage. Corrupt/partial records make affected queries fail explicitly; an incomplete final line also blocks further appends to that day's file until repaired. Back up the file before repair. Large history queries stream daily files while holding a read lock and may delay concurrent statistics writes.
+
+Example: `/management/statistics?from=2026-10-01T00:00:00Z&to=2026-11-01T00:00:00Z&provider_id=my-provider`.
 
 ## API and Access
 

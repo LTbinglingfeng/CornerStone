@@ -2,17 +2,23 @@ package storage
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 	"time"
 
 	"cornerstone/client"
 	"cornerstone/logging"
+
+	"github.com/google/uuid"
 )
 
 const (
 	memoryBatchUpsertToolName = "memory_batch_upsert"
 	memoryBatchUpsertMaxItems = 6
 )
+
+var errMemoryMatchingIDNotFound = errors.New("memory matching_id not found")
 
 type TimeProvider interface {
 	Now() time.Time
@@ -35,6 +41,7 @@ type memoryExtractionApplyStats struct {
 	AddFailedCount     int
 	UpdateFailedCount  int
 	TruncatedItemCount int
+	UnprocessedCount   int
 }
 
 var memoryExtractionTools = []client.Tool{
@@ -223,56 +230,83 @@ func truncateMemoryBatchItems(promptID string, items []ExtractedMemory) ([]Extra
 	return items[:memoryBatchUpsertMaxItems], truncatedCount
 }
 
-func (e *MemoryExtractor) applyExtractedMemories(promptID string, items []ExtractedMemory, now time.Time) memoryExtractionApplyStats {
-	stats := memoryExtractionApplyStats{
-		InputCount: len(items),
+// applyExtractedMemories commits this extraction's changes together. Returning a
+// save error must not leave half a batch applied before MemorySession retries it.
+// This remains extraction-specific; the chat tool retains its own write policy.
+func (e *MemoryExtractor) applyExtractedMemories(promptID string, items []ExtractedMemory, now time.Time) (stats memoryExtractionApplyStats, err error) {
+	stats.InputCount = len(items)
+	stats.UnprocessedCount = len(items)
+	defer func() {
+		if err != nil {
+			stats.AddFailedCount += stats.AddedCount
+			stats.UpdateFailedCount += stats.UpdatedCount
+			stats.AddedCount = 0
+			stats.UpdatedCount = 0
+		}
+	}()
+	if err := ValidateID(promptID); err != nil {
+		return stats, err
+	}
+	if now.IsZero() {
+		now = time.Now()
 	}
 
-	for _, item := range items {
+	e.mm.mu.Lock()
+	defer e.mm.mu.Unlock()
+	if err := e.mm.ensureLoadedLocked(promptID); err != nil {
+		return stats, err
+	}
+	memories := append([]Memory(nil), e.mm.cache[promptID]...)
+	type change struct {
+		before Memory
+		after  Memory
+		added  bool
+	}
+	changes := make([]change, 0, len(items))
+
+	for i, item := range items {
+		stats.UnprocessedCount = len(items) - i - 1
 		subject, category, content, ok := NormalizeExtractedMemoryFields(item.Subject, item.Category, item.Content)
 		if !ok {
 			stats.InvalidCount++
 			logging.Warnf(
 				"memory extraction field invalid: prompt=%q subject_bytes=%d category_bytes=%d content_bytes=%d",
-				promptID,
-				len(item.Subject),
-				len(item.Category),
-				len(item.Content),
+				promptID, len(item.Subject), len(item.Category), len(item.Content),
 			)
 			continue
 		}
 
-		if item.MatchingID != nil && strings.TrimSpace(*item.MatchingID) != "" {
+		if item.MatchingID != nil {
 			matchingID := strings.TrimSpace(*item.MatchingID)
-			old := e.mm.FindByID(promptID, matchingID)
-			if old != nil {
-				updated := *old
-				updated.Subject = subject
-				updated.Category = category
-				updated.Content = content
-				updated.ReinforceAt(now)
-				errUpdate := e.mm.Patch(promptID, MemoryPatch{
-					ID:        matchingID,
-					Subject:   &subject,
-					Category:  &category,
-					Content:   &content,
-					Strength:  &updated.Strength,
-					Stability: &updated.Stability,
-					LastSeen:  &updated.LastSeen,
-					SeenCount: &updated.SeenCount,
-				})
-				if errUpdate != nil {
-					stats.UpdateFailedCount++
-					logging.Errorf("memory update failed: prompt=%q id=%q error_kind=%q", promptID, matchingID, logging.ErrorKind(errUpdate))
-				} else {
-					stats.UpdatedCount++
-				}
-				continue
+			if err := ValidateID(matchingID); err != nil {
+				stats.UpdateFailedCount++
+				return stats, err
 			}
-			logging.Infof("memory matching id not found, adding: prompt=%q id=%q", promptID, matchingID)
+			index := -1
+			for i := range memories {
+				if memories[i].ID == matchingID {
+					index = i
+					break
+				}
+			}
+			if index < 0 {
+				stats.UpdateFailedCount++
+				return stats, fmt.Errorf("%w: %q", errMemoryMatchingIDNotFound, matchingID)
+			}
+			before := memories[index]
+			updated := before
+			updated.Subject = subject
+			updated.Category = category
+			updated.Content = content
+			updated.ReinforceAt(now)
+			memories[index] = updated
+			changes = append(changes, change{before: before, after: updated})
+			stats.UpdatedCount++
+			continue
 		}
 
-		errAdd := e.mm.Add(promptID, Memory{
+		memory := Memory{
+			ID:        uuid.New().String(),
 			Subject:   subject,
 			Category:  category,
 			Content:   content,
@@ -281,14 +315,23 @@ func (e *MemoryExtractor) applyExtractedMemories(promptID string, items []Extrac
 			LastSeen:  now,
 			SeenCount: 1,
 			CreatedAt: now,
-		})
-		if errAdd != nil {
-			stats.AddFailedCount++
-			logging.Errorf("memory add failed: prompt=%q error_kind=%q", promptID, logging.ErrorKind(errAdd))
-		} else {
-			stats.AddedCount++
+		}
+		memories = append(memories, memory)
+		changes = append(changes, change{after: memory, added: true})
+		stats.AddedCount++
+	}
+	if len(changes) == 0 {
+		return stats, nil
+	}
+	if err := e.mm.commitLocked(promptID, memories); err != nil {
+		return stats, err
+	}
+	for _, change := range changes {
+		if change.added {
+			logging.Infof("memory.added: persona_id=%q id=%q content_bytes=%d", promptID, change.after.ID, len(change.after.Content))
+		} else if fields := changedFields(change.before, change.after); len(fields) > 0 {
+			logging.Infof("memory.updated: persona_id=%q id=%q changed_fields=%v content_bytes=%d", promptID, change.after.ID, fields, len(change.after.Content))
 		}
 	}
-
-	return stats
+	return stats, nil
 }

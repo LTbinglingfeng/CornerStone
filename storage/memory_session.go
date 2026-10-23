@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -12,8 +13,6 @@ type MemorySession struct {
 	promptID   string
 	sessionID  string
 	roundCount int
-
-	activeMemories []Memory
 
 	mm        *MemoryManager
 	extractor *MemoryExtractor
@@ -45,16 +44,17 @@ func NewMemorySession(promptID, sessionID string, mm *MemoryManager, extractor *
 		extractor:  extractor,
 		lastAccess: time.Now(),
 	}
-	s.refresh()
 	logging.Infof("memory session created: prompt=%s session=%s", promptID, sessionID)
 	return s
 }
 
 func (s *MemorySession) GetActiveMemories() []Memory {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.touch()
-	return append([]Memory(nil), s.activeMemories...)
+	s.mu.Unlock()
+	// MemoryManager owns the only cache. Read a fresh snapshot for each prompt,
+	// so edits, deletions, other sessions' writes and decay are visible immediately.
+	return s.mm.GetActiveMemories(s.promptID)
 }
 
 func (s *MemorySession) OnRoundComplete() {
@@ -76,31 +76,23 @@ func (s *MemorySession) OnRoundComplete() {
 
 	go func() {
 		if errRefresh := s.refreshWithExtractRetry(1); errRefresh != nil {
-			logging.Errorf("记忆刷新失败（已重试）session=%s: %v", s.sessionID, errRefresh)
+			logging.Errorf("记忆提取失败 session=%s: %v", s.sessionID, errRefresh)
 		}
 	}()
 }
 
+// RefreshNow retains the existing round-counter behavior for chat tool callers.
+// There is no session-local memory snapshot to refresh anymore.
 func (s *MemorySession) RefreshNow() {
 	s.mu.Lock()
 	s.roundCount = 0
 	s.touch()
-	s.mu.Unlock()
-
-	s.refresh()
-}
-
-func (s *MemorySession) refresh() {
-	active := s.mm.GetActiveMemories(s.promptID)
-	s.mu.Lock()
-	s.activeMemories = active
 	s.mu.Unlock()
 }
 
 // refreshWithExtractRetry 带重试的记忆提取
 func (s *MemorySession) refreshWithExtractRetry(maxRetries int) error {
 	if s.extractor == nil {
-		s.refresh()
 		return nil
 	}
 
@@ -113,12 +105,15 @@ func (s *MemorySession) refreshWithExtractRetry(maxRetries int) error {
 		}
 
 		if errExtract := s.extractor.ExtractAndSave(s.promptID, s.sessionID); errExtract != nil {
+			// A missing update target may have been deliberately deleted. Do not
+			// immediately ask the model again and let it turn that update into an add.
+			if errors.Is(errExtract, errMemoryMatchingIDNotFound) || errors.Is(errExtract, ErrInvalidID) {
+				return fmt.Errorf("记忆提取结果被拒绝: %w", errExtract)
+			}
 			lastErr = errExtract
 			continue
 		}
 
-		// 成功
-		s.refresh()
 		return nil
 	}
 

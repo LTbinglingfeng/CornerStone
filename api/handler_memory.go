@@ -639,15 +639,32 @@ func (h *Handler) handleMemoryImport(w http.ResponseWriter, r *http.Request, pro
 		return
 	}
 
+	// 导入逐条提交，不是整批事务；失败响应也保留已提交的计数。
+	counts := map[string]interface{}{
+		"added": 0, "invalid": 0, "mode": req.Mode,
+		"failed": 0, "deleted": 0, "delete_failed": 0, "unprocessed": 0,
+	}
 	if req.Mode == "replace" {
 		existing := h.memoryManager.GetAll(promptID)
-		for _, m := range existing {
-			_ = h.memoryManager.Delete(promptID, m.ID)
+		for i, m := range existing {
+			if errDelete := h.memoryManager.Delete(promptID, m.ID); errDelete != nil {
+				logging.Warnf("memory import delete failed: prompt=%s id=%s err=%v", promptID, m.ID, errDelete)
+				counts["deleted"] = i
+				counts["delete_failed"] = 1
+				counts["unprocessed"] = len(req.Memories)
+				h.jsonResponse(w, http.StatusInternalServerError, Response{
+					Success: false, Data: counts,
+					Error: "Replace deletion failed; no new memories were added. Import is not a batch transaction: completed deletions were not rolled back. Check current memories before retrying; do not blindly retry the whole batch.",
+				})
+				return
+			}
 		}
+		counts["deleted"] = len(existing)
 	}
 
 	addedCount := 0
 	invalidCount := 0
+	failedCount := 0
 	for _, item := range req.Memories {
 		subject, category, content, ok := storage.NormalizeExtractedMemoryFields(item.Subject, item.Category, item.Content)
 		if !ok {
@@ -682,19 +699,23 @@ func (h *Handler) handleMemoryImport(w http.ResponseWriter, r *http.Request, pro
 
 		if errAdd := h.memoryManager.Add(promptID, memory); errAdd != nil {
 			logging.Warnf("memory import add failed: prompt=%s err=%v", promptID, errAdd)
+			failedCount++
 			continue
 		}
 		addedCount++
 	}
 
-	h.jsonResponse(w, http.StatusOK, Response{
-		Success: true,
-		Data: map[string]interface{}{
-			"added":   addedCount,
-			"invalid": invalidCount,
-			"mode":    req.Mode,
-		},
-	})
+	counts["added"] = addedCount
+	counts["invalid"] = invalidCount
+	counts["failed"] = failedCount
+	if failedCount > 0 {
+		h.jsonResponse(w, http.StatusInternalServerError, Response{
+			Success: false, Data: counts,
+			Error: "Memory saves failed. Import is not a batch transaction: successful additions and deletions were not rolled back. Check counts and current memories before retrying; do not blindly retry the whole batch.",
+		})
+		return
+	}
+	h.jsonResponse(w, http.StatusOK, Response{Success: true, Data: counts})
 }
 
 func (h *Handler) handleBatchDeleteMemories(w http.ResponseWriter, r *http.Request, promptID string) {

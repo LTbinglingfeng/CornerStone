@@ -119,6 +119,7 @@ func (h *Handler) generateSessionReply(ctx context.Context, options sessionReply
 		return nil, fmt.Errorf("no active provider configured")
 	}
 	ctx = logging.WithFields(ctx, "provider", provider.ID, "model", provider.Model)
+	ctx = h.withStatistics(ctx, provider.ID)
 	if provider.Type == config.ProviderTypeGeminiImage {
 		return nil, fmt.Errorf("active provider is not chat-capable")
 	}

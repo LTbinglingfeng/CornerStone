@@ -47,7 +47,7 @@ func (c *ObservedClient) Snapshot() CallStats {
 func (c *ObservedClient) complete(ctx context.Context, req ChatRequest, model string, stream bool, start time.Time, firstText *int64, usage Usage, err error) {
 	duration := time.Since(start).Milliseconds()
 	// Anthropic input_tokens excludes both cache categories. Other providers
-	// include cache reads in input_tokens; normalize only this provider's logs.
+	// include cache reads in input_tokens; normalize logs and persisted statistics.
 	if usage.InputTokensExcludeCache {
 		cached := usage.CacheCreationInputTokens + usage.CacheReadInputTokens
 		usage.PromptTokens += cached
@@ -68,6 +68,7 @@ func (c *ObservedClient) complete(ctx context.Context, req ChatRequest, model st
 		c.stats.Usage.ReasoningTokens += usage.ReasoningTokens
 	}
 	c.mu.Unlock()
+	recordCompletedCall(ctx, model, usage, duration, err)
 	status := "success"
 	if err != nil {
 		status = "error"

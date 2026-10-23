@@ -314,6 +314,12 @@ type MemoryExtractor struct {
 	userMgr      *UserManager
 	templatePath string
 	timeProvider TimeProvider
+	callRecorder client.CallRecorder
+}
+
+// SetCallRecorder must be called before starting extraction workers.
+func (e *MemoryExtractor) SetCallRecorder(recorder client.CallRecorder) {
+	e.callRecorder = recorder
 }
 
 func NewMemoryExtractor(mm *MemoryManager, configMgr *config.Manager, chatMgr *ChatManager, userMgr *UserManager, templatePath string, timeProviders ...TimeProvider) *MemoryExtractor {
@@ -745,6 +751,7 @@ func (e *MemoryExtractor) ExtractAndSave(promptID, sessionID string) error {
 
 	ctx = logging.EnsureRequest(ctx, "internal", "memory_extraction")
 	ctx = logging.WithFields(ctx, "session", sessionID, "prompt", promptID, "provider", provider.ID, "model", provider.Model)
+	ctx = client.WithCallRecorder(ctx, e.callRecorder, provider.ID)
 	started := time.Now()
 	outcome := "failed"
 	logging.Event(ctx, "memory.extraction.started", "rounds", contextRounds, "existing_memories", len(existingMemories))
@@ -788,17 +795,19 @@ func (e *MemoryExtractor) ExtractAndSave(promptID, sessionID string) error {
 
 	items, truncatedCount := truncateMemoryBatchItems(promptID, parseResult.Items)
 	now := e.now()
-	stats := e.applyExtractedMemories(promptID, items, now)
+	stats, errApply := e.applyExtractedMemories(promptID, items, now)
 	stats.TruncatedItemCount = truncatedCount
 	outcome = "completed"
-	if stats.AddFailedCount > 0 || stats.UpdateFailedCount > 0 {
-		outcome = "partial_failed"
+	if errApply != nil {
+		outcome = "failed"
+		logging.Event(ctx, "memory.extraction.failed", "error_kind", logging.ErrorKind(errApply))
 	}
 	logging.Event(ctx, "memory.extraction.applied", "added", stats.AddedCount, "updated", stats.UpdatedCount,
-		"invalid", stats.InvalidCount, "add_failed", stats.AddFailedCount, "update_failed", stats.UpdateFailedCount)
+		"invalid", stats.InvalidCount, "add_failed", stats.AddFailedCount, "update_failed", stats.UpdateFailedCount,
+		"unprocessed", stats.UnprocessedCount)
 
 	logging.Infof(
-		"记忆提取完成 prompt=%s session=%s tool_calls=%d items=%d added=%d updated=%d invalid=%d add_failed=%d update_failed=%d truncated=%d content_ignored=%t",
+		"记忆提取完成 prompt=%s session=%s tool_calls=%d items=%d added=%d updated=%d invalid=%d add_failed=%d update_failed=%d truncated=%d unprocessed=%d content_ignored=%t",
 		promptID,
 		sessionID,
 		parseResult.ValidCalls,
@@ -809,7 +818,11 @@ func (e *MemoryExtractor) ExtractAndSave(promptID, sessionID string) error {
 		stats.AddFailedCount,
 		stats.UpdateFailedCount,
 		stats.TruncatedItemCount,
+		stats.UnprocessedCount,
 		strings.TrimSpace(choice.Message.Content) != "",
 	)
+	if errApply != nil {
+		return fmt.Errorf("记忆保存失败: %w", errApply)
+	}
 	return nil
 }

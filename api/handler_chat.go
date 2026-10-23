@@ -135,6 +135,7 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 		effectivePromptID = existingSession.PromptID
 	}
 	ctx = logging.WithFields(ctx, "session", sessionID, "prompt", effectivePromptID, "provider", provider.ID, "model", provider.Model)
+	ctx = h.withStatistics(ctx, provider.ID)
 	r = r.WithContext(ctx)
 	requestLog.ctx = ctx
 	var persona string

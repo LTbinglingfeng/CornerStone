@@ -115,7 +115,7 @@ type DeltaToolCall struct {
 
 // Usage token使用情况
 type Usage struct {
-	// Anthropic reports cache input separately; normalize only in logs, not API responses.
+	// Anthropic reports cache input separately; normalize in observations, not API responses.
 	InputTokensExcludeCache  bool `json:"-"`
 	Present                  bool `json:"-"`
 	ReasoningTokens          int  `json:"reasoning_tokens,omitempty"`

@@ -49,6 +49,7 @@ type writeMemoryToolData struct {
 	Updated int                   `json:"updated"`
 	Skipped int                   `json:"skipped"`
 	Blocked int                   `json:"blocked"`
+	Failed  int                   `json:"failed"` // 保存失败数，同时计入 skipped 以保留原有统计语义
 	Items   []writeMemoryToolItem `json:"items,omitempty"`
 }
 
@@ -142,7 +143,8 @@ func (e *chatToolExecutor) handleWriteMemory(ctx context.Context, toolCall clien
 			if errUpdate != nil {
 				logging.Errorf("write_memory update failed: prompt=%s id=%s err=%v", toolCtx.PromptID, existing.ID, errUpdate)
 				item.Status = "skipped"
-				item.Reason = "更新记忆失败"
+				item.Reason = "更新记忆保存失败"
+				data.Failed++
 				data.Skipped++
 				data.Items = append(data.Items, item)
 				continue
@@ -168,7 +170,8 @@ func (e *chatToolExecutor) handleWriteMemory(ctx context.Context, toolCall clien
 		if errAdd != nil {
 			logging.Errorf("write_memory add failed: prompt=%s err=%v", toolCtx.PromptID, errAdd)
 			item.Status = "skipped"
-			item.Reason = "写入记忆失败"
+			item.Reason = "写入记忆保存失败"
+			data.Failed++
 			data.Skipped++
 			data.Items = append(data.Items, item)
 			continue
@@ -181,6 +184,13 @@ func (e *chatToolExecutor) handleWriteMemory(ctx context.Context, toolCall clien
 
 	if data.Added > 0 || data.Updated > 0 {
 		toolCtx.MemSession.RefreshNow()
+	}
+
+	if data.Failed > 0 {
+		return chatToolResult{
+			OK: false, Data: data,
+			Error: "部分记忆保存失败，已成功的条目不会回滚。请核对逐项结果，不要盲目整批重试，以免重复写入或强化记忆。",
+		}
 	}
 
 	return chatToolResult{

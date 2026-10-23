@@ -44,6 +44,10 @@ export interface MemoryImportResult {
     added: number
     invalid: number
     mode: string
+    failed?: number
+    deleted?: number
+    delete_failed?: number
+    unprocessed?: number
 }
 
 export const memoryService = {

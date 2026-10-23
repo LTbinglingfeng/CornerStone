@@ -318,6 +318,10 @@ func main() {
 	reminderManager := storage.NewReminderManager(remindersDir)
 	idleGreetingManager := storage.NewIdleGreetingManager(idleGreetingsDir)
 	exactTimeService := exacttime.New(exacttime.DefaultConfig())
+	statisticsManager, err := storage.NewStatisticsManager(filepath.Join(baseDir, "statistics"))
+	if err != nil {
+		logging.Fatalf("初始化统计存储失败: %v", err)
+	}
 	memoryExtractor := storage.NewMemoryExtractor(
 		memoryManager,
 		configManager,
@@ -326,6 +330,7 @@ func main() {
 		filepath.Join(baseDir, "memory_extraction_prompt.txt"),
 		exactTimeService,
 	)
+	memoryExtractor.SetCallRecorder(statisticsManager)
 	os.MkdirAll(cachePhotoDir, 0755)
 	os.MkdirAll(ttsAudioDir, 0755)
 
@@ -334,6 +339,7 @@ func main() {
 
 	// 注册API处理器
 	handler := api.NewHandler(configManager, promptManager, chatManager, userManager, authManager, cachePhotoDir, ttsAudioDir, memoryManager, memoryExtractor)
+	handler.SetStatisticsManager(statisticsManager)
 	exactTimeCtx, exactTimeCancel := context.WithCancel(context.Background())
 	defer exactTimeCancel()
 	go exactTimeService.Run(exactTimeCtx)

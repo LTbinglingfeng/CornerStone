@@ -20,7 +20,7 @@ const (
 
 // quietRequestLogPaths are polled by the log viewer; logging every successful
 // poll would flood the very file being viewed. Failures are still logged.
-var quietRequestLogPaths = map[string]bool{logsPath: true}
+var quietRequestLogPaths = map[string]bool{logsPath: true, statisticsPath: true}
 
 type logsResponse struct {
 	logging.LogPage
