@@ -1,4 +1,9 @@
+import type { ClawBotCommandPermissions } from '../services/clawbotService'
+
+export type QQOfficialCommandPermissions = ClawBotCommandPermissions
+
 export interface QQOfficialSettings {
+    command_permissions: QQOfficialCommandPermissions
     revision: string
     enabled: boolean
     app_id: string
@@ -15,7 +20,12 @@ export interface QQOfficialSettings {
 export type QQOfficialUpdate = Pick<
     QQOfficialSettings,
     'enabled' | 'app_id' | 'prompt_id' | 'source_filter_mode' | 'allowed_user_openids'
-> & { revision?: string; app_secret?: string; clear_secret?: boolean }
+> & {
+    revision?: string
+    app_secret?: string
+    clear_secret?: boolean
+    command_permissions?: QQOfficialCommandPermissions
+}
 export interface QQOfficialLogin {
     id: string
     qr_url: string

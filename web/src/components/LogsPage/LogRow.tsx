@@ -4,6 +4,8 @@ import type { LogEntry } from '../../types/logs'
 import { Icon, cx } from '../ui'
 import { fieldTone, findField, formatClock, formatFieldValue, formatDate, levelKey, parseEntryTime } from './logFormat'
 
+import { localizeLogEvent, localizeLogField, localizeLogValue } from './logLocalization'
+
 const SUMMARY_FIELD_LIMIT = 6
 
 /** Case-insensitive highlight; skipped when lower-casing changes string length (rare Unicode cases). */
@@ -40,7 +42,9 @@ function LogRowImpl({ entry, expanded, fresh, query, onToggle, onCopy, onFilterR
     const level = levelKey(entry)
     const date = parseEntryTime(entry)
     const fields = entry.fields || []
-    const title = entry.event || entry.message || (fields.length === 0 ? entry.raw : '')
+    const title = entry.event
+        ? localizeLogEvent(entry.event, locale)
+        : entry.message || (fields.length === 0 ? entry.raw : '')
     const hiddenCount = Math.max(0, fields.length - SUMMARY_FIELD_LIMIT)
     const requestId = findField(entry, 'request')
     const detailsId = `log-${entry.offset}-details`
@@ -86,7 +90,10 @@ function LogRowImpl({ entry, expanded, fresh, query, onToggle, onCopy, onFilterR
                 </span>
                 <span className="logs-row__body">
                     {title && (
-                        <span className={cx('logs-row__title', entry.event && 'logs-row__title--event')}>
+                        <span
+                            title={entry.event}
+                            className={cx('logs-row__title', entry.event && 'logs-row__title--event')}
+                        >
                             <Highlight text={title} query={query} />
                         </span>
                     )}
@@ -95,9 +102,14 @@ function LogRowImpl({ entry, expanded, fresh, query, onToggle, onCopy, onFilterR
                             className={cx('logs-chip', `logs-chip--${fieldTone(field)}`)}
                             key={`${field.key}-${index}`}
                         >
-                            <span className="logs-chip__key">{field.key}</span>
-                            <span className="logs-chip__value">
-                                <Highlight text={formatFieldValue(field, true)} query={query} />
+                            <span className="logs-chip__key" title={field.key}>
+                                {localizeLogField(field.key, locale)}
+                            </span>
+                            <span className="logs-chip__value" title={field.value}>
+                                <Highlight
+                                    text={formatFieldValue({ ...field, value: localizeLogValue(field, locale) }, true)}
+                                    query={query}
+                                />
                             </span>
                         </span>
                     ))}
@@ -128,9 +140,12 @@ function LogRowImpl({ entry, expanded, fresh, query, onToggle, onCopy, onFilterR
                         <dl className="logs-details__fields" aria-label={t('logs.fields')}>
                             {fields.map((field, index) => (
                                 <div key={`${field.key}-${index}`}>
-                                    <dt>{field.key}</dt>
-                                    <dd className={`logs-tone--${fieldTone(field)}`}>
-                                        <Highlight text={field.value === '' ? '""' : field.value} query={query} />
+                                    <dt title={field.key}>{localizeLogField(field.key, locale)}</dt>
+                                    <dd className={`logs-tone--${fieldTone(field)}`} title={field.value}>
+                                        <Highlight
+                                            text={field.value === '' ? '""' : localizeLogValue(field, locale)}
+                                            query={query}
+                                        />
                                         {formatFieldValue(field) !== field.value && field.value !== '' && (
                                             <span className="logs-details__hint">{formatFieldValue(field)}</span>
                                         )}

@@ -5,7 +5,7 @@ import { useT } from '../contexts/I18nContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { appendQueryParam, getUserAvatarUrl, getUserInfo } from '../services/api'
 import type { UserInfo } from '../types/chat'
-import { navTabs, sidebarTabs, tabRoutes, type AppTab } from '../utils/routes'
+import { navTabs, settingsChildTabs, sidebarTabs, tabRoutes, type AppTab } from '../utils/routes'
 import { Avatar, Icon, type IconName } from './ui'
 
 const tabIcons: Record<AppTab, IconName> = {
@@ -13,6 +13,7 @@ const tabIcons: Record<AppTab, IconName> = {
     chat: 'chat',
     contacts: 'persona',
     channels: 'channels',
+    usage: 'chart',
     logs: 'terminal',
     settings: 'settings',
     me: 'user',
@@ -47,8 +48,10 @@ export default function ConsoleNav({ username }: { username?: string | null }) {
     const { theme, toggleTheme } = useTheme()
     const account = useAccount(username ?? null)
     const { pathname } = useLocation()
-    // Logs are reached from Settings on mobile, so Settings stays highlighted there.
-    const inLogs = pathname === tabRoutes.logs || pathname.startsWith(`${tabRoutes.logs}/`)
+    // Usage and logs are reached from Settings on mobile, so Settings stays highlighted there.
+    const inSettingsChild = settingsChildTabs.some(
+        (tab) => pathname === tabRoutes[tab] || pathname.startsWith(`${tabRoutes[tab]}/`)
+    )
     const themeLabel = theme === 'dark' ? t('console.lightMode') : t('console.darkMode')
 
     return (
@@ -89,7 +92,7 @@ export default function ConsoleNav({ username }: { username?: string | null }) {
                         to={tabRoutes[tab]}
                         aria-label={t(`console.${tab}`)}
                         className={({ isActive }) =>
-                            isActive || (tab === 'settings' && inLogs) ? 'active' : undefined
+                            isActive || (tab === 'settings' && inSettingsChild) ? 'active' : undefined
                         }
                     >
                         <ConsoleIcon name={tab} />

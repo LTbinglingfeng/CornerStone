@@ -47,3 +47,31 @@ func TestQQOfficialConfigDefaultsValidationAndRollback(t *testing.T) {
 		t.Fatal("save failure did not rollback")
 	}
 }
+
+func TestQQOfficialCommandPermissions(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	// Old configurations acquire the same defaults as ClawBot.
+	if err := os.WriteFile(path, []byte(`{"qq_official":{"app_id":"123"}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	m := NewManager(path)
+	if got := m.GetQQOfficialConfig().CommandPermissions; !reflect.DeepEqual(got, DefaultClawBotCommandPermissions()) {
+		t.Fatalf("legacy defaults: %v", got)
+	}
+	c := m.GetQQOfficialConfig()
+	c.CommandPermissions = map[string]bool{"new": false, "prompt": false, "menu": false, "unknown": true}
+	if err := m.UpdateQQOfficialConfig(c); err != nil {
+		t.Fatal(err)
+	}
+	c.CommandPermissions["new"] = true
+	want := NormalizeClawBotCommandPermissions(map[string]bool{"new": false, "prompt": false})
+	for _, got := range []map[string]bool{m.GetQQOfficialConfig().CommandPermissions, m.Get().QQOfficial.CommandPermissions, NewManager(path).GetQQOfficialConfig().CommandPermissions} {
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("permissions: got %v want %v", got, want)
+		}
+		got["new"] = true
+	}
+	if m.GetQQOfficialConfig().CommandPermissions["new"] {
+		t.Fatal("snapshot mutation changed stored permissions")
+	}
+}

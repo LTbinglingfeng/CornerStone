@@ -1,9 +1,13 @@
+import { logVocabularyEn } from './logVocabulary'
 import { managementCopy } from './archive'
 import { overview } from './overview'
 import { settingsManagementCopy } from './settingsManagement'
 
 const en = {
     qqOfficial: {
+        commandPermissionsHint:
+            'Control which slash commands are available in the QQ Official channel. /menu is always available.',
+        commandPromptDesc: 'Allow users to view and switch the persona bound to the QQ Official channel',
         title: 'QQ Official (WebSocket)',
         hint: 'Independent official bot · Private chats only · Alongside NapCat',
         scope: 'Private text and image chats only. No group chats; proactive reminders are not integrated. Uses the fixed official QQ platform; no API URL is needed.',
@@ -53,6 +57,7 @@ const en = {
             channels: 'Channels',
             contacts: 'Personas',
             chat: 'Chats',
+            usage: 'Usage',
             logs: 'Logs',
             settings: 'Settings',
             me: 'Profile',
@@ -76,6 +81,7 @@ const en = {
         channels: 'Channels',
         contacts: 'Personas',
         chat: 'Conversations',
+        usage: 'Usage',
         logs: 'Logs',
         settings: 'Settings',
         me: 'Profile',
@@ -830,7 +836,55 @@ const en = {
         fixed: 'Fixed',
         sliding: 'Sliding',
     },
+    usage: {
+        title: 'Usage',
+        description:
+            'Requests, tokens and latency of model calls across chat, reminders, greetings and memory extraction.',
+        settingsEntry: 'Model usage',
+        settingsEntryHint: 'Requests, token spend and live rates',
+        refresh: 'Refresh',
+        retry: 'Retry',
+        range: 'Time range',
+        ranges: { today: 'Today', week: '7 days', month: '30 days', all: 'All' },
+        requests: 'Requests',
+        tokens: 'Tokens',
+        cacheHitRate: 'Cache hit rate',
+        avgLatency: 'Avg latency',
+        allSucceeded: 'All succeeded',
+        failedSummary: '{{count}} failed · {{rate}} success',
+        inputOutput: 'In {{input}} · Out {{output}}',
+        cacheHitSummary: '{{count}} tokens from cache',
+        latencyTotal: '{{total}} total',
+        noData: '—',
+        live: 'Live',
+        liveWindow: 'Last 60 seconds',
+        rpm: 'Requests / min',
+        tpm: 'Tokens / min',
+        byModel: 'By model',
+        modelDetail: '{{provider}} · {{count}} req · avg {{latency}}',
+        failed: '{{count}} failed',
+        unknownUsage: '{{count}} without usage',
+        tokenDetail: 'Token breakdown',
+        input: 'Input',
+        output: 'Output',
+        cacheRead: 'Cache reads',
+        cacheWrite: 'Cache writes',
+        reasoning: 'Reasoning',
+        detailNote: 'Cache and reasoning are parts of input and output, not added to the total.',
+        coverage: '{{count}} calls returned no usage from upstream and are not counted in tokens.',
+        asOf: 'As of {{time}}',
+        incomplete: '{{count}} usage records failed to save during this run. Figures may be incomplete.',
+        refreshFailed: 'Refresh failed, showing the last result',
+        loadFailed: 'Could not load usage',
+        empty: 'No calls yet',
+        emptyHint:
+            'Model calls appear here once they happen. Collection starts with this release; history is not backfilled.',
+        emptyRange: 'No calls in this range',
+        emptyRangeHint: 'Try a different time range.',
+        showAll: 'Show all',
+    },
     logs: {
+        vocabulary: logVocabularyEn,
         title: 'Logs',
         description:
             'Runtime records written to cornerstone.log. Trace channel connections, model calls and background jobs.',

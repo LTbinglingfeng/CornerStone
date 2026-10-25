@@ -138,6 +138,7 @@ function harness() {
     return {
         historical, errors, requests, render, settle,
         get messages() { return messages },
+        reloadMessages(next) { setMessages(next); render() },
         async start() {
             await render().sendMessage({ role: 'user', content: 'hello', timestamp: 'user' })
             const completion = render().flushPendingMessages('foreground')
@@ -207,6 +208,31 @@ for (const ending of ['DONE', 'EOF', 'error', 'abort']) {
         assert.equal(h.render().activeToolCallMessage, null)
     })
 }
+
+test('backend failure before any reply reports the error and permits another send', async () => {
+    const h = harness()
+    const { request, completion } = await h.start()
+    request.event({ session_id: 'session-a' })
+    request.event({ error: 'Provider returned HTTP 503' })
+    request.event('[DONE]')
+    await completion
+    await h.settle()
+    assert.deepEqual(h.errors, ['Provider returned HTTP 503'])
+    assert.equal(h.render().sending, false)
+    assert.equal(h.render().transientErrors[0].content, 'Provider returned HTTP 503')
+    assert.equal(h.messages.at(-1).role, 'user', 'error is not part of chat history')
+    h.reloadMessages([{ role: 'user', content: 'hello', timestamp: 'user' }])
+    assert.equal(h.render().transientErrors.length, 1, 'history refresh preserves the visible error')
+    const next = await h.start()
+    assert.equal(next.request.payload.some(message => message.content.includes('503')), false)
+    next.request.event('[DONE]')
+    await next.completion
+    await h.settle()
+    assert.equal(h.requests.length, 2)
+    assert.equal(h.render().transientErrors.length, 1, 'next send does not erase previous error')
+    h.switchSession()
+    assert.equal(h.render().transientErrors.length, 0, 'errors are cleared when leaving the session')
+})
 
 test('switching sessions aborts the old request and clears active tools', async () => {
     const h = harness()

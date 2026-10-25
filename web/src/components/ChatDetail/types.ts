@@ -8,6 +8,7 @@ export interface ChatDetailProps {
 }
 
 export type DisplayItem =
+    | { key: string; role: string; type: 'error'; message: ChatMessage; messageIndex: -1 }
     | { key: string; role: string; type: 'text'; message: ChatMessage; messageIndex: number }
     | { key: string; role: string; type: 'red-packet'; message: ChatMessage; toolCall: ToolCall; messageIndex: number }
     | {

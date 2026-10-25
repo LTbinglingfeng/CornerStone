@@ -1,12 +1,15 @@
-export type AppTab = 'overview' | 'channels' | 'contacts' | 'chat' | 'logs' | 'settings' | 'me'
+export type AppTab = 'overview' | 'channels' | 'contacts' | 'chat' | 'usage' | 'logs' | 'settings' | 'me'
 
-export const tabOrder: AppTab[] = ['overview', 'chat', 'contacts', 'channels', 'logs', 'settings', 'me']
+export const tabOrder: AppTab[] = ['overview', 'chat', 'contacts', 'channels', 'usage', 'logs', 'settings', 'me']
 
-/** Mobile tab bar. The profile lives behind the account entry; logs are reached from Settings. */
+/** Mobile tab bar. The profile lives behind the account entry; usage and logs are reached from Settings. */
 export const navTabs: AppTab[] = ['overview', 'chat', 'contacts', 'channels', 'settings']
 
 /** Desktop sidebar has room for operational pages that the mobile tab bar omits. */
-export const sidebarTabs: AppTab[] = ['overview', 'chat', 'contacts', 'channels', 'logs', 'settings']
+export const sidebarTabs: AppTab[] = ['overview', 'chat', 'contacts', 'channels', 'usage', 'logs', 'settings']
+
+/** Pages without a mobile tab; the tab bar keeps Settings highlighted while they are open. */
+export const settingsChildTabs: AppTab[] = ['usage', 'logs']
 
 export const tabRoutes: Record<AppTab, string> = {
     overview: '/overview',
@@ -14,6 +17,7 @@ export const tabRoutes: Record<AppTab, string> = {
     settings: '/settings',
     chat: '/chat',
     contacts: '/contacts',
+    usage: '/usage',
     logs: '/logs',
     me: '/me',
 }

@@ -219,7 +219,11 @@ export const MessageList: React.FC<MessageListProps> = ({
                             ) : null
 
                         const content =
-                            item.type === 'tool-call' ? (
+                            item.type === 'error' ? (
+                                <div className="message-bubble" role="alert">
+                                    <div className="message-content">⚠️ {item.message.content}</div>
+                                </div>
+                            ) : item.type === 'tool-call' ? (
                                 <ToolCallCard
                                     toolCall={item.toolCall}
                                     result={item.result}

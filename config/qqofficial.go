@@ -9,15 +9,17 @@ import (
 )
 
 type QQOfficialConfig struct {
-	Enabled            bool     `json:"enabled"`
-	AppID              string   `json:"app_id"`
-	AppSecret          string   `json:"app_secret"`
-	PromptID           string   `json:"prompt_id"`
-	SourceFilterMode   string   `json:"source_filter_mode"`
-	AllowedUserOpenIDs []string `json:"allowed_user_openids"`
+	CommandPermissions map[string]bool `json:"command_permissions"`
+	Enabled            bool            `json:"enabled"`
+	AppID              string          `json:"app_id"`
+	AppSecret          string          `json:"app_secret"`
+	PromptID           string          `json:"prompt_id"`
+	SourceFilterMode   string          `json:"source_filter_mode"`
+	AllowedUserOpenIDs []string        `json:"allowed_user_openids"`
 }
 
 func normalizeQQOfficial(c QQOfficialConfig) QQOfficialConfig {
+	c.CommandPermissions = NormalizeClawBotCommandPermissions(c.CommandPermissions)
 	c.AppID = strings.TrimSpace(c.AppID)
 	c.AppSecret = strings.TrimSpace(c.AppSecret)
 	c.PromptID = strings.TrimSpace(c.PromptID)

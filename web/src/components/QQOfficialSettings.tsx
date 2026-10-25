@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
 import { getPrompts } from '../services/api'
 import { qqOfficialService as service } from '../services/qqOfficialService'
-import type { QQOfficialSettings, QQOfficialUpdate } from '../types/qqOfficial'
+import type { QQOfficialSettings, QQOfficialUpdate, QQOfficialCommandPermissions } from '../types/qqOfficial'
 import type { Prompt } from '../types/chat'
 import { useT } from '../contexts/I18nContext'
 import { useToast } from '../contexts/ToastContext'
@@ -12,12 +12,32 @@ import { CustomSelect } from './provider'
 import { channelStatusTone } from './channelStatus'
 import './ClawBotSettings.css'
 
+const DEFAULT_COMMAND_PERMISSIONS: QQOfficialCommandPermissions = {
+    new: true,
+    ls: true,
+    checkout: true,
+    re: true,
+    rename: true,
+    delete: true,
+    prompt: true,
+}
+const COMMAND_ITEMS = [
+    ['new', 'New'],
+    ['ls', 'List'],
+    ['checkout', 'Checkout'],
+    ['re', 'Regenerate'],
+    ['rename', 'Rename'],
+    ['delete', 'Delete'],
+    ['prompt', 'Prompt'],
+] as const
+
 export default function QQOfficialSettingsPanel({ onBack }: { onBack: () => void }) {
     const { t, locale } = useT()
     const copy = getChannelsCopy(locale).detail
     const { showToast } = useToast()
     const [settings, setSettings] = useState<QQOfficialSettings | null>(null)
     const [form, setForm] = useState<QQOfficialUpdate>({
+        command_permissions: { ...DEFAULT_COMMAND_PERMISSIONS },
         enabled: false,
         app_id: '',
         prompt_id: '',
@@ -43,7 +63,8 @@ export default function QQOfficialSettingsPanel({ onBack }: { onBack: () => void
     const busy = qrState === 'starting' || qrState === 'pending'
     const dirty =
         !!settings &&
-        (form.enabled !== settings.enabled ||
+        (COMMAND_ITEMS.some(([key]) => form.command_permissions?.[key] !== settings.command_permissions?.[key]) ||
+            form.enabled !== settings.enabled ||
             form.app_id !== settings.app_id ||
             form.prompt_id !== settings.prompt_id ||
             form.source_filter_mode !== settings.source_filter_mode ||
@@ -56,6 +77,7 @@ export default function QQOfficialSettingsPanel({ onBack }: { onBack: () => void
         needsSync.current = false
         setSettings(next)
         setForm({
+            command_permissions: { ...DEFAULT_COMMAND_PERMISSIONS, ...next.command_permissions },
             revision: next.revision,
             enabled: next.enabled,
             app_id: next.app_id,
@@ -443,6 +465,35 @@ export default function QQOfficialSettingsPanel({ onBack }: { onBack: () => void
                                 />
                             </div>
                         </div>
+                    </Group>
+                    <Group title={copy.commands} description={t('qqOfficial.commandPermissionsHint')}>
+                        {COMMAND_ITEMS.map(([key, name]) => (
+                            <Row
+                                key={key}
+                                className="channel-command-row"
+                                label={<code className="channel-command">/{key}</code>}
+                                detail={t(
+                                    key === 'prompt' ? 'qqOfficial.commandPromptDesc' : `clawBot.command${name}Desc`
+                                )}
+                                trailing={
+                                    <Toggle
+                                        label={`/${key}`}
+                                        checked={form.command_permissions?.[key] ?? true}
+                                        disabled={disabled}
+                                        onChange={(checked) =>
+                                            setForm((current) => ({
+                                                ...current,
+                                                command_permissions: {
+                                                    ...DEFAULT_COMMAND_PERMISSIONS,
+                                                    ...current.command_permissions,
+                                                    [key]: checked,
+                                                },
+                                            }))
+                                        }
+                                    />
+                                }
+                            />
+                        ))}
                     </Group>
                     <Group title={copy.access} className="channel-group--overflow">
                         <div className="channel-field">

@@ -64,6 +64,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
     const effectivePromptId = promptId || prompt?.id || session?.prompt_id
     const {
         sending,
+        transientErrors,
         activeToolCallMessage,
         streamingTimestamp,
         revealingTimestamp,
@@ -81,6 +82,7 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ sessionId, promptId, onBack, on
 
     const displayItems = useDisplayItems({
         messages,
+        transientErrors,
         sending,
         activeToolCallMessage,
         streamingTimestamp,

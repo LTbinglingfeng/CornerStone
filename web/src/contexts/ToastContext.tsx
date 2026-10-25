@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react'
+import React, { createContext, useContext, useState, useCallback, useLayoutEffect, useRef, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon, type IconName } from '../components/ui'
 import './Toast.css'
@@ -37,6 +37,23 @@ export const useToast = () => {
 
 export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const [toasts, setToasts] = useState<ToastMessage[]>([])
+    const containerRef = useRef<HTMLDivElement>(null)
+    const toastCount = toasts.length
+
+    // Native modal dialogs (showModal) live in the browser top layer and cover any z-index.
+    // Promote the toast container into the top layer as a manual popover so it stays visible
+    // above open dialogs; re-show on each new toast so it stacks above a dialog opened later.
+    useLayoutEffect(() => {
+        const container = containerRef.current
+        if (!container || typeof container.showPopover !== 'function') return
+        const isOpen = container.matches(':popover-open')
+        if (toastCount === 0) {
+            if (isOpen) container.hidePopover()
+            return
+        }
+        if (isOpen && document.querySelector('dialog:modal')) container.hidePopover()
+        if (!container.matches(':popover-open')) container.showPopover()
+    }, [toastCount])
 
     const showToast = useCallback((message: string, type: ToastType = 'info') => {
         const id = Date.now().toString() + Math.random().toString(36).substring(2)
@@ -54,7 +71,7 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         <ToastContext.Provider value={{ showToast }}>
             {children}
             {createPortal(
-                <div className="toast-container" aria-live="polite">
+                <div ref={containerRef} className="toast-container" popover="manual" aria-live="polite">
                     {toasts.map((toast) => (
                         <div
                             key={toast.id}

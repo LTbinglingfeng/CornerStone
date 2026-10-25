@@ -10,6 +10,7 @@ import {
 
 interface UseDisplayItemsOptions {
     messages: ChatMessage[]
+    transientErrors?: ChatMessage[]
     sending: boolean
     activeToolCallMessage: ChatMessage | null
     streamingTimestamp: string | null
@@ -21,8 +22,15 @@ interface UseDisplayItemsOptions {
 const TOOLS_WITH_DEDICATED_UI = new Set(['send_red_packet', 'send_pat', 'red_packet_received'])
 
 export function useDisplayItems(options: UseDisplayItemsOptions): DisplayItem[] {
-    const { messages, sending, activeToolCallMessage, streamingTimestamp, revealingTimestamp, visibleSegments } =
-        options
+    const {
+        messages,
+        transientErrors,
+        sending,
+        activeToolCallMessage,
+        streamingTimestamp,
+        revealingTimestamp,
+        visibleSegments,
+    } = options
 
     return useMemo(() => {
         const items: DisplayItem[] = []
@@ -237,6 +245,28 @@ export function useDisplayItems(options: UseDisplayItemsOptions): DisplayItem[] 
                 })
             }
         })
+        // Merge only at the display layer. Persisted message indices stay untouched.
+        transientErrors?.forEach((message, index) => {
+            const item: DisplayItem = {
+                key: `error-${message.timestamp}-${index}`,
+                role: 'assistant',
+                type: 'error',
+                message,
+                messageIndex: -1,
+            }
+            const nextIndex = items.findIndex(
+                (existing) => Date.parse(existing.message.timestamp) > Date.parse(message.timestamp)
+            )
+            items.splice(nextIndex < 0 ? items.length : nextIndex, 0, item)
+        })
         return items
-    }, [messages, sending, activeToolCallMessage, streamingTimestamp, revealingTimestamp, visibleSegments])
+    }, [
+        messages,
+        transientErrors,
+        sending,
+        activeToolCallMessage,
+        streamingTimestamp,
+        revealingTimestamp,
+        visibleSegments,
+    ])
 }

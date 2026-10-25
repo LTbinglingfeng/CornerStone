@@ -1312,6 +1312,12 @@ const Settings: React.FC<SettingsProps> = ({
                     value={<span className="settings-mono">{appVersion}</span>}
                 />
                 <Row
+                    icon="chart"
+                    label={t('usage.settingsEntry')}
+                    detail={t('usage.settingsEntryHint')}
+                    to={tabRoutes.usage}
+                />
+                <Row
                     icon="terminal"
                     label={t('logs.settingsEntry')}
                     detail={t('logs.settingsEntryHint')}

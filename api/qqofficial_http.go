@@ -38,7 +38,7 @@ func (s *QQOfficialService) settingsLocked() map[string]interface{} {
 			promptName = p.Name
 		}
 	}
-	return map[string]interface{}{"revision": fmt.Sprint(s.generation), "prompt_name": promptName, "enabled": c.Enabled, "app_id": c.AppID, "has_secret": c.AppSecret != "", "prompt_id": c.PromptID, "source_filter_mode": c.SourceFilterMode, "allowed_user_openids": c.AllowedUserOpenIDs, "status": status, "last_error": s.status.LastError, "bot_id": s.status.BotID, "bot_name": s.status.BotName}
+	return map[string]interface{}{"command_permissions": c.CommandPermissions, "revision": fmt.Sprint(s.generation), "prompt_name": promptName, "enabled": c.Enabled, "app_id": c.AppID, "has_secret": c.AppSecret != "", "prompt_id": c.PromptID, "source_filter_mode": c.SourceFilterMode, "allowed_user_openids": c.AllowedUserOpenIDs, "status": status, "last_error": s.status.LastError, "bot_id": s.status.BotID, "bot_name": s.status.BotName}
 }
 func (h *Handler) handleQQOfficialSettings(w http.ResponseWriter, r *http.Request) {
 	s := h.qqOfficialService
@@ -68,6 +68,9 @@ func (h *Handler) handleQQOfficialSettings(w http.ResponseWriter, r *http.Reques
 		}
 		c := req.QQOfficialConfig
 		previous := h.configManager.GetQQOfficialConfig()
+		if c.CommandPermissions == nil {
+			c.CommandPermissions = previous.CommandPermissions
+		}
 		if c.PromptID != "" {
 			if h.promptManager == nil {
 				h.jsonResponse(w, 400, Response{Error: "Prompt not found"})

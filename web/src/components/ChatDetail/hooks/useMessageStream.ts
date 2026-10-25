@@ -17,6 +17,7 @@ interface UseMessageStreamOptions {
 
 interface UseMessageStreamReturn {
     sending: boolean
+    transientErrors: ChatMessage[]
     activeToolCallMessage: ChatMessage | null
     streamingTimestamp: string | null
     revealingTimestamp: string | null
@@ -31,13 +32,14 @@ export function useMessageStream(options: UseMessageStreamOptions): UseMessageSt
     const { sessionId, promptId, messages, setMessages, onError } = options
 
     const [sending, setSending] = useState(false)
+    // UI-only: never merge errors into persisted messages or request payloads.
+    const [transientErrors, setTransientErrors] = useState<ChatMessage[]>([])
     // The exact message object from the current request, not a globally reusable call ID.
     const [activeToolCallMessage, setActiveToolCallMessage] = useState<ChatMessage | null>(null)
     const [assistantResponseDone, setAssistantResponseDone] = useState(false)
     const [revealingTimestamp, setRevealingTimestamp] = useState<string | null>(null)
     const [assistantVisibleSegments, setAssistantVisibleSegments] = useState(0)
     const [streamingTimestamp, setStreamingTimestamp] = useState<string | null>(null)
-    const streamingTimestampRef = useRef<string | null>(null)
 
     const activeRequestRef = useRef<AbortController | null>(null)
     const pendingOutgoingMessagesRef = useRef<ChatMessage[]>([])
@@ -59,7 +61,6 @@ export function useMessageStream(options: UseMessageStreamOptions): UseMessageSt
     })
 
     const setStreamingTimestampState = useCallback((next: string | null) => {
-        streamingTimestampRef.current = next
         setStreamingTimestamp(next)
     }, [])
 
@@ -311,36 +312,17 @@ export function useMessageStream(options: UseMessageStreamOptions): UseMessageSt
                 const message =
                     error instanceof Error && error.message ? error.message : translate('common.operationFailed')
                 onError?.(message)
-                const fallbackAssistantTimestamp = new Date().toISOString()
-                const activeStreamingTimestamp = streamingTimestampRef.current
-                if (!activeStreamingTimestamp) {
-                    setRevealingTimestamp(fallbackAssistantTimestamp)
-                }
-
-                setMessages((prev) => {
-                    if (activeStreamingTimestamp) {
-                        const next = [...prev]
-                        for (let i = next.length - 1; i >= 0; i--) {
-                            const msg = next[i]
-                            if (msg.role === 'assistant' && msg.timestamp === activeStreamingTimestamp) {
-                                next[i] = { ...msg, content: message }
-                                return next
-                            }
-                        }
-                    }
-
-                    return [
-                        ...prev,
-                        {
-                            role: 'assistant',
-                            content: message,
-                            timestamp: fallbackAssistantTimestamp,
-                        },
-                    ]
-                })
-
+                setTransientErrors((prev) => [
+                    ...prev,
+                    { role: 'assistant', content: message, timestamp: new Date().toISOString() },
+                ])
+                // Errors are immediately visible, without the assistant reveal delay.
+                resetReveal(0)
                 setStreamingTimestampState(null)
-                setAssistantResponseDone(true)
+                setAssistantResponseDone(false)
+                setRevealingTimestamp(null)
+                setAssistantVisibleSegments(0)
+                setSending(false)
             } finally {
                 if (activeRequestRef.current === abortController) {
                     activeRequestRef.current = null
@@ -456,6 +438,7 @@ export function useMessageStream(options: UseMessageStreamOptions): UseMessageSt
             }
             pendingOutgoingMessagesRef.current = []
         }
+        setTransientErrors([])
         lastSessionIdRef.current = sessionId
         lastPromptIdRef.current = promptId
 
@@ -499,6 +482,7 @@ export function useMessageStream(options: UseMessageStreamOptions): UseMessageSt
 
     return {
         sending,
+        transientErrors,
         activeToolCallMessage,
         streamingTimestamp,
         revealingTimestamp,

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -91,5 +92,71 @@ func TestHandleProviderModels_RequiresExplicitKeyForEditedEndpoint(t *testing.T)
 	}
 	if resp.Error != "api_key is required" {
 		t.Fatalf("error = %q, want %q", resp.Error, "api_key is required")
+	}
+}
+
+func TestFetchModelsFromProvider_GeminiBaseURLWithoutVersion(t *testing.T) {
+	var gotPath, gotKeyHeader, gotKeyQuery string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotKeyHeader = r.Header.Get("x-goog-api-key")
+		gotKeyQuery = r.URL.Query().Get("key")
+		if r.URL.Path != "/v1beta/models" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte(`{"models":[{"name":"models/gemini-test"}]}`))
+	}))
+	defer server.Close()
+
+	for _, baseURL := range []string{server.URL, server.URL + "/", server.URL + "/v1beta"} {
+		models, err := fetchModelsFromProvider(&config.Provider{
+			Type:    config.ProviderTypeGemini,
+			BaseURL: baseURL,
+			APIKey:  "gemini-key",
+		})
+		if err != nil {
+			t.Fatalf("base %q: unexpected error: %v", baseURL, err)
+		}
+		if len(models) != 1 || models[0] != "gemini-test" {
+			t.Fatalf("base %q: unexpected models %v", baseURL, models)
+		}
+		if gotPath != "/v1beta/models" || gotKeyHeader != "gemini-key" || gotKeyQuery != "" {
+			t.Fatalf("base %q: path=%q header=%q query=%q", baseURL, gotPath, gotKeyHeader, gotKeyQuery)
+		}
+	}
+}
+
+func TestFetchModelsFromProvider_GeminiPagination(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("pageToken") == "" {
+			_, _ = w.Write([]byte(`{"models":[{"name":"models/a"}],"nextPageToken":"p2"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"models":[{"name":"models/b"}]}`))
+	}))
+	defer server.Close()
+
+	models, err := fetchModelsFromProvider(&config.Provider{Type: config.ProviderTypeGemini, BaseURL: server.URL, APIKey: "k"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(models) != 2 || models[0] != "a" || models[1] != "b" {
+		t.Fatalf("unexpected models %v", models)
+	}
+}
+
+func TestFetchModelsFromProvider_NotFoundErrorIsReadable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	_, err := fetchModelsFromProvider(&config.Provider{Type: config.ProviderTypeOpenAI, BaseURL: server.URL, APIKey: "k"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), server.URL+"/models") || !strings.Contains(err.Error(), "API URL") {
+		t.Fatalf("unexpected error message: %v", err)
 	}
 }

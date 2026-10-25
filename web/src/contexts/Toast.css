@@ -15,6 +15,23 @@
     pointer-events: none;
 }
 
+/* Reset UA popover styles; the container is promoted to the top layer only while toasts exist. */
+.toast-container[popover] {
+    inset: auto;
+    left: 50%;
+    bottom: calc(var(--space-6) + env(safe-area-inset-bottom));
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    overflow: visible;
+}
+
+.toast-container[popover]:popover-open {
+    display: flex;
+}
+
 .toast {
     display: flex;
     align-items: center;
@@ -73,12 +90,14 @@
 }
 
 @media (max-width: 760px) {
-    .toast-container {
+    .toast-container,
+    .toast-container[popover] {
         bottom: calc(var(--tabbar-height) + env(safe-area-inset-bottom) + var(--space-3));
     }
 
     /* Chat detail & persona editor hide the tab bar; clear the composer instead. */
-    body:has(.console-layout--immersive) .toast-container {
+    body:has(.console-layout--immersive) .toast-container,
+    body:has(.console-layout--immersive) .toast-container[popover] {
         bottom: calc(84px + env(safe-area-inset-bottom));
     }
 

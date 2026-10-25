@@ -76,6 +76,9 @@ func (c *GeminiClient) convertToGenAIContentsForModel(messages []Message, model 
 			callID := strings.TrimSpace(msg.ToolCallID)
 			if callID == "" {
 				// Legacy/fallback: treat as user text if tool_call_id is missing.
+				if strings.TrimSpace(msg.Content) == "" {
+					continue
+				}
 				contents = append(contents, genai.NewContentFromText(msg.Content, genai.RoleUser))
 				continue
 			}
@@ -158,8 +161,11 @@ func (c *GeminiClient) convertToGenAIContentsForModel(messages []Message, model 
 			}
 		}
 
+		// An empty-text Part serializes to {} (Text is omitempty), which Gemini
+		// rejects with "required oneof field 'data'". This happens e.g. for
+		// reasoning-only assistant turns replayed under a different model.
 		if len(parts) == 0 {
-			parts = append(parts, genai.NewPartFromText(""))
+			continue
 		}
 
 		contents = append(contents, &genai.Content{Role: role, Parts: parts})
@@ -540,6 +546,16 @@ func translateGenAIError(err error) error {
 		return fmt.Errorf("API error (status %d): %s", apiErr.Code, msg)
 	}
 	return fmt.Errorf("generate content: %w", err)
+}
+
+// GeminiModelsListURL 返回与聊天客户端一致的 Gemini 模型列表地址：
+// base URL 未带版本段时，与 genai SDK 默认行为一致使用 v1beta。
+func GeminiModelsListURL(baseURL string) string {
+	base, version := normalizeGeminiBaseURL(baseURL)
+	if version == "" {
+		version = "v1beta"
+	}
+	return strings.TrimSuffix(base, "/") + "/" + version + "/models"
 }
 
 func normalizeGeminiBaseURL(baseURL string) (cleanBaseURL, apiVersion string) {

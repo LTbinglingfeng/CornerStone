@@ -49,6 +49,7 @@ type QQOfficialService struct {
 	pollBinding  func(context.Context, *client.QQOfficialBinding) (*client.QQOfficialBindResult, error)
 	login        *qqOfficialLogin
 	receipts     *storage.QQOfficialReceiptStore
+	sessions     *storage.QQOfficialSessionStore
 }
 
 func NewQQOfficialService(h *Handler) *QQOfficialService {
@@ -256,7 +257,6 @@ func (s *QQOfficialService) process(j qqOfficialJob) (resultErr error) {
 		channelOutcome(j.ctx, "duplicate", nil)
 		return nil
 	}
-	session, exists := h.chatManager.GetSession(sid)
 	// Event receipts include the app and sender, but not the persona. A replay
 	// after rebinding a persona must not generate the same upstream event again.
 	for _, meta := range h.chatManager.ListSessions() {
@@ -273,6 +273,21 @@ func (s *QQOfficialService) process(j qqOfficialJob) (resultErr error) {
 				return receipts.Record(op)
 			}
 		}
+	}
+	if literal, escaped := unescapeClawBotLiteralCommandText(j.msg.Content); escaped {
+		j.msg.Content = literal
+	} else if command, ok := parseClawBotCommand(j.msg.Content); ok {
+		return s.processCommand(j, op, command, receipts)
+	}
+	s.mu.Lock()
+	session, err := s.currentSessionLocked(j)
+	s.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	exists := session != nil
+	if exists {
+		sid = session.SessionID
 	}
 	promptName, persona := "", ""
 	if j.cfg.PromptID != "" {
@@ -351,7 +366,7 @@ func (s *QQOfficialService) process(j qqOfficialJob) (resultErr error) {
 	reply, err := s.generate(j.ctx, sessionReplyOptions{
 		Session: &generationSession, PromptID: j.cfg.PromptID, PromptName: promptName, Persona: persona,
 		Channel: chatToolChannelQQOfficial, ToolOptions: chatToolOptions{Channel: chatToolChannelQQOfficial}, PersistMode: sessionReplyPersistAll,
-		ExtraSystemGuides: []string{"你正在通过 QQ 官方机器人私聊渠道回复用户。只支持当前私聊的文字和图片；不能设置提醒、主动问候、访问群或频道，也不能转写语音。未解析的附件仅为占位，不要声称已读取。不要输出路径或 CQ 码代替发送图片。"},
+		ExtraSystemGuides: []string{qqOfficialSystemGuide},
 	})
 	if err != nil {
 		j.ctx = jobCtx
@@ -444,11 +459,17 @@ func qqOfficialInputText(text string) string {
 }
 
 func (s *QQOfficialService) deliver(j qqOfficialJob, sid, op string, expected []storage.ChatMessage, r *generatedSessionReply) error {
+	return s.deliverWithBase(j, sid, op, expected, expected, r, false)
+}
+
+// Regeneration authorizes media from the retained context, while comparing the
+// entire original history before sending and atomically replacing it on commit.
+func (s *QQOfficialService) deliverWithBase(j qqOfficialJob, sid, op string, expected, base []storage.ChatMessage, r *generatedSessionReply, regenerating bool) error {
 	confirmed := []storage.ChatMessage{}
 	var toolImages []string
 	var deliveryErr error
 	sent := map[string]bool{}
-	authorizedMessages := append([]storage.ChatMessage(nil), expected...)
+	authorizedMessages := append([]storage.ChatMessage(nil), base...)
 	for i := range authorizedMessages {
 		authorizedMessages[i].Quote = nil
 	}
@@ -463,10 +484,10 @@ func (s *QQOfficialService) deliver(j qqOfficialJob, sid, op string, expected []
 		if !s.confirmationCurrentLocked(j) {
 			return nil
 		}
-		if len(confirmed) == 0 {
+		if len(confirmed) == 0 || (regenerating && confirmedSegments == 0) {
 			return nil
 		}
-		replacement := append(append([]storage.ChatMessage(nil), expected...), confirmed...)
+		replacement := append(append([]storage.ChatMessage(nil), base...), confirmed...)
 		if err := s.handler.chatManager.CommitDeliverySuffix(sid, op+"-out", expected, replacement); err != nil {
 			channelHistory(j.ctx, "outbound", err)
 			return err

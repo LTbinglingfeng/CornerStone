@@ -1,12 +1,14 @@
 package api
 
 import (
+	"cornerstone/client"
 	"cornerstone/config"
 	"cornerstone/logging"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -99,68 +101,107 @@ func (h *Handler) handleProviderModels(w http.ResponseWriter, r *http.Request) {
 
 // fetchModelsFromProvider 从供应商 API 获取模型列表
 func fetchModelsFromProvider(provider *config.Provider) ([]string, error) {
-	client := &http.Client{Timeout: 15 * time.Second}
-
-	var req *http.Request
-	var err error
+	httpClient := &http.Client{Timeout: 15 * time.Second}
 
 	switch provider.Type {
 	case config.ProviderTypeOpenAI, config.ProviderTypeOpenAIResponse:
-		url := strings.TrimRight(provider.BaseURL, "/") + "/models"
-		req, err = http.NewRequest(http.MethodGet, url, nil)
+		endpoint := strings.TrimRight(provider.BaseURL, "/") + "/models"
+		body, err := doModelsRequest(httpClient, endpoint, func(req *http.Request) {
+			req.Header.Set("Authorization", "Bearer "+provider.APIKey)
+		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to create request: %w", err)
+			return nil, err
 		}
-		req.Header.Set("Authorization", "Bearer "+provider.APIKey)
+		return parseOpenAIStyleModels(body)
 
 	case config.ProviderTypeAnthropic:
-		url := strings.TrimRight(provider.BaseURL, "/") + "/models"
-		req, err = http.NewRequest(http.MethodGet, url, nil)
+		endpoint := strings.TrimRight(provider.BaseURL, "/") + "/models"
+		body, err := doModelsRequest(httpClient, endpoint, func(req *http.Request) {
+			req.Header.Set("x-api-key", provider.APIKey)
+			req.Header.Set("anthropic-version", "2023-06-01")
+		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to create request: %w", err)
+			return nil, err
 		}
-		req.Header.Set("x-api-key", provider.APIKey)
-		req.Header.Set("anthropic-version", "2023-06-01")
+		return parseOpenAIStyleModels(body)
 
 	case config.ProviderTypeGemini, config.ProviderTypeGeminiImage:
-		url := strings.TrimRight(provider.BaseURL, "/") + "/models?key=" + provider.APIKey
-		req, err = http.NewRequest(http.MethodGet, url, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create request: %w", err)
+		// 与聊天客户端一致：base URL 可带或不带版本段（未带时使用 v1beta）。
+		endpoint := client.GeminiModelsListURL(provider.BaseURL)
+		models := make([]string, 0)
+		pageToken := ""
+		for page := 0; page < 10; page++ {
+			u, err := url.Parse(endpoint)
+			if err != nil {
+				return nil, fmt.Errorf("invalid base URL: %w", err)
+			}
+			q := u.Query()
+			q.Set("pageSize", "1000")
+			if pageToken != "" {
+				q.Set("pageToken", pageToken)
+			}
+			u.RawQuery = q.Encode()
+			body, err := doModelsRequest(httpClient, u.String(), func(req *http.Request) {
+				req.Header.Set("x-goog-api-key", provider.APIKey)
+			})
+			if err != nil {
+				return nil, err
+			}
+			pageModels, next, err := parseGeminiModelsPage(body)
+			if err != nil {
+				return nil, err
+			}
+			models = append(models, pageModels...)
+			if next == "" {
+				break
+			}
+			pageToken = next
 		}
+		return models, nil
 
 	default:
 		return nil, fmt.Errorf("unsupported provider type: %s", provider.Type)
 	}
+}
 
-	resp, err := client.Do(req)
+// doModelsRequest 发起 GET 请求并返回响应体；非 200 时返回带请求地址的可读错误。
+func doModelsRequest(httpClient *http.Client, endpoint string, setHeaders func(*http.Request)) ([]byte, error) {
+	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	setHeaders(req)
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20)) // 1MB limit
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20)) // 4MB limit
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("upstream API returned %d: %s", resp.StatusCode, truncateBody(body, 200))
+		displayURL := endpoint
+		if i := strings.IndexByte(displayURL, '?'); i >= 0 {
+			displayURL = displayURL[:i]
+		}
+		msg := strings.TrimSpace(truncateBody(body, 200))
+		if resp.StatusCode == http.StatusNotFound {
+			hint := "please check the API URL"
+			if msg != "" {
+				hint = msg + "; " + hint
+			}
+			return nil, fmt.Errorf("upstream API returned 404 for GET %s (%s)", displayURL, hint)
+		}
+		if msg == "" {
+			msg = http.StatusText(resp.StatusCode)
+		}
+		return nil, fmt.Errorf("upstream API returned %d for GET %s: %s", resp.StatusCode, displayURL, msg)
 	}
-
-	return parseModelsResponse(provider.Type, body)
-}
-
-// parseModelsResponse 解析不同供应商的模型列表响应
-func parseModelsResponse(providerType config.ProviderType, body []byte) ([]string, error) {
-	switch providerType {
-	case config.ProviderTypeOpenAI, config.ProviderTypeOpenAIResponse, config.ProviderTypeAnthropic:
-		return parseOpenAIStyleModels(body)
-	case config.ProviderTypeGemini, config.ProviderTypeGeminiImage:
-		return parseGeminiModels(body)
-	default:
-		return nil, fmt.Errorf("unsupported provider type: %s", providerType)
-	}
+	return body, nil
 }
 
 // parseOpenAIStyleModels 解析 OpenAI/Anthropic 格式 {"data": [{"id": "..."}]}
@@ -186,13 +227,20 @@ func parseOpenAIStyleModels(body []byte) ([]string, error) {
 
 // parseGeminiModels 解析 Gemini 格式 {"models": [{"name": "models/..."}]}
 func parseGeminiModels(body []byte) ([]string, error) {
+	models, _, err := parseGeminiModelsPage(body)
+	return models, err
+}
+
+// parseGeminiModelsPage 解析单页 Gemini 模型列表，并返回下一页 token。
+func parseGeminiModelsPage(body []byte) ([]string, string, error) {
 	var result struct {
 		Models []struct {
 			Name string `json:"name"`
 		} `json:"models"`
+		NextPageToken string `json:"nextPageToken"`
 	}
 	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, "", fmt.Errorf("failed to parse response: %w", err)
 	}
 
 	models := make([]string, 0, len(result.Models))
@@ -205,7 +253,7 @@ func parseGeminiModels(body []byte) ([]string, error) {
 		name = strings.TrimPrefix(name, "models/")
 		models = append(models, name)
 	}
-	return models, nil
+	return models, strings.TrimSpace(result.NextPageToken), nil
 }
 
 // truncateBody 截断响应体用于错误消息

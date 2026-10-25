@@ -26,7 +26,7 @@ CornerStone 是自托管 AI 聊天应用，使用 Go 后端与 React + TypeScrip
 | `api/clawbot*.go` | iLink 连接、扫码、typing、入站媒体与引用、持久化投递及历史对账 |
 | `api/napcat*.go` | OneBot 反向 WebSocket、连接生命周期、私聊媒体与引用解析、确认投递 |
 | `api/qqofficial*.go`、`client/qqofficial*.go`、`config/qqofficial.go` | QQ 官方私聊、扫码绑定、token / 网关生命周期、文本与图片投递；不处理群或频道 |
-| `storage/qqofficial_receipts.go` | 独立于可删除会话的 QQ 官方入站去重回执（保留 30 天，上限 100000 条，满额或损坏时拒绝继续处理） |
+| `storage/qqofficial_receipts.go`、`storage/qqofficial_sessions.go` | QQ 官方独立入站去重回执（保留 30 天，上限 100000 条）与按应用 / 用户 / 人设持久化的当前会话选择；满额或损坏时拒绝继续处理 |
 | `api/chat_tool_attachment.go`、`api/handler_attachment.go` | `send_attachment` 投递意图与受鉴权保护的附件下载 |
 | `api/reminder_service.go`、`api/idle_greeting_service.go` | 定时提醒与主动问候 |
 | `client/` | 上游 AI、图片、TTS、天气、ClawBot 客户端及共享 HTTP 客户端 |
@@ -115,6 +115,7 @@ go build -o cornerstone .
 - ClawBot 入站任务、去重回执、context 与游标保持原子提交；保留 outbox 分段状态、来源关联和恢复语义。投递对齐官方 openclaw-weixin，发出后不再跟踪，任务不会停下来等人工：发送结果不确定（超时、5xx、断连、重启中断）视为已送达，不重发；生成、命令、附件上传或历史写入失败时取消剩余分段，已发送分段仍写入历史，不再发送。发送被明确拒绝或附件处理 / 上传失败时尽力回一条 ⚠️ 提示（不入历史、不重试，结果不确定时不发）；同一任务的所有 sendmessage 带 `run_id = job.ID`。扫码记录了 `ilink_user_id` 时只接收该用户的消息（手动 token 无 owner 时不过滤）；模型调用工具时默认发送类型 11/12 进度消息（`no_reply` 不发，可在设置关闭）。
 - NapCat action 响应通过 echo 关联等待者；维持连接 / 账号校验、断连取消和旧连接隔离。发送超时不等于未送达，不自动重试；部分发送失败应停止后续段，历史只提交已确认部分。
 - QQ 官方通道只消费 `C2C_MESSAGE_CREATE`，即使订阅位同时覆盖群事件，也必须丢弃群 / 频道事件。会话按 AppID、用户 OpenID、人设隔离；OpenID 不是 QQ 号。当前仅文本和图片，不启用提醒、主动问候或语音转写；`send_attachment` 仅允许当前会话登记的图片。
+- QQ 官方支持 `/menu`、`/new`、`/ls`、`/checkout`、`/re`、`/rename`、`/delete`、`/prompt`，复用 ClawBot 命令解析与权限语义；`/menu` 始终可用，`//` 转义为普通聊天。`/prompt` 切换整个 QQ 官方渠道的人设；旧确定性会话 ID 保留，新会话在同作用域 ID 后添加随机后缀。命令先记录独立去重回执，失败不自动重放，命令及确认文本不写入聊天历史；重生成使用裁剪后的上下文授权附件，对原始完整历史做条件替换，未确认任何分段时保留旧回复。
 - QQ 官方扫码绑定密钥及 AppSecret 不得返回浏览器或写日志；过期、取消、配置变更、新扫码必须使旧结果失效。官方 REST 消息 POST 不盲重试；恢复网关时允许 `RESUMED` 之前的重放事件。投递前及分段间检查历史未被编辑 / 删除，确认后条件提交，并保留工具调用的 provider replay 状态。
 - 调整提醒 / 主动问候启动顺序时，确保生产者领取任务前已挂载持久化通道；typing 是非阻塞的辅助状态，不应影响回复生成或投递可靠性。
 - iLink 的 `context_token` 是不透明字符串，原样存储和回传，不裁剪空白；空值不清除已有值，重复消息不覆盖较新的 context。消息 ID 要无损支持 uint64，优先顶层 ID，再取首个有效 item ID；缺失 / 零值保留现有 fallback 去重，不伪造稳定引用键。
@@ -151,7 +152,7 @@ src/
   reminders/
   idle_greetings/
   clawbot/         # inbox / outbox、游标、回执、引用缓存等持久化状态
-  qqofficial/      # 官方 QQ 私聊入站去重回执（独立于聊天删除）
+  qqofficial/      # 官方 QQ 私聊入站去重回执、当前会话选择（独立于聊天删除）
   attachments/     # 私有附件文件，使用 /api/attachments/<id> 引用
 ```
 
